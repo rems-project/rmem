@@ -1,0 +1,480 @@
+   0  $accept : %entry% $end
+
+   1  commands : rev_commands
+
+   2  rev_commands : command
+   3               | rev_commands SEMICOLON command
+
+   4  command :
+   5          | QUIT
+   6          | help
+   7          | NUM
+   8          | step
+   9          | stepi
+  10          | peeki
+  11          | back
+  12          | UNDO
+  13          | FOLLOW
+  14          | IAUTO
+  15          | TYPESET
+  16          | GRAPH
+  17          | PPG_REGS
+  18          | PPG_REGS_RF
+  19          | PPG_TRANS
+  20          | DEBUG
+  21          | PRINT
+  22          | HISTORY
+  23          | breakpoint
+  24          | set
+  25          | search
+
+  26  help : HELP
+
+  27  step : STEP
+  28       | STEP NUM
+
+  29  back : BACK
+  30       | BACK NUM
+
+  31  breakpoint : BREAK FETCH big_num
+
+  32  search : SEARCH EXHAUSTIVE
+  33         | SEARCH RANDOM NUM
+
+  34  set : SET EAGER on_off
+
+  35  on_off : ON
+  36         | OFF
+
+  37  big_num : NUM
+  38          | BIG_NUM
+
+  39  stepi : STEPI NUM NUM
+
+  40  peeki : PEEKI NUM NUM
+
+  41  %entry% : '\001' commands
+
+state 0
+	$accept : . %entry% $end  (0)
+
+	'\001'  shift 1
+	.  error
+
+	%entry%  goto 2
+
+
+state 1
+	%entry% : '\001' . commands  (41)
+	command : .  (4)
+
+	QUIT  shift 3
+	HELP  shift 4
+	STEP  shift 5
+	STEPI  shift 6
+	PEEKI  shift 7
+	BACK  shift 8
+	UNDO  shift 9
+	FOLLOW  shift 10
+	IAUTO  shift 11
+	TYPESET  shift 12
+	GRAPH  shift 13
+	PPG_REGS  shift 14
+	PPG_REGS_RF  shift 15
+	PPG_TRANS  shift 16
+	DEBUG  shift 17
+	PRINT  shift 18
+	HISTORY  shift 19
+	SEARCH  shift 20
+	BREAK  shift 21
+	SET  shift 22
+	NUM  shift 23
+	$end  reduce 4
+	SEMICOLON  reduce 4
+
+	commands  goto 24
+	rev_commands  goto 25
+	command  goto 26
+	help  goto 27
+	step  goto 28
+	stepi  goto 29
+	peeki  goto 30
+	back  goto 31
+	breakpoint  goto 32
+	set  goto 33
+	search  goto 34
+
+
+state 2
+	$accept : %entry% . $end  (0)
+
+	$end  accept
+
+
+state 3
+	command : QUIT .  (5)
+
+	.  reduce 5
+
+
+state 4
+	help : HELP .  (26)
+
+	.  reduce 26
+
+
+state 5
+	step : STEP .  (27)
+	step : STEP . NUM  (28)
+
+	NUM  shift 35
+	$end  reduce 27
+	SEMICOLON  reduce 27
+
+
+state 6
+	stepi : STEPI . NUM NUM  (39)
+
+	NUM  shift 36
+	.  error
+
+
+state 7
+	peeki : PEEKI . NUM NUM  (40)
+
+	NUM  shift 37
+	.  error
+
+
+state 8
+	back : BACK .  (29)
+	back : BACK . NUM  (30)
+
+	NUM  shift 38
+	$end  reduce 29
+	SEMICOLON  reduce 29
+
+
+state 9
+	command : UNDO .  (12)
+
+	.  reduce 12
+
+
+state 10
+	command : FOLLOW .  (13)
+
+	.  reduce 13
+
+
+state 11
+	command : IAUTO .  (14)
+
+	.  reduce 14
+
+
+state 12
+	command : TYPESET .  (15)
+
+	.  reduce 15
+
+
+state 13
+	command : GRAPH .  (16)
+
+	.  reduce 16
+
+
+state 14
+	command : PPG_REGS .  (17)
+
+	.  reduce 17
+
+
+state 15
+	command : PPG_REGS_RF .  (18)
+
+	.  reduce 18
+
+
+state 16
+	command : PPG_TRANS .  (19)
+
+	.  reduce 19
+
+
+state 17
+	command : DEBUG .  (20)
+
+	.  reduce 20
+
+
+state 18
+	command : PRINT .  (21)
+
+	.  reduce 21
+
+
+state 19
+	command : HISTORY .  (22)
+
+	.  reduce 22
+
+
+state 20
+	search : SEARCH . EXHAUSTIVE  (32)
+	search : SEARCH . RANDOM NUM  (33)
+
+	RANDOM  shift 39
+	EXHAUSTIVE  shift 40
+	.  error
+
+
+state 21
+	breakpoint : BREAK . FETCH big_num  (31)
+
+	FETCH  shift 41
+	.  error
+
+
+state 22
+	set : SET . EAGER on_off  (34)
+
+	EAGER  shift 42
+	.  error
+
+
+state 23
+	command : NUM .  (7)
+
+	.  reduce 7
+
+
+state 24
+	%entry% : '\001' commands .  (41)
+
+	.  reduce 41
+
+
+state 25
+	commands : rev_commands .  (1)
+	rev_commands : rev_commands . SEMICOLON command  (3)
+
+	SEMICOLON  shift 43
+	$end  reduce 1
+
+
+state 26
+	rev_commands : command .  (2)
+
+	.  reduce 2
+
+
+state 27
+	command : help .  (6)
+
+	.  reduce 6
+
+
+state 28
+	command : step .  (8)
+
+	.  reduce 8
+
+
+state 29
+	command : stepi .  (9)
+
+	.  reduce 9
+
+
+state 30
+	command : peeki .  (10)
+
+	.  reduce 10
+
+
+state 31
+	command : back .  (11)
+
+	.  reduce 11
+
+
+state 32
+	command : breakpoint .  (23)
+
+	.  reduce 23
+
+
+state 33
+	command : set .  (24)
+
+	.  reduce 24
+
+
+state 34
+	command : search .  (25)
+
+	.  reduce 25
+
+
+state 35
+	step : STEP NUM .  (28)
+
+	.  reduce 28
+
+
+state 36
+	stepi : STEPI NUM . NUM  (39)
+
+	NUM  shift 44
+	.  error
+
+
+state 37
+	peeki : PEEKI NUM . NUM  (40)
+
+	NUM  shift 45
+	.  error
+
+
+state 38
+	back : BACK NUM .  (30)
+
+	.  reduce 30
+
+
+state 39
+	search : SEARCH RANDOM . NUM  (33)
+
+	NUM  shift 46
+	.  error
+
+
+state 40
+	search : SEARCH EXHAUSTIVE .  (32)
+
+	.  reduce 32
+
+
+state 41
+	breakpoint : BREAK FETCH . big_num  (31)
+
+	NUM  shift 47
+	BIG_NUM  shift 48
+	.  error
+
+	big_num  goto 49
+
+
+state 42
+	set : SET EAGER . on_off  (34)
+
+	ON  shift 50
+	OFF  shift 51
+	.  error
+
+	on_off  goto 52
+
+
+state 43
+	rev_commands : rev_commands SEMICOLON . command  (3)
+	command : .  (4)
+
+	QUIT  shift 3
+	HELP  shift 4
+	STEP  shift 5
+	STEPI  shift 6
+	PEEKI  shift 7
+	BACK  shift 8
+	UNDO  shift 9
+	FOLLOW  shift 10
+	IAUTO  shift 11
+	TYPESET  shift 12
+	GRAPH  shift 13
+	PPG_REGS  shift 14
+	PPG_REGS_RF  shift 15
+	PPG_TRANS  shift 16
+	DEBUG  shift 17
+	PRINT  shift 18
+	HISTORY  shift 19
+	SEARCH  shift 20
+	BREAK  shift 21
+	SET  shift 22
+	NUM  shift 23
+	$end  reduce 4
+	SEMICOLON  reduce 4
+
+	command  goto 53
+	help  goto 27
+	step  goto 28
+	stepi  goto 29
+	peeki  goto 30
+	back  goto 31
+	breakpoint  goto 32
+	set  goto 33
+	search  goto 34
+
+
+state 44
+	stepi : STEPI NUM NUM .  (39)
+
+	.  reduce 39
+
+
+state 45
+	peeki : PEEKI NUM NUM .  (40)
+
+	.  reduce 40
+
+
+state 46
+	search : SEARCH RANDOM NUM .  (33)
+
+	.  reduce 33
+
+
+state 47
+	big_num : NUM .  (37)
+
+	.  reduce 37
+
+
+state 48
+	big_num : BIG_NUM .  (38)
+
+	.  reduce 38
+
+
+state 49
+	breakpoint : BREAK FETCH big_num .  (31)
+
+	.  reduce 31
+
+
+state 50
+	on_off : ON .  (35)
+
+	.  reduce 35
+
+
+state 51
+	on_off : OFF .  (36)
+
+	.  reduce 36
+
+
+state 52
+	set : SET EAGER on_off .  (34)
+
+	.  reduce 34
+
+
+state 53
+	rev_commands : rev_commands SEMICOLON command .  (3)
+
+	.  reduce 3
+
+
+39 terminals, 15 nonterminals
+42 grammar rules, 54 states

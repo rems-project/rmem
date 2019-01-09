@@ -1,0 +1,149 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Shaked Flur, University of Cambridge                            2017-2018   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2017-2018   *)
+(*  Copyright Robert Norton-Wright, University of Cambridge                        2017   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           *)
+(*  For author information see README.md.                                                 *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+
+open import MachineDefUtils
+open import MachineDefTypes
+open import Sail_impl_base
+open import MachineDefEvents
+import X86_embed_types
+
+let x86_is_system_call_instruction (_: instruction_ast) = Nothing
+
+let x86_is_thread_start_instruction = function
+(*  | X86_instr (X86_embed_types.SYSCALL_THREAD_START) -> true*)
+  | _ -> false
+  end
+
+let x86_is_test_begin_instruction (_ : instruction_ast) = false
+let x86_is_test_end_instruction (_ : instruction_ast) = false
+
+let x86_register_data_info : registerdata =
+  let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
+    (name, (D_decreasing, bit_count, bit_count - 1, fields))
+  in
+  [ 
+    reg 64 "RIP" [];
+    reg 64 "RAX" [];
+    reg 64 "RCX" [];
+    reg 64 "RDX" [];
+    reg 64 "RBX" [];
+    reg 64 "RSP" [];
+    reg 64 "RBP" [];
+    reg 64 "RSI" [];
+    reg 64 "RDI" [];
+    reg 64 "R8"  [];
+    reg 64 "R9"  [];
+    reg 64 "R10" [];
+    reg 64 "R11" [];
+    reg 64 "R12" [];
+    reg 64 "R13" [];
+    reg 64 "R14" [];
+    reg 64 "R15" [];
+
+    reg 1  "CF" [];
+    reg 1  "PF" [];
+    reg 1  "AF" [];
+    reg 1  "ZF" [];
+    reg 1  "SF" [];
+    reg 1  "OF" [];
+  ]
+
+let x86_reg_name name : reg_name =
+  match reg_from_data x86_register_data_info name with
+  | Just r -> r
+  | Nothing -> fail
+  end
+
+let x86_fixed_pseudo_registers = []
+  (* TODO: this is how you define fixed values for registers from the list above *
+  let fix v r = fixed_reg x86_register_data_info v r in
+  [ fix 5 "REG1";
+    fix 9 "REG2";
+  ]
+  *)
+
+let x86_thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr  = x86_reg_name "RAX"; (* XXX *)
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return = x86_reg_name "RAX";
+
+      (* these registers hold the arguments of the new-thread function *)
+      tsi_f_tid  = x86_reg_name "RAX"; (* XXX *)
+      tsi_f_toc  = Nothing;
+      tsi_f_addr = Nothing;
+  |>
+
+let x86_make_empty_write_events
+    (tid:          thread_id)
+    (inst:         instruction_instance)
+    ((addr, size): footprint)
+    (write_kind:   write_kind)
+    : (list write) * (MachineDefFreshIds.id_state ioid)
+  =
+  (* TODO: handle X86 version of store multiple/pair *)
+  let addr' = integer_of_address addr in
+  let write_size =
+    if List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    else if write_kind = Write_X86_locked then size
+    else 1 (* not sure *)
+  in
+  make_empty_write_events' inst.instance_id_state tid inst.instance_ioid addr size write_size write_kind
+
+let x86_make_read_request_events
+    (tid:          thread_id)
+    (inst:         instruction_instance)
+    ((addr, size): footprint)
+    (read_kind:    read_kind)
+    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+  =
+  let addr' = integer_of_address addr in
+  let read_size =
+    if List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    else if read_kind = Read_X86_locked then size
+    else 1 (* not sure *)
+  in
+  make_read_request_events' inst.instance_id_state tid inst.instance_ioid addr size read_size read_kind
+
+let x86_ism : isa_info =
+  <|  ism                         = X86_ism;
+
+      is_system_call_instruction  = x86_is_system_call_instruction;
+      is_thread_start_instruction = x86_is_thread_start_instruction;
+      is_test_begin_instruction   = x86_is_test_begin_instruction;
+      is_test_end_instruction     = x86_is_test_end_instruction;
+
+      thread_start_info           = x86_thread_start_info;
+
+      register_data_info          = x86_register_data_info;
+      fixed_pseudo_registers      = x86_fixed_pseudo_registers;
+      cia_reg                     = x86_reg_name "RIP";
+      nia_reg                     = x86_reg_name "RIP";
+      dia_reg                     = Nothing;
+
+      make_empty_write_events     = x86_make_empty_write_events;
+      make_read_request_events    = x86_make_read_request_events;
+  |>

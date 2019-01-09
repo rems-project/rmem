@@ -1,0 +1,548 @@
+<!--==============================================================================================-->
+<!--                                                                                              -->
+<!--                rmem executable model                                                         -->
+<!--                =====================                                                         -->
+<!--                                                                                              -->
+<!--  This file is:                                                                               -->
+<!--                                                                                              -->
+<!--  Copyright Jon French, University of Cambridge                                        2017   -->
+<!--  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)               2011   -->
+<!--  Copyright Shaked Flur, University of Cambridge                                  2015-2018   -->
+<!--  Copyright Peter Sewell, University of Cambridge                          2011, 2014, 2017   -->
+<!--  Copyright Francesco Zappa Nardelli, INRIA Paris                                      2011   -->
+<!--  Copyright Ohad Kammar, University of Cambridge (when this work was done)             2013   -->
+<!--  Copyright Susmit Sarkar, University of St Andrews                                    2014   -->
+<!--  Copyright Christopher Pulte, University of Cambridge                                 2018   -->
+<!--                                                                                              -->
+<!--  All rights reserved.                                                                        -->
+<!--                                                                                              -->
+<!--  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.                 -->
+<!--  For author information see README.md.                                                       -->
+<!--                                                                                              -->
+<!--==============================================================================================-->
+
+<!DOCTYPE html>
+<html>
+<head class="ko">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <title data-bind="text: 'RMEM ' + version() + ' (' + isa_name() + ') :: ' + test_name()">RMEM</title> <!-- will be set to the right title by setISA -->
+
+  <link rel="stylesheet" type="text/css" href="web_assets/stylesheet.css" />
+  <!-- style sheet for the litmus browser -->
+  <link rel="stylesheet" type="text/css" href="web_assets/browse.css" />
+  <link rel="stylesheet" type="text/css" href="web_assets/lib/jquery-ui.css"/>
+  <link rel="stylesheet" type="text/css" href="web_assets/lib/jquery-ui.theme.css"/>
+  <link rel="stylesheet" type="text/css" href="web_assets/lib/codemirror.css" />
+  <link rel="stylesheet" type="text/css" href="web_assets/lib/fonts/liberation/liberation.css" />
+  <script type="text/javascript" src="web_assets/lib/es5-shim.min.js"></script>
+  <script type="text/javascript" src="web_assets/lib/es6-shim.min.js"></script>
+</head>
+
+<body>
+    <div id="main_container">
+        <div id="interact_page" class="main">
+            <div id="interact_vsplit">
+                <div id="top_bar" class="ko">
+                    <div id="top_bar_title" data-bind="attr: { title: 'Version: ' + version() + '\n' + build_date() + '\n' + 'Current ISA: ' + isa_name() }">RMEM</div>
+                    <span class="sys_state_title" data-bind="text: test_name"></span>
+                    <span class="vertical_separator"></span>
+                    <div class="top_bar_section menubar" id="load_buttons">
+                        <a class="toolbutton" href="#" id="load_litmus_button">Load litmus</a>
+                        <a class="toolbutton" href="#" id="load_test_button">Load ELF</a>
+                        <a class="toolbutton" href="#" id="select_options">Model</a>
+                    </div>
+                    <span class="vertical_separator"></span>
+                    <div class="top_bar_section menubar">
+                        <a href="#" id="next" class="toolbutton cmdbutton disabled when_started" cmd="">Next</a>
+                        <a href="#" id="undo"  class="toolbutton cmdbutton disabled when_started" cmd="undo">Undo</a>
+                        <a href="#" class="toolbutton restart disabled when_started">Restart</a>
+                        <a href="#" class="toolbutton disabled when_started" id="search_button">Search&nbsp;<span class="ui-icon ui-icon-triangle-1-s"></span></a>
+                    </div>
+                    <span class="vertical_separator"></span>
+                    <div class="top_bar_section">
+                        <div id="top_bar_options"></div>
+                    </div>
+                    <span class="vertical_separator"></span>
+                    <div class="top_bar_section menubar">
+                        <a href="#" id="link_button" class="toolbutton disabled" data-bind="css: { disabled: test_type() !== 'litmus' }">Link to this state<span class="ui-icon ui-icon-triangle-1-s"></span></a>
+                        <a href="#" class="help_button toolbutton">Help</a>
+                    </div>
+                </div>
+                <div id="split_root">
+                    <div class="split_loading">
+                        <img src="images/hourglass.gif" width="48" height="48" alt="">&nbsp;Loading...
+                    </div>
+                </div>
+            </div> <!-- interact_vsplit -->
+        </div> <!-- interact_page -->
+    </div> <!-- main_container -->
+
+    <div class="option_group ui-corner-all ui-widget" id="search_dropdown">
+        <!-- <div class="option"> -->
+        <!--     <button id="search_random_button" class="when_started" disabled="disabled">Search randomly</button> -->
+        <!-- </div> -->
+        <!-- <div class="option"> -->
+        <!--     <button id="search_exhaustive_button" class="when_started" disabled="disabled">Search exhaustively</button> -->
+        <!-- </div> -->
+    </div>
+
+    <div class="option_group ui-corner-all ui-widget" id="link_dropdown">
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_model_options" checked="checked">
+                <span class="option-name">Include model parameters</span>
+            </div>
+        </div>
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_include_commands" checked="checked">
+                <span class="option-name">Include command history</span>
+            </div>
+        </div>
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_follow_list" checked="checked">
+                <span class="option-name" title="Convert all transitions taken after the last non-transition command to a follow-list">Include recent transitions as follow-list</span>
+            </div>
+        </div>
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_all_options">
+                <span class="option-name" title="(Including those not explicitly set by commands)">Include default value of all options</span>
+            </div>
+        </div>
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_window_layout" checked="checked">
+                <span class="option-name">Include window layout</span>
+            </div>
+        </div>
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_use_redirect">
+                <span class="option-name">TODO FIXME TEMPORARY: Rewrite links to use redirect</span>
+            </div>
+        </div>
+        <div class="option toggler">
+            <div class="top">
+                <input type="checkbox" id="link_shorten_url">
+                <span class="option-name">Shorten URL</span>
+            </div>
+        </div>
+        <div class="option">
+            <div class="notification">
+                Copied to clipboard.
+            </div>
+        </div>
+        <div class="option">
+            <button id="link_copy_button">Copy link to clipboard</button>
+        </div>
+    </div>
+
+    <div id="litmus_browser" class="dialog browse" title="Load litmus test from library">
+        <div class="litmus_tabs">
+            <ul data-bind="foreach: litmus_library">
+                <li><a href="#" data-bind="text: $data.title, attr: { href: '#' + $data.arch + '_litmus_browser' }"></a></li>
+            </ul>
+            <!-- ko foreach: litmus_library -->
+            <div class="litmus_browser" data-bind="attr: { id: $data.arch + '_litmus_browser' }">
+                <div style="margin-left: 170px; margin-top: 5px; margin-bottom: 10px;">
+                    <input type="text" class="litmus_filter" placeholder="Filter..">
+                </div>
+                <div class="category_wrapper">
+                    <div class="category" data-bind="attr: { id: $data.arch + '_categories' }">
+                        <ul data-bind="foreach: $data.categories">
+                            <li class="test_category" data-bind="attr: { folder: $data.folder }, text: $data.name"></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="clear"></div>
+            </div>
+            <!-- /ko -->
+        </div>
+        <template class="contents_template">
+            <div class="contents" data-bind="attr: { folder: category.folder }" style="display: none">
+                <h4 data-bind="text: category.name"></h4>
+                <ul data-bind="foreach: tests">
+                    <li class="litmus_name" data-bind="text: name, attr: { test_url: url }"></li>
+                </ul>
+            </div>
+        </template>
+        <template class="error_template">
+            <div class="contents" data-bind="attr: { folder: category.folder }" style="display: none">
+                <h4 data-bind="text: category.name"></h4>
+                <div style="text-align: center" data-bind="text: error"></div>
+            </div>
+        </template>
+    </div>
+
+    <div id="elf_browser" class="dialog browse" title="Load ELF test from library">
+        <div class="litmus_tabs">
+            <ul data-bind="foreach: elf_library">
+                <li><a href="#" data-bind="text: $data.arch, attr: { href: '#' + $data.arch + '_elf_browser' }"></a></li>
+            </ul>
+            <!-- ko foreach: elf_library -->
+            <div class="litmus_browser" data-bind="attr: { id: $data.arch + '_elf_browser' }">
+                <div style="margin-left: 170px; margin-top: 5px; margin-bottom: 10px;">
+                    <input type="text" class="litmus_filter" placeholder="Filter..">
+                </div>
+                <div class="category_wrapper">
+                    <div class="category" data-bind="attr: { id: $data.arch + '_categories' }">
+                        <ul data-bind="foreach: $data.categories">
+                            <li class="test_category" data-bind="attr: { folder: $data.folder }, text: ($data.name ? $data.name : $data.folder)"></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="clear"></div>
+            </div>
+            <!-- /ko -->
+        </div>
+        <template class="contents_template">
+            <div class="contents" data-bind="attr: { folder: category.folder }" style="display: none">
+                <h4 data-bind="text: (category.name ? category.name : category.folder)"></h4>
+                <ul data-bind="foreach: tests">
+                    <li class="litmus_name" data-bind="text: name, attr: { test_name: name, binary_url: binary_url, source_urls: JSON.stringify(source_urls), n_threads: n_threads }"></li>
+                </ul>
+            </div>
+        </template>
+        <template class="error_template">
+            <div class="contents" data-bind="attr: { folder: category.folder }" style="display: none">
+                <h4 data-bind="text: (category.name ? category.name : category.folder)"></h4>
+                <div style="text-align: center" data-bind="text: error"></div>
+            </div>
+        </template>
+    </div>
+
+
+    <div id="load_elf_dialog" class="dialog" title="Load ELF test (ARM or POWER)">
+        <div class="flex-row">
+            <button id="elf_from_library" class="flex">Load from library...</button>
+            <button id="elf_from_file" class="flex">Load from file...</button>
+        </div>
+        <input type="file" id="elf_file_select" style="display: none">
+        <input type="file" id="elf_source_select" multiple="multiple" style="display: none">
+        <div style="margin: 2em 2em 0 2em">
+            <b>Current ELF file:</b>&nbsp;<span id="elf_dialog_current_file">(none)</span>
+            <br><br>
+            <b>Source files (optional):</b>
+            <br>
+            <select id="elf_source_list" multiple="multiple" class="ko" data-bind="foreach: sources">
+                <option data-bind="attr: { value: $data.name }, text: $data.name"></option>
+            </select>
+            <div class="flex-row">
+                <button id="elf_source_add" class="flex">Add...</button>
+                <button id="elf_source_remove" class="flex">Remove selected</button>
+            </div>
+            <br><br>
+            <label>
+                Number of threads to create:
+                <input type="number" id="elf_threads" value="1" min="1">
+            </label>
+            <br><br>
+            <label>
+                <input type="checkbox" id="use_dwarf">
+                Enable DWARF support
+            </label>
+        </div>
+    </div>
+
+    <div id="options" class="dialog ko" title="Model options">
+        <p class="ui-state-highlight when_started" style="display: none;">
+            <span class="ui-icon ui-icon-alert"></span>
+            Note: changing these will restart the execution
+        </p>
+
+        <h1>Out-of-order mode</h1>
+
+        <h2 class="justify" class="ko">
+            <label>
+                <input type="radio" id="force_sc_false" value="false" name="force_sc" data-bind="checked: force_sc">
+                Relaxed
+            </label>
+            <label>
+                <input type="radio" id="force_sc_true" value="true" name="force_sc" data-bind="checked: force_sc">
+                Sequential consistency
+            </label>
+        </h2>
+
+        <h1>Storage model</h1>
+
+        <h2 id="memory_models" class="justify">
+            <label data-bind="visible: isa_name() === 'PPC'">
+                <input type="radio" id="model_pldi11" name="model" value="pldi11">
+                PLDI11
+            </label>
+            <label data-bind="visible: isa_name() === 'AArch64' || isa_name() === 'MIPS'">
+                <input type="radio" id="model_flowing" name="model" value="flowing">
+                Flowing
+            </label>
+            <label data-bind="visible: isa_name() === 'AArch64' || isa_name() === 'MIPS'">
+                <input type="radio" id="model_pop" name="model" value="pop">
+                POP
+            </label>
+            <label data-bind="visible: isa_name() === 'AArch64' || isa_name() === 'MIPS'">
+                <input type="radio" id="model_nop" name="model" value="nop">
+                NOP
+            </label>
+            <label data-bind="visible: isa_name() === 'AArch64' || isa_name() === 'MIPS' || isa_name() === 'RISCV'">
+                <input type="radio" id="model_flat" name="model" value="flat">
+                Flat
+            </label>
+            <label data-bind="visible: isa_name() === 'RISCV' || isa_name() === 'X86'">
+                <input type="radio" id="model_tso" name="model" value="tso">
+                TSO
+            </label>
+            <label data-bind="visible: isa_name() === 'AArch64'">
+                <input type="radio" id="model_promising" name="model" value="promising">
+                Promising
+            </label>
+        </h2>
+
+        <h1>Instruction Semantics</h1>
+
+        <h2 class="justify">
+            <label>
+                <input type="radio" id="semantics_interpreter" name="semantics" value="interpreter" data-bind="checked: embedding">
+                Interpreter
+            </label>
+            <label>
+                <input type="radio" id="semantics_shallow_embedding" name="semantics" value="shallow" data-bind="checked: embedding">
+                Shallow embedding
+            </label>
+        </h2>
+
+        <h1>Tree speculation</h1>
+
+        <h2 class="justify" class="ko">
+            <label>
+                <input type="radio" id="allow_tree_speculation" value="allow" name="tree_speculation" data-bind="checked: tree_speculation">
+                allow
+            </label>
+            <label>
+                <input type="radio" id="forbid_tree_speculation" value="forbid" name="tree_speculation" data-bind="checked: tree_speculation">
+                forbid
+            </label>
+        </h2>
+
+        <h1>(Promising) Restrict promises</h1>
+        <div id="restrict_promises">
+        <h2 class="justify" class="ko">
+            <label>
+                <input type="radio" id="promiseFirst" value="allow" name="promise_first" data-bind="checked: promise_first">
+                Promise first
+            </label>
+            <label>
+                <input type="radio" id="promiseAnytime" value="forbid" name="promise_first" data-bind="checked: promise_first">
+                Promise anytime
+            </label>
+        </h2>
+        </div>
+        <div id="restrict_promises_na">
+          (not applicable)
+        </div>
+
+
+
+        <h1>Topology Choice for Flowing Model</h1>
+        <div id="flowing_topology">
+            <h2>Topology for two-thread tests</h2>
+            <div id="topos_two_threads"></div>
+
+            <h2>Topology for three-thread tests</h2>
+            <div id="topos_three_threads"></div>
+
+            <h2>Topology for four-thread tests</h2>
+            <div id="topos_four_threads"></div>
+        </div>
+        <div id="flowing_topology_na">
+            (not applicable)
+        </div>
+
+    </div> <!-- options -->
+
+    <div id="load_litmus_dialog" title="Load litmus test">
+        <div class="flex-row">
+            <button id="litmus_from_library" class="flex">Load from library...</button>
+            <button id="litmus_from_file" class="flex">Load from file...</button>
+        </div>
+        <label>or enter a test below:</label>
+        <textarea></textarea>
+        <input type="file" id="litmus_file_select" style="display: none">
+    </div>
+
+    <template id="console_template">
+        <div class="mid_bar">
+            <select data-bind="switcher: 'console'"></select>
+            <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="font_size_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                <a class="font_size_reset toolbutton" href="#">100%</a>
+                <a class="font_size_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
+            </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+            </div>
+        </div>
+        <div class="system_state adjust_font_size">
+            <div class="interact_loading">
+                <img src="images/hourglass.gif" width="48" height="48" alt="working...">
+            </div>
+            <!-- note the comments to remove extraneous whitespace because this is formatted 'pre' -->
+            <div class="system_state_lines" data-bind="foreach: console_lines"><!--
+                --><p data-bind="html: $data"></p><!--
+            --></div>
+        </div>
+        <div class="interact_prompt_line">
+            <div class="interact_prompt" data-bind="html: prompt" style="display: inline-block"></div>
+            <textarea class="input_cmd" style="display: inline-block"></textarea>
+        </div>
+    </template>
+
+    <template id="trace_template">
+        <div class="mid_bar">
+            <select data-bind="switcher: 'trace'"></select>
+            <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="font_size_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                <a class="font_size_reset toolbutton" href="#">100%</a>
+                <a class="font_size_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
+            </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+            </div>
+        </div>
+        <div class="system_state adjust_font_size">
+            <div class="interact_loading">
+                <img src="images/hourglass.gif" width="48" height="48" alt="working...">
+            </div>
+            <!-- note the comments to remove extraneous whitespace because this is formatted 'pre' -->
+            <div class="system_state_lines" data-bind="foreach: trace_lines"><!--
+                --><p data-bind="html: $data"></p><!--
+            --></div>
+        </div>
+        <div class="trace_prompt_lines" data-bind="html: trace_available_transitions">
+        </div>
+    </template>
+
+    <template id="graph_template">
+        <div class="dot_fieldset">
+            <div class="mid_bar">
+                <select data-bind="switcher: 'graph'"></select>
+                <span class="flex_spacer"></span>
+                <div class="menubar">
+                    <a class="dot_refresh toolbutton" href="#">Refresh</a>
+                    <a class="dot_download_link toolbutton follow" data-bind="css: { disabled: graph_html() === '' }" href="#" target="_blank">Download .dot</a>
+                </div>
+                <span class="vertical_separator"></span>
+                <div class="menubar">
+                    <a class="dot_pan_centre toolbutton" href="#">centre</a>
+                    <a class="dot_zoom_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                    <a class="dot_zoom_100 toolbutton" href="#">100%</a>
+                    <a class="dot_zoom_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
+                </div>
+                <span class="vertical_separator"></span>
+                <div class="menubar">
+                    <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                    <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                    <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+                </div>
+            </div>
+            <div class="dot_inner_container">
+                <div class="dot_loading">
+                    <img src="images/hourglass.gif" width="48" height="48" alt="working...">
+                </div>
+                <div class="dot_outdated">
+                    <p>warning: graph of outdated state</p>
+                </div>
+                <div class="dot" data-bind="html: graph_html"></div>
+            </div>
+    </template>
+
+    <template id="sources_template">
+        <div class="mid_bar">
+            <select data-bind="switcher: 'sources'"></select>
+            <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="font_size_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                <a class="font_size_reset toolbutton" href="#">100%</a>
+                <a class="font_size_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
+            </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+            </div>
+        </div>
+        <div class="source_tabs tabs">
+            <ul></ul>
+            <!-- ko foreach: sources -->
+            <div data-bind="source_tab: $data" class="adjust_font_size source_tab"></div>
+            <!-- /ko -->
+        </div>
+    </template>
+
+    <template id="help_template">
+        <div class="mid_bar">
+            <select data-bind="switcher: 'help'"></select>
+            <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="follow toolbutton" href="help.html" target="_blank">Open in new tab</a>
+            </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="font_size_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                <a class="font_size_reset toolbutton" href="#">100%</a>
+                <a class="font_size_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
+            </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+            </div>
+        </div>
+        <div class="help_loader adjust_font_size" data-bind="component: 'help_loader'"></div>
+    </template>
+</body>
+
+<!-- <script type="text/javascript" src="web_assets/lib/jquery-3.1.0.min.js"></script> -->
+<!-- replace the above line with this for debugging: -->
+<script type="text/javascript" src="web_assets/lib/jquery-3.1.0.js"></script>
+<script type="text/javascript" src="web_assets/lib/jquery-ui.js"></script>
+<script type="text/javascript" src="web_assets/lib/jquery-ajax-native.js"></script>
+<script type="text/javascript" src="web_assets/lib/split.js"></script>
+<script type="text/javascript" src="web_assets/lib/jquery.mousewheel.js"></script>
+<script type="text/javascript" src="web_assets/lib/jquery.panzoom.js"></script>
+<script type="text/javascript" src="web_assets/lib/codemirror.js"></script>
+<script type="text/javascript" src="web_assets/lib/string-format.js"></script>
+<script type="text/javascript" src="web_assets/lib/codemirror-simplemode.js"></script>
+<script type="text/javascript" src="web_assets/lib/codemirror-clike.js"></script>
+<script type="text/javascript" src="web_assets/lib/codemirror-gas.js"></script>
+<script type="text/javascript" src="web_assets/codemirror-litmus.js"></script>
+<script type="text/javascript" src="web_assets/lib/clipboard.js"></script>
+
+<script type="text/javascript" src="web_assets/lib/viz.js"></script>
+<script type="text/javascript" src="web_assets/lib/knockout-3.4.2.debug.js"></script>
+
+<script type="text/javascript" src="web_assets/isas.js"></script>
+
+<script type="text/javascript" src="system.js"></script>
+
+<script type="text/javascript" src="web_assets/utils.js"></script>
+<script type="text/javascript" src="web_assets/model.js"></script>
+<script type="text/javascript" src="web_assets/graph.js"></script>
+<script type="text/javascript" src="web_assets/layout.js"></script>
+<script type="text/javascript" src="web_assets/loaders.js"></script>
+<script type="text/javascript" src="web_assets/options.js"></script>
+<script type="text/javascript" src="web_assets/source.js"></script>
+<script type="text/javascript" src="web_assets/ui.js"></script>
+<script type="text/javascript" src="web_assets/main.js"></script>
+
+</html>

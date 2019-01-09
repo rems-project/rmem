@@ -1,0 +1,449 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Jon French, University of Cambridge                2018            *)
+(*  Copyright Christopher Pulte, University of Cambridge    2017-2018            *)
+(*  Copyright Shaked Flur, University of Cambridge          2017-2018            *)
+(*  Copyright Robert Norton-Wright, University of Cambridge      2017            *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives_extra
+
+(* emacs fontification -*-caml-*- *)
+
+open import Sail_impl_base
+open import MachineDefDebug
+open import MachineDefUtils
+open import MachineDefFreshIds
+open import MachineDefTypes
+     import MachineDefEvents
+open import MachineDefThreadSubsystemUtils
+open import MachineDefThreadSubsystem
+
+
+open import Sail_values
+       import Sail2_values
+       import Riscv_types
+       import Sail2_prompt_monad
+       import Sail2_operators_mwords
+
+import Prompt
+import Power_embed
+import ArmV8_embed
+import Mips_embed
+import Riscv
+
+let sail_bit_1to2 b =
+  match b with
+  | Sail_values.B0 -> Sail2_values.B0
+  | Sail_values.B1 -> Sail2_values.B1
+  | Sail_values.BU -> Sail2_values.BU
+end
+
+let bool_to_bitU b =
+  match b with
+  | true -> Sail_values.B1
+  | false -> Sail_values.B0
+  end
+
+let bool_to_bitl b =
+  match b with
+  | true -> Sail_impl_base.Bitl_one
+  | false -> Sail_impl_base.Bitl_zero
+  end
+
+val sail_bv_1to2 : Sail_values.vector Sail_values.bitU -> list Sail2_values.bitU
+let sail_bv_1to2 vec =
+  (* TODO FIXME start and direction *)
+  if Sail_values.get_dir vec <> false then failwith "non-decreasing vector seen by sail_bv_1to2" else
+    (* if Sail_values.get_start vec <> 63 then failwith "non-63-start vector seen by sail_bv_1to2" else *)
+    List.map sail_bit_1to2 (Sail_values.get_elems vec)
+
+let riscv_bits_to_sail1_vec bv =
+  (Sail_values.Vector (List.map bool_to_bitU (Machine_word.bitlistFromWord bv)) (integerFromNat (Machine_word.word_length bv)) false)
+
+let riscv_bk_to_sail1 bk =
+  match bk with
+  | Sail2_instr_kinds.Barrier_Sync        -> Sail_impl_base.Barrier_Sync
+  | Sail2_instr_kinds.Barrier_LwSync      -> Sail_impl_base.Barrier_LwSync
+  | Sail2_instr_kinds.Barrier_Eieio       -> Sail_impl_base.Barrier_Eieio
+  | Sail2_instr_kinds.Barrier_Isync       -> Sail_impl_base.Barrier_Isync
+  | Sail2_instr_kinds.Barrier_DMB         -> Sail_impl_base.Barrier_DMB
+  | Sail2_instr_kinds.Barrier_DMB_ST      -> Sail_impl_base.Barrier_DMB_ST
+  | Sail2_instr_kinds.Barrier_DMB_LD      -> Sail_impl_base.Barrier_DMB_LD
+  | Sail2_instr_kinds.Barrier_DSB         -> Sail_impl_base.Barrier_DSB
+  | Sail2_instr_kinds.Barrier_DSB_ST      -> Sail_impl_base.Barrier_DSB_ST
+  | Sail2_instr_kinds.Barrier_DSB_LD      -> Sail_impl_base.Barrier_DSB_LD
+  | Sail2_instr_kinds.Barrier_ISB         -> Sail_impl_base.Barrier_ISB
+  | Sail2_instr_kinds.Barrier_TM_COMMIT   -> Sail_impl_base.Barrier_TM_COMMIT
+  | Sail2_instr_kinds.Barrier_MIPS_SYNC   -> Sail_impl_base.Barrier_MIPS_SYNC
+  | Sail2_instr_kinds.Barrier_RISCV_rw_rw -> Sail_impl_base.Barrier_RISCV_rw_rw
+  | Sail2_instr_kinds.Barrier_RISCV_r_rw  -> Sail_impl_base.Barrier_RISCV_r_rw
+  | Sail2_instr_kinds.Barrier_RISCV_r_r   -> Sail_impl_base.Barrier_RISCV_r_r
+  | Sail2_instr_kinds.Barrier_RISCV_rw_w  -> Sail_impl_base.Barrier_RISCV_rw_w
+  | Sail2_instr_kinds.Barrier_RISCV_w_w   -> Sail_impl_base.Barrier_RISCV_w_w
+  | Sail2_instr_kinds.Barrier_RISCV_w_rw  -> Sail_impl_base.Barrier_RISCV_w_rw
+  | Sail2_instr_kinds.Barrier_RISCV_rw_r  -> Sail_impl_base.Barrier_RISCV_rw_r
+  | Sail2_instr_kinds.Barrier_RISCV_r_w   -> Sail_impl_base.Barrier_RISCV_r_w
+  | Sail2_instr_kinds.Barrier_RISCV_w_r   -> Sail_impl_base.Barrier_RISCV_w_r
+  | Sail2_instr_kinds.Barrier_RISCV_tso   -> Sail_impl_base.Barrier_RISCV_tso
+  | Sail2_instr_kinds.Barrier_RISCV_i     -> Sail_impl_base.Barrier_RISCV_i
+  | Sail2_instr_kinds.Barrier_x86_MFENCE  -> Sail_impl_base.Barrier_x86_MFENCE
+end
+
+let riscv_rk_to_sail1 rk =
+  match rk with
+    | Sail2_instr_kinds.Read_plain                         -> Sail_impl_base.Read_plain
+    | Sail2_instr_kinds.Read_reserve                       -> Sail_impl_base.Read_reserve
+    | Sail2_instr_kinds.Read_acquire                       -> Sail_impl_base.Read_acquire
+    | Sail2_instr_kinds.Read_exclusive                     -> Sail_impl_base.Read_exclusive
+    | Sail2_instr_kinds.Read_exclusive_acquire             -> Sail_impl_base.Read_exclusive_acquire
+    | Sail2_instr_kinds.Read_stream                        -> Sail_impl_base.Read_stream
+    | Sail2_instr_kinds.Read_RISCV_acquire                 -> Sail_impl_base.Read_RISCV_acquire_RCpc
+    | Sail2_instr_kinds.Read_RISCV_strong_acquire          -> Sail_impl_base.Read_RISCV_acquire_RCsc
+    | Sail2_instr_kinds.Read_RISCV_reserved                -> Sail_impl_base.Read_RISCV_reserved
+    | Sail2_instr_kinds.Read_RISCV_reserved_acquire        -> Sail_impl_base.Read_RISCV_reserved_acquire_RCsc
+    | Sail2_instr_kinds.Read_RISCV_reserved_strong_acquire -> Sail_impl_base.Read_RISCV_reserved_acquire_release
+    | Sail2_instr_kinds.Read_X86_locked                    -> Sail_impl_base.Read_X86_locked
+  end
+
+let riscv_wk_to_sail1 wk =
+  match wk with
+  | Sail2_instr_kinds.Write_plain                            -> Sail_impl_base.Write_plain
+  | Sail2_instr_kinds.Write_conditional                      -> Sail_impl_base.Write_conditional
+  | Sail2_instr_kinds.Write_release                          -> Sail_impl_base.Write_release
+  | Sail2_instr_kinds.Write_exclusive                        -> Sail_impl_base.Write_exclusive
+  | Sail2_instr_kinds.Write_exclusive_release                -> Sail_impl_base.Write_exclusive_release
+  | Sail2_instr_kinds.Write_RISCV_release                    -> Sail_impl_base.Write_RISCV_release_RCpc
+  | Sail2_instr_kinds.Write_RISCV_strong_release             -> Sail_impl_base.Write_RISCV_release_RCsc
+  | Sail2_instr_kinds.Write_RISCV_conditional                -> Sail_impl_base.Write_RISCV_conditional
+  | Sail2_instr_kinds.Write_RISCV_conditional_release        -> Sail_impl_base.Write_RISCV_conditional_release_RCsc
+  | Sail2_instr_kinds.Write_RISCV_conditional_strong_release -> Sail_impl_base.Write_RISCV_conditional_acquire_release
+  | Sail2_instr_kinds.Write_X86_locked                       -> Sail_impl_base.Write_X86_locked
+  end
+
+let riscv_tk_to_sail1 tk =
+  match tk with
+  | Sail2_instr_kinds.Transaction_start  -> Sail_impl_base.Transaction_start
+  | Sail2_instr_kinds.Transaction_commit -> Sail_impl_base.Transaction_commit
+  | Sail2_instr_kinds.Transaction_abort  -> Sail_impl_base.Transaction_abort
+  end
+
+let riscv_ik_to_sail1 ik =
+  match ik with
+  | Sail2_instr_kinds.IK_barrier bk       -> Sail_impl_base.IK_barrier (riscv_bk_to_sail1 bk)
+  | Sail2_instr_kinds.IK_mem_read rk      -> Sail_impl_base.IK_mem_read (riscv_rk_to_sail1 rk)
+  | Sail2_instr_kinds.IK_mem_write wk     -> Sail_impl_base.IK_mem_write (riscv_wk_to_sail1 wk)
+  | Sail2_instr_kinds.IK_mem_rmw (rk, wk) -> Sail_impl_base.IK_mem_rmw (riscv_rk_to_sail1 rk, riscv_wk_to_sail1 wk)
+  | Sail2_instr_kinds.IK_branch ()        -> Sail_impl_base.IK_branch
+  | Sail2_instr_kinds.IK_trans tk         -> Sail_impl_base.IK_trans (riscv_tk_to_sail1 tk)
+  | Sail2_instr_kinds.IK_simple ()        -> Sail_impl_base.IK_simple
+  end
+
+let bool_from_bitl b =
+  match b with
+  | Bitl_zero    -> false
+  | Bitl_one     -> true
+  | Bitl_undef   -> false
+  | Bitl_unknown -> false
+  end
+
+let riscv_regfp_to_sail1 rfp =
+  match rfp with
+  | Riscv_types.RFull s     -> Sail_values.RFull s
+  | Riscv_types.RSlice t    -> Sail_values.RSlice t
+  | Riscv_types.RSliceBit t -> Sail_values.RSliceBit t
+  | Riscv_types.RField t    -> Sail_values.RField t
+  end
+
+let riscv_niafp_to_sail1 nfp =
+  match nfp with
+  | Riscv_types.NIAFP_successor ()        -> Sail_values.NIAFP_successor
+  | Riscv_types.NIAFP_indirect_address () -> Sail_values.NIAFP_indirect_address
+  | Riscv_types.NIAFP_concrete_address bv -> Sail_values.NIAFP_concrete_address (riscv_bits_to_sail1_vec bv)
+  end
+
+let riscv_diafp_to_sail1 dfp =
+  match dfp with
+  | Riscv_types.DIAFP_none ()     -> Sail_values.DIAFP_none
+  | Riscv_types.DIAFP_concrete bv -> Sail_values.DIAFP_concrete (riscv_bits_to_sail1_vec bv)
+  | Riscv_types.DIAFP_reg rfp     -> Sail_values.DIAFP_reg (riscv_regfp_to_sail1 rfp)
+  end
+
+let outcome_unwrap o =
+  match o with
+  | Sail_impl_base.Done a -> a
+  | _ -> failwith "outcome_unwrap given non-Done"
+  end
+
+
+let string_to_sail1_reg name =
+  let len = match name with
+    | "cur_privilege" -> 2
+    | "medeleg"       -> 65
+    | "sedeleg"       -> 66
+    | "misa"          -> 67
+    | "mtvec"         -> 68
+    | "mideleg"       -> 69
+    | "mie"           -> 69
+    | "mip"           -> 69
+    | "mstatus"       -> 70
+    (* | "sstatus"       -> 71 *)
+    | "mcause"        -> 72
+    | "scause"        -> 72
+
+    | _               -> 64
+    end in
+  Sail_impl_base.Reg name (len - 1) len Sail_impl_base.D_decreasing
+
+(* Extremely hacky. Chooses what riscv type is wanted based on the length of the register... *)
+let sail1_regval_to_riscv rv =
+  if rv.rv_start <> 0 || rv.rv_dir <> Sail_impl_base.D_decreasing then failwith "invalid vector sail1_regval_to_riscv" else
+    match List.length (rv.rv_bits) with
+    | 1 ->
+       Riscv_types.Regval_bool (bool_from_bitl (List_extra.head rv.rv_bits))
+    | 2 ->
+       Riscv_types.Regval_Privilege (Riscv.privLevel_of_bits (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits)))
+    | 64 ->
+       Riscv_types.Regval_vector_64_dec_bit (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))
+    | 65 ->
+       Riscv_types.Regval_Medeleg <| Riscv_types.Medeleg_Medeleg_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 1 rv.rv_bits))) |>
+    | 66 ->
+       Riscv_types.Regval_Sedeleg <| Riscv_types.Sedeleg_Sedeleg_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 2 rv.rv_bits))) |>
+    | 67 ->
+       Riscv_types.Regval_Misa <| Riscv_types.Misa_Misa_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 3 rv.rv_bits))) |>
+    | 68 ->
+       Riscv_types.Regval_Mtvec <| Riscv_types.Mtvec_Mtvec_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 4 rv.rv_bits))) |>
+    | 69 ->
+       Riscv_types.Regval_Minterrupts <| Riscv_types.Minterrupts_Minterrupts_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 5 rv.rv_bits))) |>
+    | 70 ->
+       Riscv_types.Regval_Mstatus <| Riscv_types.Mstatus_Mstatus_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 6 rv.rv_bits))) |>
+    (* | 71 ->
+     *    Riscv_types.Regval_Sstatus <| Riscv_types.Sstatus_Sstatus_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 7 rv.rv_bits))) |> *)
+    | 72 ->
+       Riscv_types.Regval_Mcause <| Riscv_types.Mcause_Mcause_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 8 rv.rv_bits))) |>
+
+    | _ ->
+       failwith "invalid vector length given to sail1_regval_to_riscv"
+    end
+
+let bl0 = Bitl_zero
+
+let riscv_regval_to_sail rv =
+  match rv with
+  | Riscv_types.Regval_bool b              -> build_register_value [bool_to_bitl b] D_decreasing 1 0
+  | Riscv_types.Regval_Privilege p         -> build_register_value (List.map bool_to_bitl (Machine_word.bitlistFromWord (Riscv.privLevel_to_bits p))) D_decreasing 2 1
+  | Riscv_types.Regval_Medeleg <| Riscv_types.Medeleg_Medeleg_chunk_0 = w |> -> build_register_value (bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 65 64
+  | Riscv_types.Regval_Sedeleg <| Riscv_types.Sedeleg_Sedeleg_chunk_0 = w |> -> build_register_value (bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 66 65
+  | Riscv_types.Regval_Misa <| Riscv_types.Misa_Misa_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 67 66
+  | Riscv_types.Regval_Mtvec <| Riscv_types.Mtvec_Mtvec_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 68 67
+  | Riscv_types.Regval_Minterrupts <| Riscv_types.Minterrupts_Minterrupts_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 69 68
+  | Riscv_types.Regval_Mstatus <| Riscv_types.Mstatus_Mstatus_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 70 69
+  (* | Riscv_types.Regval_Sstatus <| Riscv_types.Sstatus_Sstatus_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 71 70 *)
+  | Riscv_types.Regval_Mcause <| Riscv_types.Mcause_Mcause_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 72 71
+
+  | Riscv_types.Regval_vector_64_dec_bit w -> build_register_value (List.map bool_to_bitl (Machine_word.bitlistFromWord w)) D_decreasing 64 63
+  | _ -> failwith "unknown regval given to riscv_regval_to_sail"
+  end
+
+let address_lifted_of_address a =
+  match a with
+    Address bytes i -> Address_lifted (List.map byte_lifted_of_byte bytes) (Just i)
+  end
+
+let sail2_addr_to_sail1 addr = address_lifted_of_address (address_of_integer (fromJust (Sail2_values.unsigned_of_bits addr)))
+
+val sail1_memval_to_sail2 : memory_value -> list Sail2_values.memory_byte
+let sail1_memval_to_sail2 mv =
+  let integer = (match (integer_of_memory_value E_big_endian mv) with | Just x -> x | Nothing -> failwith "integer_of_memory_value failed in sail1_memval_to_sail2" end) in
+  let len = 8 * (integerFromNat (memory_value_length mv)) in
+  let bits = (Sail2_values.bits_of_int len integer) in
+  match (Sail2_values.bytes_of_bits bits) with | Just x -> x | Nothing -> failwith "bytes_of_bits failed in sail1_memval_to_sail2" end
+
+let sail2_memval_to_sail1 mv =
+  let len = List.length mv in
+  memory_value_of_integer E_big_endian len (fromJust (Sail2_values.unsigned_of_bits (Sail2_values.bits_of_bytes mv)))
+
+(* TODO FIXME expand and correct *)
+val sail2_prompt_to_outcome : forall 'a 'e. Sail2_prompt_monad.monad Riscv_types.register_value 'a 'e -> outcome 'a
+let rec sail2_prompt_to_outcome p =
+  match p with
+  | Sail2_prompt_monad.Done a                -> Sail_impl_base.Done a
+  | Sail2_prompt_monad.Exception e           -> Sail_impl_base.Fail (Just "*Sail2 exception escaped*") (* TODO *)
+  | Sail2_prompt_monad.Fail s                -> Sail_impl_base.Fail (Just s)
+  | Sail2_prompt_monad.Print s next          -> sail2_prompt_to_outcome next (* TODO *)
+  | Sail2_prompt_monad.Footprint next        -> Sail_impl_base.Footprint (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Undefined _           -> failwith "unsupported Undefined constructor of prompt monad"
+  | Sail2_prompt_monad.Read_tag _ _          -> failwith "unsupported Read_tag constructor of prompt monad"
+  | Sail2_prompt_monad.Write_tag _ _ _       -> failwith "unsupported Write_tag constructor of prompt monad"
+  | Sail2_prompt_monad.Read_reg name f       -> Sail_impl_base.Read_reg (string_to_sail1_reg name) (fun v -> (sail2_prompt_to_outcome (f (sail1_regval_to_riscv v)), Nothing))
+  | Sail2_prompt_monad.Write_reg name v next -> Sail_impl_base.Write_reg (string_to_sail1_reg name, riscv_regval_to_sail v) (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Barrier bk next       -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Read_mem rk a sz f    -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (sail2_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
+  | Sail2_prompt_monad.Write_ea wk a sz next -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Write_memv mv f       -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Excl_res f            -> Sail_impl_base.Excl_res (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
+end
+
+val outcome_bind : forall 'a 'b. Sail_impl_base.outcome 'a -> ('a -> Sail_impl_base.outcome 'b) -> Sail_impl_base.outcome 'b
+let rec outcome_bind o f =
+  match o with
+  | Sail_impl_base.Done a -> f a
+  | Sail_impl_base.Read_mem x g -> Sail_impl_base.Read_mem x (fun m -> let (o', aux) = (g m) in (outcome_bind o' f, aux))
+  | Sail_impl_base.Write_ea x owa' -> Sail_impl_base.Write_ea x (let (o', aux) = owa' in (outcome_bind o' f, aux))
+  | Sail_impl_base.Excl_res g -> Sail_impl_base.Excl_res (fun b -> let (o', aux) = (g b) in (outcome_bind o' f, aux))
+  | Sail_impl_base.Write_memv v g -> Sail_impl_base.Write_memv v (fun b -> let (o', aux) = (g b) in (outcome_bind o' f, aux))
+  | Sail_impl_base.Barrier k owa' -> Sail_impl_base.Barrier k (let (o', aux) = owa' in (outcome_bind o' f, aux))
+  | Sail_impl_base.Footprint owa' -> Sail_impl_base.Footprint (let (o', aux) = owa' in (outcome_bind o' f, aux))
+  | Sail_impl_base.Read_reg r g -> Sail_impl_base.Read_reg r (fun v -> let (o', aux) = (g v) in (outcome_bind o' f, aux))
+  | Sail_impl_base.Write_reg (r, v) owa' -> Sail_impl_base.Write_reg (r, v) (let (o', aux) = owa' in (outcome_bind o' f, aux))
+  | Sail_impl_base.Internal h owa' -> Sail_impl_base.Internal h (let (o', aux) = owa' in (outcome_bind o' f, aux))
+  | Sail_impl_base.Escape s -> Sail_impl_base.Escape s
+  | Sail_impl_base.Fail s -> Sail_impl_base.Fail s
+  | Sail_impl_base.Error s -> Sail_impl_base.Error s
+  end
+   
+let ignore_outcome o = outcome_bind o (fun _ -> Sail_impl_base.Done ())
+
+let analysis_outcome_riscv_to_sail1 o =
+  outcome_bind o
+    (fun (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) ->
+      Sail_impl_base.Done
+        (List.map riscv_regfp_to_sail1 input_regs,
+         List.map riscv_regfp_to_sail1 output_regs,
+         List.map riscv_regfp_to_sail1 address_feeding_address_regs,
+         List.map riscv_niafp_to_sail1 nias,
+         riscv_diafp_to_sail1 dia,
+         riscv_ik_to_sail1 instruction_kind)
+    )
+
+(** shallow embedding ***********************************************)
+
+val handle_reg_reads : forall 'a. list (reg_name * register_value) -> outcome 'a -> 'a
+let rec handle_reg_reads environment outcome = match outcome with
+  | Read_reg reg_name c ->
+     let regval =
+       ensure_just (List.lookup reg_name environment)
+                   ("no value in environment for register " ^ show reg_name ^ " in list [" ^ (String.concat ", " (List.map show (List.map fst environment))) ^ "]") in
+     handle_reg_reads environment (fst (c regval))
+  | Fail (Just err) -> failwith ("handle_reads: Fail " ^ err)
+  | Fail Nothing -> failwith ("handle_reads: Fail with unspecified error")
+  | Error string -> failwith ("handle_reads: Error " ^ string)
+  | Done v -> v
+  | _ -> failwith "handle_reg_reads: unhandled effect"
+  end
+
+let initialise_shallow_embedding_semantics endianness ism =
+    let default_direction = match ism with
+      | PPCGEN_ism -> true
+      | AARCH64_ism AArch64HandSail -> false
+      | AARCH64_ism AArch64GenSail -> false
+      | MIPS_ism -> false
+      | RISCV_ism -> false
+      | X86_ism -> false
+    end in
+
+  let shallow_embedding__decode_to_instruction (address : address) (opcode : opcode) =
+    let opcode_bitv =
+      let (Opcode bytes) = opcode in
+      bitv_of_bytes default_direction bytes in
+    match ism with
+    | PPCGEN_ism ->
+       match Power_embed.decode opcode_bitv with
+       | Nothing -> FDO_decode_error (Not_an_instruction_error opcode)
+       | Just instr ->
+          match Power_embed.supported_instructions instr with
+          | Nothing -> FDO_decode_error(Unsupported_instruction_error opcode (PPCGEN_instr instr))
+          | Just _ ->  FDO_success address (Just opcode) (PPCGEN_instr instr)
+          end
+       end
+    | AARCH64_ism AArch64HandSail ->
+       match ArmV8_embed.decode opcode_bitv with
+       | Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
+       | Done (Just instr)  -> FDO_success address (Just opcode) (AArch64_instr instr)
+       | Error descr         -> failwith ("armV8 decode failed with: Error " ^ descr)
+       | Fail (Just descr)   -> failwith ("armV8 decode failed with: Fail " ^ descr)
+       | Fail Nothing        -> failwith ("armV8 decode failed with unspecified error: Fail")
+       | Escape (Just descr) -> failwith ("armV8 decode failed with: Exception " ^ descr)
+       | Escape Nothing      -> failwith ("armV8 decode failed with exception: Exception")
+       | Internal _ _        -> failwith ("armV8 decode returned unexpected Internal outcome")
+       | _                   -> failwith ("armV8 decode had unhandled effect")
+       end
+    | AARCH64_ism AArch64GenSail -> failwith "AArch64Gen ISA not supported by shallow embedding"
+    | MIPS_ism ->
+       match Mips_embed.decode opcode_bitv with
+       | Nothing -> FDO_decode_error (Not_an_instruction_error opcode)
+       | Just instr -> FDO_success address (Just opcode) (MIPS_instr instr)
+       end
+   | RISCV_ism ->
+      match Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv)) with
+      | Nothing -> FDO_decode_error (Not_an_instruction_error opcode)
+      | Just instr -> FDO_success address (Just opcode) (RISCV_instr instr)
+      end
+   | X86_ism ->
+      failwith "x86 decode not implemented"
+    end in
+
+  let shallow_embedding__initial_outcome_s_of_instruction = function
+    | PPCGEN_instr instr  ->  (Power_embed.execute instr,Nothing)
+    | AArch64_instr instr ->  (ArmV8_embed.execute instr,Nothing)
+    | MIPS_instr instr ->     (Mips_embed.execute instr,Nothing)
+    | RISCV_instr instr ->    (ignore_outcome (sail2_prompt_to_outcome (Riscv.execute instr)),Nothing)
+    | X86_instr instr ->      (X86_embed.execute instr,Nothing)
+    | Fetch_error         -> failwith "initial_outcome_s_of_instruction Fetch_error"
+    end in
+
+  let shallow_embedding__instruction_analysis _ instr analysis_function reginfo _ environment =
+    let (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) =
+      (handle_reg_reads environment)
+        match (instr, analysis_function) with
+        | (PPCGEN_instr instr, "initial_analysis") ->
+           Power_embed.initial_analysis instr
+        | (PPCGEN_instr instr, "recalculate_lswx_reg_footprint") ->
+           Power_embed.recalculate_lswx_reg_footprint instr
+        | (PPCGEN_instr instr, "recalculate_stswx_reg_footprint") ->
+           Power_embed.recalculate_stswx_reg_footprint instr
+        | (PPCGEN_instr _, _) ->
+           failwith "instruction_analysis: unknown POWER analysis function"
+        | (AArch64_instr instr, "initial_analysis") ->
+           ArmV8_embed.initial_analysis instr
+        | (AArch64_instr _, _) ->
+           failwith "instruction_analysis: unknown ARM analysis function"
+        | (MIPS_instr instr, "initial_analysis") ->
+           Mips_embed.initial_analysis instr
+        | (MIPS_instr _, _) ->
+           failwith "instruction_analysis: unknown MIPS analysis function"
+        | (RISCV_instr instr, "initial_analysis") ->
+           analysis_outcome_riscv_to_sail1 (sail2_prompt_to_outcome (Riscv.initial_analysis instr))
+        | (RISCV_instr _, _) ->
+           failwith "instruction_analysis: unknown RISCV analysis function"
+        | (X86_instr instr, "initial_analysis") ->
+           X86_embed.initial_analysis instr
+        | (X86_instr _, _) ->
+           failwith "instruction_analysis: unknown X86 analysis function"
+        | (Fetch_error,_) ->
+           failwith "instruction_analysis: Fetch_error"
+        end in
+    let (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) =
+      (List.map (regfp_to_reg reginfo) input_regs,
+       List.map (regfp_to_reg reginfo) output_regs,
+       List.map (regfp_to_reg reginfo) address_feeding_address_regs,
+       List.map (niafp_to_nia reginfo) nias,
+       diafp_to_dia reginfo dia,
+       instruction_kind) in
+    (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) in
+
+    <| instruction_analysis = shallow_embedding__instruction_analysis;
+       decode_to_instruction = shallow_embedding__decode_to_instruction;
+       initial_outcome_s_of_instruction =
+         shallow_embedding__initial_outcome_s_of_instruction |>

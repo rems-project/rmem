@@ -1,0 +1,54 @@
+(*=======================================================================================*)
+(*                                                                                       *)
+(*                rmem executable model                                                  *)
+(*                =====================                                                  *)
+(*                                                                                       *)
+(*  This file is:                                                                        *)
+(*                                                                                       *)
+(*  Copyright Peter Sewell, University of Cambridge                          2014-2016   *)
+(*  Copyright Shaked Flur, University of Cambridge                           2015-2017   *)
+(*  Copyright Susmit Sarkar, University of St Andrews                             2014   *)
+(*  Copyright Ohad Kammar, University of Cambridge (when this work was done)      2013   *)
+(*                                                                                       *)
+(*  All rights reserved.                                                                 *)
+(*                                                                                       *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.          *)
+(*  For author information see README.md.                                                *)
+(*                                                                                       *)
+(*=======================================================================================*)
+
+open import Pervasives
+
+(* emacs fontification -*-caml-*- *)
+
+(** Fresh Identifiers:
+    - 'initial_id_state x' where x is a unique value will return a
+    fresh-id state that can generate IDs of the form (x, fresh-id).
+    - 'gen_fresh_id state' will return a fresh-id and the next state.
+*)
+
+(* the type of id *)
+type fresh_id 'a = 'a * nat
+
+(* the type of the generator state *)
+type id_state 'a =
+  <| id_state_uid: 'a;
+     fresh_id:     nat;
+  |>
+
+val initial_id_state : forall 'a. 'a -> id_state 'a
+let initial_id_state uid =
+  <| id_state_uid = uid;
+     fresh_id     = 0;
+  |>
+
+val gen_fresh_id : forall 'a. id_state 'a -> (fresh_id 'a * id_state 'a)
+let gen_fresh_id id_state =
+  ((id_state.id_state_uid, id_state.fresh_id),
+   <| id_state with fresh_id = id_state.fresh_id + 1 |>)
+
+
+val count_fresh_id : forall 'a. id_state 'a -> nat
+let count_fresh_id id_state =
+  id_state.fresh_id 
+

@@ -1,0 +1,74 @@
+--- ../../sail/power/power_embed.lem	2018-02-08 10:22:01.818240912 +0000
++++ build_isa_models/power/power_embed.lem	2018-02-08 10:41:11.722227988 +0000
+@@ -2141,62 +2141,6 @@
+   read_reg (access GPR (unsigned (reset_vector_start RS))) >>= fun w__2 ->
+   MEMw (reset_vector_start EA,(8:ii),reset_vector_start w__2)
+ 
+-let execute_Lq (RTp, RA, DQ, PT) =
+-  let EA = to_vec_inc ((64:ii),(0:ii)) in
+-  let b = to_vec_inc ((64:ii),(0:ii)) in
+-  (if bitU_to_bool (eq_vec_range (RA, (0:ii)))
+-   then
+-     let b = to_vec_inc ((64:ii),(0:ii)) in
+-     return b
+-   else read_reg (access GPR (unsigned (reset_vector_start RA)))) >>= fun b ->
+-  let EA =
+-    set_vector_start 0
+-      (add_VVV
+-         (reset_vector_start b)
+-         (reset_vector_start (exts
+-                                ((64:ii),
+-                                 reset_vector_start (DQ ^^ (Vector [B0;B0;B0;B0] 0 true)))))) in
+-  MEMr (reset_vector_start EA,(16:ii)) >>= fun mem ->
+-  read_reg bigendianmode >>= fun w__1 ->
+-  if bitU_to_bool (most_significant w__1)
+-  then
+-    write_reg (access GPR (unsigned (reset_vector_start RTp))) (slice mem (0:ii) (63:ii)) >>
+-    write_reg
+-      (access GPR (add_VII (reset_vector_start RTp) (1:ii)))
+-      (set_vector_start 0 (slice mem (64:ii) (127:ii)))
+-  else
+-    let bytereverse = byte_reverse (nv4852' * (8:ii),reset_vector_start mem) in
+-    write_reg (access GPR (unsigned (reset_vector_start RTp))) (slice bytereverse (0:ii) (63:ii)) >>
+-    write_reg
+-      (access GPR (add_VII (reset_vector_start RTp) (1:ii)))
+-      (set_vector_start 0 (slice bytereverse (64:ii) (127:ii)))
+-
+-let execute_Stq (RSp, RA, DS) =
+-  let b = to_vec_inc ((64:ii),(0:ii)) in
+-  let EA = to_vec_inc ((64:ii),(0:ii)) in
+-  (if bitU_to_bool (eq_vec_range (RA, (0:ii)))
+-   then
+-     let b = to_vec_inc ((64:ii),(0:ii)) in
+-     return b
+-   else read_reg (access GPR (unsigned (reset_vector_start RA)))) >>= fun b ->
+-  let EA =
+-    set_vector_start 0
+-      (add_VVV
+-         (reset_vector_start b)
+-         (reset_vector_start (exts ((64:ii),reset_vector_start (DS ^^ (Vector [B0;B0] 0 true)))))) in
+-  MEMw_EA (reset_vector_start EA,(16:ii)) >>
+-  let mem = to_vec_inc ((128:ii),(0:ii)) in
+-  read_reg (access GPR (unsigned (reset_vector_start RSp))) >>= fun w__1 ->
+-  let mem = update mem (0:ii) (63:ii) w__1 in
+-  read_reg (access GPR (add_VII (reset_vector_start RSp) (1:ii))) >>= fun w__2 ->
+-  let mem = update mem (64:ii) (127:ii) (set_vector_start 64 w__2) in
+-  read_reg bigendianmode >>= fun w__3 ->
+-  let mem =
+-    if bitU_to_bool (most_significant (reset_vector_start (bitwise_not (reset_vector_start w__3))))
+-    then byte_reverse (nv4999' * (8:ii),reset_vector_start mem)
+-    else mem in
+-  MEMw (reset_vector_start EA,(16:ii),reset_vector_start mem)
+-
+ let execute_Lhbrx (RT, RA, RB) =
+   let b = to_vec_inc ((64:ii),(0:ii)) in
+   let EA = to_vec_inc ((64:ii),(0:ii)) in
+@@ -4590,8 +4534,6 @@
+   | Stdx (RS,RA,RB) -> execute_Stdx (RS,RA,RB)
+   | Stdu (RS,RA,DS) -> execute_Stdu (RS,RA,DS)
+   | Stdux (RS,RA,RB) -> execute_Stdux (RS,RA,RB)
+-  | Lq (RTp,RA,DQ,PT) -> execute_Lq (RTp,RA,DQ,PT)
+-  | Stq (RSp,RA,DS) -> execute_Stq (RSp,RA,DS)
+   | Lhbrx (RT,RA,RB) -> execute_Lhbrx (RT,RA,RB)
+   | Sthbrx (RS,RA,RB) -> execute_Sthbrx (RS,RA,RB)
+   | Lwbrx (RT,RA,RB) -> execute_Lwbrx (RT,RA,RB)

@@ -1,0 +1,29 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge 2017                          *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+type instruction = AArch64HGenBase.instruction
+type labelmap = (string * int) list
+
+let shallow_ast_to_herdtools_ast _ = failwith "stub"
+let herdtools_ast_to_shallow_ast _ = failwith "stub"
+
+let herdtools_ast_to_interp_instruction _ = failwith "stub"
+let interp_instruction_to_herdtools_ast _ = failwith "stub"
+
+let unlabelize_ins _ _ _ _ = failwith "stub"
+let labelize_ins _ _ _ = failwith "stub"
+
+let end_ins = `AArch64ImplementationDefinedStopFetching

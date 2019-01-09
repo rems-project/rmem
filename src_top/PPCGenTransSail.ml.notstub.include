@@ -1,0 +1,160 @@
+(*======================================================================================*)
+(*                                                                                      *)
+(*                rmem executable model                                                 *)
+(*                =====================                                                 *)
+(*                                                                                      *)
+(*  This file is:                                                                       *)
+(*                                                                                      *)
+(*  Copyright Susmit Sarkar, University of St Andrews                            2014   *)
+(*  Copyright Christopher Pulte, University of Cambridge                         2016   *)
+(*  Copyright Shaked Flur, University of Cambridge                          2016-2017   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)      2016   *)
+(*  Copyright Robert Norton-Wright, University of Cambridge                      2017   *)
+(*  Copyright Peter Sewell, University of Cambridge                              2014   *)
+(*                                                                                      *)
+(*  All rights reserved.                                                                *)
+(*                                                                                      *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.         *)
+(*  For author information see README.md.                                               *)
+(*                                                                                      *)
+(*======================================================================================*)
+
+open PPCGenBase
+
+type labelmap = (string * int) list
+
+open Interp_interface
+open Sail_impl_base
+
+module SB = Sail_impl_base
+module IInt = Interp_interface
+module IImp = Interp_inter_imp
+
+type instruction = PPCGenBase.instruction
+
+let ireg_to_num r = match r with
+| GPR0 -> 0
+| GPR1 -> 1
+| GPR2 -> 2
+| GPR3 -> 3
+| GPR4 -> 4
+| GPR5 -> 5
+| GPR6 -> 6
+| GPR7 -> 7
+| GPR8 -> 8
+| GPR9 -> 9
+| GPR10 -> 10
+| GPR11 -> 11
+| GPR12 -> 12
+| GPR13 -> 13
+| GPR14 -> 14
+| GPR15 -> 15
+| GPR16 -> 16
+| GPR17 -> 17
+| GPR18 -> 18
+| GPR19 -> 19
+| GPR20 -> 20
+| GPR21 -> 21
+| GPR22 -> 22
+| GPR23 -> 23
+| GPR24 -> 24
+| GPR25 -> 25
+| GPR26 -> 26
+| GPR27 -> 27
+| GPR28 -> 28
+| GPR29 -> 29
+| GPR30 -> 30
+| GPR31 -> 31
+      
+let int_of_reg r = match r with
+| Ireg r -> ireg_to_num r
+| _ -> assert false
+
+
+(* #include "build_isa_models/power/gen/trans_sail_types.hgen" *)
+
+
+let herdtools_ast_to_interp_instruction (i : instruction) = 
+  let (instr,parms,_) = match i with
+    (* #include "build_isa_models/power/gen/trans_sail.gen" *)
+    | i -> 
+        begin
+          Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
+          failwith "Translation failure"
+        end in
+  (instr,parms)
+
+
+let unlabelize_ins lookup_loc lm i ins =
+  match ins with
+  | `Pb_lbl l -> 
+      let dest = List.assoc l lm in
+      `Pb (DontSetAA,DontSetLK,dest - i)
+  | `Pbcc_lbl (c,l) -> 
+      let dest = List.assoc l lm in
+      let bo,bi = match c with
+      | Eq -> 12,2
+      | Ne -> 4,2
+      | Lt | Ge | Gt | Le -> failwith "unexpected value"
+      in
+      `Pbc (DontSetAA,DontSetLK,bo,bi,dest - i)
+  | ins -> ins
+
+let end_ins = `Psc (32)
+
+
+(* #include "build_isa_models/power/gen/sail_trans_out_types.hgen" *)
+
+
+let interp_instruction_to_herdtools_ast (instr,parms) : instruction =
+  match (instr,parms,[]) with
+  (* #include "build_isa_models/power/gen/sail_trans_out.gen" *)
+  | i ->
+      match i with
+      | (n,_,_) ->
+        begin  Printf.eprintf "Cannot translate %s to litmus format\n" n;
+        failwith "Translation failure"
+        end
+
+
+let labelize_ins
+    (lookup_symbol: address -> string option)
+    (program_loc: address)
+    ins
+  =
+  match ins with
+  | ins -> ins
+  
+
+
+let int_to_bit = function
+  | 0 -> Sail_values.B0
+  | 1 -> Sail_values.B1
+  | _ -> failwith "int_to_bit called for non 0-or-1 value"
+
+let herdtools_ast_to_shallow_ast (instr : instruction) =
+  let open Power_embed_types in
+  let instr = match instr with
+  (* #include "build_isa_models/power/gen/herdtools_ast_to_shallow_ast.gen" *)
+  | i ->
+      begin
+        Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
+        failwith "Translation failure"
+      end
+  in
+  MachineDefTypes.PPCGEN_instr instr
+
+
+(* #include "build_isa_models/power/gen/shallow_types_to_herdtools_types.hgen" *)
+
+let shallow_ast_to_herdtools_ast instr : instruction =
+  let open Power_embed_types in
+  match instr with
+  | MachineDefTypes.PPCGEN_instr instr ->
+     begin match instr with
+     (* #include "build_isa_models/power/gen/shallow_ast_to_herdtools_ast.gen" *)
+       (* | i -> failwith "cannot translate instruction" *)
+     end
+  | _ -> failwith "not a POWER instruction"
+
+

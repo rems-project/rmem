@@ -1,0 +1,24 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017                    *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives_extra
+open import X86_embed_types
+open import Prompt
+
+let decode _ : ast = failwith "X86 decode stub"
+let execute _ : M unit = failwith "X86 execute stub"
+let initial_analysis _ = failwith "X86 initial_analysis stub"

@@ -1,0 +1,212 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017                    *)
+(*  Copyright Christopher Pulte, University of Cambridge 2016                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* machinery for instruction-semantics traces, to express the constraints on the
+   pseudocode that we rely on implicitly in the thread semantics.  This is not
+   yet checked dynamically, and may be out of date *)
+
+(* a type of instruction labels, obtained from Interp_interface.outcome by:
+   - including register and memory read values, in an early-LTS style
+   - combining address/size pairs into footprints (for new style)
+   - omitting the resulting instruction state and continuation components
+   - omitting the debug information in Internal transitions
+   - omitting the terminal Done (as expressed by trace termination)
+   - omitting the Error (as it should never happen)
+   - for the moment, omitting Nondet_choice and Escape, as not yet used
+*)
+type instruction_label =
+| IL_Read_mem of read_kind * (address_lifted*nat) * maybe (list reg_name) * memory_value
+| IL_Write_mem of write_kind * (address_lifted*nat) * maybe (list reg_name) * memory_value * maybe (list reg_name) * bool
+| IL_Barrier of barrier_kind
+| IL_Read_reg of reg_name * register_value  (* we do _not_ include IL_Read_reg for pseudoregisters; those are mapped onto IL_Internal *)
+| IL_Write_reg of reg_name * register_value (* we _do_ include IL_Write_reg for the NIA pseudoregister *)
+(*| IL_Nondet_choice of list instruction_state *)
+| IL_Internal
+(*| IL_Escape of maybe instruction_state*)
+(*| IL_Done*)
+(*| IL_Error of string*)
+
+(* constraint on sensible values in read-mem and read-reg, for quantification over all traces *)
+let wf_instruction_label
+    (l: instruction_label)
+    : bool =
+  match l with
+  | IL_Read_mem rk (addr,sz) rdeps mval ->
+      (* check mval size matches sz *)
+      memory_value_length mval =  sz
+  | IL_Write_mem wk (addr,sz) rdeps v rdeps2 wcondsucc -> true
+  | IL_Barrier bk -> true
+  | IL_Read_reg r rval ->
+      true (* TODO: check the rval matches r in size and indexing*)
+  | IL_Write_reg r v -> true
+  | IL_Internal -> true
+  end
+
+let is_instruction_transition
+    (m: thread_params)
+    (im: interp_mode)
+    (cia_address: address)
+    (is1: instruction_state)
+    (l: instruction_label)
+    (is2: instruction_state)
+    : bool =
+  match (l, interp im is1) with
+  | (IL_Read_mem rk (addr,sz) rdeps mval,
+     Read_mem rk' addr' sz' rdeps' c') ->
+      rk=rk' && addr=addr' && sz=sz' && rdeps=rdeps' && is2=c' mval
+  | (IL_Write_mem wk (addr,sz) rdeps v rdeps2 wcondsucc,
+     Write_mem wk' addr' sz' rdeps' v' rdeps2' c') ->
+       wk=wk' && addr=addr' && sz=sz' && rdeps=rdeps' && v=v' && rdeps2=rdeps2' && is2=c' wcondsucc
+  | (IL_Barrier bk, Barrier bk' is') ->
+      bk=bk' && is2=is'
+  | (IL_Read_reg r rval, Read_reg r' c') ->
+      r=r' && is2 = c' rval
+  | (IL_Write_reg r v, Write_reg r' v' is') ->
+      r=r' && v=v' && is2=is'
+  | (IL_Internal, Internal _ _ is') ->
+      is2=is'
+  | (IL_Internal, Read_reg r' c') ->
+      if is_pseudo_register m r' then is2 = c' (pseudo_register_value m cia_address r')
+      else false
+  | _ -> false
+  end
+
+let is_instruction_done
+    (im: interp_mode)
+    (is: instruction_state)
+    : bool =
+  let o = interp im is in
+  match o with
+  | Done -> true
+  | _ -> false
+  end
+
+let rec ~{ocaml} is_completed_trace
+    (m: thread_params)
+    (im: interp_mode)
+    (cia_address: address)
+    (is: instruction_state)
+    (ls: list instruction_label)
+    : bool =
+  (* we could make this computable if we wanted, as the interpreter is
+  deterministic. Probably we should, so we can check the analysis
+  correctness properties dynamically at the end of instruction
+  execution, having saved the actual trace we've followed *)
+  match ls with
+  | [] -> is_instruction_done im is
+  | l::ls' ->
+      wf_instruction_label l &&
+      exists is'. is_instruction_transition m im cia_address is l is' && is_completed_trace m im cia_address is' ls'
+  end
+
+let ~{ocaml} is_terminating
+    (m: thread_params)
+    (im: interp_mode)
+    (cia_address: address)
+    (is0: instruction_state)
+    : bool =
+  not (exists ls (*:natural->instruction_label*).
+         exists is (*:natural->instruction_state*).
+           forall i (*:natural*).
+             wf_instruction_label (ls (i:natural)) &&
+             is_instruction_transition m im cia_address (is i) (ls i) (is (i+1)) )
+
+
+let instruction_kind_of_instruction_label (l:instruction_label) : maybe instruction_kind =
+  match l with
+  | IL_Read_mem rk fp _ mval -> Just (IK_mem_read rk)
+  | IL_Write_mem wk fp _ mval _ wcondsucc -> Just (IK_mem_write wk)
+  | IL_Barrier bk -> Just (IK_barrier bk)
+  | IL_Read_reg r rval -> Nothing
+  | IL_Write_reg r rval -> Nothing
+  | IL_Internal -> Nothing
+  end
+
+let reg_in_of_instruction_label (l:instruction_label) : maybe reg_name =
+  match l with
+  | IL_Read_mem rk fp _ mval -> Nothing
+  | IL_Write_mem wk fp _ mval _ wcondsucc -> Nothing
+  | IL_Barrier bk -> Nothing
+  | IL_Read_reg r rval -> Just r
+  | IL_Write_reg r rval -> Nothing
+  | IL_Internal -> Nothing
+  end
+
+let reg_out_of_instruction_label (l:instruction_label) : maybe reg_name =
+  match l with
+  | IL_Read_mem rk fp _ mval -> Nothing
+  | IL_Write_mem wk fp _ mval _ wcondsucc -> Nothing
+  | IL_Barrier bk -> Nothing
+  | IL_Read_reg r rval -> Nothing
+  | IL_Write_reg r rval -> Just r
+  | IL_Internal -> Nothing
+  end
+
+val list_all_pairwise : forall 'a. ('a->'a->bool) -> list 'a -> bool
+let rec list_all_pairwise p xs =
+  match xs with
+  | [] -> true
+  | x::xs' -> List.all (p x) xs' && list_all_pairwise p xs'
+  end
+
+val list_all2 : forall 'a  'b. ('a->'b->bool) -> list 'a -> list 'b -> bool
+let list_all2 p xs ys =
+  List.all (fun x -> List.all (p x) ys) xs
+
+let ~{ocaml} instruction_assumptions
+    (m: thread_params)
+    (register_data:registerdata)
+    (im: interp_mode)
+    (cia_address: address)
+    (is: instruction_state)
+    : bool =
+  (* terminating *)
+  is_terminating m im cia_address is &&
+  (* and all completed traces are good *)
+  forall ls (*: list instruction_label*).
+    is_completed_trace m im cia_address is ls -->
+
+      let regs_in_of_trace : list reg_name =
+        List.mapMaybe reg_in_of_instruction_label ls in
+      let regs_out_of_trace : list reg_name =
+        List.mapMaybe reg_out_of_instruction_label ls in
+      let instruction_kinds_of_trace : list instruction_kind =
+        List.mapMaybe instruction_kind_of_instruction_label ls in
+
+      (* no repeated writes to any register bits *)
+      list_all_pairwise reg_name_non_empty_intersection regs_out_of_trace
+        &&
+      (* no repeated reads from any register bits *)
+      list_all_pairwise reg_name_non_empty_intersection regs_in_of_trace
+        &&
+      (* no overlap between register reads and writes *)
+      list_all2 reg_name_non_empty_intersection regs_in_of_trace regs_out_of_trace
+        &&
+      (* at most one memory read, memory write, and barrier *)
+      List.length instruction_kinds_of_trace <= 1
+
+(* TODO: correctness of NIA analysis *)
+(* TODO: correctness of regs_feeding_address *)
+
+(* TODO: either say that all traces have the same regs-out etc., or that all traces match the static analysis thereof
+(* trace matches static analysis regs_out *)
+Set.fromList regs_out_of_trace = regs_out
+(* trace matches static analysis regs_in *)
+Set.fromList regs_in_of_trace = regs_in
+*)
+
+(* TODO: correctness of memory footprint analysis *)

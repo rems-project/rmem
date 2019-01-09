@@ -1,0 +1,1449 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge    2017-2018            *)
+(*  Copyright Shaked Flur, University of Cambridge          2017-2018            *)
+(*  Copyright Robert Norton-Wright, University of Cambridge      2017            *)
+(*  Copyright Jon French, University of Cambridge                2018            *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives_extra
+open import MachineDefUtils
+
+open import Sail_impl_base
+open import MachineDefTypes
+open import MachineDefFragments
+     import MachineDefFreshIds
+     import MachineDefEvents
+open import MachineDefDebug
+open import MachineDefInstructionPredicates
+open import MachineDefUI
+
+import Power_embed_types
+
+(** Error reporting *************************************************)
+
+val catch_thread_errors : forall 'a. thread_id -> ioid -> (unit -> 'a) -> 'a
+declare ocaml target_rep function catch_thread_errors = `Debug.catch_thread_errors`
+declare isabelle target_rep function catch_thread_errors tid ioid c = c ()
+
+(** Sail_impl_base.reg_name Utils *********************************)
+
+(* return all the slices of r's base-register that i is known to
+write to based on the static footprint analysis (regs_out) *)
+let reg_out_slices (r: reg_name) (i: instruction_instance)
+    : list (reg_name * maybe_value_fragment bit_lifted)
+  =
+  let r_name = register_base_name r in
+  List.mapMaybe
+    (fun r' ->
+      if register_base_name r' = r_name then Just (r', (slice_of_reg_name r', Nothing))
+      else Nothing)
+    (Set_extra.toList i.regs_out)
+
+
+(* return all the slices of r's base-register that i has written to *)
+let reg_write_slices (r: reg_name) (i: instruction_instance)
+    : list (reg_name * maybe_value_fragment bit_lifted)
+  =
+  let r_name = register_base_name r in
+  List.mapMaybe
+    (fun (r', (_, rv)) ->
+      if register_base_name r' = r_name then
+        let slice = slice_of_reg_name r' in
+        let () =
+          ensure (slice = (rv.rv_start, rv.rv_start + (List.length rv.rv_bits) - 1))
+            $ "reg_write_slices saw a value with non-matching start index or length " ^ register_base_name r
+        in
+        Just (r', (slice, Just rv.rv_bits))
+      else Nothing)
+    i.reg_writes
+
+
+let reassemble_register_value (r: reg_name) (mfs: list (maybe_value_fragment bit_lifted))
+    : maybe register_value
+  =
+  value_of_maybe_value_fragments mfs
+  $> Maybe.map (register_value_for_reg r)
+
+(** Inter-instruction Register Reading ******************************)
+
+(* SF: this should be next to the type definition *)
+let ioids_of_rrs (rrs: register_read_sources) : set ioid =
+  List.mapMaybe
+    (function
+    | RRS_instruction ioid _ _ -> Just ioid
+    | RRS_initial_state _      -> Nothing
+    | RRS_pseudoregister       -> Nothing
+    end)
+    rrs
+  $> Set.fromList
+
+type find_reg_read_outcome =
+  (* found a write of the particular register by that instruction with that
+     value *)
+  | FRRO_found of register_read_sources * register_value
+
+  (* register read is blocked as some required instruction with that register
+     in its footprint hasn't done a register write to it yet, or an initial
+     value is required but the initial values were not provided. *)
+
+  | FRRO_blocked of register_read_sources
+
+  (* DEADCODE: FRRO_not_found is never used to construct a value *)
+  (* no instruction in the prefix has the register in its footprint *)
+  | FRRO_not_found
+
+
+(* overview: to do a register read, walk back through the instructions, and
+   through the register writes in the footprint of each.  Maintain the "footprint
+   needed" as a list of disjoint slices (in increasing order).  Check for each
+   write in the current footprint whether that overlaps the footprint needed
+   (not, partially, or completely).  If there's a non-empty intersection and the
+   write hasn't been done yet, signal blockedness; otherwise, stash away the
+   value for the intersection.  If one gets to the end, do the same with a
+   pseudo-write from the initial register state.  Then glue together the value
+   fragments into a list, by sorting and checking adjacency. *)
+
+
+(* TODO: what about cases where the footprint includes multiple register writes
+   to overlapping parts of a register?  TODO: surely the slice type should use
+   int not integer (they will never be more than 2^31... or indeed nat) *)
+
+(* TODO: note that this assumes that if a register is in i.regs_out then i
+   *will* eventually write to it.  Is that true? If not, can we make it so by
+   reasonable patching, or do we have to dynamically recalculate i's register write
+   footprint? (SF: this was relaxed a bit, see comment in machineDefTypes.lem
+   next to regs_out).
+   It further assumes that an instruction writes exactly once to each of its regs_out,
+   otherwise this might pick up a "register coherence hidden" value by reading too
+   early. *)
+
+(* find *)
+let rec find_reg_read'
+    (init_values: maybe (registerdata * (reg_base_name -> register_value)))
+    (r:           reg_name)
+    (needed :     list (nat*nat))
+    (* acc_found will be used to calculate the read value *)
+    (acc_found:   list (maybe_value_fragment bit_lifted))
+    (* acc_source will be the register_read_sources at the end*)
+    (acc_source:  list register_read_source)
+    (is:          list instruction_instance)
+    : find_reg_read_outcome
+  =
+  let reassemble acc_found acc_source =
+    match reassemble_register_value r acc_found with
+    | Nothing -> FRRO_blocked (List.reverse acc_source)
+    | Just v  -> FRRO_found (List.reverse acc_source) v
+    end
+  in
+
+  if needed = [] then reassemble acc_found acc_source else
+
+  match is with
+  | [] ->
+      match init_values with
+      | Nothing ->
+          (* we need to read from the initial state but we were not given
+          one, so we will return FRRO_blocked *)
+          FRRO_blocked (List.reverse acc_source)
+      | Just (registerdata, init_values') ->
+          (* get the base-register *)
+          let base_reg : reg_name = ensure_just (reg_from_data registerdata (register_base_name r))
+              ("the register \"" ^ show (register_base_name r) ^ "\" is not defined in MachineDef*")
+          in
+          (* get the initial value for the base-register register *)
+          let init_val = init_values' (register_base_name r) in
+          let init_mvf = (slice_of_reg_name base_reg, Just init_val.rv_bits) in
+          match match_maybe_value_fragment needed init_mvf with
+          | ([], found) -> reassemble (found ++ acc_found) (RRS_initial_state found :: acc_source)
+          | _           -> fail
+          end
+      end
+
+  | i :: is' ->
+      match reg_out_slices r i with
+      | [] -> find_reg_read' init_values r needed acc_found acc_source is'
+      | reg_out_slices ->
+          let got =
+            let reg_write_slices = reg_write_slices r i in
+            (* if the instruction has finished its execution we can ignore
+            the static analysis and use the actual register writes. This might
+            be important if the static analysis is an over-approximation *)
+            if i.finished then reg_write_slices
+            else reg_write_slices ++ reg_out_slices
+          in
+
+          let (needed, found, reg_names) =
+            List.foldl
+              (fun (needed, acc_fragments, acc_reg_names) (reg_name, mvf) ->
+                match needed with
+                | [] -> ([], acc_fragments, acc_reg_names)
+                | _  ->
+                    match match_maybe_value_fragment needed mvf with
+                    | (_,      [])    -> (needed, acc_fragments, acc_reg_names)
+                    | (needed, found) -> (needed, found ++ acc_fragments, reg_name :: acc_reg_names)
+                    end
+                end)
+              (needed, [], [])
+              got
+          in
+
+          let acc_found' = found ++ acc_found in
+          let acc_source' =
+            match found with
+            | [] -> acc_source
+            | _  -> (RRS_instruction i.instance_ioid reg_names found) :: acc_source
+            end
+          in
+          find_reg_read' init_values r needed acc_found' acc_source' is'
+      end
+  end
+
+
+(* if init_values is Nothing and an initial value is needed, the
+result will be FRRO_blocked with the register_read_sources collected
+from instructions *)
+let find_reg_read
+    (init_values: maybe (registerdata * (reg_base_name -> register_value)))
+    (r:           reg_name)
+    (is:          list instruction_instance)
+    : find_reg_read_outcome
+  =
+  let needed = [slice_of_reg_name r] in
+  find_reg_read' init_values r needed [] [] is
+
+
+let find_register_snapshot
+    (register_data:          registerdata)
+    (initial_register_state: reg_base_name -> register_value)
+    (is:                     list instruction_instance)
+    : list (reg_base_name * maybe register_value)  (* = register_snapshot *)
+  =
+  List.map
+    (fun (rbn, (dir, width, start_index, _)) ->
+        (* TODO: Need to check that this is the correct start_index for D_decreasing *)
+        let r = Reg rbn start_index width dir in
+        let mv =
+          match find_reg_read (Just (register_data, initial_register_state)) r is with
+          | FRRO_found rrs v -> Just v
+          | FRRO_blocked _   -> Nothing
+          | FRRO_not_found   -> failwith "find_register_snapshot FRRO_not_found"
+          end in
+        (rbn, mv))
+    register_data
+
+
+let ioids_feeding_regs
+    (po:   list instruction_instance) (* head is new *)
+    (regs: set reg_name)
+    : set ioid
+  =
+  bigunionMap
+    (fun reg ->
+      match find_reg_read Nothing reg po with
+      | FRRO_found rrs _ -> ioids_of_rrs rrs
+      | FRRO_blocked rrs -> ioids_of_rrs rrs
+      | FRRO_not_found   -> {}
+      end)
+    regs
+
+
+(* also see registers_final_state below *)
+
+let register_state_zero
+    (register_data:registerdata)
+    (tid: thread_id)
+    (rbn: reg_base_name)
+    : register_value =
+  let (dir,width,start_index,_) =
+    ensure_just (List.lookup rbn register_data)
+      $ "register_state_zero lookup failed (" ^ rbn ^ ") looking at " ^ show (List.length register_data) ^ " registers."
+  in
+  register_value_zeros dir width start_index
+
+
+let is_nia_register params (reg: reg_name) : bool =
+  register_base_name params.thread_isa_info.nia_reg = register_base_name reg
+
+let is_cia_register params (reg: reg_name) : bool =
+  register_base_name params.thread_isa_info.cia_reg = register_base_name reg
+
+(* 'is_pseudo_register params reg' is true iff 'reg' is a pseudo register *)
+let is_pseudo_register params : (reg_name -> bool) =
+  let (fixed_pseudo_regs, _) = List.unzip params.thread_isa_info.fixed_pseudo_registers in
+  (fun (reg: reg_name) ->
+      is_nia_register params reg ||
+      is_cia_register params reg ||
+      exists (reg' MEM fixed_pseudo_regs).
+        register_base_name reg' = register_base_name reg)
+
+
+let non_pseudo_registers params (regs: set reg_name) : set reg_name =
+  let is_pseudo_register' = is_pseudo_register params in
+  {reg | forall (reg IN regs) | not (is_pseudo_register' reg)}
+
+
+let pseudo_register_value params cia_address reg =
+  let pseudo_register_values =
+    let cia_reg = params.thread_isa_info.cia_reg in
+    let nia_reg = params.thread_isa_info.nia_reg in
+    (cia_reg, register_value_of_address cia_address (direction_of_reg_name cia_reg)) ::
+      (nia_reg, register_value_of_address (address_of_integer ((integer_of_address cia_address)+4)) (direction_of_reg_name nia_reg)) :: (* FIXME HACK *)
+      params.thread_isa_info.fixed_pseudo_registers
+  in
+
+  let (needed, found) =
+    match_maybe_value_fragments
+      [slice_of_reg_name reg]
+      [(slice_of_reg_name reg', Just rv.rv_bits)
+          | forall ((reg', rv) MEM pseudo_register_values)
+          | register_base_name reg' = register_base_name reg]
+      []
+  in
+
+  let () = ensure (needed = [])
+    $ "missing pseudo register slices (" ^ show reg ^ " " ^ show needed ^ ")"
+  in
+
+  ensure_just (reassemble_register_value reg found) "could not reconstruct pseudo register"
+
+
+let rec undetermined_reg_writes_read_from_helper active_prefix ioid reg_names : set ioid =
+  match active_prefix with
+  | [] -> {}  (* if ioid is not in active_prefix then it is an old
+              instruction (i.e. finished) *)
+  | i :: active_prefix ->
+      if i.instance_ioid = ioid then
+        if i.finished then {} else
+        (* NOTE: we assume rmw instructions write to registers only in the load part *)
+        if i.rmw_finished_load_snapshot <> Nothing then {} else
+
+        Set.fromList reg_names
+        $> Set.bigunionMap (fun reg ->
+            match List.lookup reg i.reg_writes with
+            | Just (dependencies, _) ->
+                Set.fromList dependencies
+                $> Set.bigunionMap (function
+                    | RWD_reg_write ioid reg_names -> undetermined_reg_writes_read_from_helper active_prefix ioid reg_names
+                    | RWD_mem_read -> {ioid}
+                    end)
+            | Nothing -> {ioid}
+                (* the register write disappeared, i.e. i was restarted,
+                yet the register dependent instruction that initiated this
+                check was not restarted. That can happen when the register
+                write is deterministic (e.g. the status register of AArch64
+                STXR). This means we can return {} here, but it feels unsafe.
+                Since this scenario involves restarts it does not really
+                matter, so I do the safer thing which is to return {ioid}. *)
+            end)
+
+      else undetermined_reg_writes_read_from_helper active_prefix ioid reg_names
+  end
+
+let undetermined_reg_writes_read_from
+    (active_prefix: list instruction_instance)
+    (reg_reads:     list (reg_name * register_read_sources * register_value))
+    : set ioid
+  =
+  Set.fromList reg_reads
+  $> Set.bigunionMap (fun (_, register_read_sources, _) ->
+      Set.fromList register_read_sources
+      $> Set.bigunionMap (function
+          | RRS_instruction ioid reg_names _ -> undetermined_reg_writes_read_from_helper active_prefix ioid reg_names
+          | RRS_initial_state _ -> {}
+          | RRS_pseudoregister  -> {}
+          end))
+
+(** Instruction Tree Manipulation ***********************************)
+
+let rec forall_iprev_with_prefix
+    (prefix: list instruction_instance)
+    (p:      instruction_instance -> list instruction_instance -> bool)
+    : bool
+  =
+  match prefix with
+  | [] -> true
+  | iprev :: prefix ->
+      if p iprev prefix then forall_iprev_with_prefix prefix p
+      else false
+  end
+
+let rec exists_iprev_with_prefix
+    (prefix: list instruction_instance)
+    (p:      instruction_instance -> list instruction_instance -> bool)
+    : bool
+  =
+  match prefix with
+  | [] -> false
+  | iprev :: prefix ->
+      if p iprev prefix then true
+      else exists_iprev_with_prefix prefix p
+  end
+
+(* break 'it' to a set of tuples of the form (prefix', inst', it') where inst'
+   is an instruction, prefix' is the list of po-previous instructions concatenated
+   with prefix (head is closer to inst', i.e.  reverse po) and it' is the po-after
+   tree. *)
+let rec set_of_instruction_tree
+    (prefix: list instruction_instance)
+    (T iis:  instruction_tree)
+    : set (list instruction_instance *
+           instruction_instance *
+           instruction_tree)
+  =
+  match iis with
+  | [] -> {}
+  | (i,it) :: iis ->
+     (Set.insert (prefix,i,it) (set_of_instruction_tree (i::prefix) it)) union
+     (set_of_instruction_tree prefix (T iis))
+  end
+
+
+(* return all the instructions in 'it' as a set *)
+let instructions_of_tree (it: instruction_tree) : set instruction_instance =
+  Set.map (fun (_,i,_) -> i) (set_of_instruction_tree [] it)
+
+let ioids_of_instruction_tree (it: instruction_tree) : set ioid =
+  Set.map (fun i -> i.instance_ioid) (instructions_of_tree it)
+
+(* for each instruction in 'it' apply 'f prefix' inst' it'' where
+inst' is the instruction, prefix' is the list of po-previous
+instructions concatenated with 'prefix' (head is closer to inst', i.e.
+reversed po, similar to active_prefix) and it' is the po-after tree. *)
+let rec instruction_tree_map
+    (f:         (list instruction_instance) -> instruction_instance -> instruction_tree -> instruction_instance)
+    (prefix:    list instruction_instance)
+    (T iiits:   instruction_tree)
+    : instruction_tree
+  =
+  T (List.map (fun (ii, it') -> (f prefix ii it', instruction_tree_map f (ii :: prefix) it'))
+              iiits)
+
+
+(* Return Just (prefix', inst', it') of the first (in pre-order) instruction in
+   'it' for which 'f prefix' inst' it'' is true where inst' is the instruction,
+   prefix' is the list of po-previous instructions concatenated with 'prefix' (head
+   is closer to inst', i.e.  reversed po, similar to active_prefix) and it' is the
+   po-after tree.  Return Nothing if no such instruction is found *)
+let rec instruction_tree_find
+    (f:       (list instruction_instance) -> instruction_instance -> instruction_tree -> bool)
+    (prefix:  list instruction_instance)
+    (it:      instruction_tree)
+    : maybe (list instruction_instance * instruction_instance * instruction_tree)
+  =
+  let is = Set_extra.toList (set_of_instruction_tree prefix it) in
+  List.find (fun (prfx,i,it) -> f prfx i it) is
+
+
+let instruction_tree_any
+    (f:         (list instruction_instance) -> instruction_instance -> instruction_tree -> bool)
+    (prefix:    list instruction_instance)
+    (it:        instruction_tree)
+    : bool
+  =
+  instruction_tree_find f prefix it <> Nothing
+
+let instruction_tree_all
+    (f:         (list instruction_instance) -> instruction_instance -> instruction_tree -> bool)
+    (prefix:    list instruction_instance)
+    (it:        instruction_tree)
+    : bool
+  =
+  not (instruction_tree_any (fun is i it -> not (f is i it)) prefix it)
+
+(* apply fold to every path from root to leaves and return the set of results *)
+let rec instruction_tree_fold_root
+    (f:      'a -> list instruction_instance -> instruction_instance -> instruction_tree -> 'a)
+    (prev:   'a)
+    (prefix: list instruction_instance)
+    (T iis:  instruction_tree)
+    : set 'a
+  =
+  match iis with
+  | [] -> {prev}
+  | (i,it) :: iis ->
+     (instruction_tree_fold_root f (f prev prefix i it) (i::prefix) it) union
+     instruction_tree_fold_root f prev prefix (T iis)
+  end
+
+
+(* find all the in-flight instruction instances in a thread's instruction_tree,
+   together with the tree context for each *)
+let rec filter_instructions
+    (p:          instruction_instance -> bool)
+    (T iis:      instruction_tree)
+    (itcns:      list instruction_tree_context_node)  (* accumulating context *)
+    (prefix:     instruction_prefix)  (* accumulating prefix *)
+    (prefix_old: instruction_prefix)  (* fixed old prefix *)
+    : list instruction_in_context =
+  List.concat
+    (mapWithContext
+       (fun left ((i,it') : instruction_instance * instruction_tree) right ->
+         let in_flights_of_subtree =
+           filter_instructions p it' (ITC_node left i right :: itcns) (i::prefix) prefix_old in
+         if p i then
+           <| iic_instance = i;
+              context       = ITC_innermost left right itcns;
+              subtree       = it';
+              active_prefix = prefix;
+              old_prefix    =  prefix_old
+           |>
+             :: in_flights_of_subtree
+         else
+           in_flights_of_subtree)
+       iis)
+
+
+let in_flight_instructions state : list instruction_in_context =
+  filter_instructions (fun i -> not i.finished) (state.instruction_tree) [] [] 
+                      (state.old_instructions)
+
+
+let un_old_instructions state : list instruction_in_context =
+  filter_instructions (fun _ -> true)
+                      (state.instruction_tree) [] [] (state.old_instructions)
+
+let un_old_finished_instructions state : list instruction_in_context =
+  filter_instructions (fun i -> i.finished)
+                      (state.instruction_tree) [] [] (state.old_instructions)
+
+let find_ioid_instruction_in_context state ioid : maybe instruction_in_context =
+  match filter_instructions (fun i -> i.instance_ioid = ioid)
+                            (state.instruction_tree) [] []
+                            (state.old_instructions) with
+  | head :: [] -> Just head
+  | [] -> Nothing
+  | _ -> failwith $ "ioid " ^ show ioid ^ " appears more than once in the instruction tree"
+  end
+
+
+(* wrap an instruction_tree_context around an instruction instance and subtree *)
+let rec apply_tree_context_nodes
+    (ictns: list instruction_tree_context_node)
+    (it:    instruction_tree)
+    : instruction_tree =
+  match ictns with
+  | [] -> it
+  | (ITC_node left i right) :: ictns' ->
+      let it' = T (left ++ ((i,it) :: right)) in
+      apply_tree_context_nodes ictns' it'
+  end
+
+let rec apply_tree_context
+    (ITC_innermost left right ictns: instruction_tree_context)
+    ((i, it):                        instruction_instance * instruction_tree)
+    : instruction_tree =
+  let it' = T (left ++ ((i,it) :: right)) in
+  apply_tree_context_nodes ictns it'
+
+(* return a new iic for one instruction up (i.e. the head of active_prefix)
+if such instruction exists, otherwise Nothing *)
+let prev_instruction_in_context (iic: instruction_in_context) : maybe instruction_in_context =
+  match iic.context with
+  | (ITC_innermost _ _ []) -> Nothing
+  | (ITC_innermost left right ((ITC_node left' i' right') :: ictns')) ->
+      let it' = T (left ++ ((iic.iic_instance, iic.subtree) :: right)) in
+      let active_prefix' =
+        match iic.active_prefix with
+        | [] -> failwith "expected non-empty active_prefix"
+        | _ :: tail -> tail
+        end
+      in
+      Just <| iic_instance = i';
+              context       = ITC_innermost left' right' ictns';
+              subtree       = it';
+              active_prefix = active_prefix';
+              old_prefix    = iic.old_prefix;
+           |>
+  end
+
+(* return a new iic for the first instruction in 'iic.iic_instance :: iic.active_prefix'
+for which 'f' is true *)
+let rec find_prev_iic
+    (f: instruction_instance -> bool)
+    (iic: instruction_in_context)
+    : maybe instruction_in_context
+  =
+  if f iic.iic_instance then Just iic
+  else
+    Maybe.bind (prev_instruction_in_context iic) $ fun iic' -> find_prev_iic f iic'
+
+let find_prev_ioid_iic
+    (ioid: ioid)
+    (iic:  instruction_in_context)
+    : maybe instruction_in_context
+  =
+  find_prev_iic (fun i -> i.instance_ioid = ioid) iic
+
+
+(* collapse old instructions back into the instruction tree (for UI) *)
+let rec tree_of_old_and_new_instructions_helper
+    (it: instruction_tree)
+    (is: list instruction_instance)
+    : instruction_tree
+  =
+  match is with
+  | []      -> it
+  | i :: is -> tree_of_old_and_new_instructions_helper (T [(i, it)]) is
+  end
+
+let tree_of_old_and_new_instructions (s: thread_state) : instruction_tree =
+  tree_of_old_and_new_instructions_helper s.instruction_tree s.old_instructions
+
+
+let rec _count_pairs (prefix:list instruction_instance) (us:address) (them:address) (acc:nat) =
+  match prefix with
+  | [] -> acc
+  | [x] -> acc
+  (* note prefix is in reverse program order *)
+  | x::y::l ->
+     _count_pairs (y::l) us them (if x.program_loc = them && y.program_loc = us then acc + 1 else acc)
+end
+
+
+
+(** The Default Successor Instruction Address ***********************)
+(* used for fetching and in branch commit *)
+
+let successor_fetch_address (i: instruction_instance) : address =
+  add_address_nat i.program_loc 4  (* TODO not if at end of address space - cf 2.06B *)
+
+let next_address_of_finished_instruction params (i: instruction_instance) : address =
+  let () = ensure (params.thread_isa_info.ism <> MIPS_ism)
+      "next_address_of_finished_instruction not implemented for MIPS"
+  in
+  match List.lookup params.thread_isa_info.nia_reg i.reg_writes with
+  | Just (_, rv) ->
+    let al = ensure_just (address_lifted_of_register_value rv)
+                        "NIA/PC register write not 64 bits" in
+    ensure_just (address_of_address_lifted al) "NIA/PC not a concrete address"
+  | Nothing -> successor_fetch_address i
+  end
+
+
+let mips_delayed_pc_of_finished_instruction params (i: instruction_instance) : maybe address =
+  let dia_reg = ensure_just params.thread_isa_info.dia_reg "expected a dia reg for mips" in
+  match List.lookup dia_reg i.reg_writes with (* TODO branch likely *)
+  | Just (_, rv) ->
+     let al = ensure_just (address_lifted_of_register_value rv)
+                          "delayedPC register write not 64 bits" in
+     let a = ensure_just (address_of_address_lifted al) "delayedPC not a concrete address" in
+     Just a
+  | Nothing -> Nothing
+  end
+
+let mips_next_next_pc_of_finished_instruction params (i: instruction_instance) : address =
+  (* look for a write to delayedPC otherwise branch untaken *)
+  match mips_delayed_pc_of_finished_instruction params i with
+  | Just a  -> a
+  | Nothing -> add_address_nat (successor_fetch_address i) 4
+  end
+
+
+(** Initial instruction state, and recalculations, and restarts *)
+
+val reg_info : thread_params -> string -> maybe string -> (nat * nat * direction * (nat * nat))
+let reg_info params regname regfield =
+  let reg = match regfield with
+    | Just regfield -> reg_field_from_data params.thread_isa_info.register_data_info regname regfield
+    | Nothing -> reg_from_data params.thread_isa_info.register_data_info regname
+  end in
+  let reg = Maybe_extra.fromJust reg in
+  let sl =
+    let (i, j) = slice_of_reg_name reg in
+    match direction_of_reg_name reg with
+    | D_increasing -> (i, j)
+    | D_decreasing ->
+        let start = start_of_reg_name reg in
+        (start - i, start - j)
+    end
+  in
+  (start_of_reg_name reg, width_of_reg_name reg, direction_of_reg_name reg, sl)
+
+let analyse_instruction
+    params
+    (i_sem : instruction_semantics)
+    (analysis_function : maybe string)
+    (environment : (list (reg_name * register_value)))
+    (old_outcome : outcome_S)
+    (inst:        instruction_ast)
+    (iprefix:     list instruction_instance)
+    (cia_address: address)
+    : instruction_kind * set nia * dia * set reg_name * set reg_name * set reg_name
+  =
+
+  let analysis_function = match analysis_function with
+    | Nothing -> "initial_analysis"
+    | Just s -> s
+    end in
+
+  let cia_reg = params.thread_isa_info.cia_reg in
+  let environment =
+    ((cia_reg,pseudo_register_value params cia_address cia_reg) ::
+      params.thread_isa_info.fixed_pseudo_registers) ++ environment in
+
+  let (regs_in,regs_out,regs_feeding_address,nias,dia,ik) =
+    i_sem.instruction_analysis
+      old_outcome
+      inst
+      analysis_function
+      (reg_info params)
+      params.thread_isa_info.nia_reg
+      environment in
+
+  let (regs_in,regs_out,regs_feeding_address,nias) =
+    (non_pseudo_registers params (fromList regs_in),
+     non_pseudo_registers params (fromList regs_out),
+     non_pseudo_registers params (fromList regs_feeding_address),
+     fromList nias) in
+  let regs_in =
+    if params.thread_isa_info.is_thread_start_instruction inst then
+      Set.mapMaybe Function.id {
+        Just params.thread_isa_info.thread_start_info.tsi_addr;
+        params.thread_isa_info.thread_start_info.tsi_toc;
+        params.thread_isa_info.thread_start_info.tsi_extra;
+      }
+    else regs_in in
+  let regs_out =
+    if params.thread_isa_info.is_thread_start_instruction inst then
+      {params.thread_isa_info.thread_start_info.tsi_return}
+    else regs_out in
+  let nias = match params.thread_isa_info.ism with
+    | MIPS_ism ->
+       match iprefix with
+       | [] -> { NIA_successor }
+       | prev_inst :: _ ->
+          match prev_inst.mips_dia with
+          | DIA_none -> {NIA_successor}
+          | DIA_concrete_address a ->
+             if prev_inst.finished then
+               {NIA_concrete_address (mips_next_next_pc_of_finished_instruction params prev_inst)}
+             else
+               {NIA_successor; NIA_concrete_address a}
+          | DIA_register r ->
+             if prev_inst.finished then
+               {NIA_concrete_address(mips_next_next_pc_of_finished_instruction params prev_inst)}
+             else
+               {NIA_successor ; NIA_indirect_address}
+          end
+       end
+    | _ -> nias
+    end in
+  (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
+
+let starting_inst_instance_aux
+      params
+      (i_sem:    instruction_semantics)
+      (new_ioid: ioid)
+      (mop:      maybe opcode)
+      (inst:     instruction_ast)
+      (loc:      address)
+      (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
+      ioids_feeding_address
+      initial_outcome_S
+    : instruction_instance
+  =
+ <| instance_ioid =     new_ioid;
+    instance_id_state = MachineDefFreshIds.initial_id_state new_ioid;
+    program_loc =       loc;
+    program_opcode =    mop;
+    instruction =       inst;
+    instruction_kind =  ik;
+
+    initial_micro_op_state =          MOS_plain initial_outcome_S;
+    initial_regs_in =                 regs_in;
+    initial_regs_out =                regs_out;
+    initial_regs_in_feeding_address = regs_feeding_address;
+
+    regs_in =                 regs_in;
+    regs_out =                regs_out;
+    regs_in_feeding_address = regs_feeding_address;
+    ioids_feeding_address =   ioids_feeding_address;
+    nias =                    nias;
+    mips_dia = dia;
+    reg_reads =  [];
+    reg_writes = [];
+
+    subreads =
+      <|  sr_addr =             Nothing;
+          sr_unsat_slices =     [];
+          sr_writes_read_from = [];
+          sr_requested =        [];
+          sr_assembled_value =  Nothing;
+      |>;
+
+    subwrites =
+      <|  sw_addr =                      Nothing;
+          sw_potential_write_addresses = [];
+          sw_potential_writes =          [];
+          sw_propagated_writes =         [];
+          sw_committed =                 false;
+      |>;
+
+    successful_atomic_store =
+      match ik with
+      | IK_mem_rmw (r, w) ->
+          let () = ensure (is_atomic_read r = is_atomic_write w)
+            "the atomicity of the read and the write of an RMW must be the same" in
+
+          if params.thread_isa_info.ism = RISCV_ism then Nothing
+          else if is_atomic_read r && is_atomic_write w then Just true
+          else Nothing
+      | IK_barrier _   -> Nothing
+      | IK_mem_write _ -> Nothing
+      | IK_mem_read _  -> Nothing
+      | IK_branch      -> Nothing
+      | IK_trans _     -> Nothing
+      | IK_simple      -> Nothing
+      end;
+
+    committed_barriers =   [];
+
+    finished =  false;
+
+    micro_op_state = MOS_plain initial_outcome_S;
+
+    rmw_finished_load_snapshot = Nothing;
+|>
+
+
+
+let starting_inst_instance
+      params
+      (i_sem:    instruction_semantics)
+      (new_ioid: ioid)
+      (mop:      maybe opcode)
+      (inst:     instruction_ast)
+      (loc:      address)
+      (is:       list instruction_instance) (* active prefix ++ old instructions *)
+    : instruction_instance
+  =
+  let initial_outcome_S = i_sem.initial_outcome_s_of_instruction inst in
+  let (ik, nias, dia, regs_in, regs_out, regs_feeding_address) =
+    analyse_instruction params i_sem Nothing [] initial_outcome_S inst is loc in
+  let ioids_feeding_address = ioids_feeding_regs is regs_feeding_address in
+
+  starting_inst_instance_aux params i_sem new_ioid mop inst loc
+    (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
+    ioids_feeding_address
+    initial_outcome_S
+
+
+let starting_fetch_exception_inst_instance
+    (new_ioid: ioid)
+    (fde:      fetch_and_decode_exception)
+    (loc:      address)
+    : instruction_instance
+  =
+ <| instance_ioid =     new_ioid;
+    instance_id_state = MachineDefFreshIds.initial_id_state new_ioid;
+    program_loc =       loc;
+    program_opcode =    Nothing;
+    instruction =       Fetch_error;
+    instruction_kind =  IK_simple;
+
+    initial_micro_op_state =          MOS_pending_exception (ET_fetch_and_decode fde);
+    initial_regs_in =                 {};
+    initial_regs_out =                {};
+    initial_regs_in_feeding_address = {};
+
+    regs_in =                 {};
+    regs_out =                {};
+    regs_in_feeding_address = {};
+    ioids_feeding_address =   {};
+    nias =                    {};
+    mips_dia =                DIA_none;
+    reg_reads =  [];
+    reg_writes = [];
+
+    subreads =
+      <|  sr_addr =             Nothing;
+          sr_unsat_slices =     [];
+          sr_writes_read_from = [];
+          sr_requested =        [];
+          sr_assembled_value =  Nothing;
+      |>;
+
+    subwrites =
+      <|  sw_addr =                      Nothing;
+          sw_potential_write_addresses = [];
+          sw_potential_writes =          [];
+          sw_propagated_writes =         [];
+          sw_committed =                 false;
+      |>;
+
+    successful_atomic_store = Nothing;
+
+    committed_barriers =   [];
+
+    finished =  false;
+
+    micro_op_state = MOS_pending_exception (ET_fetch_and_decode fde);
+
+    rmw_finished_load_snapshot = Nothing;
+|>
+
+(* should be equal to starting_inst_instance m i.instance_ioid i.instruction i.program_loc ...activeprefix... *)
+let restart_instruction (i: instruction_instance) : instruction_instance =
+  let (tid, iid) = i.instance_ioid in
+  let i_str = "(" ^ (show tid) ^ ":" ^ (show iid) ^ ") from 0x" ^ (show i.program_loc) in
+
+  let () = ensure (not i.finished)
+    $ "trying to restart a finished instruction " ^ i_str in
+  let () = ensure (i.subwrites.sw_propagated_writes = [])
+    $ "trying to restart instruction with propagated writes " ^ i_str in
+  let () = ensure (i.committed_barriers = [])
+    $ "trying to restart instruction with propagated barriers " ^ i_str in
+
+  match i.rmw_finished_load_snapshot with
+  | Nothing ->
+      <| i with
+          (* restarting the id state means read/write/barrier events will get the
+          same id as before the restart. This allows for better hash-pruning
+          and infinite loop detection. *)
+          instance_id_state = MachineDefFreshIds.initial_id_state i.instance_ioid;
+
+          regs_in    = i.initial_regs_in;
+          regs_out   = i.initial_regs_out;
+          regs_in_feeding_address = i.initial_regs_in_feeding_address;
+          reg_reads  = [];
+          reg_writes = [];
+
+          subreads =
+            <|  sr_addr             = Nothing;
+                sr_unsat_slices     = [];
+                sr_writes_read_from = [];
+                sr_requested        = [];
+                sr_assembled_value  = Nothing;
+            |>;
+
+          subwrites =
+            <|  sw_addr =                      Nothing;
+                sw_potential_write_addresses = [];
+                sw_potential_writes =          [];
+                sw_propagated_writes =         [];
+                sw_committed =                 false;
+            |>;
+
+          micro_op_state = i.initial_micro_op_state;
+
+          (* committed_barriers   = []; *)
+          (* finished             = false; *)
+      |>
+      (* TODO: for a restarted lswx, we need to also reset regs_in etc.*)
+  | Just snapshot ->
+      <| i with
+          instance_id_state = snapshot.rfls_instance_id_state;
+
+          reg_reads  = snapshot.rfls_reg_reads;
+          reg_writes = snapshot.rfls_reg_writes;
+
+          subwrites =
+            <|  sw_addr =                      Nothing;
+                sw_potential_write_addresses = [];
+                sw_potential_writes =          [];
+                sw_propagated_writes =         [];
+                sw_committed =                 false;
+            |>;
+
+          micro_op_state = snapshot.rfls_micro_op_state;
+      |>
+  end
+
+
+(* recalculate_register_footprint, used for instructions whose register footprint changes based on the value of a register read *)
+let recalculate_register_footprint params
+    (i_sem: instruction_semantics)
+    (i:  instruction_instance)
+    (old_outcome: outcome_S)
+    (is: list instruction_instance)
+    : instruction_instance
+  =
+  let instr = i.instruction in
+
+  let analysis_function = match instr with
+    | PPCGEN_instr (Power_embed_types.Lswx _) -> Just "recalculate_lswx_reg_footprint"
+    | PPCGEN_instr (Power_embed_types.Stswx _) -> Just "recalculate_stswx_reg_footprint"
+    | _ -> failwith "recalculate_register_footprint was called for instruction that is not Lswx or Stswx"
+  end in
+
+  let env = List.map (fun (name,_,v) -> (name,v)) i.reg_reads in
+
+  let (_, _, _, regs_in, regs_out, regs_feeding_address) =
+    analyse_instruction params i_sem analysis_function env old_outcome instr is i.program_loc in
+
+  let is_pseudo_register' = is_pseudo_register params in
+  <| i with regs_in = regs_in union { r | forall ((r,rrs,v) MEM i.reg_reads) | not (is_pseudo_register' r)};
+            regs_out = regs_out union { r | forall ((r,(_,v)) MEM i.reg_writes) | not (is_pseudo_register' r)};
+            regs_in_feeding_address = regs_feeding_address;
+ (* TODO: does that also need to be extended with those already read from? *)
+            ioids_feeding_address = ioids_feeding_regs is regs_feeding_address |>
+
+
+let recalculate_ioids_feeding_address
+    (prefix:     list instruction_instance)
+    (it :        instruction_tree)
+    : instruction_tree
+  =
+  instruction_tree_map
+    (fun prefix' i' _ ->
+      <| i' with ioids_feeding_address = ioids_feeding_regs prefix' i'.regs_in_feeding_address |>
+    )
+    prefix
+    it
+
+
+let nias_of_instruction
+    (params: thread_params)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    : set address
+  =
+  match iic.iic_instance.micro_op_state with
+  | MOS_plain (Done (), _) ->
+      { next_address_of_finished_instruction params iic.iic_instance }
+  | _ ->
+      Set.bigunionMap
+        (function
+        | NIA_successor -> { successor_fetch_address iic.iic_instance }
+        | NIA_concrete_address a -> { a }
+        | NIA_indirect_address ->
+            match List.lookup params.thread_isa_info.nia_reg iic.iic_instance.reg_writes with
+            | Just (_, rv) ->
+                let al = ensure_just (address_lifted_of_register_value rv)
+                                    "NIA/PC register write not 64 bits" in
+                ensure_just (address_of_address_lifted al) "NIA/PC not a concrete address"
+                $> Set.singleton
+            | Nothing ->
+                let branch_targets = Map.findWithDefault state.thread Map.empty params.branch_targets in
+                Map.findWithDefault iic.iic_instance.program_loc {} branch_targets
+            end
+        end)
+        iic.iic_instance.nias
+  end
+
+let interp_nias_of_instruction
+    (instruction: instruction_ast)
+    (nia_address: list (maybe address)) (* Nothing for unknown/undef *)
+    : list nia
+  =
+  let nias = List.map
+      function
+      | Just a  -> NIA_concrete_address a
+      | Nothing -> NIA_indirect_address
+      end
+      nia_address
+  in
+
+  (* it's a fact of the Power2.06B instruction pseudocode that in the B and Bc
+     cases there should be no Unknown values in nia_values, while in the Bclr
+     and Bcctr cases nia_values will just be Unknown and the semantics should
+     match the comments in the machineDefTypes definition of nia *)
+
+  (* the Sail code only writes to the nia register when a branch is taken,
+  i.e., if the branch is not taken it will not explicitly writes PC+4;
+  hence, for most instructions we need to add NIA_successor to 'nias' *)
+  match instruction with
+  | PPCGEN_instr (Power_embed_types.B _) ->
+      let () = ensure
+        (forall (nia MEM nias).
+            match nia with
+            | NIA_concrete_address _ -> true
+            | _ -> false
+            end)
+        "unexpected unknown/undefined address in nia_values ('b' instruction)"
+      in
+      nias
+  | PPCGEN_instr i ->
+      let () = ensure
+        ((exists (nia MEM nias). nia = NIA_indirect_address) -->
+            match i with
+            | Power_embed_types.Bclr _  -> true
+                (* the indirect address is "LR0:61 || 0b00" in Power pseudocode *)
+            | Power_embed_types.Bcctr _ -> true
+                (* the indirect address is "CTR0:61 || 0b00" in Power pseudocode *)
+            | _ -> false
+            end)
+        "unexpected unknown/undefined address in nia_values"
+      in
+      NIA_successor :: nias
+
+  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) ->
+      let () = ensure
+        match nias with
+        | NIA_concrete_address _ :: [] -> true
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | AArch64_instr (ArmV8_embed_types.BranchRegister _) ->
+      let () = ensure
+        match nias with
+        | _ :: [] -> true
+            (* the nia will be NIA_concrete_address if the register is
+            XZR, otherwise it will be NIA_indirect_address *)
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | AArch64_instr _ -> NIA_successor :: nias
+
+  | MIPS_instr _ -> (* XXX TODO *)
+      let () = ensure (nias = [])
+        "unexpected address in nia_values" in
+      NIA_successor :: []
+
+  | RISCV_instr (Riscv_types.RISCV_JAL _) ->
+      let () = ensure
+        match nias with
+        | NIA_concrete_address _ :: [] -> true
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | RISCV_instr (Riscv_types.RISCV_JALR _) ->
+      let () = ensure
+        match nias with
+        | _ :: [] -> true
+            (* the nia will be NIA_concrete_address if the register is
+            x0, otherwise it will be NIA_indirect_address *)
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | RISCV_instr _ -> NIA_successor :: nias
+
+  | X86_instr (X86_embed_types.Jcc _)  -> NIA_successor :: nias
+  | X86_instr (X86_embed_types.LOOP _) -> NIA_successor :: nias
+(* XXX  | X86_instr(X86_embed_types.CALL(_)) -> NIA_successor :: nias *)
+(* XXX  | X86_instr(X86_embed_types.RET(_)) -> NIA_successor :: nias *)
+(* XXX  | X86_instr(X86_embed_types.JMP(_)) -> NIA_successor :: nias *)
+  | X86_instr _ ->
+      let () = ensure (nias = [])
+        "unexpected address in nia_values" in
+      NIA_successor :: []
+
+  | _ -> failwith "unexpected 'instruction' in interp_nias_of_instruction"
+  end
+
+let potential_next_addresses_of_instruction
+    (params: thread_params)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    : set address
+  =
+  if params.thread_isa_info.ism = MIPS_ism then
+    (* Maybe the instruction preceding this one was a branch? *)
+    match iic.active_prefix with
+    | [] ->
+       (* no previous instruction, ergo not a branch delay XXX unless likely...  *)
+       { successor_fetch_address iic.iic_instance }
+    | prev_inst :: _ ->
+       if prev_inst.finished && is_branch_instruction prev_inst then
+         let () = ensure (not (is_branch_instruction iic.iic_instance))
+              "undefined behaviour: branch in branch delay slot" in (* XXX could be likely... *)
+
+         (* Use nextNextPC of finished instruction (may be branch delay) *)
+         { mips_next_next_pc_of_finished_instruction params prev_inst }
+       else
+         (* Use NIAs *)
+         nias_of_instruction params state iic
+    end
+  else
+    if iic.iic_instance.finished then
+      { next_address_of_finished_instruction params iic.iic_instance }
+    else
+      nias_of_instruction params state iic
+
+
+let rec make_old_instructions_helper params
+    (state:                      thread_state)
+    (unacknowledged_syncs_ioids: set ioid)
+    (((T iis) as it):            instruction_tree)
+    (acc:                        list instruction_instance)
+    : list instruction_instance * instruction_tree
+  =
+  match iis with
+  | [(i, T it')] ->
+      let is_active_tstart =
+        match state.transaction with
+        | Just (ts, _) -> ts.ts_ioid = i.instance_ioid
+        | Nothing -> false
+        end
+      in
+
+      if i.finished && i.instance_ioid NIN unacknowledged_syncs_ioids && not is_active_tstart then
+        let succs = [instruction.program_loc | forall ((instruction, _) MEM it') | true] in
+        let nia =
+          if params.thread_isa_info.ism = MIPS_ism then
+            match acc with
+            | [] ->  successor_fetch_address i
+            | prev_inst :: _ ->
+                mips_next_next_pc_of_finished_instruction params prev_inst
+            end
+          else
+            next_address_of_finished_instruction params i
+        in
+        if (nia = state.return_address || List.elem nia succs) then
+          (* DEBUG:
+          let () =
+            let (name, _, _) = i.instruction in
+            print_string ("\nmove " ^ name ^ " to old_instructions (") in
+          let () = print_integer (integerFromNat i.instance_ioid) in
+          let () = print_endline ")" in
+          *)
+          make_old_instructions_helper params state unacknowledged_syncs_ioids (T it') (i :: acc)
+        else (acc,it)
+     else (acc,it)
+  | _ -> (acc,it)
+  end
+
+(* return a new thread state with as many instructions as possible moved from
+   the instruction tree to the list of old instructions *)
+let make_old_instructions params (state: thread_state) : thread_state =
+  match params.thread_isa_info.ism with
+  | MIPS_ism -> state (* optimisation not yet implemented for MIPS due to branch delays *)
+  | _ ->
+  let unacknowledged_syncs =
+    match state.thread_substate with
+    | PLDI11_thread pldi11_thread -> pldi11_thread.unacknowledged_syncs
+    | POP_thread _                -> {}
+    | TSO_thread                  -> {}
+    end
+  in
+  let unacknowledged_syncs_ioids = {b.b_ioid | forall (b IN unacknowledged_syncs) | true} in
+  let (old_instrs, it) =
+    make_old_instructions_helper params state unacknowledged_syncs_ioids state.instruction_tree []
+  in
+  <| state with
+     old_instructions = old_instrs ++ state.old_instructions;
+     instruction_tree = it;
+  |>
+  end
+
+let thread_is_final_state _params thread_state = thread_state.instruction_tree = T []
+
+(** Other *******************************************)
+
+
+let rec find_propagated_writes (T iits: instruction_tree) (acc: list write) : list write =
+  match iits with
+  (* NOTE: there will not be propagated writes after a branch, hence we
+     stop the search when the tree starts branching *)
+  | (instruction, it) :: [] ->
+     find_propagated_writes it (acc ++ instruction.subwrites.sw_propagated_writes)
+  | _ -> acc
+  end
+
+let writes_read_from (inst: instruction_instance) : list (write * slices) =
+  List.concat (snd (List.unzip inst.subreads.sr_writes_read_from))
+
+
+let machine_update_initial_register_state t updates = 
+  let function_update x v f = fun x' -> if x = x' then v else f x' in
+  let reg_state = List.foldl (fun acc (x,y) -> function_update x y acc)
+                             t.initial_register_state updates in
+  <| t with initial_register_state = reg_state |>
+
+let machine_update_initial_fetch_address _params t addr =
+  <| t with initial_fetch_address = Just addr |>
+
+
+(** Thread-subsystem-independent functions ...................................*)
+
+val ts_instructions : forall 'ts. threadSubsystem 'ts -> 'ts -> set instruction_instance
+let ts_instructions tmodel ts = 
+  let (linear_prefix,instruction_tree) = tmodel.ts_instruction_tree ts in
+  (Set.fromList linear_prefix) union (instructions_of_tree instruction_tree)
+  
+
+val ts_find_instruction : forall 'ts. threadSubsystem 'ts -> 
+                          (list instruction_instance -> instruction_instance -> bool) -> 'ts ->
+                          maybe (list instruction_instance * instruction_instance)
+
+let ts_find_instruction tmodel p ts =
+  let (old_instructions,instruction_tree) = tmodel.ts_instruction_tree ts in
+  match instruction_tree_find (fun prefix i _ -> p prefix i) old_instructions instruction_tree with
+  | Just (prfx,i,_) -> Just (prfx,i)
+  | _ -> Nothing
+  end
+
+val ts_branch_targets : forall 'ts. threadSubsystem 'ts -> 'ts -> map address (set address)
+let ts_branch_targets tmodel state  =
+  let (old_instructions,instruction_tree) = tmodel.ts_instruction_tree state in
+  tree_of_old_and_new_instructions_helper instruction_tree old_instructions
+  $> instruction_tree_fold_root
+    (fun acc _ i (T its) ->
+      if exists (nia IN i.nias). nia = NIA_indirect_address then
+        acc union {(i.program_loc, i'.program_loc) | forall ((i', _) MEM its) | true}
+      else acc)
+    {}
+    []
+  $> Set.bigunion
+  $> Set_extra.toList
+  $> List.foldl (fun bts (l, l') ->
+    Map.insert l ((Map.findWithDefault l {} bts) union {l'}) bts
+  ) Map.empty
+
+
+val ts_memory_footprints : forall 'ts. threadSubsystem 'ts -> 'ts -> set footprint
+let ts_memory_footprints tmodel state =
+  let (old_instructions,instruction_tree) = tmodel.ts_instruction_tree state in
+  tree_of_old_and_new_instructions_helper instruction_tree old_instructions
+  $> instruction_tree_fold_root
+    (fun acc _ i _ ->
+      match (i.subreads.sr_addr, i.subwrites.sw_addr) with
+      | (Nothing, Nothing) -> {}
+      | (Nothing, Just w)  -> {w}
+      | (Just r,  Nothing) -> {r}
+      | (Just r,  Just w)  -> {r; w}
+      end)
+    {}
+    []
+  $> Set.bigunion
+
+
+
+(** auxiliary functions to construct transitions *********************************)
+
+
+let make_thread_cont_res
+    (restarted: set ioid)
+    (discarded: set ioid)
+    (state:     'ts)
+    : thread_cont_res 'ts
+  =
+  <|  tcr_state          = state;
+      tcr_inst_restarted = restarted;
+      tcr_inst_discarded = discarded;
+  |>
+
+let make_cont tid ioid
+    (cont: 'answer -> thread_cont_res 'ts)
+    : thread_cont 'answer 'ts
+  =
+  <|  tc_tid  = tid;
+      tc_ioid = ioid;
+      tc_cont = cont;
+  |>
+
+let make_label' (tid : thread_id) (ioid : ioid)
+    (label:  'request)
+    (state': 'answer -> thread_cont_res 'ts)
+    : thread_label 'request 'answer 'ts
+  =
+  <|  tl_label = label;
+      tl_suppl = Nothing;
+      tl_cont  = make_cont tid ioid state'
+  |>
+
+let make_label state iic
+    (label:  'request)
+    (state': 'answer -> thread_cont_res 'ts)
+    : thread_label 'request 'answer 'ts
+  =
+  make_label' state.thread iic.iic_instance.instance_ioid label state'
+
+
+
+
+
+let make_ui_machine_thread_state (_s : 'storage_subsystem_state) 
+      (t : maybe thread_state) (t' : thread_state)
+      (ncands: list (ui_trans 'ts 'ss)) : (ui_thread_state 'ts 'ss) =
+    let trans t = Maybe.bind t $ fun (t, _) -> Just t in
+
+  UI_machine_thread_state
+    <| ui_thread = t'.thread ;           
+       ui_register_data = t'.register_data;
+       ui_initial_register_state = t'.initial_register_state;
+       ui_initial_fetch_address =
+         match t with
+         | Just t ->
+            if t.initial_fetch_address = t'.initial_fetch_address
+            then C2b_unchanged t.initial_fetch_address
+            else C2b_changed t'.initial_fetch_address
+         | Nothing ->
+            unchanged2b t'.initial_fetch_address
+         end ;
+       ui_instruction_tree =
+         match t with
+         | Just t ->
+            make_ui_instruction_tree
+              (tree_of_old_and_new_instructions t)
+              (tree_of_old_and_new_instructions t') ncands
+         | Nothing ->
+            make_ui_instruction_tree_nocompare
+              (tree_of_old_and_new_instructions t') ncands
+         end;
+
+       ui_transaction = 
+         match t with
+         | Just t -> ui_eq_diff2b (trans t.transaction) (trans t'.transaction)
+         | Nothing -> unchanged2b (trans t'.transaction)
+         end;
+       
+       ui_unacknowledged_syncs =
+         match t with
+         | Just t -> 
+            match (t.thread_substate, t'.thread_substate) with
+            | (PLDI11_thread thread, PLDI11_thread thread') ->
+               Just (ui_set_diff3 thread.unacknowledged_syncs thread'.unacknowledged_syncs)
+            | _ -> Nothing
+           end
+         | Nothing ->
+            match t'.thread_substate with
+            | PLDI11_thread thread' ->
+               Just (unchanged3_set thread'.unacknowledged_syncs)
+            | _ -> Nothing
+            end
+         end;
+
+       ui_read_issuing_order =
+         match t with 
+         | Just t ->
+            match (t.thread_substate, t'.thread_substate) with
+            | (POP_thread substate, POP_thread substate') ->
+               Just (ui_set_diff3 substate.read_issuing_order.relon_rel
+                       substate'.read_issuing_order.relon_rel)
+            | _ -> Nothing
+            end
+         | Nothing ->
+            match t'.thread_substate with
+            | POP_thread substate' ->
+               Just (unchanged3_set substate'.read_issuing_order.relon_rel)
+            | _ -> Nothing
+            end
+         end;
+
+       ui_initial_fetch_transitions = 
+         List.filter
+           (fun (n,tr) ->
+             match tr with
+             | T_trans (T_sync (T_fetch tl) _) -> tl.tl_cont.tc_tid = t'.thread
+             | _ -> false
+            end
+           )
+           ncands;
+     |>
+
+
+
+

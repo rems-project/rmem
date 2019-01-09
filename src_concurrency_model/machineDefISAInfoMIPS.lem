@@ -1,0 +1,168 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017-2018               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+
+open import MachineDefUtils
+open import MachineDefTypes
+open import Sail_impl_base
+open import MachineDefEvents
+import Mips_embed_types
+
+let mips_is_system_call_instruction (_: instruction_ast) = Nothing
+
+let mips_is_thread_start_instruction = function
+  | MIPS_instr (Mips_embed_types.SYSCALL_THREAD_START) -> true
+  | _ -> false
+  end
+
+let mips_is_test_begin_instruction (_ : instruction_ast) = false
+let mips_is_test_end_instruction (_ : instruction_ast) = false
+
+let mips_register_data_info : registerdata =
+  let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
+    (name, (D_decreasing, bit_count, bit_count - 1, fields))
+  in
+  [ reg 64 "GPR00" [];
+    reg 64 "GPR01" [];
+    reg 64 "GPR02" [];
+    reg 64 "GPR03" [];
+    reg 64 "GPR04" [];
+    reg 64 "GPR05" [];
+    reg 64 "GPR06" [];
+    reg 64 "GPR07" [];
+    reg 64 "GPR08" [];
+    reg 64 "GPR09" [];
+    reg 64 "GPR10" [];
+    reg 64 "GPR11" [];
+    reg 64 "GPR12" [];
+    reg 64 "GPR13" [];
+    reg 64 "GPR14" [];
+    reg 64 "GPR15" [];
+    reg 64 "GPR16" [];
+    reg 64 "GPR17" [];
+    reg 64 "GPR18" [];
+    reg 64 "GPR19" [];
+    reg 64 "GPR20" [];
+    reg 64 "GPR21" [];
+    reg 64 "GPR22" [];
+    reg 64 "GPR23" [];
+    reg 64 "GPR24" [];
+    reg 64 "GPR25" [];
+    reg 64 "GPR26" [];
+    reg 64 "GPR27" [];
+    reg 64 "GPR28" [];
+    reg 64 "GPR29" [];
+    reg 64 "GPR30" [];
+    reg 64 "GPR31" [];
+
+    reg 64 "HI" [];
+    reg 64 "LO" [];
+
+    reg 64 "PC" [];
+    reg 64 "nextPC" [];
+    reg 64 "delayedPC" [];
+
+    reg 64 "CP0LLAddr" [];
+    reg 1  "CP0LLBit"  [];
+
+    (* TODO: add all the mips registers *)
+  ]
+
+let mips_reg_name name : reg_name =
+  match reg_from_data mips_register_data_info name with
+  | Just r -> r
+  | Nothing -> fail
+  end
+
+let mips_fixed_pseudo_registers = []
+  (* TODO: this is how you define fixed values for registers from the list above *
+  let fix v r = fixed_reg mips_register_data_info v r in
+  [ fix 5 "REG1";
+    fix 9 "REG2";
+  ]
+  *)
+
+let mips_thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr  = mips_reg_name "GPR04";
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return = mips_reg_name "GPR02";
+
+      (* these registers hold the arguments of the new-thread function *)
+      tsi_f_tid  = mips_reg_name "GPR04";
+      tsi_f_toc  = Nothing;
+      (* For MIPS ABI t9 should point to function entry point on entry *)
+      tsi_f_addr = Just (mips_reg_name "GPR25");
+  |>
+
+let mips_make_empty_write_events
+    (tid:          thread_id)
+    (inst:         instruction_instance)
+    ((addr, size): footprint)
+    (write_kind:   write_kind)
+    : (list write) * (MachineDefFreshIds.id_state ioid)
+  =
+  (* TODO: handle MIPS version of store multiple/pair *)
+  let addr' = integer_of_address addr in
+  let write_size =
+    if List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    (* TODO: handle unaligned writes *)
+    else failwith "unaligned write (not implemented for MIPS yet)"
+  in
+  make_empty_write_events' inst.instance_id_state tid inst.instance_ioid addr size write_size write_kind
+
+let mips_make_read_request_events
+    (tid:          thread_id)
+    (inst:         instruction_instance)
+    ((addr, size): footprint)
+    (read_kind:   read_kind)
+    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+  =
+  (* TODO: handle MIPS version of load multiple/pair *)
+  let addr' = integer_of_address addr in
+  let read_size =
+    if List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    (* TODO: handle unaligned reads *)
+    else failwith "unaligned read (not implemented for MIPS yet)"
+  in
+  make_read_request_events' inst.instance_id_state tid inst.instance_ioid addr size read_size read_kind
+
+let mips_ism : isa_info =
+  <|  ism                         = MIPS_ism;
+
+      is_system_call_instruction  = mips_is_system_call_instruction;
+      is_thread_start_instruction = mips_is_thread_start_instruction;
+      is_test_begin_instruction   = mips_is_test_begin_instruction;
+      is_test_end_instruction     = mips_is_test_end_instruction;
+
+      thread_start_info           = mips_thread_start_info;
+
+      register_data_info          = mips_register_data_info;
+      fixed_pseudo_registers      = mips_fixed_pseudo_registers;
+      cia_reg                     = mips_reg_name "PC";
+      nia_reg                     = mips_reg_name "nextPC";
+      dia_reg                     = Just (mips_reg_name "delayedPC");
+
+      make_empty_write_events     = mips_make_empty_write_events;
+      make_read_request_events    = mips_make_read_request_events;
+  |>

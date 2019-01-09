@@ -1,0 +1,108 @@
+NOTE:
+
+This licence applies to all files of the rmem tool distribution,
+except the files listed under EXCEPTIONS.
+
+
+LICENCE
+-------
+
+The rmem tool is licensed under the 2-Clause BSD Licence, also called
+the "Simplified BSD License" or the "FreeBSD Licence".
+
+Copyright Peter Sewell, University of Cambridge                                            2011-2018 
+Copyright Shaked Flur, University of Cambridge                                             2014-2018 
+Copyright Christopher Pulte, University of Cambridge                                       2014-2018 
+Copyright Jon French, University of Cambridge                                              2015-2018 
+Copyright Kathy Gray, University of Cambridge (when this work was done)                    2014-2017 
+Copyright Luc Maranget, INRIA Paris-Rocquencourt                                2011-2012, 2014-2018 
+Copyright Susmit Sarkar, University of St Andrews                                          2011-2016 
+Copyright Robert Norton-Wright, University of Cambridge                                    2016-2017 
+Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)                     2011-2012 
+Copyright Stephen Kell, University of Cambridge (when this work was done)                  2014-2016 
+Copyright Ohad Kammar, University of Cambridge (when this work was done)                   2013-2014 
+Copyright Sela Mador-Haim, University of Pennsylvania (when this work was done)            2011-2012 
+Copyright Linden Ralph, University of Cambridge (when this work was done)                  2017-2017 
+Copyright Francesco Zappa Nardelli, INRIA Paris                                            2011-2011 
+Copyright Gabriel Kerneis, University of Cambridge (when this work was done)               2014-2014 
+Copyright Jean Pichon-Pharabod, University of Cambridge                                    2013-2015 
+Copyright Kyndylan Nienhuis, University of Cambridge                                       2016-2016 
+Copyright Ali Sezgin, University of Cambridge (when this work was done)                    2015-2016 
+Copyright Dominic Mulligan, University of Cambridge (when this work was done)              2013-2014 
+Copyright Victor Gomes, University of Cambridge                                            2018-2018 
+Copyright Mark Batty, University of Cambridge (when this work was done)                    2015-2016 
+Copyright Richard Bornat, Middlesex University                                             2012-2012 
+Copyright Kayvan Memarian, University of Cambridge                                         2012-2012 
+Copyright Anthony Fox, University of Cambridge (when this work was done)                   2017-2017 
+Copyright Alasdair Armstrong, University of Cambridge                                      2017-2017 
+
+
+======================================================================
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+======================================================================
+
+
+EXCEPTIONS
+----------
+
+The files contained in src_top/herd_based are licensed under the
+CeCILL-B licence in src_top/herd_based/LICENCE.txt.
+
+The above licence also does not apply to the files contained in
+src_web_interface/web_assets/lib. These files are in particular:
+
+- clipboard.js, under an MIT licence. For copyright and licence
+  information see
+  https://github.com/lgarron/clipboard-polyfill/blob/0beca5ecccd7432b8fc7e25fec9c0dce0ac28abc/LICENSE.md
+
+- CodeMirror (the files codemirror*), under an MIT licence. For
+  copyright and licence information see codemirror* files.
+
+- es5-shim.min.js and es6-shim.min.js, under an MIT licence. For
+  copyright and licence information see these files.
+
+- The Liberation Sans Font, under the SIL Open Font Licence. For
+  copyright and licence information see fonts/liberation/SIL Open Font
+  License.txt.
+
+- jquery (the files jquery*), under an MIT licence. For copyright and
+  licence information see jquery* files.
+
+- The Knockout JavaScript library (knockout-3.4.2.js and
+  knockout-3.4.2.debug.js), under an MIT licence. For copyright and
+  licence information see these files.
+
+- Split.js. For copyright and licence information see
+  https://github.com/nathancahill/split/blob/master/packages/splitjs/LICENSE.txt
+
+- string-format.js, under an MIT licence. For copyright and licence
+  information see
+  https://github.com/davidchambers/string-format/blob/master/MIT-LICENSE
+
+- viz.js, under an MIT licence. For copyright and licence information
+  see this file.
+
+

@@ -1,0 +1,547 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2018                    *)
+(*  Copyright Shaked Flur, University of Cambridge       2018                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives_extra
+open import Relation
+open import MachineDefFreshIds 
+open import Sail_impl_base
+open import MachineDefTypes
+open import MachineDefDebug
+open import MachineDefFragments
+
+
+(* diff for values compared with equality *)
+val ui_eq_diff2b : forall 'a. Eq 'a => 'a -> 'a -> (changed2b 'a)
+let ui_eq_diff2b x y = 
+  if x=y then C2b_unchanged y else C2b_changed y
+
+val ui_eq_diff2b_By : forall 'a. ('a -> 'a -> bool) -> 'a -> 'a -> (changed2b 'a)
+let ui_eq_diff2b_By eq x y = 
+  if eq x y then C2b_unchanged y else C2b_changed y
+
+(* set diff for sets that increase monotonically along transitions *)
+val ui_set_diff2 : forall 'a. SetType 'a => set 'a -> set 'a -> list (changed2 'a)
+let ui_set_diff2 xs ys (* precondition: xs subseteq ys *) = 
+  List.map 
+    (fun y -> 
+      match y IN xs with 
+      | true -> C2_unchanged y
+      | false -> C2_new y 
+      end)
+    (Set_extra.toList ys)
+
+
+let unchanged3 (a : 'a) : changed3 'a = C3_unchanged a
+let unchanged2 (a : 'a) : changed2 'a = C2_unchanged a
+let unchanged2b (a : 'a) : changed2b 'a = C2b_unchanged a
+
+let unchanged3_list (l : list 'a) : list (changed3 'a) =
+  List.map unchanged3 l
+let unchanged2_list (l : list 'a) : list (changed2 'a) =
+  List.map unchanged2 l
+let unchanged2b_list (l : list 'a) : list (changed2b 'a) =
+  List.map unchanged2b l
+
+let unchanged3_set (l : set 'a) : list (changed3 'a) =
+  List.map unchanged3 (Set_extra.toList l)
+let unchanged2_set (l : set 'a) : list (changed2 'a) =
+  List.map unchanged2 (Set_extra.toList l)
+let unchanged2b_set (l : set 'a) : list (changed2b 'a) =
+  List.map unchanged2b (Set_extra.toList l)
+
+
+(* set diff for sets that may have changed in either direction along transitions *)
+val ui_set_diff3 : forall 'a. SetType 'a => set 'a -> set 'a -> list (changed3 'a)
+let ui_set_diff3 xs ys =
+  List.map 
+    (fun z -> 
+      match ((z IN xs), (z IN ys)) with 
+      | (true,true)  -> C3_unchanged z
+      | (false,true) -> C3_new z
+      | (true,false) -> C3_gone z
+      | (false, false) -> C3_new z  (* failwith "ui_set_diff3"   HACK!!!*)
+      end)
+    (Set_extra.toList (xs union ys))
+
+(* list diff for lists that are normally extended monotonically at the head but sometimes reset *)
+val ui_list_diff3 : forall 'a. Eq 'a => list 'a -> list 'a -> list (changed3 'a)
+(* normal cases: ys = someprefix ++ xs  OR ys = []  (but eager transitioning might step further than the latter) *)
+let ui_list_diff3 xs ys = 
+  let gone = List.mapMaybe (fun x -> if List.elem x ys then Nothing else Just (C3_gone x)) xs in
+  let rest = List.map (fun y -> if List.elem y xs then C3_unchanged y else C3_new y) ys in
+  rest ++ gone
+
+
+let ui_map_diff3 (m : Map.map 'a 'b) (m' : Map.map 'a 'b) : list (changed3 ('a * 'b)) = 
+  ui_list_diff3 (Map_extra.toList m) (Map_extra.toList m')
+
+
+let rec ui_assoc_list_list_diff3_helper compare xs ys accum =
+  match (xs, ys) with
+  | ([], []) -> List.reverse accum
+  | ((xd, xr) :: xs', []) ->
+      ui_assoc_list_list_diff3_helper compare xs' ys ((xd, (ui_list_diff3 xr [])) :: accum) (* xd was removed *)
+  | ([], (yd, yr) :: ys') ->
+      ui_assoc_list_list_diff3_helper compare xs ys' ((yd, (ui_list_diff3 [] yr)) :: accum) (* yd was added *)
+  | ((xd, xr) :: xs', (yd, yr) :: ys') ->
+      match compare xd yd with
+      | EQ -> ui_assoc_list_list_diff3_helper compare xs' ys' ((yd, (ui_list_diff3 xr yr)) :: accum)
+      | LT -> ui_assoc_list_list_diff3_helper compare xs' ys ((xd, (ui_list_diff3 xr [])) :: accum) (* xd was removed *)
+      | GT -> ui_assoc_list_list_diff3_helper compare xs ys' ((yd, (ui_list_diff3 [] yr)) :: accum) (* yd was added *)
+      end
+  end
+
+
+val ui_assoc_list_list_diff3 : forall 'a 'b. Eq 'a, Eq 'b => ('a -> 'a -> ordering) -> list ('a * (list 'b)) -> list ('a * (list 'b)) -> list ('a * (list (changed3 'b)))
+let ui_assoc_list_list_diff3 compare xs ys =
+  let assoc_compare (lhs, _) (rhs, _) = compare lhs rhs in
+  let sorted_xs = Sorting.sortByOrd assoc_compare xs in
+  let sorted_ys = Sorting.sortByOrd assoc_compare ys in
+  ui_assoc_list_list_diff3_helper compare sorted_xs sorted_ys []
+
+
+(* Lem: to match the bounded list quantifier syntax, Lem should
+support x MEM xs as syntax for List.elem x xs *)
+
+
+(* list diff for lists that are extended (at the tail) monotonically along transitions *)
+val ui_list_diff2t : forall 'a. Eq 'a => list 'a -> list 'a -> list (changed2 'a)
+(* precondition: ys = xs ++ somesuffix *)
+let rec ui_list_diff2t xs ys = 
+  match (xs,ys) with
+  | ([], []) -> []
+  | ([], y::ys) -> C2_new y :: ui_list_diff2t [] ys 
+  | (x::xs, y::ys) -> 
+      if x=y then 
+        C2_unchanged x :: ui_list_diff2t xs ys
+      else 
+        failwith "checked_list_suffix assert failure"
+  | _ ->  failwith "checked_list_suffix assert failure"
+  end
+
+(* list diff for lists that are extended (at the head) monotonically along transitions *)
+val ui_list_diff2h : forall 'a. Eq 'a => list 'a -> list 'a -> list (changed2 'a)
+(* precondition: ys = someprefix ++ xs *)
+let rec ui_list_diff2h xs ys = 
+  List.map (fun y -> if List.elem y xs then C2_unchanged y else C2_new y) ys 
+
+
+(* list diff for lists that are only extended monotonically at the head *)
+val ui_list_diffhBy : forall 'a. ('a -> 'a -> bool) -> list 'a -> list 'a -> list (changed2 'a)
+(* precondition: ys = someprefix ++ xs *)
+let ui_list_diffhBy eq xs ys =  
+  List.map (fun y -> if List.elemBy eq y xs then C2_unchanged y else C2_new y) ys
+
+
+let map_changed2 (f: 'a -> 'b) (xc: changed2 'a) : changed2 'b= 
+  match xc with
+  | C2_new x -> C2_new (f x)
+  | C2_unchanged x -> C2_unchanged (f x)
+  end
+
+let map_changed2_list (f: 'a -> 'b) (xcs: list (changed2 'a)) : list (changed2 'b) = 
+  List.map (map_changed2 f) xcs
+
+
+
+
+val transitive_reduction: forall 'a. ('a->'a->bool) -> (list ('a*'a)) -> (list ('a*'a))
+(* precondition: r is acyclic *)
+let transitive_reduction eq r =
+  let transitive_pairs = 
+    List.concatMap 
+      (fun (a1,a2) -> 
+        List.mapMaybe (fun (a1',a2') -> if eq a2 a1' then Just (a1,a2') else Nothing) r)
+      r in
+  (* a partial check for cycles *)
+  if List.any (fun (a1,a2)->eq a1 a2) (r ++ transitive_pairs) then 
+    failwith "transitive_reduction: Transitive"
+  else
+    List.filter (fun (a1,a2) -> not (List.any (fun (b1,b2) -> (eq a1 b1 && eq a2 b2)) transitive_pairs)) r
+
+
+let set_transitive_reduction relation =
+  let relation2 = {(a,c) | forall ((a,b) IN relation) ((b',c) IN relation)
+                         | b = b'} in
+  let () = ensure (forall ((a,b) IN relation2). a <> b) "Cyclic extended coherence" in
+  relation \ relation2
+
+
+let diff_coherence coherence coherence' = 
+  let ui_coherence_old = transitive_reduction (fun w1 w2 -> w1=w2)
+      (Set_extra.toList coherence) in
+  let ui_coherence_new = transitive_reduction (fun w1 w2 -> w1=w2)
+      (Set_extra.toList (Set.difference coherence' coherence)) in
+  [C2_unchanged (w1,w2) | forall ((w1,w2) MEM ui_coherence_old) | true ]
+    ++  [C2_new (w1,w2) | forall ((w1,w2) MEM ui_coherence_new) | true ]
+
+let pop_diff_coherence coherence coherence' =
+  let coherence = set_transitive_reduction coherence in
+  let coherence' = set_transitive_reduction coherence' in
+  ui_set_diff3 coherence coherence'
+
+let rec mapMaybe f xs =
+  match xs with
+  | [] -> []
+  | x::xs ->
+      match f x with
+      | Nothing -> mapMaybe f xs
+      | Just y -> y :: (mapMaybe f xs)
+      end
+  end
+
+let diff_new_coherence new_coherence new_coherence' =
+  let domain = Map.domain new_coherence in
+  let domain' = Map.domain new_coherence' in
+  List.map (fun (fp,coh) -> 
+    if not(fp IN domain) then 
+      C3_new 
+        (fp, List.map (fun (w1,w2) -> C2_new (w1,w2)) (Set_extra.toList coh))
+    else
+      C3_unchanged 
+        (fp, diff_coherence (Map_extra.find fp new_coherence) coh))
+    (mapToList new_coherence')
+  ++
+  (mapMaybe 
+     (fun (fp,coh) -> 
+       if not (fp IN domain') then
+         Just (C3_gone 
+                 (fp, List.map (fun (w1,w2) -> C2_unchanged (w1,w2)) (Set_extra.toList coh)))
+       else
+         Nothing)
+     (mapToList new_coherence))
+
+
+
+let diff_subwrites subwrites subwrites' =
+  <|  ui_sw_addr = subwrites'.sw_addr;
+      ui_sw_potential_write_addresses = ui_list_diff2h subwrites.sw_potential_write_addresses subwrites'.sw_potential_write_addresses;
+      ui_sw_potential_writes = (* ui_list_diff2h subwrites.sw_potential_writes *) subwrites'.sw_potential_writes;
+      ui_sw_propagated_writes = ui_list_diff2h subwrites.sw_propagated_writes subwrites'.sw_propagated_writes;
+      ui_sw_committed = ui_eq_diff2b subwrites.sw_committed subwrites'.sw_committed;
+  |>
+
+let diff_subreads subreads subreads' =
+  let sort_writes_read_from sr_writes_read_from =
+    List.map
+      (fun (rr, sliced_writes) -> (rr, Sorting.sortByOrd (fun (w, _) (w', _) -> compare w.w_ioid w'.w_ioid) sliced_writes))
+      sr_writes_read_from
+  in
+
+  let addr_compare lhs rhs = compare lhs.r_addr rhs.r_addr in
+  <|  ui_sr_addr = subreads'.sr_addr;
+      ui_sr_unsat_slices = ui_assoc_list_list_diff3 addr_compare subreads.sr_unsat_slices subreads'.sr_unsat_slices;
+      ui_sr_writes_read_from = ui_assoc_list_list_diff3
+        addr_compare
+        (sort_writes_read_from subreads.sr_writes_read_from )
+        (sort_writes_read_from subreads'.sr_writes_read_from);
+      ui_sr_requested = ui_assoc_list_list_diff3 addr_compare subreads.sr_requested subreads'.sr_requested;
+      ui_sr_assembled_value = subreads'.sr_assembled_value;
+  |>
+
+
+let make_ui_instruction_instance
+    (i: instruction_instance)
+    (i': instruction_instance)
+    (ncands: list (ui_trans 'ts 'ss))
+    : ui_instruction_instance 'ts 'ss =
+    <|
+    ui_instance_ioid = i.instance_ioid; 
+    ui_program_loc = i.program_loc;
+    ui_program_opcode = i.program_opcode;
+    ui_instruction = i.instruction;
+    ui_instruction_kind = i.instruction_kind;
+    ui_initial_micro_op_state = i.initial_micro_op_state;
+    ui_regs_in = ui_set_diff3 i.regs_in i'.regs_in;
+    ui_regs_out = ui_set_diff3 i.regs_out i'.regs_out;
+    ui_ioids_feeding_address = ui_set_diff3 i.ioids_feeding_address i'.ioids_feeding_address;
+    (*ui_reg_read_from_ioids = ui_set_diff3 i.reg_read_from_ioids i'.reg_read_from_ioids;*)
+    ui_nias = Set_extra.toList i.nias;
+    ui_dia  = i.mips_dia;
+    ui_reg_reads = ui_list_diff3 i.reg_reads i'.reg_reads;
+    ui_reg_writes =
+      let rw  = [(r, v) | forall ((r, (_, v)) MEM i.reg_writes) | true] in
+      let rw' = [(r, v) | forall ((r, (_, v)) MEM i'.reg_writes) | true] in
+      ui_list_diff3 rw rw';
+    (*ui_writes_read_from = ui_set_diff3 i.writes_read_from i'.writes_read_from;  *)
+    ui_subreads = diff_subreads i.subreads i'.subreads;
+    ui_subwrites = diff_subwrites i.subwrites i'.subwrites;
+    ui_successful_atomic_store = ui_eq_diff2b i.successful_atomic_store i'.successful_atomic_store;
+    ui_committed_barriers = ui_list_diff2h i.committed_barriers i'.committed_barriers;
+    ui_finished = ui_eq_diff2b i.finished i'.finished;
+    ui_micro_op_state =
+      ui_eq_diff2b_By
+        (fun mos mos' ->
+          match (mos,mos') with
+          | (MOS_plain _, MOS_plain _) -> true
+          | (MOS_pending_mem_read _, MOS_pending_mem_read _) -> true
+          | (MOS_potential_mem_write _, MOS_potential_mem_write _) -> true
+          | _ -> false
+          end)
+        i.micro_op_state i'.micro_op_state;
+    (* ui_show_micro_op_state = i'.show_micro_op_state; *)
+    ui_instruction_transitions = 
+      List.filter
+        (fun (_, trans) ->
+            not (MachineDefTypes.is_storage_transition trans) &&
+            MachineDefTypes.is_transition_of_ioid i.instance_ioid trans)
+        ncands;
+    |>
+
+
+let nocompare_subwrites subwrites' =
+  <|  ui_sw_addr = subwrites'.sw_addr;
+      ui_sw_potential_write_addresses = unchanged2_list subwrites'.sw_potential_write_addresses;
+      ui_sw_potential_writes = subwrites'.sw_potential_writes;
+      ui_sw_propagated_writes = unchanged2_list subwrites'.sw_propagated_writes;
+      ui_sw_committed = unchanged2b subwrites'.sw_committed;
+  |>
+
+let nocompare_subreads subreads' =
+  <|  ui_sr_addr = subreads'.sr_addr;
+      ui_sr_unsat_slices = List.map (fun (a,bs) -> (a,unchanged3_list bs)) subreads'.sr_unsat_slices;
+      ui_sr_writes_read_from = List.map (fun (a,bs) -> (a,unchanged3_list bs)) subreads'.sr_writes_read_from;
+      ui_sr_requested = List.map (fun (a,bs) -> (a,unchanged3_list bs)) subreads'.sr_requested;
+      ui_sr_assembled_value = subreads'.sr_assembled_value;
+  |>
+
+
+let make_ui_instruction_instance_nocompare
+    (i': instruction_instance)
+    (ncands: list (ui_trans 'ts 'ss))
+    : ui_instruction_instance 'ts 'ss =
+    <|
+    ui_instance_ioid = i'.instance_ioid; 
+    ui_program_loc = i'.program_loc;
+    ui_program_opcode = i'.program_opcode;
+    ui_instruction = i'.instruction;
+    ui_instruction_kind = i'.instruction_kind;
+    ui_initial_micro_op_state = i'.initial_micro_op_state;
+    ui_regs_in = unchanged3_set i'.regs_in;
+    ui_regs_out = unchanged3_set  i'.regs_out;
+    ui_ioids_feeding_address = unchanged3_set i'.ioids_feeding_address;
+    ui_nias = Set_extra.toList i'.nias;
+    ui_dia  = i'.mips_dia;
+    ui_reg_reads = unchanged3_list i'.reg_reads;
+    ui_reg_writes =
+      let rw' = [(r, v) | forall ((r, (_, v)) MEM i'.reg_writes) | true] in
+      unchanged3_list rw';
+    (*ui_writes_read_from = ui_set_diff3 i.writes_read_from i'.writes_read_from;  *)
+
+    ui_subreads = diff_subreads i'.subreads i'.subreads;
+    ui_subwrites = diff_subwrites i'.subwrites i'.subwrites;
+
+    ui_successful_atomic_store = unchanged2b i'.successful_atomic_store;
+    ui_committed_barriers = unchanged2_list i'.committed_barriers;
+    ui_finished = unchanged2b i'.finished;
+    ui_micro_op_state = unchanged2b i'.micro_op_state;
+    (* ui_show_micro_op_state = i'.show_micro_op_state; *)
+    ui_instruction_transitions = 
+      List.filter
+        (fun (_, trans) ->
+            not (MachineDefTypes.is_storage_transition trans) &&
+            MachineDefTypes.is_transition_of_ioid i'.instance_ioid trans)
+        ncands;
+    |>
+
+
+
+
+let rec c3ify 
+    (f : ui_instruction_instance 'ts 'ss -> changed3 (ui_instruction_instance 'ts 'ss))
+    (it0 : (instruction_tree))
+    (ncands: list (ui_trans 'ts 'ss))
+    : ui_instruction_tree 'ts 'ss =
+  match it0 with
+  | T its ->
+      UI_T (List.map (fun (i,it) -> (f (make_ui_instruction_instance i i ncands),c3ify f it ncands)) its)
+  end 
+
+let rec make_ui_instruction_tree it0 it0' (ncands: list (ui_trans 'ts 'ss)) : (ui_instruction_tree 'ts 'ss) =
+  match (it0,it0') with
+  | (T its, T its') ->
+      let gone = List.mapMaybe
+          (fun (i,it) -> 
+            if not (List.any (fun (i',it') -> i'.instance_ioid = i.instance_ioid) its') then 
+              Just ((C3_gone (make_ui_instruction_instance i i ncands)),(c3ify (fun ui_i -> C3_gone ui_i) it ncands))
+            else
+              Nothing)
+          its in
+      let rest = List.map
+          (fun (i',it') ->
+            match List.find (fun (i,it) -> i.instance_ioid = i'.instance_ioid) its with
+            | Just (i,it) -> 
+              ((C3_unchanged (make_ui_instruction_instance i i' ncands), make_ui_instruction_tree it it' ncands))
+            | Nothing -> 
+              ((C3_new (make_ui_instruction_instance i' i' ncands), (c3ify (fun ui_i -> C3_new ui_i) it' ncands)))
+            end)
+          its' in
+      UI_T (gone ++ rest)
+  end
+
+
+let rec make_ui_instruction_tree_nocompare it0' (ncands: list (ui_trans 'ts 'ss)) : (ui_instruction_tree 'ts 'ss) =
+  let (T its') = it0' in
+  let rest = List.map
+      (fun (i',it') ->
+        (C3_unchanged (make_ui_instruction_instance_nocompare i' ncands), 
+         make_ui_instruction_tree_nocompare it' ncands)
+      )
+      its' in
+  UI_T rest
+
+
+let make_ui_instruction_list is is' (ncands: list (ui_trans 'ts 'ss)) : (ui_instruction_list 'ts 'ss) =
+   let gone = List.mapMaybe
+       (fun i -> 
+         if not (List.any (fun i' -> i'.instance_ioid = i.instance_ioid) is') then 
+           Just (C3_gone (make_ui_instruction_instance i i ncands))
+         else
+           Nothing) is
+   in
+   let rest = List.map
+       (fun i' ->
+         match List.find (fun i -> i.instance_ioid = i'.instance_ioid) is with
+         | Just i -> 
+            C3_unchanged (make_ui_instruction_instance i i' ncands)
+         | Nothing -> 
+           C3_new (make_ui_instruction_instance i' i' ncands)
+        end) is'
+   in
+   gone ++ rest
+
+
+
+
+
+
+
+(* find the ui_instruction_instance of an ioid in a ui_system_state *)
+
+let lookup_ui_thread ioid s =
+  let (tid,_) = ioid in
+  match List.lookup tid s.ui_thread_states with
+  | Just t -> t
+  | _ -> failwith "lookup_ui_thread did not find thread"
+  end
+
+let rec lookup_ui_instruction_in_tree ioid cit = 
+  match cit with
+  | UI_T cits -> 
+      lookup_ui_instruction_in_list ioid cits
+  end
+
+and lookup_ui_instruction_in_list ioid cits =
+  match cits with 
+  | (ci,cit') :: cits' ->
+      let f i = 
+        if i.ui_instance_ioid = ioid then Just i
+        else 
+          match lookup_ui_instruction_in_tree ioid cit' with
+          | Just i -> Just i 
+          | Nothing -> lookup_ui_instruction_in_list ioid cits'
+          end in 
+      match ci with
+      | C3_new i       -> f i 
+      | C3_unchanged i -> f i 
+      | C3_gone _      -> Nothing
+      end
+  | [] -> Nothing
+  end
+
+let lookup_ui_instructions ioid ui_instructions =
+  let p = function
+    | C3_new i -> i.ui_instance_ioid = ioid
+    | C3_unchanged i -> i.ui_instance_ioid = ioid
+    | C3_gone _ -> false
+  end in
+
+  match List.find p ui_instructions with
+  | Just (C3_new i) -> Just i
+  | Just (C3_unchanged i) -> Just i
+  | _ -> Nothing
+  end
+
+let make_ui_system_state 
+      (* allow ui_thread_state to depend on storage state for Promising *)
+      (make_ui_thread_state : 'ss -> maybe 'ts -> 'ts -> 
+                              list (ui_trans 'ts 'ss) -> ui_thread_state 'ts 'ss)
+      (make_ui_storage_state : maybe 'ss -> 'ss -> 
+                               list (ui_trans 'ts 'ss) -> ui_storage_subsystem_state 'ts 'ss)
+      (s : maybe (system_state 'ts 'ss))
+      (s' : system_state 'ts 'ss)
+      (ncands : list (ui_trans 'ts 'ss)) 
+    : (ui_system_state 'ts 'ss) =
+  let threads : list thread_id = Set_extra.toList (Map.domain s'.thread_states) in
+  <| 
+  ui_program_memory = s'.program_memory; 
+  ui_initial_writes = s'.initial_writes;
+  ui_thread_states 
+    = 
+  List.map 
+    (fun tid -> 
+      let t = Maybe.map (fun s -> Map_extra.find tid s.thread_states) s in
+      let t' = Map_extra.find tid s'.thread_states in
+      (tid, make_ui_thread_state s'.storage_subsystem t t' ncands))
+    threads;
+  ui_storage_subsystem = make_ui_storage_state
+      (Maybe.map (fun s -> s.storage_subsystem) s) 
+      s'.storage_subsystem ncands;
+  ui_model = s'.model;
+  ui_transition_history = s'.transition_history;
+
+  ui_riscv_AMO_lock = 
+    ui_eq_diff2b (maybe s'.riscv_AMO_lock 
+                    (fun s -> s.riscv_AMO_lock) s) 
+      s'.riscv_AMO_lock;
+  |>
+
+
+let lookup_ui_instruction_in_thread ioid = function
+  | UI_machine_thread_state t ->
+     lookup_ui_instruction_in_tree ioid t.ui_instruction_tree
+  | UI_promising_thread_state t ->
+     lookup_ui_instructions ioid t.ui_promising_instrs
+end
+
+let lookup_ui_instruction_in_system ioid s =
+  lookup_ui_instruction_in_thread ioid (lookup_ui_thread ioid s)
+
+let tso_ss_tree ui_ss : flowing_tree * _ * _ =
+  let threads = Set_extra.toList (Map.domain ui_ss.ui_tso_ss_buffers) in
+  let start = flowing_segment_initial in
+  let (segs, root_seg, segs_to_threads) =
+    List.foldr (fun tid (segs, id, segs_to_threads) ->
+                    ((FT_join id [])::segs,
+                     flowing_segment_successor id,
+                     (fun s -> if s = id then tid else segs_to_threads s)))
+               ([], start, (fun flowing_segment -> fail))
+               threads
+  in
+  let topology = FT_join root_seg segs in
+  let buffers seg =
+    if seg = root_seg then [] else
+    let tid = segs_to_threads seg in
+    let tso_buffer =
+      match Map.lookup tid ui_ss.ui_tso_ss_buffers with
+      | Nothing -> fail
+      | Just x -> x
+      end 
+    in
+    List.map (fun w -> ([], FWrite w)) tso_buffer
+  in
+  (topology, buffers, segs_to_threads)

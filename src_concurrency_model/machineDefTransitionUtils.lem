@@ -1,0 +1,538 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2017-2018   *)
+(*  Copyright Shaked Flur, University of Cambridge                            2017-2018   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           *)
+(*  For author information see README.md.                                                 *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+open import Pervasives_extra
+
+(* emacs fontification -*-caml-*- *)
+
+open import Sail_impl_base
+open import MachineDefDebug
+open import MachineDefUtils
+open import MachineDefFreshIds
+open import MachineDefTypes
+     import MachineDefEvents
+open import MachineDefThreadSubsystemUtils
+open import MachineDefThreadSubsystem
+open import MachineDefFragments
+open import MachineDefInstructionSemantics
+open import MachineDefSystem
+
+open import Sail_values
+
+let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe MachineDefTypes.footprint =
+  match transition with
+  | SS_trans _ -> Nothing
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_internal_outcome      -> Nothing
+      | T_pending_memory_read_request -> Nothing
+      | T_pseudoreg_read _ _    -> Nothing
+      | T_pseudoreg_write _ _   -> Nothing
+      | T_footprint_outcome     -> Nothing
+      | T_actually_satisfy _    -> Nothing
+      | T_register_read _ _ _   -> Nothing
+      | T_register_write _ _    -> Nothing
+      | T_mem_forward_write r _ -> Just r.r_addr
+      | T_mem_write_footprint _ -> Nothing
+      | T_mem_potential_write _ -> Nothing
+      | T_finish _ _ _          -> Nothing
+      | T_finish_load_of_rmw    -> Nothing
+      | T_exception _           -> Nothing
+      | T_commit_store          -> Nothing
+      | T_complete_store        -> Nothing
+      | T_successful_store_excl -> Nothing
+      | T_potential_store_cond  -> Nothing
+      | T_failed_store_excl     -> Nothing
+      | T_prev_excl_result _    -> Nothing
+      | T_commit_barrier _      -> Nothing
+      | T_POP_subsumed_write _  -> Nothing
+      | T_RISCV_atomic_begin    -> Nothing
+      | T_RISCV_atomic_end      -> Nothing
+      end
+  | T_trans (T_sync tsl _) ->
+      match tsl with
+      | T_fetch _                 -> Nothing
+      | T_mem_read_request tl ->
+          let (r, _, _, _) = tl.tl_label in
+          Just r.r_addr
+      | T_propagate_write _       -> Nothing
+      | T_propagate_barrier _     -> Nothing
+      | T_PLDI11_mem_satisfy_read tl ->
+          let (r, _) = tl.tl_label in
+          Just r.r_addr
+      | T_POP_tm_start _          -> Nothing
+      | T_POP_tm_commit _         -> Nothing
+      | T_POP_tm_abort _          -> Nothing
+      | T_Flat_mem_satisfy_read tl ->
+          let (r, _, _, _) = tl.tl_label in
+          Just r.r_addr
+      | T_Flat_try_commit_store_cond tl -> Nothing
+      | T_TSO_mem_satisfy_read tl ->
+          let r = tl.tl_label in
+          Just r.r_addr
+      | T_try_store_excl _        -> Nothing
+      | T_Promising_propagate_write _ -> Nothing
+      | T_Promising_fulfil_promise _  -> Nothing
+      | T_Promising_propagate_write_nonshared _ -> Nothing
+      | T_Promising_mem_satisfy_read tl -> Just (fst tl.tl_label).r_addr
+      | T_Promising_mem_satisfy_read_nonshared tl -> Just (fst tl.tl_label).r_addr
+      end
+  | T_trans (T_thread_start _) -> Nothing
+  end
+
+let trans_reads_footprint
+    (footprint:  footprint)
+    (state:      system_state_and_transitions 'ts 'ss)
+    (transition: trans 'ts 'ss)
+    : bool
+  =
+  read_footprint_of_trans transition
+  $> Maybe.map (non_empty_intersection footprint)
+  $> fromMaybe false
+
+let write_footprints_of_trans (transition: trans 'ts 'ss) : list MachineDefTypes.footprint =
+  match transition with
+  | SS_trans _ -> []
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_internal_outcome       -> []
+      | T_pending_memory_read_request -> []
+      | T_pseudoreg_read _ _     -> []
+      | T_pseudoreg_write _ _    -> []
+      | T_footprint_outcome      -> []
+      | T_actually_satisfy _     -> []
+      | T_register_read _ _ _    -> []
+      | T_register_write _ _     -> []
+      | T_mem_forward_write _ _  -> []
+      | T_mem_write_footprint ws -> [w.w_addr | forall (w MEM ws) | true]
+      | T_mem_potential_write ws -> [w.w_addr | forall (w MEM ws) | true]
+      | T_finish _ _ _           -> []
+      | T_finish_load_of_rmw     -> []
+      | T_exception _            -> []
+      | T_commit_store           -> []
+      | T_complete_store         -> []
+      | T_successful_store_excl  -> []
+      | T_potential_store_cond   -> []
+      | T_failed_store_excl      -> []
+      | T_prev_excl_result _     -> []
+      | T_commit_barrier _       -> []
+      | T_POP_subsumed_write w   -> [w.w_addr]
+      | T_RISCV_atomic_begin     -> []
+      | T_RISCV_atomic_end       -> []
+      end
+  | T_trans (T_sync tsl _) ->
+      match tsl with
+      | T_fetch _                       -> []
+      | T_mem_read_request _            -> []
+      | T_propagate_write tl            -> let (w, _, _) = tl.tl_label in [w.w_addr]
+      | T_propagate_barrier _           -> []
+      | T_PLDI11_mem_satisfy_read _     -> []
+      | T_POP_tm_start _                -> []
+      | T_POP_tm_commit _               -> []
+      | T_POP_tm_abort _                -> []
+      | T_Flat_mem_satisfy_read _       -> []
+      | T_Flat_try_commit_store_cond tl -> let (w, _) = tl.tl_label in [w.w_addr]
+      | T_TSO_mem_satisfy_read _        -> []
+      | T_try_store_excl _              -> []
+      | T_Promising_propagate_write tl  -> [(fst tl.tl_label).wd_w.w_addr]
+      | T_Promising_fulfil_promise tl -> []
+      | T_Promising_propagate_write_nonshared tl  -> [tl.tl_label.wd_w.w_addr]
+      | T_Promising_mem_satisfy_read _  -> []
+      | T_Promising_mem_satisfy_read_nonshared _  -> []
+      end
+  | T_trans (T_thread_start _) -> []
+  end
+
+let trans_writes_footprint
+    (footprint:  footprint)
+    (state:      system_state_and_transitions 'ts 'ss)
+    (transition: trans 'ts 'ss)
+    : bool
+  =
+  exists (fp MEM (write_footprints_of_trans transition)).
+      non_empty_intersection footprint fp
+
+let memory_access_footprints t =
+  match (read_footprint_of_trans t, write_footprints_of_trans t) with
+  | (Just _,  _ :: _) -> failwith "transition with both memory read and write accesses"
+  | (Just fp, [])     -> [fp]
+  | (Nothing, fps)    -> fps
+  end
+
+let is_rw_transition t =
+  memory_access_footprints t <> []
+
+let is_fetch_single_transition : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_sync (T_fetch tl) _) ->
+      match tl.tl_label with
+      | (_, FK_normal)         -> true
+      | (_, FK_multiple_fixed) -> false
+      | (_, FK_unfixed)        -> false
+      end
+  | _ -> false
+  end
+
+let is_fetch_multi_transition : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_sync (T_fetch tl) _) ->
+      match tl.tl_label with
+      | (_, FK_normal)         -> false
+      | (_, FK_multiple_fixed) -> true
+      | (_, FK_unfixed)        -> true
+      end
+  | _ -> false
+  end
+
+let is_pseudocode_internal_step_transition : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_internal_outcome -> true
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_constant_register_read_transition params : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_pseudoreg_read r _    ->
+          let r = register_base_name r in
+          exists ((r', _) MEM params.t.thread_isa_info.fixed_pseudo_registers).
+              register_base_name r' = r
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_register_read_or_write_transition : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_pseudoreg_read _ _    -> true
+      | T_pseudoreg_write _ _   -> true
+      | T_register_read _ _ _   -> true
+      | T_register_write _ _    -> true
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = function
+  | SS_trans ss_trans ->
+      match ss_trans with
+      | SS_only ss_only_trans _ ->
+          match ss_only_trans with
+          (*** PLDI11 transitions: ***)
+          | SS_PLDI11_partial_coherence_commit _ _    -> false
+          | SS_PLDI11_propagate_write_to_thread _ _   -> false
+          | SS_PLDI11_write_reaches_coherence_point _ -> false
+          | SS_PLDI11_propagate_barrier_to_thread _ _ -> false
+          (*** POP transitions: ***)
+          | SS_POP_propagate_event_to_thread _ _ -> false
+          | SS_POP_partially_satisfy_read _ _    -> false
+          (*** NOP transitions: ***)
+          | SS_NOP_constrain_order _ _  -> false
+          | SS_NOP_propagate_everything -> false
+          (*** Flowing transitions: ***)
+          | SS_Flowing_flow_write_to_memory _          -> true
+          | SS_Flowing_flow_barrier_to_memory _        -> true
+          | SS_Flowing_flow_satisfied_read_to_memory _ -> true
+          | SS_Flowing_reorder_events _ _              -> false
+          | SS_Flowing_flow_to_segment _               -> false
+          | SS_Flowing_partially_satisfy_read _ _      -> false
+          (*** TSO transitions: ***)
+          | SS_TSO_propagate_write_to_memory _ -> false
+          | SS_Promising_stop_promising -> false
+          end
+
+      | SS_sync ss_sync_trans _ _ ->
+          match ss_sync_trans with
+          | SS_PLDI11_acknowledge_sync_barrier _ -> true
+          | SS_POP_read_response _ _             -> false
+          | SS_NOP_read_response_segment _ _     -> false
+          | SS_NOP_read_response_memory _ _ _ _  -> false
+          | SS_Flowing_seg_read_response _ _     -> false
+          | SS_Flowing_mem_read_response _ _     -> true
+          end
+      end
+
+  | T_trans thread_trans ->
+      match thread_trans with
+      | T_only tl ->
+          match tl.tl_label with
+          | T_actually_satisfy _    -> true
+          | T_pending_memory_read_request -> true
+          | T_mem_write_footprint _ -> true
+          | T_mem_potential_write _ -> true
+          | T_commit_store          -> true
+          | T_complete_store        -> true
+          | T_commit_barrier _      -> true
+          | T_prev_excl_result _    -> true
+          | T_finish_load_of_rmw    -> true
+
+          | T_internal_outcome      -> false
+          | T_pseudoreg_read _ _    -> false
+          | T_pseudoreg_write _ _   -> false
+          | T_footprint_outcome     -> false
+          | T_register_read _ _ _   -> false
+          | T_register_write _ _    -> false
+          | T_finish _ _ _          -> false
+
+          | T_exception _           -> false
+          | T_successful_store_excl -> false
+          | T_potential_store_cond  -> false
+          | T_failed_store_excl     -> false
+          | T_POP_subsumed_write _  -> false
+          | T_mem_forward_write _ _ -> false
+
+          | T_RISCV_atomic_begin    -> false
+          | T_RISCV_atomic_end      -> true
+          end
+      | T_sync tsl _ ->
+          match tsl with
+          | T_fetch _                      -> false
+          | T_mem_read_request _           -> false
+          | T_propagate_write tl           -> false
+          | T_propagate_barrier _          -> (is_flat_model params.t)
+          | T_PLDI11_mem_satisfy_read _    -> false
+          | T_POP_tm_start _               -> false
+          | T_POP_tm_commit _              -> false
+          | T_POP_tm_abort _               -> false
+          | T_Flat_mem_satisfy_read _      -> false
+          | T_Flat_try_commit_store_cond _ -> false
+          | T_TSO_mem_satisfy_read _       -> false
+          | T_try_store_excl _             -> false
+          | T_Promising_fulfil_promise _   -> false
+          | T_Promising_propagate_write _  -> false
+          | T_Promising_mem_satisfy_read _ -> false
+          | T_Promising_propagate_write_nonshared _  -> false
+          | T_Promising_mem_satisfy_read_nonshared _ -> false
+          end
+      | T_thread_start _ -> false
+      end
+  end
+
+let is_finish_transition : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_finish _ _ _ -> true
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_footprint_recalculation_transition : (trans 'ts 'ss -> bool) = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_footprint_outcome -> true
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_thread_start_transition = function
+  | T_trans (T_thread_start _) -> true
+  | _ -> false
+  end
+
+let is_local_mem_transition params t =
+  (* match memory_access_footprints t with *)
+  
+  (* TODO: For now making loads to non-shared memory not eager:
+     because it is unsound in combination with prune_restarts *)
+  match write_footprints_of_trans t with
+  | []  -> false
+  | fps ->
+      Set.fromList fps
+      $> non_empty_intersection_set params.shared_memory
+      $> not
+  end
+
+let is_loop_limit_exception_transition = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_exception ET_loop_limit_reached -> true
+      | _                                 -> false
+      end
+  | _ -> false
+  end
+
+let is_eager_transition params
+    (eager_mode:    eager_mode)
+    (t:             trans 'ts 'ss)
+    : bool
+  =
+     (eager_mode.eager_fetch_single        && is_fetch_single_transition t)
+  || (eager_mode.eager_fetch_multi         && params.t.thread_allow_tree_speculation && is_fetch_multi_transition t)
+  || (eager_mode.eager_pseudocode_internal && is_pseudocode_internal_step_transition t)
+  || (eager_mode.eager_constant_reg_read   && is_constant_register_read_transition params t)
+  || (eager_mode.eager_reg_rw              && is_register_read_or_write_transition t)
+  || (eager_mode.eager_memory_aux          && is_memory_auxiliary_steps_transition params t)
+  || (eager_mode.eager_finish              && is_finish_transition t)
+  || (eager_mode.eager_fp_recalc           && is_footprint_recalculation_transition t)
+  || (eager_mode.eager_thread_start        && is_thread_start_transition t)
+  || (eager_mode.eager_local_mem           && is_local_mem_transition params t)
+
+
+let maybe_snapshot_of_transition = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_finish _ (Just rs) (Just m) ->
+          Just (tl.tl_cont.tc_ioid, rs, m)
+      | _ -> Nothing
+      end
+  | _ -> Nothing
+  end
+
+
+
+(** predicates for filtering ****************************************)
+
+let is_internal : trans 'ts 'ss -> bool = function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_internal_outcome      -> true
+      | T_pending_memory_read_request -> true
+      | T_pseudoreg_read _ _    -> true
+      | T_pseudoreg_write _ _   -> true
+      | T_footprint_outcome     -> true
+      | T_actually_satisfy _    -> true
+      | T_prev_excl_result _    -> true
+
+      | T_register_read _ _ _   -> false
+      | T_register_write _ _    -> false
+      | T_mem_forward_write _ _ -> false
+      | T_mem_write_footprint _ -> false
+      | T_mem_potential_write _ -> false
+      | T_finish _ _ _          -> false
+      | T_finish_load_of_rmw    -> false
+      | T_exception _           -> false
+      | T_commit_store          -> false
+      | T_complete_store        -> false
+      | T_successful_store_excl -> false
+      | T_potential_store_cond  -> false
+      | T_failed_store_excl     -> false
+      | T_commit_barrier _      -> false
+      | T_POP_subsumed_write _  -> false
+      | T_RISCV_atomic_begin    -> false
+      | T_RISCV_atomic_end      -> false
+      end
+  | _ -> false
+  end
+
+(** predicates for breakpoints **************************************)
+
+let enabled_exception_transition (sst: system_state_and_transitions 'ts 'ss) : bool =
+  exists (t MEM sst.sst_system_transitions).
+    match t with
+    | T_trans (T_only tl) ->
+        match tl.tl_label with
+        | T_exception _ -> true
+        | _             -> false
+        end
+    | _ -> false
+    end
+
+
+let fetched_address (addr: address) (sst: system_state_and_transitions 'ts 'ss) : bool =
+  Map.any
+    (fun _ t -> isJust (ts_find_instruction sst.sst_state.t_model 
+                          (fun _prefix i -> i.program_loc = addr) t))
+    sst.sst_state.thread_states
+
+let trans_fetches_address
+    (addr:  address)
+    (state: system_state_and_transitions 'ts 'ss)
+    : trans 'ts 'ss -> bool
+  = function
+  | T_trans (T_sync (T_fetch tl) _) ->
+      let (addr', _) = tl.tl_label in
+      addr = addr'
+  | _ -> false
+  end
+
+let is_ioid_finished (target_ioid : ioid) (sst: system_state_and_transitions 'ts 'ss) : bool =
+  let (thread_id, inst_id) = target_ioid in
+  let thread = ensure_just (Map.lookup thread_id sst.sst_state.thread_states)
+                           "No such thread" in
+  match ts_find_instruction sst.sst_state.t_model (fun _prefix i -> i.instance_ioid = target_ioid) thread with
+  | Just (_,i) -> i.finished
+  | Nothing -> false
+  end
+
+
+let exclusive_priority : trans 'ts 'ss -> bool = function
+  | T_trans (T_sync (T_try_store_excl _) _)              -> true
+  | T_trans (T_only tl) ->
+    match tl.tl_label with
+    | T_successful_store_excl -> true
+    | T_failed_store_excl -> true
+    | _ -> false
+    end
+  | _ -> false
+end
+
+let riscv_cond_priority : trans 'ts 'ss -> bool = function
+  | T_trans (T_only tl) ->
+    match tl.tl_label with
+    | T_potential_store_cond -> true
+    | T_failed_store_excl    -> true
+    | _ -> false
+    end
+  | _ -> false
+end
+
+let fetch_multi_priority : trans 'ts 'ss -> bool = function
+  | T_trans (T_sync (T_fetch tl) _) ->
+    match tl.tl_label with
+    | (_, FK_multiple_fixed) -> true
+    | _ -> false
+    end
+  | _ -> false
+end
+
+let stop_promising_priority : trans 'ts 'ss -> bool = function
+  | SS_trans (SS_only SS_Promising_stop_promising _) -> true
+  | _ -> false
+end
+
+
+(* TODO: maybe Shaked can add a small explanation of how this is used? *)
+let priority_transitions params (ss_final_state : bool) (_: eager_mode) :
+      list ((trans 'ts 'ss -> bool) * bool) =
+  match params.t.thread_model with
+  | Promising_thread_model -> (* also see optimised transition enumeration *)
+     if not params.ss.promise_first then
+       []
+     else if ss_final_state (* stopped_promising = true *) then
+       [(fun t -> not (MachineDefPromisingARM.promising_shared_write t), true);
+        (fun t -> true, true)] 
+     else
+       [(fun t -> MachineDefPromisingARM.promising_shared_write t ||
+                    stop_promising_priority t, false)]
+  | POP_thread_model _ ->
+      match params.t.thread_isa_info.ism with
+      | AARCH64_ism _ -> [(exclusive_priority,true); (fetch_multi_priority,true)]
+      | RISCV_ism     -> [(riscv_cond_priority, true); (fetch_multi_priority,true)]
+      | PPCGEN_ism    -> []
+      | MIPS_ism      -> []
+      | X86_ism       -> []
+      end
+  | PLDI11_thread_model -> []
+  | TSO_thread_model -> []
+  | Relaxed_thread_model -> []
+  end
+ 

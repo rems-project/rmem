@@ -1,0 +1,2622 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2015-2018   *)
+(*  Copyright Shaked Flur, University of Cambridge                            2014-2018   *)
+(*  Copyright Peter Sewell, University of Cambridge                           2014-2017   *)
+(*  Copyright Jon French, University of Cambridge                             2017-2018   *)
+(*  Copyright Susmit Sarkar, University of St Andrews                              2014   *)
+(*  Copyright Robert Norton-Wright, University of Cambridge                   2016-2017   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*  Copyright Ohad Kammar, University of Cambridge (when this work was done)       2013   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)        2015   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           *)
+(*  For author information see README.md.                                                 *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+open import Pervasives_extra
+
+(* emacs fontification -*-caml-*- *)
+
+(* TODO: check if this is still true: naming convention: 'load' and
+   'store' are used for instructions; 'read' and 'write' for memory
+   actions.  Unqualifed 'load'/'store'/'read'/'write' do not include
+   any reserve/conditional or acquire/release variants *)
+
+open import MachineDefFreshIds
+open import Sail_impl_base
+import Power_embed
+import ArmV8_embed
+import Mips_embed
+import Riscv
+import X86_embed
+import Power_embed_types
+import ArmV8_embed_types
+import Mips_embed_types
+import Riscv_types
+import X86_embed_types
+
+(** thread id and footprint types *)
+
+type thread_id = nat
+type ioid = fresh_id thread_id (* instruction IDs are unique within threads *)
+type eiid = fresh_id ioid      (* event IDs are unique within instructions *)
+
+type size = nat (* the number of bytes in a footprint *)
+
+type footprint = address * size
+type footprint_i = integer * size
+
+type integer_footprint = integer*integer
+
+let footprintCompare (fp1: footprint) (fp2: footprint) = compare fp1 fp2
+
+let stringFromFootprint (a,sz) = show a ^ "/" ^ show sz
+
+type reg_base_name = string
+
+(* the left nat is width and the right nat is initial index;
+the list is the register fields; if direction is D_increasing the left side of the
+slice is less or equal to the right, if direction is D_decreasing the right side of the
+slice is less or equal to the left *)
+type registerdata = list (reg_base_name * (direction * nat * nat * list (string * slice)))
+
+let reg_from_data (data: registerdata) (name: reg_base_name) : maybe reg_name =
+  Maybe.bind (List.lookup name data) $ fun (direction, width, start, _) ->
+  Just (Reg name start width direction)
+
+let reg_field_from_data (data: registerdata) (name: reg_base_name) (field_name: string) : maybe reg_name =
+  Maybe.bind (List.lookup name data) $ fun (direction, width, start, fields) ->
+  Maybe.bind (List.lookup field_name fields) $ fun slice ->
+  let norm (d: direction) (start: nat) (i, j) = (* see interp_inter_imp.lem extern_slice *)
+    match d with
+    | D_increasing -> (i, j)
+    | D_decreasing ->
+        let i' = start - i in
+        let j' = (i - j) + i' in
+        (i', j')
+    end
+  in
+  Just (Reg_field name start direction field_name (norm direction start slice))
+
+let fixed_reg (data: registerdata) value (name: reg_base_name) =
+  let reg = Maybe_extra.fromJust (reg_from_data data name) in
+  (reg, register_value_for_reg_of_integer reg value)
+
+let fixed_reg_field (data: registerdata) value (name: reg_base_name) (field_name: string) =
+  let reg = Maybe_extra.fromJust (reg_field_from_data data name field_name) in
+  (reg, register_value_for_reg_of_integer reg value)
+
+
+type register_snapshot = list (reg_base_name * maybe register_value)
+
+type memory_snapshot = list (footprint * memory_value)
+type memory_snapshot_i = list (footprint_i * memory_value)
+
+
+
+(** relon is a relation over a set (useful when the domain of the
+relation does not cover the set, e.g., coherence when there is only one
+write) *)
+type relon 'a =
+  <| relon_set: set 'a;
+     relon_rel: Relation.rel 'a 'a;
+  |>
+
+let relonEmpty = <| relon_set = {};
+                    relon_rel = Relation.relEmpty;
+                 |>
+
+let relonFromSetAndRelation s r =
+  let () = ensure (Relation.relOver r s)
+      ("relonFromSetAndRelation: 'r' is not over 's' (" ^ (show ((Relation.relDefinedOn r) \ s)) ^ ")")
+  in
+  <| relon_set = s; relon_rel = r |>
+
+(* true iff e1,e2 are in the set and (e1,e2) in the relation *)
+let relonInRel e1 e2 r =
+  e1 IN r.relon_set &&
+  e2 IN r.relon_set &&
+  Relation.inRel e1 e2 r.relon_rel
+
+(* return the set of elements that are left of e in r *)
+let relonLeftOf e r =
+  { a | forall ((a, b) IN r.relon_rel) | b = e }
+
+(* return the set of elements that are right of e in r *)
+let relonRightOf e r =
+  { b | forall ((a, b) IN r.relon_rel) | a = e }
+
+let relonAddToSet e r = <| r with relon_set = Set.insert e r.relon_set; |>
+
+let relonAddToRel e1 e2 r =
+  <| relon_set = r.relon_set union {e1; e2};
+     relon_rel = Relation.relAdd e1 e2 r.relon_rel; |>
+
+(* add e to the relation to the right of all the elements for which pred is true *)
+let relonAddToTheRight pred e r =
+  let relon_rel' =
+    r.relon_rel
+    union
+    {(e', e) | forall (e' IN r.relon_set) | pred e'}
+  in
+  <| relon_set = Set.insert e r.relon_set;
+     relon_rel = relon_rel';
+  |>
+
+(* add e to the relation to the left of all the elements for which pred is true *)
+let relonAddToTheLeft e pred r =
+  let relon_rel' =
+    r.relon_rel
+    union
+    {(e, e') | forall (e' IN r.relon_set) | pred e'}
+  in
+  <| relon_set = Set.insert e r.relon_set;
+     relon_rel = relon_rel';
+  |>
+
+let relonRemoveElement e r =
+  <| relon_set = r.relon_set \ {e};
+     relon_rel = {(a, b) | forall ((a, b) IN r.relon_rel)
+                         | a <> e && b <> e};
+  |>
+
+let relonFilterSet f r =
+  let relon_set' = Set.filter f r.relon_set in
+  <| relon_set = relon_set';
+     relon_rel = Relation.relRestrict r.relon_rel relon_set';
+  |>
+
+let relonUnion r r' =
+  <| relon_set = r.relon_set union r'.relon_set;
+     relon_rel = r.relon_rel union r'.relon_rel;
+  |>
+
+let relonTransitiveClosure r =
+  <| r with relon_rel = Relation.transitiveClosure r.relon_rel |>
+
+let relonBigUnion relons =
+  <| relon_set = Set.bigunion (Set.map (fun r -> r.relon_set) relons);
+     relon_rel = Set.bigunion (Set.map (fun r -> r.relon_rel) relons) |>
+
+let rec list_to_rel_aux (acc : relon 'a) (xs : list 'a) : relon 'a =
+  match xs with
+  | [] -> acc
+  | x :: xs -> 
+     let acc = relonAddToTheRight (fun _ -> true) x acc in
+     list_to_rel_aux acc xs
+  end
+
+let list_to_rel (xs : list 'a) : Relation.rel 'a 'a =
+  (list_to_rel_aux relonEmpty xs).relon_rel
+
+
+(** relon end *)
+
+
+
+
+(** events: write, read_request, read_response, barrier *)
+
+(* In the original ppcmem, execution instance ids, w_eiid, r_eiid, and
+b_eiid, were treated abstractly in the model (compared with equality
+but their fields not accessed) but constructed deterministically
+rather than being gensym'd.  That may be good for search-space
+exploration, as it lets us identify trivially isomorphic states more
+easily, but it adds complexity that we eschew for now *)
+
+type w_eiid  = eiid
+type r_eiid  = eiid
+type b_eiid  = eiid
+type ts_eiid = eiid
+
+type write = (* w *)
+  <| weiid:        w_eiid;
+     w_ioid:       ioid;
+     w_thread:     thread_id;
+     w_addr:       footprint;
+     w_value:      maybe memory_value;
+     w_write_kind: write_kind;
+  |>
+
+type write_conditional_request = <| wc_w:write; wc_wprev:maybe write|> (* wcr *)
+
+(* uses unsafe struct equality *)
+type barrier = (* b *)
+  <| beiid:          b_eiid;
+     b_ioid:         ioid;
+     b_thread:       thread_id;
+     b_barrier_kind: barrier_kind;
+  |>
+
+type barrier_ack = <| br_thread:thread_id; br_ioid:ioid; br_eiid: b_eiid |> (* br *)
+
+type read_request = (* r *)
+  <| reiid:               r_eiid ;
+     r_ioid:              ioid;
+     r_thread:            thread_id;
+     r_addr:              footprint;
+     r_read_kind:         read_kind;
+     r_write_lower_bound: set write;
+     r_write_upper_bound: set write;
+  |>
+
+type read_response = (* rr *)
+  <|  rr_eiid:   r_eiid;
+      rr_ioid:   ioid;
+      rr_thread: thread_id;
+      rr_write:  write;
+  |>
+
+type transaction_start =
+  <|  ts_eiid:   ts_eiid;
+      ts_ioid:   ioid;
+      ts_thread: thread_id;
+  |>
+
+(* write, barrier, and read kind predicates *)
+
+let is_write_exclusive write =
+  match write.w_write_kind with
+  | Write_exclusive -> true
+  | Write_exclusive_release -> true
+  | _ -> false
+  end
+
+let is_write_release write =
+  match write.w_write_kind with
+  | Write_release -> true
+  | Write_exclusive_release -> true
+  | _ -> false
+  end
+
+let is_barrier_ld barrier =
+  match barrier.b_barrier_kind with
+  | Barrier_DMB_LD -> true
+  | Barrier_DSB_LD -> true
+  | _ -> false
+  end
+
+let is_barrier_st barrier =
+  match barrier.b_barrier_kind with
+  | Barrier_DMB_ST -> true
+  | Barrier_DSB_ST -> true
+  | _ -> false
+  end
+
+let is_read_exclusive read =
+  match read.r_read_kind with
+  | Read_exclusive -> true
+  | Read_exclusive_acquire -> true
+  | _ -> false
+  end
+
+let is_read_acquire read =
+  match read.r_read_kind with
+  | Read_acquire -> true
+  | Read_exclusive_acquire -> true
+  | _ -> false
+  end
+
+
+(* type class instantiations for event types *)
+(* VALUETODO fix these up as the defaults are not good enough *)
+
+let ~{ocaml} writeCompare w1 w2 =
+  compare ((w1.w_thread, w1.w_ioid, w1.weiid), (w1.w_addr, w1.w_value, w1.w_write_kind))
+          ((w2.w_thread, w2.w_ioid, w2.weiid), (w2.w_addr, w2.w_value, w2.w_write_kind))
+let inline {ocaml} writeCompare = defaultCompare
+
+let ~{ocaml} writeLess b1 b2      = writeCompare b1 b2 =  LT
+let ~{ocaml} writeLessEq b1 b2    = writeCompare b1 b2 <> GT
+let ~{ocaml} writeGreater b1 b2   = writeCompare b1 b2 =  GT
+let ~{ocaml} writeGreaterEq b1 b2 = writeCompare b1 b2 <> LT
+
+let inline {ocaml} writeLess      = defaultLess
+let inline {ocaml} writeLessEq    = defaultLessEq
+let inline {ocaml} writeGreater   = defaultGreater
+let inline {ocaml} writeGreaterEq = defaultGreaterEq
+
+instance (Ord write)
+  let compare = writeCompare
+  let (<)  = writeLess
+  let (<=) = writeLessEq
+  let (>)  = writeGreater
+  let (>=) = writeGreaterEq
+end
+
+let {coq; ocaml} writeEqual w1 w2 = compare w1 w2 = EQ
+let inline {hol; isabelle} writeEqual = unsafe_structural_equality
+
+let {coq; ocaml} writeInequal w1 w2 = not (writeEqual w1 w2)
+let inline {hol; isabelle} writeInequal = unsafe_structural_inequality
+
+instance (Eq write)
+  let (=)  = writeEqual
+  let (<>) = writeInequal
+end
+
+instance (SetType write)
+  let setElemCompare = compare
+end
+
+let ~{ocaml} barrierCompare b1 b2 =
+  compare (b1.b_thread, b1.b_ioid, b1.beiid, b1.b_barrier_kind)
+          (b2.b_thread, b2.b_ioid, b2.beiid, b2.b_barrier_kind)
+let inline {ocaml} barrierCompare = defaultCompare
+
+let ~{ocaml} barrierLess b1 b2      = barrierCompare b1 b2 =  LT
+let ~{ocaml} barrierLessEq b1 b2    = barrierCompare b1 b2 <> GT
+let ~{ocaml} barrierGreater b1 b2   = barrierCompare b1 b2 =  GT
+let ~{ocaml} barrierGreaterEq b1 b2 = barrierCompare b1 b2 <> LT
+
+let inline {ocaml} barrierLess      = defaultLess
+let inline {ocaml} barrierLessEq    = defaultLessEq
+let inline {ocaml} barrierGreater   = defaultGreater
+let inline {ocaml} barrierGreaterEq = defaultGreaterEq
+
+instance (Ord barrier)
+  let compare = barrierCompare
+  let (<)  = barrierLess
+  let (<=) = barrierLessEq
+  let (>)  = barrierGreater
+  let (>=) = barrierGreaterEq
+end
+
+let {coq} barrierEqual w1 w2 = compare w1 w2 = EQ
+let inline ~{coq} barrierEqual = unsafe_structural_equality
+
+let {coq} barrierInequal w1 w2 = not (barrierEqual w1 w2)
+let inline ~{coq} barrierInequal = unsafe_structural_inequality
+
+instance (Eq barrier)
+  let (=)  = barrierEqual
+  let (<>) = barrierInequal
+end
+
+instance (SetType barrier)
+  let setElemCompare = compare
+end
+
+(* read requests are uniquely identified by their thread_id, ioid, and reiid *)
+let read_requestCompare rr1 rr2 =
+  compare (rr1.reiid, rr1.r_thread, rr1.r_ioid) (rr2.reiid, rr2.r_thread, rr2.r_ioid)
+
+instance (Ord read_request)
+  let compare = read_requestCompare
+  let (<)  rr1 rr2 = read_requestCompare rr1 rr2 =  LT
+  let (<=) rr1 rr2 = read_requestCompare rr1 rr2 <> GT
+  let (>)  rr1 rr2 = read_requestCompare rr1 rr2 =  GT
+  let (>=) rr1 rr2 = read_requestCompare rr1 rr2 <> LT
+end
+
+let {ocaml;coq} read_requestEqual rr1 rr2 = compare rr1 rr2 = EQ
+(* for Isabelle and HOL set equality is fine *)
+let inline {hol;isabelle} read_requestEqual = unsafe_structural_equality
+
+let {ocaml;coq} read_requestInequal rr1 rr2 = not (read_requestEqual rr1 rr2)
+(* for Isabelle and HOL set equality is fine *)
+let inline {hol;isabelle} read_requestInequal = unsafe_structural_inequality
+
+instance (Eq read_request)
+  let (=)  = read_requestEqual
+  let (<>) = read_requestInequal
+end
+
+instance (SetType read_request)
+  let setElemCompare = compare
+end
+
+let stringFromReadRequest r =
+  "R "  (* TODO: move functions like src/pp.ml pp_brief_write_kind to lem *)
+  ^ stringFromFootprint r.r_addr
+
+instance (Show read_request)
+  let show = stringFromReadRequest
+end
+
+let ~{ocaml} read_responseCompare rr1 rr2 =
+  compare (rr1.rr_thread, rr1.rr_ioid, rr1.rr_eiid, rr1.rr_write)
+          (rr2.rr_thread, rr2.rr_ioid, rr2.rr_eiid, rr2.rr_write)
+let inline {ocaml} read_responseCompare = defaultCompare
+
+let ~{ocaml} read_responseLess b1 b2      = read_responseCompare b1 b2 =  LT
+let ~{ocaml} read_responseLessEq b1 b2    = read_responseCompare b1 b2 <> GT
+let ~{ocaml} read_responseGreater b1 b2   = read_responseCompare b1 b2 =  GT
+let ~{ocaml} read_responseGreaterEq b1 b2 = read_responseCompare b1 b2 <> LT
+
+let inline {ocaml} read_responseLess      = defaultLess
+let inline {ocaml} read_responseLessEq    = defaultLessEq
+let inline {ocaml} read_responseGreater   = defaultGreater
+let inline {ocaml} read_responseGreaterEq = defaultGreaterEq
+
+instance (Ord read_response)
+  let compare = read_responseCompare
+  let (<)  = read_responseLess
+  let (<=) = read_responseLessEq
+  let (>)  = read_responseGreater
+  let (>=) = read_responseGreaterEq
+end
+
+instance (SetType read_response)
+  let setElemCompare = compare
+end
+
+
+let ~{ocaml} transaction_startCompare rr1 rr2 =
+  compare (rr1.ts_thread, rr1.ts_ioid, rr1.ts_eiid)
+          (rr2.ts_thread, rr2.ts_ioid, rr2.ts_eiid)
+let inline {ocaml} transaction_startCompare = defaultCompare
+
+let ~{ocaml} transaction_startLess b1 b2      = transaction_startCompare b1 b2 =  LT
+let ~{ocaml} transaction_startLessEq b1 b2    = transaction_startCompare b1 b2 <> GT
+let ~{ocaml} transaction_startGreater b1 b2   = transaction_startCompare b1 b2 =  GT
+let ~{ocaml} transaction_startGreaterEq b1 b2 = transaction_startCompare b1 b2 <> LT
+
+let inline {ocaml} transaction_startLess      = defaultLess
+let inline {ocaml} transaction_startLessEq    = defaultLessEq
+let inline {ocaml} transaction_startGreater   = defaultGreater
+let inline {ocaml} transaction_startGreaterEq = defaultGreaterEq
+
+instance (Ord transaction_start)
+  let compare = transaction_startCompare
+  let (<)  = transaction_startLess
+  let (<=) = transaction_startLessEq
+  let (>)  = transaction_startGreater
+  let (>=) = transaction_startGreaterEq
+end
+
+instance (SetType transaction_start)
+  let setElemCompare = compare
+end
+
+
+(* TODO: are the above equalities on the sets of writes going to be correct? *)
+
+let stringFromWrite w =
+  "W "  (* TODO: move functions like src/pp.ml pp_brief_write_kind to lem*)
+  ^ stringFromFootprint w.w_addr
+  ^ "="
+  ^ show w.w_value
+
+instance (Show write)
+  let show = stringFromWrite
+end
+
+let stringFromBarrier b =
+  show b.b_barrier_kind ^ "(" ^ show b.b_thread ^ ")"
+
+instance (Show barrier)
+  let show = stringFromBarrier
+end
+
+
+instance (Eq transaction_start)
+  let (=)  t1 t2 = compare t1 t2 = EQ
+  let (<>) t1 t2 = not (compare t1 t2 = EQ)
+end
+
+instance (Show transaction_start)
+  let show t = "TSTART"
+end
+
+
+(** mixed-size register and memory support: slices of writes and read-requests *)
+
+
+(* for registers, all indices are wrt the base register_data indexing;
+   for memory, all indices are wrt the base address of the read-request
+    (arguably it would be cleaner to index wrt absolute memory addresses,
+     but at present we're using int for indexes)
+*)
+
+type slice = nat * nat
+type slices = list slice
+(* each pair is a (start,end) pair, denoting the elements indexed from start to end, inclusive *)
+(* invariant: the first of each pair is always less than or equal to the second, the list is sorted by the first element, and there is no overlap *)
+
+type value_fragment 'a = slice * list 'a
+(* use 'a=bool and 'a=word8 for register and memory fragments respectively*)
+
+type maybe_value_fragment 'a = slice * maybe (list 'a)
+(* Just data, if the data is available, or Nothing, if not (eg for register writes in an instruction footprint that have not yet occurred dynamically) *)
+
+type memory_read_source =
+  <| mrs_footprint:        footprint;    (* the footprint being read from *)
+     mrs_value:            memory_value; (* the assembled memory value *)
+     mrs_writes_read_from: list (write * slices);
+     (* the writes that contribute to the read (in no particular
+     order), with the slices they contribute, and no overlap (in the read indices) between
+     any distinct slices of any two writes *)
+  |>
+
+(** instruction kinds *)
+
+(*
+- the PLDI-style ppcmem PPC model uses Sync, LwSync, and Eieio
+- the PLDI-style ppcmem ARM model uses Sync for the ARM DMB and does not support DMB_ST, DMB_LD, or DSB (it translates those to Sync microops)
+- the Flowing/POP ppcmem ARM model does not use Sync, LwSync and Eieio, and does support DSB, DSB_ST, DSB_LD, DMB, DMB_ST, DMB_LD *)
+
+(* Assume:
+    Read_mem outcomes and E_read_mem events only arise from IK_mem_read
+    Write_mem outcomes and E_write_mem events only arise from IK_mem_write
+    Barrier outcomes and E_barrier events only arise from IK_barrier
+
+    ...and for all the above, the read_kind, write_kind, or
+     barrier_kind from the outcome or event is equal to that of the
+     instruction (so no instruction is both a Write_plain and
+     Write_conditional, for example)
+
+    Read_reg, Write_reg, outcomes and E_read_reg, E_write_reg events
+     may arise from any instructions
+*)
+
+type instruction_ast =
+  | PPCGEN_instr of Power_embed_types.ast
+  | AArch64_instr of ArmV8_embed_types.ast
+  | MIPS_instr of Mips_embed_types.ast
+  | RISCV_instr of Riscv_types.ast
+  | X86_instr of X86_embed_types.ast
+  | Fetch_error
+
+type decode_error_t =
+  | Unsupported_instruction_error of opcode * instruction_ast
+  | Not_an_instruction_error of opcode
+  | Internal_decode_error of string
+
+let decode_error_compare e1 e2 =
+  match (e1, e2) with
+  (* we assume 'opcode' deterministically defines 'instruction_ast' so we only
+  compare 'opcode', also it's hard to auto-gen compare for 'instruction_ast' *)
+  | (Unsupported_instruction_error a1 _, Unsupported_instruction_error a2 _)
+      -> compare a1 a2
+  | (Unsupported_instruction_error _ _, _) -> LT
+  | (_, Unsupported_instruction_error _ _) -> GT
+
+  | (Not_an_instruction_error o1, Not_an_instruction_error o2) -> compare o1 o2
+  | (Not_an_instruction_error _, _) -> LT
+  | (_, Not_an_instruction_error _) -> GT
+
+  | (Internal_decode_error s1, Internal_decode_error s2) -> compare s1 s2
+  end
+
+let decode_error_less e1 e2       = decode_error_compare e1 e2 =  LT
+let decode_error_less_eq e1 e2    = decode_error_compare e1 e2 <> GT
+let decode_error_greater e1 e2    = decode_error_compare e1 e2 =  GT
+let decode_error_greater_eq e1 e2 = decode_error_compare e1 e2 <> LT
+
+instance (Ord decode_error_t)
+  let compare = decode_error_compare
+  let (<)  = decode_error_less
+  let (<=) = decode_error_less_eq
+  let (>)  = decode_error_greater
+  let (>=) = decode_error_greater_eq
+end
+
+let {coq; ocaml} decode_error_equal e1 e2 = (decode_error_compare e1 e2) = EQ
+let inline {hol; isabelle} decode_error_equal = unsafe_structural_equality
+
+let {coq; ocaml} decode_error_inequal e1 e2 = not (decode_error_equal e1 e2)
+let inline {hol; isabelle} decode_error_inequal = unsafe_structural_inequality
+
+instance  (Eq decode_error_t)
+  let (=)  = decode_error_equal
+  let (<>) = decode_error_inequal
+end
+
+(*: \section{The Storage Subsystem Model} :*)
+
+
+(** ***********************  storage subsystem states ************)
+(*: \subsection{Storage Subsystem States} :*)
+
+
+(* PLDI11 storage subsystem *)
+
+type tracked_event =
+       | SWrite of (write * slices)
+       | SBarrier of barrier
+
+(* type class instantiations *)
+
+let {coq; ocaml} tracked_eventEqual t1 t2 =
+  match (t1, t2) with
+  | (SWrite w1, SWrite w2) -> w1 = w2
+  | (SBarrier b1, SBarrier b2) -> b1 = b2
+  | _ -> false
+  end
+let inline {hol; isabelle} tracked_eventEqual = unsafe_structural_equality
+
+let {coq; ocaml} tracked_eventInequal t1 t2 = not (tracked_eventEqual t1 t2)
+let inline {hol; isabelle} tracked_eventInequal = unsafe_structural_inequality
+
+instance (Eq tracked_event)
+  let (=)  = tracked_eventEqual
+  let (<>) = tracked_eventInequal
+end
+
+let stringFromTracked_event t =
+  match t with
+  | SWrite (w, sls) -> show (w,sls)
+  | SBarrier b -> show b
+  end
+
+instance (Show tracked_event)
+  let show = stringFromTracked_event
+end
+
+
+(* TODO: the storage subsystem state will also need to know the set of mapped addresses *)
+type pldi11_storage_subsystem_state =
+    <|
+  (*: the set of thread ids that exist in the system :*)
+    threads : set thread_id;
+
+    writes_seen : set write;
+
+    (*: set of pairs (w1,w2) for which potential_coherence_commitment_cand holds :*)
+    potential_coherence_commitment_cands : set (write * write);
+
+  (*: for each address, a strict partial order over the writes to
+      that address that the storage subsystem has received from the
+      threads, giving the current constraints on the coherence
+      order over those writes. We record the union of those
+      orders. We encode the
+      partial order as a set of pairs of writes. :*)
+    coherence : Relation.rel write write;
+
+    new_coherence_basis: set footprint;
+      (* the domain of new_coherence *)
+    new_coherence : map footprint (Relation.rel write write);
+      (* the coherence order for each maximally split footprint, as a strict partial order over all writes (received by the storage subsystem) that overlap that footprint. We encode the partial order as a set of pairs of writes *)
+
+    (*: the set of writes that have reached their coherence points. :*)
+    writes_past_coherence_point : set write ;
+
+    (*: for each thread, the writes that have been propagated to it by the
+      storage subsystem, together with the barriers that have been
+      propagated to that thread. These are all placed in a
+      linear (per-thread) order corresponding to that thread's view of
+      time, most recent at the end of the list.  :*)
+    events_propagated_to : thread_id -> list tracked_event;
+
+    (*: pairs (w,tid') such that w has not been propagated to tid' :*)
+    writes_not_propagated_to : set (write * thread_id);
+
+    (*: the set of [[sync]] barriers that have not yet been acknowledged
+        back to their originating thread :*)
+    unacknowledged_sync_requests : set barrier;
+|>
+
+
+(**************** flowing events (used in flowing and pop storage subsystems *****)
+
+type flowing_event =
+  | FWrite of write
+  | FFWrite of read_request * set ioid
+  (* the 'slices' of FRead are the unsatisfied slices
+  and the 'list (write * slices)' are the satisfied slices.
+  The writes might be from write-forwarding and as such they might
+  have an unknown value; when comparing with committed write use weiid
+  instead of the polymorphic compare as the committed write will have
+  a value. *)
+  | FRead of read_request * slices * list (write * slices)
+  | FBarrier of barrier
+  | FTStart of transaction_start
+
+
+instance (Show flowing_event)
+  let show = function
+  | FWrite w      -> show w
+  | FFWrite r _   -> ("W(future, paired with '" ^ show r ^ "')")
+  | FRead r _ _   -> show r
+  | FBarrier b    -> show b
+  | FTStart t     -> show t
+  end
+end
+
+let flowing_eventCompare fe1 fe2 =
+  match (fe1,fe2) with
+  | (FWrite w1,         FWrite w2)         -> compare w1 w2
+  | (FFWrite r1 i1,     FFWrite r2 i2)     ->
+      match compare r1 r2 with
+      | EQ -> compare (Set_extra.toOrderedList i1) (Set_extra.toOrderedList i2)
+      | x -> x
+      end
+  | (FRead r1 sls1 ws1, FRead r2 sls2 ws2) -> compare (r1, sls1, ws1) (r2, sls2, ws2)
+  | (FBarrier b1,       FBarrier b2)       -> compare b1 b2
+  | (FTStart t1,        FTStart t2)        -> compare t1 t2
+  | (FWrite _, _)                          -> LT
+  | (_, FWrite _)                          -> GT
+  | (FFWrite _ _, _)                       -> LT
+  | (_, FFWrite _ _)                       -> GT
+  | (FRead _ _ _, _)                       -> LT
+  | (_, FRead _ _ _)                       -> GT
+  | (FBarrier _, _)                        -> LT
+  | (_, FBarrier _)                        -> GT
+  end
+(* even with the sets contained in flowing_events ocaml's Pset implementation of sets should
+be fine *)
+
+let flowing_eventLess fe1 fe2      = flowing_eventCompare fe1 fe2 =  LT
+let flowing_eventLessEq fe1 fe2    = flowing_eventCompare fe1 fe2 <> GT
+let flowing_eventGreater fe1 fe2   = flowing_eventCompare fe1 fe2 =  GT
+let flowing_eventGreaterEq fe1 fe2 = flowing_eventCompare fe1 fe2 <> LT
+(*
+let inline {ocaml} flowing_eventLess      = defaultLess
+let inline {ocaml} flowing_eventLessEq    = defaultLessEq
+let inline {ocaml} flowing_eventGreater   = defaultGreater
+let inline {ocaml} flowing_eventGreaterEq = defaultGreaterEq
+ *)
+instance (Ord flowing_event)
+  let compare = flowing_eventCompare
+  let (<)  = flowing_eventLess
+  let (<=) = flowing_eventLessEq
+  let (>)  = flowing_eventGreater
+  let (>=) = flowing_eventGreaterEq
+end
+
+let {ocaml;coq} flowing_eventEqual fe1 fe2 = compare fe1 fe2 = EQ
+(* for Isabelle and HOL the set equality in read_requests is no problem *)
+let inline {isabelle;hol} flowing_eventEqual = unsafe_structural_equality
+
+let {ocaml;coq} flowing_eventInequal fe1 fe2 = compare fe1 fe2 <> EQ
+(* for Isabelle and HOL the set equality in read_requests is no problem *)
+let inline {isabelle;hol} flowing_eventInequal = unsafe_structural_inequality
+
+instance (Eq flowing_event)
+  let (=)  = flowing_eventEqual
+  let (<>) = flowing_eventInequal
+end
+
+instance (SetType flowing_event)
+  let setElemCompare = compare
+end
+
+let tryFWrite : flowing_event -> maybe write = function
+  | FWrite w -> Just w
+  | _ -> Nothing
+  end
+
+let tryFFWrite : flowing_event -> maybe (read_request * set ioid) = function
+  | FFWrite r i -> Just (r, i)
+  | _ -> Nothing
+  end
+
+let tryFRead : flowing_event -> maybe (read_request * slices * list (write * slices)) = function
+  | FRead r s rf -> Just (r, s, rf)
+  | _ -> Nothing
+  end
+
+let tryFBarrier : flowing_event -> maybe barrier = function
+  | FBarrier b -> Just b
+  | _ -> Nothing
+  end
+
+let tryFTStart : flowing_event -> maybe transaction_start = function
+  | FTStart t -> Just t
+  | _ -> Nothing
+  end
+
+let unsafeFWrite (e: flowing_event) : write =
+  e $> tryFWrite $> Maybe_extra.fromJust
+
+let unsafeFFWrite (e: flowing_event) : (read_request * set ioid) =
+  e $> tryFFWrite $> Maybe_extra.fromJust
+
+let unsafeFRead (e: flowing_event) : read_request * slices * list (write * slices) =
+  e $> tryFRead $> Maybe_extra.fromJust
+
+let unsafeFBarrier (e: flowing_event) : barrier =
+  e $> tryFBarrier $> Maybe_extra.fromJust
+
+let unsafeFTStart (e: flowing_event) : transaction_start =
+  e $> tryFTStart $> Maybe_extra.fromJust
+
+let thread_of_flowing_event = function
+  | FWrite w      -> w.w_thread
+  | FFWrite r _   -> r.r_thread
+  | FRead r _ _   -> r.r_thread
+  | FBarrier b    -> b.b_thread
+  | FTStart t     -> t.ts_thread
+  end
+
+let principal_ioid_of_flowing_event = function
+  | FWrite w      -> w.w_ioid
+  | FFWrite _ _   -> fail
+  | FRead rr _ _  -> rr.r_ioid
+  | FBarrier b    -> b.b_ioid
+  | FTStart t     -> t.ts_ioid
+  end
+
+let ioid_of_flowing_event = function
+  | FWrite w      -> w.w_ioid
+  | FFWrite _ _   -> fail
+  | FRead rr _ _  -> rr.r_ioid
+  | FBarrier b    -> b.b_ioid
+  | FTStart t     -> t.ts_ioid
+  end
+
+let address_of_flowing_event = function
+  | FWrite w      -> w.w_addr
+  | FFWrite r _   -> r.r_addr
+  | FRead r _ _   -> r.r_addr
+  | FBarrier _    -> fail
+  | FTStart _     -> fail
+  end
+
+let is_fe_read = function
+  | FRead _ _ _-> true
+  | _ -> false
+  end
+
+let is_fe_read_acquire = function
+  | FRead r _ _ -> is_read_acquire r
+  | _ -> false
+  end
+
+let is_fe_read_exclusive = function
+  | FRead r _ _ -> is_read_exclusive r
+  | _ -> false
+  end
+
+let is_fe_write = function
+  | FWrite _ -> true
+  | _ -> false
+  end
+
+let is_fe_future_write = function
+  | FFWrite _ _ -> true
+  | _ -> false
+  end
+
+let is_fe_write_release = function
+  | FWrite w -> is_write_release w
+  | _ -> false
+  end
+
+let is_fe_write_exclusive = function
+  | FWrite w -> is_write_exclusive w
+  | _ -> false
+  end
+
+let is_fe_read_or_write fe = is_fe_read fe || is_fe_write fe
+
+let is_fe_barrier = function
+  | FBarrier _ -> true
+  | _ -> false
+  end
+
+let is_fe_barrier_ld = function
+  | FBarrier b -> is_barrier_ld b
+  | _ -> false
+  end
+
+let is_fe_barrier_st = function
+  | FBarrier b -> is_barrier_st b
+  | _ -> false
+  end
+
+let is_fe_barrier_lwsync = function
+  | FBarrier b -> b.b_barrier_kind = Barrier_LwSync
+  | _ -> false
+  end
+
+let is_fe_barrier_eieio = function
+  | FBarrier b -> b.b_barrier_kind = Barrier_Eieio
+  | _ -> false
+  end
+
+let is_fe_strong_memory_barrier = function
+  | FBarrier b -> b.b_barrier_kind = Barrier_DSB || b.b_barrier_kind = Barrier_DMB || b.b_barrier_kind = Barrier_Sync || b.b_barrier_kind = Barrier_MIPS_SYNC
+  | _ -> false
+  end
+
+let is_fe_tstart = function
+  | FTStart _ -> true
+  | _ -> false
+  end
+
+(******************** Flowing Storage Subsystem ********************)
+
+type flowing_segment = nat
+let flowing_segment_initial : flowing_segment = 0
+let flowing_segment_successor segment : flowing_segment = segment + 1
+
+type flowing_tree =
+  | FT_join of flowing_segment * (list flowing_tree)
+
+type flowing_storage_subsystem_state =
+  <|  (* the set of thread ids that exist in the system *)
+      flowing_ss_threads : set thread_id;
+      (* the segments topology *)
+      flowing_ss_topology : flowing_tree;
+      (* associate a segment with each thread *)
+      flowing_ss_thread_to_segment : map thread_id flowing_segment;
+
+      (* a map from tree segment to the list of events in that segment
+         Invariant: a finite map with domain topology.segments *)
+      flowing_ss_buffers : map flowing_segment (list flowing_event);
+      (* the pairs of flowing events that have been reordered and so
+         should not be reordered again in the current segment.
+         the first event in the pair is the event that was newer before
+         the reordering. *)
+      flowing_ss_reordered : set (flowing_event * flowing_event);
+
+      (* map read_requests of load-exclusives that are paired with store-exclusive
+      that is guaranteed to succeed, to the writes they read from *)
+      flowing_ss_exclusive_reads: map read_request (list (write * slices) * flowing_event);
+      (* map writes of store-exclusives that are guaranteed to succeed,
+      to the read_request of the paired load-exclusive; this read_request
+      can be found in flowing_ss_exclusive_reads *)
+      flowing_ss_exclusive_writes: map write read_request;
+
+      (* the currently visible write-slices in memory;
+      invariant: no overlapping slices *)
+      flowing_ss_memory_writes : list (write * slices);
+      (* record writes that flowed to memory in the order in which they
+      flowed (head is new); we need this to reconstruct coherence *)
+      flowing_ss_old_writes : list write;
+
+      (* map every thread that is in TM model to the set of read-requests
+      from that thread that has flown down to the next segment *)
+      flowing_ss_tm : map thread_id (set read_request);
+  |>
+
+
+(******************** Flat Storage Subsystem ********************)
+
+type flat_storage_subsystem_state =
+  <|  (* the currently visible write-slices in memory;
+      invariant: no overlapping slices *)
+      flat_ss_memory_writes : list (write * slices);
+      (* record writes that flowed to memory in the order in which they
+      flowed (head is new); we need this to reconstruct coherence *)
+      flat_ss_old_writes : list write;
+
+      (* map read_requests of load-exclusives that are paired with store-exclusive
+      that is guaranteed to succeed, to the writes they read from *)
+      flat_ss_exclusive_reads: map read_request (list (write * slices) * set ioid);
+  |>
+
+(********************** POP Storage Subsystem **********************)
+
+type pop_storage_subsystem_state =
+  <|  (* The set of thread ids that exist in the system. *)
+      pop_ss_threads : set thread_id;
+      (* The set of events the storage subsystem has seen. *)
+      pop_ss_events_seen : map flowing_event (set thread_id);
+      (* The order constraints.
+      For (e1, e2) IN pop_ss_order_constraints_closure, e1 must be before e2. *)
+      (* I tried to handle the transitivity issue of LDAR and DMB LD
+      by recording the non-transitive order but it does not work due
+      to coherence violations in WWC+poss and RWC+poss *)
+      pop_ss_order_constraints_closure : Relation.rel flowing_event flowing_event;
+
+      (* map read_requests of load-exclusives that are paired with store-exclusive
+      that is guaranteed to succeed, to the writes they read from *)
+      pop_ss_exclusive_reads: map read_request (list (write * slices) * flowing_event);
+      (* map writes of store-exclusives that are guaranteed to succeed,
+      to the read_request of the paired load-exclusive; this read_request
+      can be found in pop_ss_exclusive_reads *)
+      pop_ss_exclusive_writes: map write read_request;
+  |>
+
+(********************** NOP Storage Subsystem **********************)
+
+type nop_storage_subsystem_state =
+  <|  (* The set of thread ids that exist in the system. *)
+      nop_ss_threads : set thread_id;
+      (* The set of events the storage subsystem has seen. *)
+      nop_ss_events_seen : set flowing_event;
+      (* The order constraints.  For (e1, e2) IN
+         nop_ss_order_constraints_closure, e1 must be before e2. *)
+      nop_ss_order_constraints_closure : Relation.rel flowing_event flowing_event;
+      (* For each thread, the events that have been propagated to it. *)
+      nop_ss_events_propagated_to : map thread_id (set flowing_event);
+      (* map write-exclusives to the writes that satisfied the corresponding
+         read-exclusive plus the same-thread writes in between the
+         read-exclusive and the write-exclusive *)
+      nop_ss_exclusives : map flowing_event (set flowing_event);
+  |>
+
+(******************** TSO Storage Subsystem ************************)
+
+type tso_storage_subsystem_state =
+  <|  (* a map from thread id to the list of writes in that thread *)
+      tso_ss_buffers : map thread_id (list write);
+
+      (* "Just tid" iff thread tid has the lock *)
+      tso_ss_lock : maybe thread_id;
+
+      (* the currently visible write-slices in memory;
+      invariant: no overlapping slices *)
+      tso_ss_memory_writes : list (write * slices);
+
+      (* record writes that flowed to memory in the order in which they
+      flowed (head is new); we need this to reconstruct coherence *)
+      tso_ss_old_writes : list write;
+  |>
+
+
+(*** Views *********************************************************************)
+
+type t = nat
+type write_ids = WI of set w_eiid
+
+let write_ids_eq (WI wi1) (WI wi2) =
+  setEqual wi1 wi2
+let write_ids_neq wi1 wi2 = not (write_ids_eq wi1 wi2)
+
+instance (Eq write_ids)
+  let (=) = write_ids_eq
+  let (<>) = write_ids_neq
+end
+
+type ui_t = t
+type ui_write_ids = list w_eiid
+
+type view =
+  | Timestamp of t
+  | Write_Ids of write_ids
+
+let ensure_timestamp = function
+  | Timestamp t -> t
+  | _ -> failwith "not a timestamp"
+end
+
+let ensure_write_ids = function
+  | Write_Ids ws -> ws
+  | _ -> failwith "not write_ids"
+end
+
+type ui_view =
+  | UI_Timestamp of ui_t
+  | UI_Write_Ids of ui_write_ids
+
+let view_eq v1 v2 = 
+  match (v1,v2) with
+  | (Timestamp t1, Timestamp t2) -> t1 = t2
+  | (Write_Ids i1, Write_Ids i2) -> i1 = i2
+  | _ -> false
+  end
+let view_neq v1 v2 = not (view_eq v1 v2)
+
+instance (Eq view)
+  let (=) = view_eq
+  let (<>) = view_neq
+end
+
+
+(******************** Promising Storage Subsystem *******************)
+
+(* write promising write IDS are (tid,addr,number of writes by tid to addr) *)
+
+type writedata = <| wd_w : write; 
+                    wd_rexinfo : maybe (w_eiid * address); 
+                    wd_req_view : view |>
+
+type pssto = 
+  <| pssto_memory : list (write * t); 
+     pssto_stopped_promising : bool; |>
+
+type psspo = 
+  <| psspo_writes : set write; 
+     psspo_order : Relation.rel w_eiid w_eiid; 
+     psspo_addr_view: set (w_eiid * footprint); 
+     psspo_stopped_promising : bool;
+ |>
+
+type promising_storage_state =
+  | PSSTO of pssto
+  | PSSPO of psspo
+
+
+(** ********************** instruction instance states **************)
+
+(* we need an explicit type of instruction states (we can't just build
+*thread_state* continuations) because the rest of the thread has to be
+able to evolve while a read request is outstanding... *)
+
+type fetch_and_decode_exception =
+  | FDE_non_concrete_fetch_address_error
+  | FDE_illegal_fetch_address_error of address
+  | FDE_decode_error of decode_error_t * address
+
+let fetch_and_decode_exception_compare e1 e2 =
+  match (e1, e2) with
+  | (FDE_non_concrete_fetch_address_error, FDE_non_concrete_fetch_address_error) -> EQ
+  | (FDE_non_concrete_fetch_address_error, _) -> LT
+  | (_, FDE_non_concrete_fetch_address_error) -> GT
+
+  | (FDE_illegal_fetch_address_error address1,
+     FDE_illegal_fetch_address_error address2)
+      -> compare address1 address2
+  | (FDE_illegal_fetch_address_error _, _) -> LT
+  | (_, FDE_illegal_fetch_address_error _) -> GT
+
+  | (FDE_decode_error decode_error1 address1,
+     FDE_decode_error decode_error2 address2)
+      -> compare (decode_error1, address1) (decode_error2, address2)
+  (* | (FDE_decode_error _ _, _) -> LT *)
+  (* | (_, FDE_decode_error _ _) -> GT *)
+  end
+
+let fetch_and_decode_exception_less e1 e2       = fetch_and_decode_exception_compare e1 e2 =  LT
+let fetch_and_decode_exception_less_eq e1 e2    = fetch_and_decode_exception_compare e1 e2 <> GT
+let fetch_and_decode_exception_greater e1 e2    = fetch_and_decode_exception_compare e1 e2 =  GT
+let fetch_and_decode_exception_greater_eq e1 e2 = fetch_and_decode_exception_compare e1 e2 <> LT
+
+instance (Ord fetch_and_decode_exception)
+  let compare = fetch_and_decode_exception_compare
+  let (<)  = fetch_and_decode_exception_less
+  let (<=) = fetch_and_decode_exception_less_eq
+  let (>)  = fetch_and_decode_exception_greater
+  let (>=) = fetch_and_decode_exception_greater_eq
+end
+
+let {coq; ocaml} fetch_and_decode_exception_equal e1 e2 = (fetch_and_decode_exception_compare e1 e2) = EQ
+let inline {hol; isabelle} fetch_and_decode_exception_equal = unsafe_structural_equality
+
+let {coq; ocaml} fetch_and_decode_exception_inequal e1 e2 = not (fetch_and_decode_exception_equal e1 e2)
+let inline {hol; isabelle} fetch_and_decode_exception_inequal = unsafe_structural_inequality
+
+ instance  (Eq fetch_and_decode_exception)
+  let (=)  = fetch_and_decode_exception_equal
+  let (<>) = fetch_and_decode_exception_inequal
+ end
+
+
+type exception_type =
+  (* the read_request and the unmapped footprint *)
+  | ET_read_from_unmapped_memory of read_request * slices
+  | ET_write_to_unmapped_memory of list write
+  | ET_fetch_and_decode of fetch_and_decode_exception
+  | ET_loop_limit_reached (* this exception will be recorded in the
+                          instruction instance of the branch target *)
+  | ET_ISA_termination of string
+
+let exception_type_compare e1 e2 =
+  match (e1, e2) with
+  | (ET_read_from_unmapped_memory read_request1 slices1,
+     ET_read_from_unmapped_memory read_request2 slices2)
+      -> compare (read_request1, slices1) (read_request2, slices2)
+  | (ET_read_from_unmapped_memory _ _, _) -> LT
+  | (_, ET_read_from_unmapped_memory _ _) -> GT
+
+  | (ET_write_to_unmapped_memory ws1, ET_write_to_unmapped_memory ws2)
+      -> compare ws1 ws2
+  | (ET_write_to_unmapped_memory _, _) -> LT
+  | (_, ET_write_to_unmapped_memory _) -> GT
+
+  | (ET_fetch_and_decode f1, ET_fetch_and_decode f2) -> compare f1 f2
+  | (ET_fetch_and_decode _, _) -> LT
+  | (_, ET_fetch_and_decode _) -> GT
+
+  | (ET_loop_limit_reached, ET_loop_limit_reached) -> EQ
+  | (ET_loop_limit_reached, _) -> LT
+  | (_, ET_loop_limit_reached) -> GT
+
+  | (ET_ISA_termination s1, ET_ISA_termination s2) -> compare s1 s2
+  (* | (ET_ISA_termination _, _) -> LT
+  | (_, ET_ISA_termination _) -> GT *)
+  end
+
+let exception_type_less e1 e2       = exception_type_compare e1 e2 =  LT
+let exception_type_less_eq e1 e2    = exception_type_compare e1 e2 <> GT
+let exception_type_greater e1 e2    = exception_type_compare e1 e2 =  GT
+let exception_type_greater_eq e1 e2 = exception_type_compare e1 e2 <> LT
+
+instance (Ord exception_type)
+  let compare = exception_type_compare
+  let (<)  = exception_type_less
+  let (<=) = exception_type_less_eq
+  let (>)  = exception_type_greater
+  let (>=) = exception_type_greater_eq
+end
+
+let {coq; ocaml} exception_type_equal e1 e2 = (exception_type_compare e1 e2) = EQ
+let inline {hol; isabelle} exception_type_equal = unsafe_structural_equality
+let {coq; ocaml} exception_type_inequal e1 e2 = not (exception_type_equal e1 e2)
+let {hol; isabelle} exception_type_inequal = unsafe_structural_inequality
+
+instance  (Eq exception_type)
+  let (=)  = exception_type_equal
+  let (<>) = exception_type_inequal
+end
+
+let showFromExceptionType = function
+  | ET_read_from_unmapped_memory rr s -> "ET_read_from_unmapped_memory " ^ show rr ^ "[" ^ show s ^ "]"
+  | ET_write_to_unmapped_memory ws    -> "ET_write_to_unmapped_memory " ^ show ws
+  | ET_fetch_and_decode fde           -> "ET_fetch_and_decode [???]"
+  | ET_loop_limit_reached             -> "ET_loop_limit_reached"
+  | ET_ISA_termination msg            -> "ET_ISA_termination " ^ msg
+  end
+
+instance (Show exception_type)
+  let show = showFromExceptionType
+end
+
+(* this should become polymorphic in the instruction state. Otherwise, how can
+   we pull out theorem prover definitions without interpreter definitions as
+   well? *)
+
+type outcome_S = outcome_s unit
+(* An outcome_S corresponds to the instruction state. It contains:
+   - the next outcome
+   - maybe (a pp of the current interpreter state)
+   - maybe (a function that given an environment gives us the exhaustive events from this state)
+   This is so we can hide the interpreter state from machineDefTypes but still get the functionality
+   we need for the interpreter.
+ *)
+
+
+type micro_op_state =
+  | MOS_plain               of outcome_S
+  | MOS_pending_mem_read    of (memory_value -> outcome_S)
+  | MOS_potential_mem_write of (bool -> outcome_S)
+  | MOS_AMO_lock            of (memory_value -> outcome_S)
+  | MOS_AMO_unlock          of outcome_S
+  | MOS_pending_exception   of exception_type
+
+(* misaligned writes must be split into multiple subwrites *)
+type subwrites =
+  <|  (* the footprint of the whole write, when known *)
+      sw_addr : maybe footprint;
+      (* sw_potential_write_addresses, sw_potential_writes and sw_propagated_writes
+      are mutually exclusive. A write starts its life when the ISA model
+      generates a Write_ea outcome. The write is recorded in
+      sw_potential_write_addresses with w_value set to Nothing.
+      In non-MCA ARM, those writes can already be ("symbolically") forwarded to reads. *)
+      sw_potential_write_addresses: list write;
+      (* When the ISA model generates a Write_memv w_value is set to the
+      appropriate value and the write is moved to sw_potential_writes. *)
+      sw_potential_writes: list write;
+      (* when the write is propagated to storage it is moved to sw_propagated_writes. *)
+      sw_propagated_writes: list write;
+
+      sw_committed: bool;
+  |>
+
+(* misaligned reads must be split into multiple subreads that can be
+satisfied at different points, but with a single thread-state
+continuation in the MOS_pending_mem_read for when they have all been
+satisfied *)
+type subreads =
+  <|  (* the footprint of the whole read, when known *)
+      sr_addr : maybe footprint;
+      (* ASSUME: the domains of sr_unsat_slices and sr_writes_read_from
+      are always identical and are the set of all current read requests
+      of the instruction *)
+      (* map read to its unsatisfied slices *)
+      sr_unsat_slices : list (read_request * slices);
+      (* map read to the writes it reads from, writes might overlap,
+      head covers tail.
+      In non-MCA ARM, some writes might have an unknown value due to early
+      write-forwarding. The value will be set when we handle the Write_memv
+      outcome *)
+      sr_writes_read_from : list (read_request * (list (write * slices)));
+      (* map read to the slices that were requested from storage.
+      we don't remove the request even after we get the response. This
+      is important for load-acquires: if a write was forwarded to a load-acquire
+      that write can be propagated only after the load-acquire token has
+      been passed to storage. This is also important for load-exclusive
+      when we determine if the paired store-exclusive can be successful *)
+      sr_requested : list (read_request * slices);
+      (* the assembled memory value, starts from Nothing and changes
+      to Just .. after all read requests are fully satisfied *)
+      sr_assembled_value : maybe memory_value;
+  |>
+
+(* return all the read-requests of subreads' *)
+let read_requests_of_subreads subreads : list read_request =
+  fst (List.unzip subreads.sr_unsat_slices)
+
+
+
+type register_read_source =
+  | RRS_instruction of ioid * list reg_name * list (maybe_value_fragment bit_lifted)
+  | RRS_initial_state of list (maybe_value_fragment bit_lifted)
+  | RRS_pseudoregister
+(* the lists of maybe_value_fragments above are recorded only for the sake of constructing axiomatic executions for the user interface *)
+
+(* list with the most recent at the head *)
+type register_read_sources = list register_read_source
+
+type register_write_dependency =
+    | RWD_reg_write of ioid * list reg_name (* a po-previous instruction and register writes
+                                            that feed a register read that was performed
+                                            before the register write *)
+    | RWD_mem_read (* indicates the instruction performed a memory read
+                   before the register write *)
+
+(* these are the fields of instruction_instance we need for doing a
+partial restart of an rmw instruction *)
+type rmw_finished_load_snapshot =
+  <|  rfls_instance_id_state: id_state ioid;
+      rfls_reg_reads:         list (reg_name * register_read_sources * register_value);
+      rfls_reg_writes:        list (reg_name * (list register_write_dependency * register_value));
+      rfls_micro_op_state:    micro_op_state;
+  |>
+
+type instruction_instance =
+       <| instance_ioid: ioid; (*: Chosen to make every instance unique :*)
+          instance_id_state: id_state ioid; (*: generating unique IDs for events :*)
+          program_loc: address;  (*: record fetched address :*)
+          program_opcode: maybe opcode;  (*: record fetched opcode :*)
+          instruction: instruction_ast; (*:  assembly AST instruction,:*)
+
+          (* statically analysed data about the instruction*)
+          instruction_kind: instruction_kind;
+          initial_micro_op_state: micro_op_state;
+          (* for all instructions except lswx/stswx, the regs_in, regs_out,
+              and regs_feeding_address fields will be constant and the
+              "initial" variants will be identical.  For lswx, those
+              three can change dynamically, and the initial variants
+              are kept to properly restart an lswx instruction to its
+              initial state*)
+          initial_regs_in: set reg_name;         (*: The input registers, for ease of dependency calculation :*)
+          initial_regs_out: set reg_name;        (*: The output registers, for ease of dependency calculation :*)
+          initial_regs_in_feeding_address: set reg_name;         (*: The input registers that feed into a read or write address :*)
+          regs_in: set reg_name;         (*: The input registers, for ease of dependency calculation :*)
+          regs_out: set reg_name;        (*: The output registers, for ease of dependency calculation
+              Currently in PPC and AArch64, if a register is in regs_out
+              eventually it will also be in reg_writes. Hence regs_out
+              can be calculated once and safely used for dependency
+              calculations.
+              regs_out block dependencies as long as
+              the instruction is not finished (TODO: should be committed???).
+              After the instruction is finished we only use reg_writes.
+              A more relaxed model might requier us to recalculate
+              regs_out before the instruction is finished  :*)
+          regs_in_feeding_address: set reg_name;         (*: The input registers that feed into a read or write address :*)
+          ioids_feeding_address: set ioid; (*: the previous instructions that write input registers that feed into a read or write address :*)
+          (* invariant: regs_in, regs_out, and ioids_feeding_addresses
+              do not include the Power pseudoregisters CIA and NIA *)
+          nias: set nia;
+          (* the size of nias is greater than 1 iff the instruction is a conditional branch *)
+          mips_dia: dia;
+
+          (* dynamic info *)
+          (*reg_read_from_ioids: set ioid;  (*: the instructions this instruction has done register reads from :*)*)
+
+          (* reg_reads: accumulated register reads, most recent at head
+          (possibly including pseudoregister reads), used for:
+          - recalculate_register_footprint
+          - track dependencies to register writes *)
+          reg_reads: list (reg_name * register_read_sources * register_value);
+
+          (* accumulated register writes, most recent at head (possibly
+          including pseudoregister writes to NIA) - subject to restart.
+          the 'list register_write_dependency' is used by commitDataflow *)
+          reg_writes: list (reg_name * (list register_write_dependency * register_value));
+
+(*SUBSUMED BY writes_read_from??          read_responses : set read_response ; (*: Read responses :*)*)
+(*           writes_read_from: set (write*slices);  (*: Tracking writes read from, to determine restart candidates at invalidates. This component starts out empty and evolves through time - subject to restart :*) *)
+
+          subreads:  subreads;
+          subwrites: subwrites;
+
+          successful_atomic_store: maybe bool;
+            (* after setting to 'Just b' it will never change, not even
+            when restarted *)
+            (* AArch64: 'true' for committed to succeed; 'false' for
+            committed to fail *)
+            (* RISC-V: 'true' only after the atomic-store is completed;
+            'false' if chosen to fail early or after propagation fails; *)
+
+          committed_barriers: list barrier; (* barriers sent to storage subsystem on commit *)
+
+          finished:  bool; (*: committed and no more microops :*)
+
+          micro_op_state: micro_op_state;  (* evolving over time *)
+
+          rmw_finished_load_snapshot: maybe rmw_finished_load_snapshot;
+    |>
+
+
+(* NOTE: we compare only the ioid of the instruction!
+use 'set instruction_instance' only when you are sure the instructions
+are not going to change *)
+instance forall. (SetType instruction_instance)
+  let setElemCompare i1 i2 = compare i1.instance_ioid i2.instance_ioid
+end
+
+instance forall. (Eq instruction_instance)
+  let (=) inst1 inst2 = inst1.instance_ioid = inst2.instance_ioid
+  let (<>) inst1 inst2 = not (inst1.instance_ioid = inst2.instance_ioid)
+end
+
+
+
+(** *********************  thread states **********************)
+
+type instruction_tree =
+  | T of list (instruction_instance * instruction_tree)
+
+type instruction_tree_context_node (*name="itc*"*) =
+  | ITC_node of (list (instruction_instance * instruction_tree))
+      * instruction_instance (* context hole *)
+      * (list (instruction_instance * instruction_tree))
+
+type instruction_tree_context =
+  | ITC_innermost of
+      (list (instruction_instance * instruction_tree))
+        (* instruction and subtree hole *)
+        * (list (instruction_instance * instruction_tree))
+        * list (instruction_tree_context_node)
+          (* list of the outer left- and right- context pairs, innermost at the head *)
+
+type instruction_prefix =
+    list (instruction_instance)
+      (* the po-prefix, most recent at the head*)
+
+type instruction_in_context =
+   <| iic_instance: instruction_instance;
+      context: instruction_tree_context;
+      subtree: instruction_tree;
+      active_prefix: instruction_prefix (*in-flight or finished*);
+      old_prefix: instruction_prefix (*old*);
+   |>
+
+
+type pldi11_thread_substate =
+  <| (* Barrier acknowledgements not yet received *)
+     unacknowledged_syncs: set barrier;
+  |>
+
+
+type pop_thread_substate =
+  <|  (* Track the order in which read_requests are issued (i.e.
+      passed to storage). head is the last request that was issued. We use
+      the order to determine if a read request needs to be restarted. See
+      MP+dmb+pos-fri-rfi-ctrlisb for example.  Also see private notes84: TYPES1 *)
+      read_issuing_order : relon read_request;
+  |>
+
+type thread_substate =
+  | PLDI11_thread of pldi11_thread_substate
+  | POP_thread of pop_thread_substate
+  | No_substate
+
+let get_pldi11_thread_substate thread =
+  match thread with
+  | PLDI11_thread thread_substate -> thread_substate
+  | _ -> fail
+  end
+
+let get_pop_thread_substate thread =
+  match thread with
+  | POP_thread thread_substate -> thread_substate
+  | _ -> fail
+  end
+
+(* TODO: register data is in both here and in the isa_info part of thread_params *)
+type thread_state =
+  <| (* the id of this thread, for reference *)
+     thread: thread_id;
+
+     id_state: id_state thread_id;
+
+     (* the address where the thread should end up when execution is
+     completed. We use this address to detect when we should stop
+     fetching instructions.
+     ELF threads will have a return/branch instruction that tries to
+     jump to that address;
+     This is the address of the last instruction (dummy/end_ins) in litmus
+     tests (inserted by translate.ml), the one before last instruction
+     will have this address as the successor instruction *)
+     return_address: address;
+
+     (* the registers with their direction, width, and initial index *)
+     register_data: registerdata;
+
+     (* Map from registers to values *)
+     initial_register_state: (reg_base_name -> register_value);
+     (* ...replace with a fake multiple-register-write instruction?  *)
+
+     (* the address from which to fetch the first instruction *)
+     initial_fetch_address: maybe address; (* Nothing for a thread which has not yet started*)
+
+     (* maximal contiguous prefix of instructions that            *)
+     (* (1) have been finished and                                *)
+     (* (2) whose successors have all been fetched and            *)
+     (* (3) all sync-acks have been received, most-recent at the  *)
+     (*     head                                                  *)
+     (* ...and we might replace the old ones by fake instructions *)
+     (* that just have enough register writes...?                 *)
+     old_instructions: list instruction_instance;
+
+     instruction_tree: instruction_tree;
+     (* ...for the above two, it'd be nice to be able to find the *)
+     (* right place in the tree without a big search?             *)
+
+     (* this is for ARM transactional memory, but it might also work for POWER *)
+     transaction: maybe (transaction_start * (register_value -> instruction_instance));
+
+     (* the part of the state that is unique to each model *)
+     thread_substate: thread_substate;
+  |>
+
+
+type fetch_and_decode_outcome =
+  | FDO_success of address * (maybe opcode) * instruction_ast
+  | FDO_address_not_concrete
+  | FDO_illegal_fetch_address
+  | FDO_decode_error of decode_error_t
+
+
+(******************** Promising Thread Subsystem *******************)
+
+type addrNat = nat
+
+type pts' 'v = 
+  <| reg : map reg_base_name register_value
+   ; vCoh : map address 'v
+   ; vReg : map reg_base_name 'v
+   ; vRm  : 'v
+   ; vRp  : 'v
+   ; vWm  : 'v
+   ; vWp  : 'v
+   ; vCAP : 'v
+   ; vRel : 'v
+   ; fwd_bank : map address (w_eiid * bool * 'v)
+   ; xcl_bank : maybe ((w_eiid * address) * 'v) (* v is read exclusive view, for RISCV *)
+   ; promises : set w_eiid
+   ; prog     : address -> fetch_and_decode_outcome
+   ; initAddr : maybe address
+   ; retAddr  : address
+   ; tid      : thread_id
+   ; ids      : id_state thread_id
+   ; wids     : Map.map addrNat nat
+   ; regdata  : registerdata
+   (* information for user-interface purposes only *)
+   ; instrs   : list instruction_instance
+   ; initRegS : (reg_base_name -> register_value)
+  |>
+
+type ptsto = pts' t
+type ptspo = pts' write_ids
+
+type promising_thread_state =
+  | PTSTO of ptsto
+  | PTSPO of ptspo
+
+(** *********************  View class *******************************)
+
+class (View 'v) 
+  val join : 'v -> 'v -> 'v
+  val bot : 'v
+  val le : 'v -> 'v -> bool
+  val to_view : 'v -> view
+  val to_v : view -> 'v
+  val add_write : write -> 'v -> 'v
+    
+  val toPTS : pts' 'v -> promising_thread_state
+  val to_ui_view : 'v -> ui_view
+end
+
+instance (View nat)
+  let join = max
+  let bot = 0
+  let le = (<=)
+  let to_view = Timestamp
+  let to_v = function 
+    | Timestamp t -> t
+    | _ -> fail
+    end
+   let add_write = fun _ -> (+) 1
+  let toPTS = fun s -> PTSTO s
+  let to_ui_view = fun n -> UI_Timestamp n
+end 
+
+instance (View write_ids)
+  let join = fun (WI s) (WI s') -> WI (s union s')
+  let bot = WI Set.empty
+  let le = fun (WI s) (WI s') -> Set.isSubsetOf s s'
+  let to_view = fun (WI s) -> Write_Ids (WI s)
+  let to_v = function 
+    | Write_Ids s -> s
+    | _ -> fail
+    end
+  let add_write = fun w (WI v) -> WI (Set.insert w.weiid v)
+  let toPTS = fun s -> PTSPO s
+  let to_ui_view = fun (WI s) -> UI_Write_Ids (Set_extra.toList s)
+end 
+
+val joinS : forall 'v. View 'v => list 'v -> 'v
+let joinS = List.foldl join bot
+
+val ifV : forall 'v. View 'v => bool -> 'v -> 'v
+let inline ifV c v = if c then v else bot
+
+val mV : forall 'v. View 'v => maybe 'v -> 'v
+let inline mV = function
+  | Nothing -> bot
+  | Just v -> v
+end
+
+(** model parameters *)
+(*: \subsection{Model Parameters} :*)
+
+type propagate_write_params =
+  | Only_at_end
+  | Possibly_in_middle
+
+type new_coherence_params =
+  | Use_new_coherence
+  | Use_old_coherence
+  | Check_new_vs_old
+
+type storage_model =
+  | PLDI11_storage_model
+  | Flowing_storage_model
+  | Flat_storage_model
+  | POP_storage_model
+  | NOP_storage_model
+  | TSO_storage_model
+  | Promising_storage_model
+
+type flowing_topology =
+  | FTopo_leaf of thread_id
+  | FTopo_join of list flowing_topology
+
+type ss_params =
+  <| ss_model: storage_model;
+     ss_sc   : bool; (* behave like SC *)
+     pw      : propagate_write_params;
+     new_coh : new_coherence_params;
+
+     (* parameters for Flowing *)
+     flowing_topology : flowing_topology;
+
+     promise_first: bool;
+  |>
+
+
+type thread_flowing_same_address_params =
+  | Flowing_same_address_strict
+  | Flowing_same_address_aggressive
+
+type thread_restrict_write_commit_params =
+  | Forbid_prev_uncommitted_read_type0
+  | Allow_prev_uncommitted_determined_addr_read_type1
+
+type thread_restart_read_params =
+  | Restart_on_commit
+  | Restart_on_read_satisfy
+
+type aarch64_variant =
+  | AArch64HandSail   (* hand written ISA model *)
+  | AArch64GenSail    (* auto-generated ISA model *)
+
+type instruction_semantics_mode (* ism *) =
+  | PPCGEN_ism
+  | AARCH64_ism of aarch64_variant
+  | MIPS_ism
+  | RISCV_ism
+  | X86_ism
+
+type pop_thread_model =
+  | Standard_POP
+  | Flat_POP
+
+type thread_model =
+  | PLDI11_thread_model
+  | POP_thread_model of pop_thread_model
+  | TSO_thread_model
+  | Promising_thread_model
+  | Relaxed_thread_model  (* A bit of a hack! This is a very relaxed model
+                          intended to be used with 'rmem -dot_final_ok true ...'.
+                          It should allow all litmus tests that don't
+                          have a "data | addr | rf | fr" cycle.
+                          To be used together with flat-storage. *)
+
+type thread_restriction =
+  | RestrictionNone
+  | RestrictionSC      (* sequential consistency *)
+  | RestrictionSCANASC (* single-copy-atomic non-atomic-sequential-consistency *)
+
+type thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr:   reg_name;
+      tsi_toc:    maybe reg_name; (* PPCGEN *)
+      tsi_extra:  maybe reg_name; (* PPCGEN, though unused *)
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return: reg_name;
+
+      (* these registers hold the arguments of the new thread function *)
+      tsi_f_tid:  reg_name;
+      tsi_f_toc:  maybe reg_name; (* PPCGEN *)
+      tsi_f_addr: maybe reg_name; (* MIPS *)
+  |>
+
+let thread_start_info_stub =
+  <|  tsi_addr  = Reg "" 0 0 D_increasing;
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      tsi_return = Reg "" 0 0 D_increasing;
+      tsi_f_tid  = Reg "" 0 0 D_increasing;
+      tsi_f_toc  = Nothing;
+      tsi_f_addr = Nothing;
+  |>
+
+type isa_info =
+  <|  ism : instruction_semantics_mode;
+      is_system_call_instruction  : instruction_ast -> maybe integer;
+      is_thread_start_instruction : instruction_ast -> bool;
+      is_test_begin_instruction   : instruction_ast -> bool;
+      is_test_end_instruction     : instruction_ast -> bool;
+
+      thread_start_info : thread_start_info;
+
+      register_data_info     : registerdata;
+      fixed_pseudo_registers : list (reg_name * register_value);
+      cia_reg                : reg_name;
+      nia_reg                : reg_name;
+      dia_reg                : maybe reg_name;
+
+      make_empty_write_events  : thread_id -> instruction_instance ->
+        footprint -> write_kind -> ((list write) * (id_state ioid));
+      make_read_request_events : thread_id -> instruction_instance ->
+        footprint -> read_kind -> ((list read_request) * (id_state ioid))
+  |>
+
+let isa_info_stub =
+  <|  ism                         = PPCGEN_ism;
+      is_system_call_instruction  = fun _ -> failwith "stub";
+      is_thread_start_instruction = fun _ -> failwith "stub";
+      is_test_begin_instruction   = fun _ -> failwith "stub";
+      is_test_end_instruction     = fun _ -> failwith "stub";
+      thread_start_info           = thread_start_info_stub;
+      register_data_info          = [];
+      fixed_pseudo_registers      = [];
+      cia_reg                     = Reg "" 0 0 D_increasing;
+      nia_reg                     = Reg "" 0 0 D_increasing;
+      dia_reg                     = Nothing;
+      make_empty_write_events     = fun _ _ _ _ -> failwith "stub";
+      make_read_request_events    = fun _ _ _ _ -> failwith "stub";
+  |>
+
+type branch_targets_map = map thread_id (map address (set address))
+
+type thread_params =
+  <| thread_model:       thread_model;
+     thread_restriction: thread_restriction; (* additional model restrictions *)
+     thread_fsa:         thread_flowing_same_address_params;
+     thread_rwc:         thread_restrict_write_commit_params;
+     thread_rr:          thread_restart_read_params;
+     thread_allow_tree_speculation:  bool;
+     thread_allow_write_subsumption: bool;
+     thread_fail_on_loop:            bool;
+     thread_isa_info :               isa_info;
+     thread_loop_unroll_limit:       maybe nat;
+
+     branch_targets: branch_targets_map;
+
+     thread_certify_after_stop_promising : bool;
+     thread_promising_fuel : nat;
+
+     promising_partial_order : bool;
+  |>
+
+let is_pop_model params = match params.thread_model with
+  | POP_thread_model _ -> true
+  | _ -> false
+end
+
+let is_flat_model params = match params.thread_model with
+  | POP_thread_model Flat_POP -> true
+  | _ -> false
+end
+
+type model_params =
+  <| ss:             ss_params;
+     t:              thread_params;
+
+     shared_memory:  set footprint;
+  |>
+
+(** whole system state *)
+(*: \subsection{Whole-system state} :*)
+
+type instruction_semantics =
+  <| initial_outcome_s_of_instruction: instruction_ast -> outcome_S;
+     instruction_analysis :
+       outcome_S (* the current outcome for the interpreter *) ->
+       instruction_ast ->
+       string (*analysis function*) ->
+       (string -> (Maybe.maybe string) -> (nat*nat*direction*(nat*nat))) (* reginfo*) ->
+       reg_name (* nia_reg *) ->
+       list (reg_name * register_value) ->
+       (list reg_name * list reg_name * list reg_name * list nia * dia * instruction_kind);
+     decode_to_instruction : address -> opcode -> fetch_and_decode_outcome;
+  |>
+
+
+type instruction_semantics_option =
+  | Interp of bool (* true for eager, false for non-eager *)
+  | Shallow_embedding
+
+type instruction_semantics_p =
+  instruction_semantics_option ->
+  instruction_semantics
+
+
+
+
+(** ***************   transitions ******************************)
+
+(** storage subsystem transitions *)
+
+(* storage-subsystem initiated transitions that don't involve other subsystems *)
+type ss_only_trans =
+  (*** PLDI11 transitions: ***)
+  | SS_PLDI11_partial_coherence_commit of write * write
+  (* TODO: the next 2 are whole writes or fragments? *)
+  | SS_PLDI11_propagate_write_to_thread of (write * slices) * thread_id
+  | SS_PLDI11_write_reaches_coherence_point of write
+  (* TODO: should we be able to do reassembly, so set (set write_fragment) is returned for read requests? *)
+  | SS_PLDI11_propagate_barrier_to_thread of barrier * thread_id
+  (*** POP transitions: ***)
+  | SS_POP_propagate_event_to_thread of flowing_event * thread_id
+  | SS_POP_partially_satisfy_read of read_request * list (write * slices)
+  (*** NOP transitions: ***)
+  | SS_NOP_constrain_order of write * write
+  | SS_NOP_propagate_everything
+  (*** Flowing transitions: ***)
+  | SS_Flowing_flow_write_to_memory of write
+  | SS_Flowing_flow_barrier_to_memory of barrier
+  | SS_Flowing_flow_satisfied_read_to_memory of read_request
+  | SS_Flowing_reorder_events of flowing_event * flowing_event
+  | SS_Flowing_flow_to_segment of flowing_event
+  | SS_Flowing_partially_satisfy_read of read_request * list (write * slices)
+  (*** TSO transitions: ***)
+  | SS_TSO_propagate_write_to_memory of write
+  (*** Promising transitions: ***)
+  | SS_Promising_stop_promising
+
+let principal_ioid_of_ss_only_trans = function
+  | SS_PLDI11_partial_coherence_commit w1 _      -> w1.w_ioid (* or maybe the other one? *)
+  | SS_PLDI11_propagate_write_to_thread (w, _) _ -> w.w_ioid
+  | SS_PLDI11_write_reaches_coherence_point w    -> w.w_ioid
+  | SS_PLDI11_propagate_barrier_to_thread b _    -> b.b_ioid
+  | SS_POP_propagate_event_to_thread e tid       -> principal_ioid_of_flowing_event e
+  | SS_POP_partially_satisfy_read r _            -> r.r_ioid
+  | SS_NOP_constrain_order _ w2                  -> w2.w_ioid (* or maybe the other one? *)
+  | SS_NOP_propagate_everything                  -> failwith "I don't know what to do"
+  | SS_Flowing_flow_write_to_memory w            -> w.w_ioid
+  | SS_Flowing_flow_barrier_to_memory b          -> b.b_ioid
+  | SS_Flowing_flow_satisfied_read_to_memory r   -> r.r_ioid
+  | SS_Flowing_reorder_events e1 _               -> principal_ioid_of_flowing_event e1
+  | SS_Flowing_flow_to_segment e                 -> principal_ioid_of_flowing_event e
+  | SS_Flowing_partially_satisfy_read r _        -> r.r_ioid
+  | SS_TSO_propagate_write_to_memory w           -> w.w_ioid
+  | SS_Promising_stop_promising                  -> (0,0) (* TODO: fix? *)
+  end
+
+(* transitions that are initiated by the storage subsystem but also change the thread state *)
+type ss_sync_trans =
+  (*** PLDI11 transitions: ***)
+  | SS_PLDI11_acknowledge_sync_barrier of barrier
+  (*** POP transitions: ***)
+  | SS_POP_read_response of read_request * memory_read_source
+  (*** NOP transitions: ***)
+  | SS_NOP_read_response_segment of read_request * memory_read_source
+  | SS_NOP_read_response_memory of read_request * memory_read_source *
+            set flowing_event * set flowing_event
+  (*** Flowing transitions: ***)
+  | SS_Flowing_seg_read_response of read_request * memory_read_source
+  | SS_Flowing_mem_read_response of read_request * memory_read_source
+
+let tid_of_ss_sync_trans = function
+  | SS_PLDI11_acknowledge_sync_barrier b -> b.b_thread
+  | SS_POP_read_response rr _            -> rr.r_thread
+  | SS_NOP_read_response_segment rr _    -> rr.r_thread
+  | SS_NOP_read_response_memory rr _ _ _ -> rr.r_thread
+  | SS_Flowing_seg_read_response rr _    -> rr.r_thread
+  | SS_Flowing_mem_read_response rr _    -> rr.r_thread
+  end
+
+let principal_ioid_of_ss_sync_trans = function
+  | SS_PLDI11_acknowledge_sync_barrier b -> b.b_ioid
+  | SS_POP_read_response rr _            -> rr.r_ioid
+  | SS_NOP_read_response_segment rr _    -> rr.r_ioid
+  | SS_NOP_read_response_memory rr _ _ _ -> rr.r_ioid
+  | SS_Flowing_seg_read_response rr _    -> rr.r_ioid
+  | SS_Flowing_mem_read_response rr _    -> rr.r_ioid
+  end
+
+type thread_cont_res 'ts =
+  <|  tcr_state:          'ts;
+      tcr_inst_restarted: set ioid;
+      tcr_inst_discarded: set ioid;
+  |>
+
+(* the continuation returns the next thread state and, if needed, the
+read-requests that are still active so that the storage-subsystem can
+remove the old ones *)
+type thread_cont 'answer 'ts =
+  <|  tc_tid:  thread_id;
+      tc_ioid: ioid;
+      tc_cont: 'answer -> thread_cont_res 'ts;
+  |>
+
+(* all storage subsystem transitions *)
+type ss_trans_t 'ss 'tc =
+  | SS_only of ss_only_trans * (unit -> 'ss)
+  | SS_sync of ss_sync_trans * (unit -> 'ss) * 'tc (* 'tc: see types below *)
+
+(* when the transition is generated by the storage 'tc is unit; after
+the transition is synced with the thread 'tc is the thread continuation *)
+type ss_trans 'ss         = ss_trans_t 'ss unit
+type sys_ss_trans 'ts 'ss = ss_trans_t 'ss (maybe (thread_cont unit 'ts))
+
+let principal_ioid_of_ss_trans = function
+  | SS_only t _   -> principal_ioid_of_ss_only_trans t
+  | SS_sync t _ _ -> principal_ioid_of_ss_sync_trans t
+  end
+
+(** thread transitions *)
+
+type fetch_kind =
+  | FK_normal (* the fetch is the only successor, and it's fixed, e.g., following
+              a non-branch instruction, or following a conditional branch where
+              both branches are hard coded to the same target *)
+  | FK_multiple_fixed (* the fetch is part of multiple fixed successor, e.g.,
+                      following a conditional branch where both branches are
+                      hard coded *)
+  | FK_unfixed  (* the fetch is part of (potentially) multiple successors
+                of which some of them might not be known yet, e.g., following
+                a branch register *)
+
+(* memory_write_outcome is what we feed the thread continuation after
+committing a write *)
+type memory_write_outcome 'a =
+  | MWO_successful of 'a (* writes were performed *) (* 'a is timestamp for the case of Promising, otherwise unit *)
+  | MWO_unmapped_address of list write  (* trying to access unmapped address *)
+  | MWO_exclusive_failed                (* write-exclusive failed *)
+
+type thread_label 'request 'answer 'ts =
+  <|  tl_label: 'request;
+      tl_suppl: maybe 'answer;
+      tl_cont:  thread_cont 'answer 'ts;
+  |>
+
+let next_thread_of_tl tl : thread_cont_res 'ts =
+  match tl.tl_suppl with
+  | Just s  -> tl.tl_cont.tc_cont s
+  | Nothing -> fail
+  end
+
+type thread_only_trans =
+  (** internal transitions: *)
+  | T_internal_outcome (* only from interpreter, not shallow embedding? *)
+  | T_pending_memory_read_request
+  | T_pseudoreg_read      of reg_name * register_value
+  | T_pseudoreg_write     of reg_name * register_value
+  | T_footprint_outcome
+  | T_actually_satisfy    of memory_value
+  (** not internal transitions: *)
+  | T_register_read       of reg_name * register_read_sources * register_value
+  | T_register_write      of reg_name * register_value
+  | T_mem_forward_write   of read_request * list (write * slices)
+  | T_mem_write_footprint of list write
+  | T_mem_potential_write of list write
+  | T_finish              of (address * instruction_ast) * maybe register_snapshot * maybe memory_snapshot
+  | T_finish_load_of_rmw
+  | T_exception           of exception_type
+  | T_commit_store   (* at this point the store is guaranteed to happen *)
+  | T_complete_store (* at this point all writes have been propagated to storage *)
+  | T_successful_store_excl (* see also T_try_store_excl for when we need the storage *)
+  | T_potential_store_cond
+  | T_failed_store_excl
+  | T_prev_excl_result    of bool
+  | T_commit_barrier      of barrier (* commit isb/isync/dmb ld *)
+  | T_POP_subsumed_write  of write (* like T_propagate_write but for subsumed writes; after
+                                      this transition the write cannot be forwarded *)
+  (** although these two transitions are thread-only, they change the
+  system lock *)
+  | T_RISCV_atomic_begin (* begin the memory access of an AMO *)
+  | T_RISCV_atomic_end   (* end the memory access of an AMO *)
+
+let show_thread_only_label = function
+  (** internal transitions: *)
+  | T_internal_outcome -> "T_internal_outcome"
+  | T_pending_memory_read_request -> "T_pending_memory_read_request"
+  | T_pseudoreg_read _ _ -> "T_pseudoreg_read"
+  | T_pseudoreg_write _ _ -> "T_pseudoreg_write"
+  | T_footprint_outcome -> "T_footprint_outcome"
+  | T_actually_satisfy _ -> "T_actually_satisfy"
+  (** not internal transitions: *)
+  | T_register_read _ _ _ -> "T_register_read"
+  | T_register_write _ _ -> "T_register write"
+  | T_mem_forward_write _ _ -> "T_mem_forward_write"
+  | T_mem_write_footprint _ -> "T_mem_write_footprint"
+  | T_mem_potential_write _ -> "T_mem_potential_write"
+  | T_finish _ _ _ -> "T_finish"
+  | T_finish_load_of_rmw -> "T_finish_load_of_rmw"
+  | T_exception _ -> "T_exception"
+  | T_commit_store -> "T_commit_store"
+  | T_complete_store -> "T_complete_store"
+  | T_successful_store_excl -> "T_successful_store_Excl"
+  | T_potential_store_cond -> "T_potential_store_cont"
+  | T_failed_store_excl -> "T_failed_store_excl"
+  | T_prev_excl_result  _-> "T_prev_excl_result"
+  | T_commit_barrier _ -> "T_commit_barrier"
+  | T_POP_subsumed_write _ -> "T_POP_subsumed_write"
+  | T_RISCV_atomic_begin -> "T_RISCV_atomic_begin"
+  | T_RISCV_atomic_end -> "T_RISCV_atomic_end"
+end
+
+(* thread transitions which involve interaction with the storage
+subsystem when taken *)
+(** NOTE: ALL THE CONSTRUCTORS SHOULD HAVE THE TYPE "thread_label 'l 's" *)
+type thread_sync_label 'ts =
+  | T_fetch of thread_label
+      (* bool: the fetch is one out of multiple branches *)
+      (address * fetch_kind)
+      fetch_and_decode_outcome
+      'ts
+  | T_mem_read_request of thread_label
+      (read_request * slices (* the slices we're requesting *)
+          * list (write * slices) (* the writes that have previously been forwarded to the read*)
+          * maybe (set ioid)) (* for load-exclusive: the set of paired successful store-exclusives *)
+      bool (* 'false' for read from unmapped memory *)
+      'ts
+  | T_propagate_write of thread_label
+          (write (* the write itself *)
+          * maybe read_request (* maybe an exclusive read_request in case of a write-exclusive  *)
+          * list (read_request * list (write * slices) * set ioid)) (* the rf-by-forwarding information *)
+      (memory_write_outcome unit)
+      'ts
+  | T_propagate_barrier of thread_label barrier unit 'ts
+  | T_try_store_excl    of thread_label (* see also T_successful_store_excl for when we don't need the storage *)
+      (* the maybe: Nothing if the paired read was requested and not satisfied yet;
+      subreads.sr_writes_read_from of the paired read if it was requested and satisfied *)
+      (read_request * maybe (list (write * slices)) * ioid)
+      unit
+      'ts
+  (*** PLDI11: ***)
+  | T_PLDI11_mem_satisfy_read of thread_label (read_request * slices) (list memory_read_source) 'ts
+  (* TODO  | T_commit_mem_write_cond *)
+  (*** POP: ***)
+  | T_POP_tm_start  of thread_label transaction_start unit 'ts
+  | T_POP_tm_commit of thread_label transaction_start unit 'ts
+  | T_POP_tm_abort  of thread_label (transaction_start * register_value) unit 'ts
+  (*** Flat: ***)
+  | T_Flat_mem_satisfy_read of thread_label
+      (read_request * slices * list (write * slices) * maybe (set ioid))
+        (* rr, unsat_slices, rf, paired_stores *)
+      (maybe (list memory_read_source)) (* 'Nothing' for read from unmapped memory *)
+      'ts
+  (* RISC-V-style commit and propagate store-conditional: *)
+  | T_Flat_try_commit_store_cond of thread_label
+      (write * list (write * slices)) (* the conditional write and the
+                                      writes the load-reserve read from *)
+      (memory_write_outcome unit)
+      'ts
+  (*** Promising: ***)
+  | T_Promising_propagate_write of thread_label
+      (writedata * bool) 
+      (memory_write_outcome view)
+      'ts
+  | T_Promising_fulfil_promise of thread_label
+      writedata
+      (memory_write_outcome view)
+      'ts
+  | T_Promising_mem_satisfy_read of thread_label
+      (read_request * view)
+      (maybe (write * view))
+      'ts 
+  | T_Promising_propagate_write_nonshared of thread_label
+      writedata (* whether promising *)
+      (memory_write_outcome view)
+      'ts
+  | T_Promising_mem_satisfy_read_nonshared of thread_label
+      (read_request * view)
+      (maybe (write * view))
+      'ts 
+  (*** TSO: ***)
+  | T_TSO_mem_satisfy_read of thread_label
+      read_request
+      (maybe (list memory_read_source)) (* 'Nothing' for read from unmapped memory *)
+      'ts
+
+let tid_of_thread_sync_trans = function
+  | T_fetch tl                      -> tl.tl_cont.tc_tid
+  | T_mem_read_request tl           -> tl.tl_cont.tc_tid
+  | T_propagate_write tl            -> tl.tl_cont.tc_tid
+  | T_propagate_barrier tl          -> tl.tl_cont.tc_tid
+  | T_PLDI11_mem_satisfy_read tl    -> tl.tl_cont.tc_tid
+  | T_try_store_excl tl             -> tl.tl_cont.tc_tid
+  | T_POP_tm_start tl               -> tl.tl_cont.tc_tid
+  | T_POP_tm_commit tl              -> tl.tl_cont.tc_tid
+  | T_POP_tm_abort tl               -> tl.tl_cont.tc_tid
+  | T_Flat_mem_satisfy_read tl      -> tl.tl_cont.tc_tid
+  | T_Flat_try_commit_store_cond tl -> tl.tl_cont.tc_tid
+  | T_TSO_mem_satisfy_read tl       -> tl.tl_cont.tc_tid
+  | T_Promising_fulfil_promise tl   -> tl.tl_cont.tc_tid
+  | T_Promising_propagate_write tl  -> tl.tl_cont.tc_tid
+  | T_Promising_mem_satisfy_read tl -> tl.tl_cont.tc_tid
+  | T_Promising_propagate_write_nonshared tl  -> tl.tl_cont.tc_tid
+  | T_Promising_mem_satisfy_read_nonshared tl -> tl.tl_cont.tc_tid
+  end
+
+let ioid_of_thread_sync_trans = function
+  | T_fetch tl                      -> tl.tl_cont.tc_ioid
+  | T_mem_read_request tl           -> tl.tl_cont.tc_ioid
+  | T_propagate_write tl            -> tl.tl_cont.tc_ioid
+  | T_propagate_barrier tl          -> tl.tl_cont.tc_ioid
+  | T_PLDI11_mem_satisfy_read tl    -> tl.tl_cont.tc_ioid
+  | T_try_store_excl tl             -> tl.tl_cont.tc_ioid
+  | T_POP_tm_start tl               -> tl.tl_cont.tc_ioid
+  | T_POP_tm_commit tl              -> tl.tl_cont.tc_ioid
+  | T_POP_tm_abort tl               -> tl.tl_cont.tc_ioid
+  | T_Flat_mem_satisfy_read tl      -> tl.tl_cont.tc_ioid
+  | T_Flat_try_commit_store_cond tl -> tl.tl_cont.tc_ioid
+  | T_TSO_mem_satisfy_read tl       -> tl.tl_cont.tc_ioid
+  | T_Promising_fulfil_promise tl   -> tl.tl_cont.tc_ioid
+  | T_Promising_propagate_write tl  -> tl.tl_cont.tc_ioid
+  | T_Promising_mem_satisfy_read tl -> tl.tl_cont.tc_ioid
+  | T_Promising_propagate_write_nonshared tl  -> tl.tl_cont.tc_ioid
+  | T_Promising_mem_satisfy_read_nonshared tl -> tl.tl_cont.tc_ioid
+  end
+
+(* all the thread transitions; this is a union of 'thread_label's with
+different specializations, depending on the type of the actual label
+and the type of the argument the thread continuation expects *)
+(** NOTE: if you need to add transitions that are not in one of the
+categories below, maybe you should add a new category; try not to add
+orphan transitions, like T_thread_start! *)
+type thread_trans_t 'ssc 'ts =
+  | T_only         of thread_label thread_only_trans unit 'ts
+  | T_sync         of thread_sync_label 'ts * 'ssc (* 'ssc: see types below *)
+  | T_thread_start of
+      thread_label
+        (register_value * maybe register_value) (* (opd address, opd toc), only PPCGEN has toc *)
+        (maybe thread_id) (* the tid of the new thread *)
+        'ts
+
+(* when the transition is generated by the thread 'ssc is unit; after
+the transition is synced with storage 'ssc is the storage continuation *)
+type thread_trans 'ts         = thread_trans_t unit 'ts
+type sys_thread_trans 'ts 'ss = thread_trans_t (maybe (unit -> 'ss)) 'ts
+
+let tid_of_thread_trans = function
+  | T_only tl         -> tl.tl_cont.tc_tid
+  | T_sync tsl _      -> tid_of_thread_sync_trans tsl
+  | T_thread_start tl -> tl.tl_cont.tc_tid
+  end
+
+let ioid_of_thread_trans = function
+  | T_only tl         -> tl.tl_cont.tc_ioid
+  | T_sync tsl _      -> ioid_of_thread_sync_trans tsl
+  | T_thread_start tl -> tl.tl_cont.tc_ioid
+  end
+
+
+
+(** whole-system states and transitions *)
+
+(* all the system transitions; this is a union of the storage and thread
+transitions, with 'tc and 'ssc (respectively) providing extra continuations
+for the synced counter part (thread/storage) *)
+type trans 'ts 'ss =
+  | SS_trans of sys_ss_trans 'ts 'ss
+  | T_trans  of sys_thread_trans 'ts 'ss
+
+let principal_ioid_of_trans (t: trans 'ts 'ss) =
+  match t with
+  | SS_trans t -> principal_ioid_of_ss_trans t
+  | T_trans t  -> ioid_of_thread_trans t
+  end
+   
+let is_storage_transition : trans 'ts 'ss -> bool = function
+  | SS_trans _ -> true
+  | T_trans _  -> false
+  end
+
+let ioid_of_thread_transition : trans 'ts 'ss -> maybe ioid = function
+  | SS_trans _ -> Nothing
+  | T_trans t  -> Just (ioid_of_thread_trans t)
+  end
+
+let is_transition_of_ioid (target_ioid: ioid) (transition: trans 'ts 'ss) : bool =
+  ioid_of_thread_transition transition
+  $> Maybe.map ((=) target_ioid)
+  $> fromMaybe false
+
+let thread_id_of_thread_transition : trans 'ts 'ss -> maybe thread_id = function
+  | SS_trans _ -> Nothing
+  | T_trans t  -> Just (tid_of_thread_trans t)
+  end
+
+let is_transition_of_thread (target_tid : nat) (transition: trans 'ts 'ss) : bool =
+  thread_id_of_thread_transition transition
+  $> Maybe.map ((=) target_tid)
+  $> fromMaybe false
+
+
+
+(** ***********************  UI auxiliary types ******************)
+
+type changed3 'a =
+  | C3_new of 'a 
+  | C3_gone of 'a
+  | C3_unchanged of 'a
+
+type changed2 'a =
+  | C2_new of 'a 
+  | C2_unchanged of 'a
+
+type changed2b 'a =
+  | C2b_changed of 'a
+  | C2b_unchanged of 'a
+
+
+type ui_trans 'ts 'ss = nat * trans 'ts 'ss
+(* not doing change colouration for transitions *)
+
+
+
+
+type pldi11_ui_storage_subsystem_state 'ts 'ss =
+  <| ui_threads: list thread_id;
+     ui_writes_seen: list (changed2 write);
+     ui_coherence: list (changed2 (write*write));
+     ui_new_coherence: list (changed3 (footprint * list (changed2 (write*write))));
+     ui_writes_past_coherence_point: list (changed2 write) ;
+     ui_events_propagated_to: list (thread_id * list (changed2 tracked_event));
+     ui_unacknowledged_sync_requests: list (changed3 barrier);
+     ui_ss_transitions_pcc: list (ui_trans 'ts 'ss);
+     ui_ss_transitions_cp: list (ui_trans 'ts 'ss);
+     ui_ss_transitions_prop: list (ui_trans 'ts 'ss);
+     ui_ss_transitions_ack_sync: list (ui_trans 'ts 'ss);
+  |>
+
+type flowing_ui_storage_subsystem_state 'ts 'ss =
+  <|  (* storage state *)
+      ui_flowing_ss_threads : list thread_id;
+      ui_flowing_ss_topology : flowing_tree;
+      ui_flowing_ss_segment_to_thread : flowing_segment -> thread_id;
+      ui_flowing_ss_buffers : flowing_segment -> (list (list (ui_trans 'ts 'ss) * flowing_event));
+      ui_flowing_ss_reordered : list (changed3 (flowing_event * flowing_event));
+      ui_flowing_ss_memory_writes : list (changed3 (write * slices));
+
+      (* storage transitions *)
+      ui_flowing_transitions_write_to_mem:           list (ui_trans 'ts 'ss);
+      ui_flowing_transitions_barrier_to_mem:         list (ui_trans 'ts 'ss);
+      ui_flowing_transitions_satisfied_read_to_mem:  list (ui_trans 'ts 'ss);
+      ui_flowing_transitions_reorder:                list (ui_trans 'ts 'ss);
+      ui_flowing_transitions_flow_to_seg:            list (ui_trans 'ts 'ss);
+      ui_flowing_transitions_partially_satisfy_read: list (ui_trans 'ts 'ss);
+      ui_flowing_transitions_read_response:          list (ui_trans 'ts 'ss);
+  |>
+
+type pop_ui_storage_subsystem_state 'ts 'ss =
+  <| (* storage state *)
+     ui_pop_ss_threads: list thread_id;
+     ui_pop_ss_events_seen: list (changed3 flowing_event);
+     ui_pop_ss_order_constraints_closure: list (changed3 (flowing_event * flowing_event));
+     ui_pop_ss_events_propagated_to: list (thread_id * list (changed3 flowing_event));
+     (*ui_pop_ss_store_exclusive_map: list (changed2 (write * write));*)
+     (* storage transitions *)
+     ui_pop_ss_transitions_prop_event:             list (ui_trans 'ts 'ss);
+     ui_pop_ss_transitions_partially_satisfy_read: list (ui_trans 'ts 'ss);
+     ui_pop_ss_transitions_read_response:          list (ui_trans 'ts 'ss);
+  |>
+
+type nop_ui_storage_subsystem_state 'ts 'ss =
+  <| (* storage state *)
+     ui_nop_ss_threads: list thread_id;
+     ui_nop_ss_events_seen: list (changed3 flowing_event);
+     ui_nop_ss_order_constraints_closure: list (changed3 (flowing_event * flowing_event));
+     ui_nop_ss_events_propagated_to: list (thread_id * list (changed3 flowing_event));
+     (*ui_nop_ss_store_exclusive_map: list (changed2 (write * write));*)
+     (* storage transitions *)
+     ui_nop_ss_transitions_constrain_order:        list (ui_trans 'ts 'ss);
+     ui_nop_ss_transitions_propagate_everything:   list (ui_trans 'ts 'ss);
+  |>
+
+type flat_ui_storage_subsystem_state 'ts 'ss =
+  <|  (* storage state *)
+      ui_flat_ss_memory_writes : list (changed3 (write * slices));
+      (* storage transitions: none *)
+      ui_flat_ss_old_writes : list (changed3 write);
+  |>
+
+type tso_ui_storage_subsystem_state 'ts 'ss =
+  <|  (* storage state *)
+      ui_tso_ss_buffers:                  map thread_id (list write);
+      ui_tso_ss_lock:                     changed2b (maybe thread_id);
+      ui_tso_ss_memory_writes:            list (changed3 (write * slices));
+      (* storage transitions: some *)
+      ui_tso_transitions_propagate_write: list (ui_trans 'ts 'ss);
+  |>
+
+type pssto_ui_state 'ts 'ss =
+  <|  (* storage state *)
+      ui_pssto_memory: list (changed3 (write * t));
+      ui_pssto_stopped_promising: changed2b bool;
+      ui_pssto_transitions: list (ui_trans 'ts 'ss);
+  |>
+
+type psspo_ui_state 'ts 'ss =
+  <|  (* storage state *)
+      ui_psspo_writes: list (changed3 write);
+      ui_psspo_write_order: list (changed3 (w_eiid * w_eiid));
+      ui_psspo_addr_view: list (changed3 (w_eiid * footprint));
+      ui_psspo_stopped_promising: changed2b bool;
+      ui_psspo_transitions: list (ui_trans 'ts 'ss);
+  |>
+
+type promising_ui_storage_subsystem_state 'ts 'ss =
+  | PSSTO_UI of pssto_ui_state 'ts 'ss
+  | PSSPO_UI of psspo_ui_state 'ts 'ss
+
+type ui_storage_subsystem_state 'ts 'ss =
+  | PLDI11_UI_storage  of pldi11_ui_storage_subsystem_state 'ts 'ss
+  | Flowing_UI_storage of flowing_ui_storage_subsystem_state 'ts 'ss
+  | Flat_UI_storage    of flat_ui_storage_subsystem_state 'ts 'ss
+  | POP_UI_storage     of pop_ui_storage_subsystem_state 'ts 'ss
+  | NOP_UI_storage     of nop_ui_storage_subsystem_state 'ts 'ss
+  | TSO_UI_storage     of tso_ui_storage_subsystem_state 'ts 'ss
+  | Promising_UI_storage of promising_ui_storage_subsystem_state 'ts 'ss
+
+
+type ui_subwrites =
+  <|  ui_sw_addr : maybe footprint;
+      ui_sw_potential_write_addresses: list (changed2 write);
+      ui_sw_potential_writes : list ((* changed2 *) write);
+      ui_sw_propagated_writes: list (changed2 write);
+      ui_sw_committed: changed2b bool;
+  |>
+
+type ui_subreads =
+  <|  ui_sr_addr : maybe footprint;
+      ui_sr_unsat_slices : list (read_request * (list (changed3 slice)));
+      ui_sr_writes_read_from : list (read_request * (list (changed3 (write * slices))));
+      ui_sr_requested : list (read_request * (list (changed3 slice)));
+      ui_sr_assembled_value : maybe memory_value;
+  |>
+
+type ui_instruction_instance 'ts 'ss =
+    <|
+    ui_instance_ioid: ioid; 
+    ui_program_loc: address; 
+    ui_program_opcode: maybe opcode;  
+    ui_instruction: instruction_ast;
+    ui_instruction_kind: instruction_kind;
+    ui_initial_micro_op_state: micro_op_state;
+    ui_regs_in: list (changed3 reg_name);    
+    ui_regs_out: list (changed3 reg_name);   
+    ui_ioids_feeding_address: list (changed3 ioid);
+    ui_nias: list nia;
+    ui_dia: dia;
+    (*ui_reg_read_from_ioids: list (changed3 ioid);*)
+    ui_reg_reads: list (changed3 (reg_name * register_read_sources * register_value));
+    ui_reg_writes: list (changed3 (reg_name * register_value)); 
+    (*ui_writes_read_from: list (changed3 (write*slices));  *)
+    ui_subreads : ui_subreads;
+    ui_subwrites : ui_subwrites;
+    ui_successful_atomic_store : changed2b (maybe bool);
+    ui_committed_barriers: list (changed2 barrier); 
+    ui_finished: changed2b bool; 
+    ui_micro_op_state: changed2b (micro_op_state);
+    (*  ui_show_micro_op_state: bool; *)
+    ui_instruction_transitions: list (ui_trans 'ts 'ss); (* the T_only_trans, T_lazy_trans, and TSS_... cases *)
+    |>
+
+type ui_instruction_tree 'ts 'ss =
+  | UI_T of list ((changed3 (ui_instruction_instance 'ts 'ss)) * (ui_instruction_tree 'ts 'ss))
+   (* the above changed3 relates to the existence of the instruction
+   instance in the tree; it doesn't record changes internal to the
+   state of that instruction *)
+
+type ui_instruction_list 'ts 'ss =
+  list (changed3 (ui_instruction_instance 'ts 'ss))
+
+type ui_machine_thread_state 'ts 'ss =
+    <|
+    ui_thread: thread_id ;           
+    ui_register_data: registerdata;
+    ui_initial_register_state: (reg_base_name -> register_value);
+    ui_initial_fetch_address: changed2b (maybe address);
+    (* ui_old_instructions: list (changed2 ui_instruction_instance);  *)
+    ui_instruction_tree: ui_instruction_tree 'ts 'ss;
+    ui_transaction: changed2b (maybe transaction_start);
+
+    (* PLDI11_thread: *)
+    ui_unacknowledged_syncs: maybe (list (changed3 barrier));
+    (* POP_thread: *)
+    ui_read_issuing_order: maybe (list (changed3 (read_request * read_request)));
+    (* transitions: *)
+    ui_initial_fetch_transitions: list (ui_trans 'ts 'ss) (* the initial T_only(T_fetch ...) transition if present *)
+    |>
+
+
+
+
+type ui_pts 'ts 'ss 'ui_view =
+    <|
+    ui_promising_reg: list (changed3 (reg_base_name * register_value));
+    ui_promising_vReg: list (changed3 (reg_base_name * 'ui_view));
+    ui_promising_regdata: registerdata;
+
+
+    ui_promising_vCoh: list (changed3 (address * 'ui_view));
+    ui_promising_vRm: changed2b 'ui_view;
+    ui_promising_vRp: changed2b 'ui_view;
+    ui_promising_vWm: changed2b 'ui_view;
+    ui_promising_vWp: changed2b 'ui_view;
+    ui_promising_vCAP: changed2b 'ui_view;
+    ui_promising_vRel: changed2b 'ui_view;
+
+    ui_promising_thread: thread_id;
+
+    ui_promising_fwd_bank: list (changed3 (address * (w_eiid * bool * 'ui_view)));
+    ui_promising_xcl_bank : changed2b (maybe ((w_eiid * address) * 'ui_view));
+
+    ui_promising_initAddr: changed2b (maybe address);
+    ui_promising_promises: list (changed3 w_eiid);
+    ui_promising_instrs: ui_instruction_list 'ts 'ss;
+    ui_promising_initRegS: (reg_base_name -> register_value);
+
+    ui_promising_last_ioid : maybe ioid;
+    |>
+
+type ui_promising_thread_state 'ts 'ss = ui_pts 'ts 'ss ui_view
+
+
+type ui_thread_state 'ts 'ss =
+  | UI_machine_thread_state of ui_machine_thread_state 'ts 'ss
+  | UI_promising_thread_state of ui_promising_thread_state 'ts 'ss
+
+type ui_system_state 'ts 'ss =
+  <| ui_program_memory: (address -> fetch_and_decode_outcome);
+     ui_initial_writes: list write;
+     ui_thread_states: list (thread_id * ui_thread_state 'ts 'ss);
+     ui_storage_subsystem: ui_storage_subsystem_state 'ts 'ss;
+     ui_model: model_params;
+     ui_riscv_AMO_lock: changed2b (maybe ioid);
+     ui_transition_history: list (trans 'ts 'ss);
+  |>
+
+
+
+type threadSubsystem 'ts =
+
+  <| ts_tid : 'ts -> thread_id;
+     ts_initial_fetch_address : 'ts -> maybe address;
+     ts_initial_reg_state : 'ts -> reg_base_name -> register_value;
+     ts_instruction_tree : 'ts -> list instruction_instance * instruction_tree;
+     ts_final_reg_state : 'ts -> list (reg_base_name * maybe register_value);
+     ts_update_initial_register_state : 'ts -> list (reg_base_name * register_value) -> 'ts;
+     ts_update_initial_fetch_address : thread_params -> 'ts -> address -> 'ts;
+
+     ts_is_final_state : thread_params -> 'ts -> bool;
+
+     ts_initial_thread_state :
+       model_params ->
+       thread_id -> (address -> fetch_and_decode_outcome) -> address ->
+       registerdata -> list (reg_base_name * register_value) ->
+       (reg_base_name -> register_value) -> maybe address -> list write -> 'ts;
+  |>
+
+
+type storageSubsystem 'ss = 
+  <| ss_initial_state : model_params -> set thread_id -> list write -> 'ss ;
+     ss_is_final_state : ss_params -> 'ss -> bool;
+     ss_coherence : ss_params -> 'ss -> Relation.rel write write;
+     ss_thread_memory_value_of_footprint : ss_params ->
+       'ss -> thread_id -> footprint -> memory_value;
+     ss_clean_reads : ss_params -> 'ss -> thread_id -> set ioid -> set ioid -> maybe 'ss;
+     (* not nice: for Promising specifically *)
+     ss_stopped_promising : 'ss -> bool;
+  |>
+
+type machineStorageSubsystem 'ts 'ss =
+  <| ss_enumerate_transitions : ss_params -> 'ss -> list (ss_trans 'ss);
+
+     ss_receive_transition : ss_params ->
+       'ss -> thread_sync_label 'ts ->
+       (* no-one except promising_ss returns more than one *)
+       list (thread_sync_label 'ts * maybe (unit -> 'ss));
+
+     (* NOP is the only model that returns a non-empty list *)
+     ss_enumerate_final_transitions : 'ss -> list (trans 'ts 'ss);
+
+     ss_make_ui_storage_state : 
+       maybe 'ss -> 'ss -> list (ui_trans 'ts 'ss) -> 
+       ui_storage_subsystem_state 'ts 'ss;
+  |>
+     
+
+type system 'ts 'ss =
+  <| s_make_ui_system_state : 
+       maybe (system_state 'ts 'ss) -> system_state 'ts 'ss -> list (ui_trans 'ts 'ss) -> 
+       ui_system_state 'ts 'ss; 
+  
+     s_enumerate_transitions_of_system :
+       instruction_semantics_option ->
+       system_state 'ts 'ss ->
+       maybe (list (ss_trans 'ss)) ->
+       map thread_id (list (thread_trans 'ts)) ->
+       map thread_id (list (trans 'ts 'ss * bool)) ->
+       (list (trans 'ts 'ss)) * (list (ss_trans 'ss)) * 
+         (map thread_id (list (thread_trans 'ts))) * 
+           (map thread_id (list (trans 'ts 'ss * bool)));
+
+  |>
+
+and system_state 'ts 'ss =
+  <| program_memory: (address -> fetch_and_decode_outcome);
+     initial_writes: list write;
+     thread_states: map thread_id 'ts;
+     storage_subsystem: 'ss;
+     model: model_params;
+     instruction_semantics : instruction_semantics_p;
+     t_model : threadSubsystem 'ts;
+     s_model : storageSubsystem 'ss;
+     system_model : system 'ts 'ss;
+     transition_history : list (trans 'ts 'ss);    (* most recent first *)
+      (* recording the transition history might have a bad effect on performance; we'll see *)
+
+     riscv_AMO_lock: maybe ioid;
+  |>
+
+
+type transition_outcome 'a =
+  | TO_system_state of 'a
+  | TO_unhandled_exception of thread_id * ioid * exception_type
+
+
+type system_state_and_transitions 'ts 'ss =
+  <| sst_state:               system_state 'ts 'ss;
+     sst_system_transitions:  list (trans 'ts 'ss);
+     sst_storage_transitions: list (ss_trans 'ss);
+     sst_thread_transitions:  map thread_id (list (thread_trans 'ts));
+     sst_sys_thread_transitions:  map thread_id (list (trans 'ts 'ss * bool));
+
+     (* the following are true iff the transition leading to sst_state
+     included instruction restarts or discarded instructions (respectively) *)
+     sst_inst_restarted:      bool;
+     sst_inst_discarded:      bool;
+     sst_write_after_stop_promising : bool;
+  |>
+
+type eager_mode =
+  <|
+    eager_fetch_single:        bool;
+    eager_fetch_multi:         bool;
+    eager_pseudocode_internal: bool;
+    eager_constant_reg_read:   bool;
+    eager_reg_rw:              bool;
+    eager_memory_aux:          bool;
+    eager_finish:              bool;
+    eager_fp_recalc:           bool;
+    eager_thread_start:        bool;
+
+    eager_local_mem:           bool;
+  |>
+
+(* two auxiliary functions for dealing with maps in Isabelle *)
+val mapToList: forall 'k 'v. MapKeyType 'k, SetType 'k, SetType 'v => map 'k 'v -> list ('k * 'v)
+let {coq;ocaml} mapToList = Map_extra.toList
+let {isabelle}  mapToList l = Set_extra.toList (Map.toSet l)
+
+val mapi : forall 'k 'v 'w. MapKeyType 'k, SetType 'k, SetType 'v => ('k -> 'v -> 'w) -> map 'k 'v -> map 'k 'w
+let {isabelle;coq} mapi f m =
+  Map.fromList (map (fun (k,v) -> (k,f k v)) ((mapToList m) : list ('k * 'v)))
+let inline {ocaml} mapi = (Map.mapi)
+
+

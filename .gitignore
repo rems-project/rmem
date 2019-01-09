@@ -1,0 +1,25 @@
+
+# /
+/_build
+/build_concurrency_model
+/build_isabelle_concurrency_model
+/build_isa_models
+/build_lem_library
+/build_linksem
+/build_sail_interp
+/build_sail_shallow_embedding
+/build_sail2_shallow_embedding
+/*.defs
+/rmem
+/main.d.byte
+/main.byte
+/main.native
+/webppc.d.byte
+/webppc.byte
+/marshal_defs.native
+/pp2ml.native
+/version.ml
+/lem_version.ml
+/linksem_version.ml
+/sail_version.ml
+/sail2_version.ml

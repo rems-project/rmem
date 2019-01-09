@@ -1,0 +1,15 @@
+S ./*
+S build_isa_models/**
+S src_marshal_defs/**
+S src_top/**
+S build_sail_interp/**
+S model/generated/**
+
+B _build/**
+
+PKG lem lem_num
+PKG linksem linksem_num
+PKG uint zarith
+PKG lambda-term zed lwt react
+PKG js_of_ocaml js_of_ocaml.ppx
+PKG base64

@@ -1,0 +1,201 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge          2017-2018            *)
+(*  Copyright Jon French, University of Cambridge                2018            *)
+(*  Copyright Christopher Pulte, University of Cambridge    2017-2018            *)
+(*  Copyright Robert Norton-Wright, University of Cambridge      2017            *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+
+open import MachineDefUtils
+open import MachineDefTypes
+open import Sail_impl_base
+open import MachineDefEvents
+import Riscv_types
+
+let riscv_is_system_call_instruction (_: instruction_ast) = Nothing
+
+let riscv_is_thread_start_instruction = function
+(*  | RISCV_instr (Riscv_embed_types.SYSCALL_THREAD_START) -> true*)
+  | _ -> false
+  end
+
+let riscv_is_test_begin_instruction (_ : instruction_ast) = false
+let riscv_is_test_end_instruction (_ : instruction_ast) = false
+
+let riscv_register_data_info : registerdata =
+  let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
+    (name, (D_decreasing, bit_count, bit_count - 1, fields))
+  in
+  [ reg 64 "x0" [];
+    reg 64 "x1" [];
+    reg 64 "x2" [];
+    reg 64 "x3" [];
+    reg 64 "x4" [];
+    reg 64 "x5" [];
+    reg 64 "x6" [];
+    reg 64 "x7" [];
+    reg 64 "x8" [];
+    reg 64 "x9" [];
+    reg 64 "x10" [];
+    reg 64 "x11" [];
+    reg 64 "x12" [];
+    reg 64 "x13" [];
+    reg 64 "x14" [];
+    reg 64 "x15" [];
+    reg 64 "x16" [];
+    reg 64 "x17" [];
+    reg 64 "x18" [];
+    reg 64 "x19" [];
+    reg 64 "x20" [];
+    reg 64 "x21" [];
+    reg 64 "x22" [];
+    reg 64 "x23" [];
+    reg 64 "x24" [];
+    reg 64 "x25" [];
+    reg 64 "x26" [];
+    reg 64 "x27" [];
+    reg 64 "x28" [];
+    reg 64 "x29" [];
+    reg 64 "x30" [];
+    reg 64 "x31" [];
+
+    reg 64 "PC" [];
+    reg 64 "nextPC" [];
+
+    reg 1 "htif_done" [];
+    reg 2 "cur_privilege" [];
+
+
+    reg 65 "medeleg" [];
+    reg 66 "sedeleg" [];
+    reg 67 "misa"    [];
+    reg 68 "mtvec"   [];
+    reg 68 "stvec"   [];
+    reg 69 "mideleg" [];
+    reg 69 "mie"     [];
+    reg 69 "mip"     [];
+    reg 70 "mstatus" [];
+    reg 72 "mcause"  [];
+    reg 72 "scause"  [];
+
+    reg 64 "htif_exit_code" [];
+    reg 64 "htif_tohost" [];
+    reg 64 "mtimecmp" [];
+    reg 64 "tselect" [];
+    reg 64 "stval" [];
+    reg 64 "sepc" [];
+    reg 64 "sscratch" [];
+    reg 64 "satp" [];
+    reg 64 "pmpcfg0" [];
+    reg 64 "pmpaddr0" [];
+    reg 64 "mhartid" [];
+    reg 64 "marchid" [];
+    reg 64 "mimpid" [];
+    reg 64 "mvendorid" [];
+    reg 64 "minstret" [];
+    reg 64 "mtime" [];
+    reg 64 "mcycle" [];
+    reg 64 "mscratch" [];
+    reg 64 "mtval" [];
+    reg 64 "mepc" [];
+    reg 64 "cur_inst" [];
+  ]
+
+let riscv_reg_name name : reg_name =
+  match reg_from_data riscv_register_data_info name with
+  | Just r -> r
+  | Nothing -> fail
+  end
+
+let riscv_fixed_pseudo_registers = 
+(* TODO: this is how you define fixed values for registers from the list above *)
+  let fix v r = fixed_reg riscv_register_data_info v r in
+  [
+    (* fix 2 "cur_privilege";
+     * fix 0 "medeleg";
+     * fix 0 "sedeleg"; *)
+    fix 0 "marchid";
+    fix 0 "mimpid";
+    fix 0 "mvendorid";
+    (* fix 0x8000000000000881 "misa"; (* RV64IMA *) This should really be a fixed pseudoregister but Lem doesn't like the massive int *)
+  ]
+
+
+let riscv_thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr  = riscv_reg_name "x4"; (* XXX *)
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return = riscv_reg_name "x2";
+
+      (* these registers hold the arguments of the new-thread function *)
+      tsi_f_tid  = riscv_reg_name "x4"; (* XXX *)
+      tsi_f_toc  = Nothing;
+      (* XXX For RISCV ABI t9 should point to function entry point on entry *)
+      tsi_f_addr = Nothing;
+  |>
+
+let riscv_make_empty_write_events
+    (tid:          thread_id)
+    (inst:         instruction_instance)
+    ((addr, size): footprint)
+    (write_kind:   write_kind)
+    : (list write) * (MachineDefFreshIds.id_state ioid)
+  =
+  let addr' = integer_of_address addr in
+  let write_size =
+    if List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    else 1
+  in
+  make_empty_write_events' inst.instance_id_state tid inst.instance_ioid addr size write_size write_kind
+
+let riscv_make_read_request_events
+    (tid:          thread_id)
+    (inst:         instruction_instance)
+    ((addr, size): footprint)
+    (read_kind:   read_kind)
+    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+  =
+  let addr' = integer_of_address addr in
+  let read_size =
+    if List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    else 1
+  in
+  make_read_request_events' inst.instance_id_state tid inst.instance_ioid addr size read_size read_kind
+
+let riscv_ism : isa_info =
+  <|  ism                         = RISCV_ism;
+
+      is_system_call_instruction  = riscv_is_system_call_instruction;
+      is_thread_start_instruction = riscv_is_thread_start_instruction;
+      is_test_begin_instruction   = riscv_is_test_begin_instruction;
+      is_test_end_instruction     = riscv_is_test_end_instruction;
+
+      thread_start_info           = riscv_thread_start_info;
+
+      register_data_info          = riscv_register_data_info;
+      fixed_pseudo_registers      = riscv_fixed_pseudo_registers;
+      cia_reg                     = riscv_reg_name "PC";
+      nia_reg                     = riscv_reg_name "nextPC";
+      dia_reg                     = Nothing;
+
+      make_empty_write_events     = riscv_make_empty_write_events;
+      make_read_request_events    = riscv_make_read_request_events;
+  |>

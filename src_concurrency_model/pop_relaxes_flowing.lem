@@ -1,0 +1,412 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2015, 2017              *)
+(*  Copyright Christopher Pulte, University of Cambridge       2018              *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives_extra
+
+(* emacs fontification -*-caml-*- *)
+
+open import MachineDefTypes
+open import MachineDefSystem
+open import ArmV8
+open import ArmV8_extras
+
+(********************************************************************)
+
+let pop_storage_of_state state =
+  match state.storage_subsystem with
+  | POP_storage storage -> storage
+  end
+
+let is_pop_thread_state thread_state =
+  match thread_state.thread_substate with
+  | POP_thread _ -> true
+  | _ -> false
+  end
+
+let is_pop_storage_state storage_state =
+  match storage_state with
+  | POP_storage _ -> true
+  | _ -> false
+  end
+
+let is_pop_system_state system_state =
+  Map.all (fun _ thread_state -> is_pop_thread_state thread_state) system_state.thread_states &&
+  is_pop_storage_state system_state.storage_subsystem &&
+  system_state.model.t.thread_model = POP_thread_model &&
+  system_state.model.ss.ss_model = POP_storage_model
+
+(********************************************************************)
+
+let flowing_storage_of_state state =
+  match state.storage_subsystem with
+  | Flowing_storage storage -> storage
+  end
+
+let is_flowing_thread_state = is_pop_thread_state
+
+let is_flowing_storage_state storage_state =
+  match storage_state with
+  | Flowing_storage _ -> true
+  | _ -> false
+  end
+
+let is_flowing_system_state system_state =
+  Map.all (fun _ thread_state -> is_flowing_thread_state thread_state) system_state.thread_states &&
+  is_flowing_storage_state system_state.storage_subsystem &&
+  system_state.model.t.thread_model = POP_thread_model &&
+  system_state.model.ss.ss_model = Flowing_storage_model
+
+(********************************************************************)
+
+(* FIXME: do we want to parametrise the LTSs with this? *)
+let interp_mode =
+  <|  Interp.eager_eval = false; (* this is the default value from globals.ml (eager_fetch_internal) *)
+      Interp.track_values = true; (* seems to be the only value ever used in the code *)
+  |>
+
+(********************************************************************)
+(*** The pop system LTS ***)
+
+indreln [pop_LTS: MachineDefTypes.system_state ->
+                  MachineDefTypes.trans ->
+                  MachineDefTypes.system_state -> bool]
+
+pop_valid_transition: forall system_state transition system_state'.
+  is_pop_system_state system_state &&
+  is_pop_system_state system_state' &&
+
+  let transitions = enumerate_transitions_of_system interp_mode system_state in
+  List.elem transition transitions &&
+  (System_state system_state') = system_state_after_transition system_state transition
+  ==>
+  pop_LTS system_state transition system_state'
+
+(* reflexive transitive closure of pop_LTS *)
+indreln [pop_LTS_closure:
+                MachineDefTypes.system_state ->
+                (* we can add this if needed: list MachineDefTypes.trans -> *)
+                MachineDefTypes.system_state ->  bool]
+
+reflexive: forall s.
+    true
+    ==>
+    pop_LTS_closure s s
+
+and
+transitive: forall s s' t' s''.
+    pop_LTS_closure s s' &&
+    pop_LTS s' t' s''
+    ==>
+    pop_LTS_closure s s''
+
+(********************************************************************)
+(*** The flowing system LTS ***)
+
+indreln [flowing_LTS: MachineDefTypes.system_state ->
+                      MachineDefTypes.trans ->
+                      MachineDefTypes.system_state -> bool]
+
+flowing_valid_transition: forall system_state transition system_state'.
+  is_flowing_system_state system_state &&
+  is_flowing_system_state system_state' &&
+
+  let transitions = enumerate_transitions_of_system interp_mode system_state in
+  List.elem transition transitions &&
+  (System_state system_state') = system_state_after_transition system_state transition
+  ==>
+  flowing_LTS system_state transition system_state'
+
+(********************************************************************)
+(*** map flowing storage state to a pop storage state ***)
+
+(* We construct the parts of the pop storage that are uniquely
+   determined by the flowing storage. Since the flowing storage does
+   not keep old events, the pop state will not include them as well,
+   flowing_pop_relation will fill this gap *)
+
+(* find the threads that feed a segment in the flowing topology *)
+let rec visible_threads state (FT_join segment subtrees) =
+  {tid  | forall (tid IN state.flowing_ss_threads)
+        | segment = MachineDefFlowingStorageSubsystem.segment_of_thread state tid}
+  union
+  (MachineDefFlowingStorageSubsystem.list_bigunionMap (visible_threads state) subtrees)
+
+
+(* The pop storage state is constructed by applying in order the
+   pop_ss_accept_*_action action followed by pop_propagate_*_action
+   actions to each event in the flowing topology, starting from memory
+   and going up (i.e. from old to new).
+   Notice that the order in which we iterate over the events (old to
+   new) guarantee all the order_constraints conditions are satisfied
+   when we do the propagation. *)
+let rec construct_pop_storage_state_helper params flowing_storage pop_storage (FT_join segment subtrees) =
+  let accept_and_propagate tids event pop_storage =
+    (* accept event *)
+    let pop_storage' =
+      match event with
+      | FWrite write ->
+          if is_write_exclusive write then
+            MachineDefPOPStorageSubsystem.pop_ss_accept_write_exclusive_success_action params pop_storage write
+          else
+            MachineDefPOPStorageSubsystem.pop_ss_accept_event_action params pop_storage event
+      | _ ->
+          MachineDefPOPStorageSubsystem.pop_ss_accept_event_action params pop_storage event
+      end
+    in
+
+    let pop_propagate_action event tid state =
+      MachineDefPOPStorageSubsystem.pop_ss_propagate_event_action params state event tid
+    in
+    (* propagate event *)
+    Set_helpers.fold (pop_propagate_action event) tids pop_storage'
+  in
+
+  let buffer = MachineDefFlowingStorageSubsystem.buffer_of_segment flowing_storage segment in
+  let visible_threads = visible_threads flowing_storage (FT_join segment subtrees) in
+
+  (* iterate over the events in buffer, old to new *)
+  let pop_storage' = List.foldr (accept_and_propagate visible_threads) pop_storage buffer in
+
+  List.foldl (construct_pop_storage_state_helper params flowing_storage) pop_storage' subtrees
+
+
+let construct_pop_storage_state params flowing_storage =
+  let pop_init_storage =
+    MachineDefPOPStorageSubsystem.pop_initial_storage_subsystem_state
+      params
+      flowing_storage.flowing_ss_threads
+      (* this list will be converted back to set: *)
+      (Set_extra.toList flowing_storage.flowing_ss_memory)
+  in
+
+  construct_pop_storage_state_helper params flowing_storage pop_init_storage flowing_storage.flowing_ss_topology
+
+(********************************************************************)
+
+let flowing_pop_relation flowing_state pop_state =
+  flowing_state.program_memory  = pop_state.program_memory &&
+  flowing_state.initial_writes  = pop_state.initial_writes &&
+  flowing_state.interp_context  = pop_state.interp_context &&
+  flowing_state.thread_states   = pop_state.thread_states &&
+  flowing_state.idstate         = pop_state.idstate && (* FIXME: these might not be the same? *)
+  flowing_state.model.t         = pop_state.model.t &&
+  flowing_state.model.ss        = <| pop_state.model.ss with ss_model = Flowing_storage_model |> &&
+
+  let mapped_pop_storage =
+    construct_pop_storage_state flowing_state.model.ss (flowing_storage_of_state flowing_state) in
+
+  let pop_storage = pop_storage_of_state pop_state in
+
+  let active_events = mapped_pop_storage.pop_ss_events_seen in
+  let old_events = pop_storage.pop_ss_events_seen \ active_events in
+
+  (* flowing storage does not keep old events (after memory overwrite)
+      so we need to restrict the pop storage to the events flowing
+      is still tracking, and make sure the events we restricted out
+      from pop are such that would have disappeared in flowing *)
+  let order_constraints = Relation.relRestrict pop_storage.pop_ss_order_constraints active_events in
+  let restricted_pop_storage =
+    <| pop_storage with
+        pop_ss_events_seen          = pop_storage.pop_ss_events_seen inter active_events;
+        pop_ss_order_constraints    = order_constraints;
+        pop_ss_order_constraints_closure
+                                    = MachineDefPOPStorageSubsystem.get_order_constraints_closure pop_storage order_constraints;
+        pop_ss_events_propagated_to = comb (intersection active_events) pop_storage.pop_ss_events_propagated_to;
+    |>
+  in
+
+  mapped_pop_storage = restricted_pop_storage &&
+
+  (forall (tid IN pop_storage.pop_ss_threads).
+      old_events subset (pop_storage.pop_ss_events_propagated_to tid)) &&
+
+  not (exists (event IN old_events). is_fe_read event)
+
+
+(* we can prove a very strong notion of observability *)
+lemma observable:
+  (forall flowing_state pop_state.
+    flowing_pop_relation flowing_state pop_state
+    -->
+    flowing_state.thread_states = pop_state.thread_states)
+
+(********************************************************************)
+
+let rec check_propagation pop_states tids event =
+  match (pop_states, tids) with
+  | (pop_state :: ((pop_state' :: _) as pop_states), tid :: tids) ->
+      if pop_LTS pop_state (SS_only_trans (SS_POP_propagate_event_to_thread event tid (pop_storage_of_state pop_state'))) pop_state' then
+        check_propagation pop_states tids event
+      else false
+
+  (* when there are no more tids for propagation, we should be left
+      with exactly one state *)
+  | ([_], []) -> true
+  | _ -> false
+  end
+
+let check_flow_to_segment flowing_state flowing_state' pop_state pop_states_propagate event =
+  (* the pop transitions have two stages, in the first stage
+      we make enough co-commitments to allow the second stage,
+      propagation to threads.
+      We discover the co-edges that need commitment by
+      constructing a pop-storage for the flowing and flowing'
+      states, and diff their order_constraints (this might be an over
+      kill, but maybe because the construction function is
+      the same function we use in the flowing-pop relation
+      it makes it easier on the proof?). *)
+  let flowing_storage = flowing_storage_of_state flowing_state in
+  let flowing_storage' = flowing_storage_of_state flowing_state' in
+
+  let mapped_pop_storage =
+    construct_pop_storage_state flowing_state.model.ss flowing_storage in
+
+  let mapped_pop_storage' =
+    construct_pop_storage_state flowing_state'.model.ss flowing_storage' in
+
+  let propagations =
+    let (Just seg) = MachineDefFlowingStorageSubsystem.segment_of_flowing_event flowing_storage event in
+    let subtree = FT_join seg (MachineDefFlowingStorageSubsystem.subtrees_of_segment flowing_storage seg) in
+
+    let (Just seg') = MachineDefFlowingStorageSubsystem.segment_of_flowing_event flowing_storage' event in
+    let subtree' = FT_join seg' (MachineDefFlowingStorageSubsystem.subtrees_of_segment flowing_storage' seg') in
+
+    let diff = (visible_threads flowing_storage' subtree') \ (visible_threads flowing_storage subtree) in
+    (* the order will determine the order of propagation, which is insignificant *)
+    Set_extra.toList diff
+  in
+
+  check_propagation (pop_state :: pop_states_propagate) propagations event
+
+
+(* We show each flowing transition has a corresponding (maybe empty)
+   sequence of POP transitions that preserves flowing_pop_relation *)
+lemma map_flowing_to_pop_transitions:
+  (forall flowing_state trans flowing_state' pop_state.
+      flowing_pop_relation flowing_state pop_state &&
+      flowing_LTS flowing_state trans flowing_state'
+      --> exists pop_state'.
+      (match trans with
+      | (SS_only_trans (SS_Flowing_flow_write_to_memory _ _)) -> pop_state' = pop_state
+      | (SS_only_trans (SS_Flowing_flow_barrier_to_memory _ _)) -> pop_state' = pop_state
+      | (SS_only_trans (SS_Flowing_reorder_events _ _ _)) -> pop_state' = pop_state
+
+      | (SS_only_trans (SS_Flowing_flow_to_segment event _)) ->
+          exists pop_states_propagate.
+            check_flow_to_segment flowing_state flowing_state' pop_state pop_states_propagate event &&
+            pop_state' = List_extra.last (pop_state :: pop_states_propagate)
+
+      | (SS_lazy_trans (SS_Flowing_read_from_memory read mrs _)) ->
+            pop_LTS pop_state (SS_lazy_trans (SS_POP_read_response read mrs (pop_storage_of_state pop_state'))) pop_state'
+
+      | (SS_lazy_trans (SS_Flowing_read_from_segment read mrs _)) ->
+            pop_LTS pop_state (SS_lazy_trans (SS_POP_read_response read mrs (pop_storage_of_state pop_state'))) pop_state'
+
+      | (T_only_trans _ _ _ _) ->
+            pop_LTS pop_state trans pop_state'
+
+      | (T_lazy_trans _ _ _ _) ->
+            pop_LTS pop_state trans pop_state'
+
+      | (TSS_fetch _ _ _ _ _ _) ->
+            pop_LTS pop_state trans pop_state'
+
+      | (TSS_Flowing_POP_commit_mem_write_exclusive_successful _ _ _) ->
+            pop_LTS pop_state trans pop_state'
+
+      (* disabled transitions: *)
+      (* (actually the _ above hide more transitions that should be disabled) *)
+      | _ -> false
+      end &&
+      flowing_pop_relation flowing_state' pop_state'))
+
+(********************************************************************)
+
+(* the initial states of flowing and pop are in the relation *)
+lemma init_relation:
+  forall params prog tids register_data initial_register_values initial_addresses initial_writes initial_id_state.
+    (* FIXME: we probably should require the above parameters to be
+       consistent with each other *)
+    let flowing_params =
+      <| ss = <| params.ss with
+                  ss_model = Flowing_storage_model;
+              |>;
+
+          t = <| params.t with
+                  thread_model = POP_thread_model;
+                  thread_ism = AARCH64_ism;
+              |>;
+      |>
+    in
+
+    let pop_params =
+      <| ss = <| params.ss with
+                  ss_model = POP_storage_model;
+              |>;
+
+          t = <| params.t with
+                  thread_model = POP_thread_model;
+                  thread_ism = AARCH64_ism;
+              |>;
+      |>
+    in
+
+    let flowing_init =
+      initial_system_state
+        ArmV8.defs (* : specification *)
+        (ArmV8_extras.aArch64_read_memory_functions,
+          ArmV8_extras.aArch64_memory_writes,
+          ArmV8_extras.aArch64_barrier_functions) (* : (memory_reads * memory_writes * barriers) *)
+        [] (* : external_functions *)
+        flowing_params (* : model_params *)
+        prog (* : Interp_interface.context -> address -> fetch_and_decode_outcome *)
+        tids (* : set thread_id *)
+        register_data (* : registerdata *)
+        initial_register_values (* : thread_id -> reg_base_name -> register_value *)
+        initial_addresses (* : thread_id -> (ioid * address) *)
+        initial_writes (* : list write *)
+        initial_id_state (* : MachineDefFreshIds.id_state *)
+    in
+
+    let pop_init =
+      initial_system_state
+        ArmV8.defs (* : specification *)
+        (ArmV8_extras.aArch64_read_memory_functions,
+          ArmV8_extras.aArch64_memory_writes,
+          ArmV8_extras.aArch64_barrier_functions) (* : (memory_reads * memory_writes * barriers) *)
+        [] (* : external_functions *)
+        pop_params (* : model_params *)
+        prog (* : Interp_interface.context -> address -> fetch_and_decode_outcome *)
+        tids (* : set thread_id *)
+        register_data (* : registerdata *)
+        initial_register_values (* : thread_id -> reg_base_name -> register_value *)
+        initial_addresses (* : thread_id -> (ioid * address) *)
+        initial_writes (* : list write *)
+        initial_id_state (* : MachineDefFreshIds.id_state *)
+    in
+
+    flowing_pop_relation flowing_init pop_init
+
+lemma trace_relation:
+  (forall flowing_state trans flowing_state' pop_state.
+      (flowing_pop_relation flowing_state pop_state &&
+      flowing_LTS flowing_state trans flowing_state')
+      --> exists pop_state'.
+      (pop_LTS_closure pop_state pop_state' &&
+      flowing_pop_relation flowing_state' pop_state'))
+
+

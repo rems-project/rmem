@@ -1,0 +1,155 @@
+(*======================================================================================*)
+(*                                                                                      *)
+(*                rmem executable model                                                 *)
+(*                =====================                                                 *)
+(*                                                                                      *)
+(*  This file is:                                                                       *)
+(*                                                                                      *)
+(*  Copyright Shaked Flur, University of Cambridge                          2015-2017   *)
+(*  Copyright Christopher Pulte, University of Cambridge                         2016   *)
+(*  Copyright Robert Norton-Wright, University of Cambridge                      2017   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)      2015   *)
+(*                                                                                      *)
+(*  All rights reserved.                                                                *)
+(*                                                                                      *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.         *)
+(*  For author information see README.md.                                               *)
+(*                                                                                      *)
+(*======================================================================================*)
+
+open Big_int
+open AArch64HGenBase
+
+
+type labelmap = (string * int) list
+
+open Interp_interface
+open Sail_impl_base
+
+module IInt = Sail_impl_base
+module IImp = Interp_inter_imp
+
+type instruction = AArch64HGenBase.instruction
+
+(* #include "build_isa_models/aarch64/gen/types_trans_sail.hgen" *)
+
+let herdtools_ast_to_interp_instruction (i : instruction) =
+  let (instr,parms,_) = match i with
+    (* #include "build_isa_models/aarch64/gen/trans_sail.hgen" *)
+  | i ->
+      begin
+        Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
+        failwith "Translation failure"
+      end in
+  (instr,parms)
+
+
+
+
+(* #include "build_isa_models/aarch64/gen/herdtools_types_to_shallow_types.hgen" *)
+
+let herdtools_ast_to_shallow_ast (instr : instruction) =
+  let open ArmV8_embed_types in
+  let instr = match instr with
+  (* #include "build_isa_models/aarch64/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  | i ->
+      begin
+        Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
+        failwith "Translation failure"
+      end
+  in
+  MachineDefTypes.AArch64_instr instr
+
+
+(* #include "build_isa_models/aarch64/gen/shallow_types_to_herdtools_types.hgen" *)
+
+let shallow_ast_to_herdtools_ast instr : instruction =
+  let open ArmV8_embed_types in
+  match instr with
+  | MachineDefTypes.AArch64_instr instr ->
+     begin match instr with
+       (* #include "build_isa_models/aarch64/gen/shallow_ast_to_herdtools_ast.hgen" *)
+     | _ -> failwith "couldn't translate instruction"
+     end
+  | _ -> failwith "not an AArch64 instruction"
+
+
+
+let unlabelize_ins lookup_loc label_map i ins =
+  begin match ins with
+  | `AArch64BranchImmediate_label (_branch_type, label) ->
+      let offset = bit64_of_int ((List.assoc label label_map) - i) in
+      `AArch64BranchImmediate (_branch_type, offset)
+
+  | `AArch64BranchConditional_label (label, condition) ->
+      let offset = bit64_of_int ((List.assoc label label_map) - i) in
+      `AArch64BranchConditional (offset, condition)
+
+  | `AArch64CompareAndBranch_label (t, datasize, iszero, label) ->
+      let offset = bit64_of_int ((List.assoc label label_map) - i) in
+      `AArch64CompareAndBranch (t, datasize, iszero, offset)
+
+  | `AArch64TestBitAndBranch_label (t, datasize, bit_pos, bit_val, label) ->
+      let offset = bit64_of_int ((List.assoc label label_map) - i) in
+      `AArch64TestBitAndBranch (t, datasize, bit_pos, bit_val, offset)
+
+  | `AArch64Address_label (d, page, label) ->
+      let offset = bit64_of_int ((List.assoc label label_map) - i) in
+      `AArch64Address (d, page, offset)
+
+  | ins -> ins
+  end
+
+let end_ins = `AArch64ImplementationDefinedStopFetching
+
+
+(* #include "build_isa_models/aarch64/gen/types_sail_trans_out.hgen" *)
+
+let interp_instruction_to_herdtools_ast inst : instruction =
+  let (name, parms) = inst in
+  begin match (name, parms) with
+  (* #include "build_isa_models/aarch64/gen/sail_trans_out.hgen" *)
+  | _ -> failwith ("unrecognized instruction: " ^ name)
+  end
+
+
+
+let labelize_ins
+    (lookup_symbol: address -> string option)
+    (program_loc: address)
+    ins
+  =
+  let label offset =
+    let int_offset = bit64_to_int offset in
+    let addr = add_address_nat program_loc int_offset in
+    lookup_symbol addr
+  in
+
+  begin match ins with
+  | `AArch64BranchImmediate (_branch_type, offset) ->
+      begin match label offset with
+      | None -> ins
+      | Some label -> `AArch64BranchImmediate_label (_branch_type, label)
+      end
+  | `AArch64BranchConditional (offset, condition) ->
+      begin match label offset with
+      | None -> ins
+      | Some label -> `AArch64BranchConditional_label (label, condition)
+      end
+  | `AArch64CompareAndBranch (t, datasize, iszero, offset) ->
+      begin match label offset with
+      | None -> ins
+      | Some label -> `AArch64CompareAndBranch_label (t, datasize, iszero, label)
+      end
+  | `AArch64TestBitAndBranch (t, datasize, bit_pos, bit_val, offset) ->
+      begin match label offset with
+      | None -> ins
+      | Some label -> `AArch64TestBitAndBranch_label (t, datasize, bit_pos, bit_val, label)
+      end
+  | `AArch64Address (d, page, offset) ->
+      begin match label offset with
+      | None -> ins
+      | Some label -> `AArch64Address_label (d, page, label)
+      end
+  | ins -> ins
+  end

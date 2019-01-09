@@ -1,0 +1,202 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge 2017                          *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+
+open import MachineDefUtils
+open import MachineDefTypes
+open import MachineDefFreshIds
+open import Sail_impl_base
+
+(** Making Memory Model Events **************************************)
+
+let make_read_request_event
+    (ist:       id_state ioid)
+    (tid:       thread_id)
+    (ioid:      ioid)
+    (addr:      address)
+    (size:      nat)
+    (read_kind: read_kind)
+    : read_request * (id_state ioid)
+  =
+  let () = ensure (size <> 0) "size = 0 illegal for make_read_request_event" in
+  let (new_eiid, ist') = gen_fresh_id ist in
+  let rr =
+    <|  r_thread = tid;
+        r_ioid = ioid;
+        reiid = new_eiid;
+        r_addr = (addr, size);
+        r_read_kind = read_kind;
+        r_write_lower_bound = {};
+        r_write_upper_bound = {};
+    |>
+  in
+  (rr, ist')
+
+(* don't call this function directly, use isa_info.make_read_request_events instead *)
+(* For mixed-size, we split nonaligned/mixed-size read requests into multiple events as necessary.
+Create (size / read_size) read request events with; head will be from 'addr' *)
+let make_read_request_events'
+    (ist:       id_state ioid)
+    (tid:       thread_id)
+    (ioid:      ioid)
+    (addr:      address)
+    (size:      nat)
+    (read_size: nat)
+    (read_kind: read_kind)
+    : (list read_request) * (id_state ioid)
+  =
+  let () = ensure (size mod read_size = 0)
+    ("the load footprint size (" ^ show size ^ ") is not devisable by the read size (" ^ show read_size ^ ")")
+  in
+
+  List.genlist
+    (fun n -> add_address_nat addr (n * read_size))
+    (size / read_size)
+  $> List.foldr
+      (fun addr (rrs, ist) ->
+        let (rr, ist) = make_read_request_event ist tid ioid addr read_size read_kind in
+        (rr :: rrs, ist))
+      ([], ist)
+
+
+let make_empty_write_event
+    (ist:  id_state ioid)
+    (tid:  thread_id)
+    (ioid: ioid)
+    (addr: address)
+    (sz:   nat)
+    (wk:   write_kind)
+    : write * (id_state ioid)
+  =
+  let () = ensure (sz <> 0) "sz = 0 illegal for make_empty_write_event" in
+  let (new_eiid, ist') = gen_fresh_id ist in
+  let w =
+    <|  w_thread = tid;
+        w_ioid = ioid;
+        weiid = new_eiid;
+        w_addr = (addr,sz);
+        w_value = Nothing;
+        w_write_kind = wk;
+    |>
+  in
+  (w, ist')
+
+(* don't call this function directly, use isa_info.make_empty_write_events instead *)
+(* For mixed-size, we split nonaligned/mixed-size writes into multiple events as necessary.
+Create (size / write_size) write events with no value; head will be to 'addr' *)
+let make_empty_write_events'
+    (ist:  id_state ioid)
+    (tid:  thread_id)
+    (ioid: ioid)
+    (addr: address)
+    (size: nat)
+    (write_size:   nat)
+    (wk:   write_kind)
+    : (list write) * (id_state ioid)
+  =
+  let () = ensure (size mod write_size = 0)
+    ("the store footprint size (" ^ show size ^ ") is not devisable by the write size (" ^ show write_size ^ ")")
+  in
+
+  List.genlist
+    (fun n -> add_address_nat addr (n * write_size))
+    (size / write_size)
+  $> List.foldr
+      (fun addr (ws, ist) ->
+        let (w, ist) = make_empty_write_event ist tid ioid addr write_size wk in
+        (w :: ws, ist))
+      ([], ist)
+
+(* split 'bytes' between 'writes' (starting from the head of both) *)
+let rec set_write_values
+    (bytes:   memory_value)
+    (writes:  list write)
+    (writes': list write)
+    : list write
+  =
+  match writes with
+  | write :: writes ->
+      let (_, size) = write.w_addr in
+      let () = ensure (List.length bytes >= size) "not enough bytes" in
+      let (value, bytes) = List.splitAt size bytes in
+      set_write_values bytes writes (<| write with w_value = Just value |> :: writes')
+  | [] ->
+      let () = ensure (bytes = []) "unused bytes" in
+      List.reverse writes'
+  end
+
+
+let rec make_write_events_big_split
+    (ist:        id_state ioid)
+    (tid:        thread_id)
+    (ioid:       ioid)
+    ((addr, sz): footprint)
+    (bs:         memory_value)
+    (wk:         write_kind) (*isrelease*)
+    : (list write) * (id_state ioid) =
+  if sz=0 && bs = [] then
+    ([],ist)
+  else if sz = 0 then
+    failwith "sz = 0 illegal for make_write_events_big_split"
+  else
+    if sz > max_size then failwith "make_write_events_big_split given too big a write" else
+    let size = biggest_initial_aligned_two_to_the_n_region' (integer_of_address addr) sz max_exp in
+    if List.length bs < size then failwith "make_write_events_big_split not given enough bytes" else
+    let (bs1, bs2) = List.splitAt size bs in
+    let addr' = add_address_nat addr size in
+    let (new_eiid,ist') = gen_fresh_id ist in
+    let fp : footprint = (addr,size) in
+    let w = <|w_thread = tid; w_ioid = ioid; weiid = new_eiid; w_addr = fp; w_value = Just bs1; w_write_kind=wk; |> in
+    let (ws,ist'') = make_write_events_big_split ist' tid ioid (addr',sz-size) bs2 wk in
+    (w::ws,ist'')
+
+
+let make_barrier_event
+    (ist:  id_state ioid)
+    (tid:  thread_id)
+    (ioid: ioid)
+    (bk:   barrier_kind)
+    : barrier * (id_state ioid)
+  =
+  let (new_eiid, ist') = gen_fresh_id ist in
+  let barrier_event =
+    <|  b_thread = tid;
+        b_ioid = ioid;
+        beiid = new_eiid;
+        b_barrier_kind = bk;
+    |>
+  in
+  (barrier_event, ist')
+
+
+let make_transaction_start_event
+    (ist:  id_state ioid)
+    (tid:  thread_id)
+    (ioid: ioid)
+    : transaction_start * (MachineDefFreshIds.id_state ioid)
+  =
+  let (new_eiid, ist') = gen_fresh_id ist in
+  let event =
+    <|  ts_eiid   = new_eiid;
+        ts_ioid   = ioid;
+        ts_thread = tid;
+    |>
+  in
+  (event, ist')

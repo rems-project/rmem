@@ -1,0 +1,28 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017                    *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Sail_values
+
+type ast =
+  | Lswx of unit
+  | Stswx of unit
+  | B of unit
+  | Bc of unit
+  | Bclr of unit
+  | Bcctr of unit
+  | Sc of (vector bitU)
+  | PPCGEN_ast_stub

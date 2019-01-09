@@ -1,0 +1,1378 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Shaked Flur, University of Cambridge                            2014-2018   *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2015-2018   *)
+(*  Copyright Peter Sewell, University of Cambridge                           2014-2016   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)        2015   *)
+(*  Copyright Susmit Sarkar, University of St Andrews                              2014   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           *)
+(*  For author information see README.md.                                                 *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+
+open import MachineDefTypes
+open import MachineDefFragments
+open import MachineDefUtils
+open import MachineDefUI
+open MaybeMonad
+
+
+(* transitiveLeastFixedPoint bound f r: calculate the least fixed point
+of r by applying f and transitive closure at each step *)
+val transitiveLeastFixedPoint : forall 'a. SetType 'a, Eq 'a
+    => nat -> ((set ('a * 'a)) -> (set ('a * 'a))) -> (set ('a * 'a)) -> (set ('a * 'a))
+let rec transitiveLeastFixedPoint bound f r =
+  match bound with
+  | 0          -> r
+  | bound' + 1 ->
+      let fr = f r in
+      if fr subset r then r
+      else
+        fr union r
+        $> Relation.transitiveClosure
+        $> transitiveLeastFixedPoint bound' f
+  end
+
+val restrict_relation_from : forall 'a. SetType 'a => set 'a -> set ('a * 'a) -> set ('a * 'a)
+let restrict_relation_from x r =
+  { (a,b) | forall ((a,b) IN r) | a NIN x && b NIN x }
+
+(* move to lem library? *)
+val first_maybe : forall 'a 'b. ('a -> maybe 'b) -> list 'a -> maybe 'b
+let rec first_maybe f l =
+  match l with
+  | [] -> Nothing
+  | head :: tail ->
+      match f head with
+      | Nothing -> first_maybe f tail
+      | Just result -> Just result
+      end
+  end
+
+let slices_of_fe = function
+  | FWrite w      -> (w.w_addr, [complete_slice w.w_addr])
+  | FFWrite r _   -> (r.r_addr, [complete_slice r.r_addr])
+  | FRead r sls _ -> (r.r_addr, sls)
+  | FBarrier _    -> fail
+  | FTStart _     -> fail
+  end
+
+(* check if the footprints/unsat-slices of memory accesses intersect *)
+let fe_addrs_intersect (e1: flowing_event) (e2: flowing_event) : bool =
+  overlapping_slices (slices_of_fe e1) (slices_of_fe e2)
+
+let rec flowing_tree_from_topology
+    (topology: flowing_topology)
+    (next_seg: flowing_segment)
+    : flowing_tree *
+      Map.map thread_id flowing_segment *
+      Map.map flowing_segment (list flowing_event) *
+      flowing_segment
+  =
+  match topology with
+  | FTopo_leaf tid ->
+      (FT_join next_seg [], Map.singleton tid next_seg, Map.singleton next_seg [], flowing_segment_successor next_seg)
+
+  | FTopo_join topologys ->
+      let (subtrees, tid_to_seg, buffers, next_seg) =
+        List.foldl
+          (fun (subtrees, tid_to_seg, buffers, next_seg) topology ->
+              let (subtree', tid_to_seg', buffers', next_seg') = flowing_tree_from_topology topology next_seg in
+              (subtree'::subtrees, Map.(union) tid_to_seg' tid_to_seg, Map.(union) buffers' buffers, next_seg'))
+          ([], Map.empty, Map.empty, next_seg)
+          topologys in
+      (* it is not very important to reverse the subtrees in the next
+         line, but it's a good idea to keep them in the expected order *)
+      (FT_join next_seg (List.reverse subtrees), tid_to_seg, Map.insert next_seg [] buffers, flowing_segment_successor next_seg)
+  end
+
+(** state abstraction ***********************************************)
+
+type flowing_event_in_context =
+  <|  feic_buffer_above:   list flowing_event; (* newer events (head is new) *)
+      feic_event:          flowing_event;
+      feic_buffer_below:   list flowing_event; (* older events (head is new) *)
+      feic_segment:        flowing_segment;
+      feic_parent_segment: maybe flowing_segment;
+  |>
+
+let remove_flowing_event state feic =
+  let buffers =
+    Map.insert
+      feic.feic_segment
+      (feic.feic_buffer_above ++ feic.feic_buffer_below)
+      state.flowing_ss_buffers
+  in
+  let reordered = restrict_relation_from {feic.feic_event} state.flowing_ss_reordered in
+  <| state with flowing_ss_buffers = buffers;
+                flowing_ss_reordered = reordered;
+  |>
+
+let remove_old_read_requests _params state tid restarted_ioids discarded_ioids =
+  if restarted_ioids = {} && discarded_ioids = {} then Nothing else
+
+  let old_ioids = restarted_ioids union discarded_ioids in
+  let is_active = function
+    | FRead read _ _ -> read.r_thread = tid --> read.r_ioid NIN old_ioids
+    | _              -> true
+    end
+  in
+
+  if Map.all (fun _ b -> List.all is_active b) state.flowing_ss_buffers &&
+      Map.all
+        (fun r (rf, w) ->
+            r.r_thread = tid -->
+              r.r_ioid NIN old_ioids &&
+              match w with
+              | FWrite w -> w.w_ioid NIN discarded_ioids
+              | FFWrite _ ioids -> Set.intersection ioids discarded_ioids = {}
+              | _ -> fail
+              end)
+        state.flowing_ss_exclusive_reads
+  then Nothing else
+
+  let buffers = Map.map (List.filter is_active) state.flowing_ss_buffers in
+  let reordered =
+    {(event1, event2) | forall ((event1, event2) IN state.flowing_ss_reordered)
+                      | is_active event1 && is_active event2} in
+
+  let exclusive_reads =
+    Map_extra.mapMaybe
+      (fun r (rf, w) ->
+          if r.r_thread = tid then
+            guard (r.r_ioid NIN old_ioids) >>
+            match w with
+            | FWrite w ->
+                guard (w.w_ioid NIN discarded_ioids) >>
+                return (rf, FWrite w)
+            | FFWrite r ioids ->
+                let ioids = ioids \ discarded_ioids in
+                guard (ioids <> {}) >>
+                return (rf, FFWrite r ioids)
+            | _ -> fail
+            end
+          else Just (rf, w))
+      state.flowing_ss_exclusive_reads
+  in
+
+  Just <| state with flowing_ss_buffers = buffers;
+                     flowing_ss_reordered = reordered;
+                     flowing_ss_exclusive_reads = exclusive_reads;
+       |>
+
+
+let segment_of_thread state tid : flowing_segment =
+  match Map.lookup tid state.flowing_ss_thread_to_segment with
+  | Nothing -> failwith "could not find thread's segment"
+  | Just segment -> segment
+  end
+
+let buffer_of_segment state segment : list flowing_event =
+  match Map.lookup segment state.flowing_ss_buffers with
+  | Nothing -> failwith "could not find segment's buffer"
+  | Just buffer -> buffer
+  end
+
+let rec events_propagated_to_seg state segment (FT_join segment' subtrees) : maybe (list flowing_event) =
+  if segment' = segment then Just (buffer_of_segment state segment')
+  else
+    match first_maybe (events_propagated_to_seg state segment) subtrees with
+    | Nothing -> Nothing
+    | Just events -> Just (events ++ (buffer_of_segment state segment'))
+    end
+
+(* return the list of events that are visible to thread tid (not including
+    events in memory). Head is the newest event. *)
+let events_propagated_to state tid : list flowing_event =
+  let segment = segment_of_thread state tid in
+  match events_propagated_to_seg state segment state.flowing_ss_topology with
+  | Nothing -> failwith "could not find the segment associated with thread"
+  | Just events -> events
+  end
+
+let induced_order_add state target ordered buffer order =
+  List.foldl
+    (fun order e ->
+      if target e || exists (e' IN order.relon_set). ordered e e' then
+        relonAddToTheLeft e (ordered e) order
+      else order)
+    order
+    buffer
+
+let rec induced_order_helper state target ordered (FT_join segment subtrees) =
+  List.foldl
+    (fun order tree ->
+      relonUnion order (induced_order_helper state target ordered tree))
+    relonEmpty
+    subtrees
+  $> induced_order_add state target ordered (buffer_of_segment state segment)
+
+(* induced_order s t o: calculates the partial order induced by the buffers
+and old_writes and o over events for which 't e' or 'o e e'' are true,
+where e' is an event that is already in the order.
+NOTE: the result is not transitively closed *)
+let induced_order state
+    (target:  flowing_event -> bool)
+    (ordered: flowing_event -> flowing_event -> bool) (* ordered old new *)
+    : relon flowing_event
+  =
+  (* the order induced by the topology *)
+  induced_order_helper state target ordered state.flowing_ss_topology
+  (* add old writes *)
+  $> induced_order_add state target ordered [FWrite w | forall (w MEM state.flowing_ss_old_writes) | true]
+
+(* also used by POP *)
+let rec expected_release_sequence_fps exclusive_reads exclusive_writes writes =
+  List.concatMap
+    (fun (w, slices) ->
+      if is_write_release w then [(w.w_thread, (w.w_addr, slices))] else
+      match Map.lookup w exclusive_writes with
+      | Just read ->
+          match Map.lookup read exclusive_reads with
+          | Just (rf, _) ->
+              match_writes w.w_addr slices rf []
+              $> snd $> expected_release_sequence_fps exclusive_reads exclusive_writes
+          | Nothing -> fail
+          end
+      | Nothing -> [(w.w_thread, (w.w_addr, slices))]
+      end)
+    writes
+
+(** the reorder condition (also used by POP) ************************)
+
+let internal_reorder_events_cand params exclusive_reads exclusive_writes new_event old_event : bool =
+  let tid_new = thread_of_flowing_event new_event in
+  let tid_old = thread_of_flowing_event old_event in
+
+  not (is_fe_strong_memory_barrier new_event) &&
+  not (is_fe_strong_memory_barrier old_event) &&
+
+  not (is_fe_write_release new_event) &&
+
+  (* See private comment in notes84: FLOWING1 *)
+
+  match old_event with
+  | FRead r [] _ -> not (is_read_acquire r)
+  | _ -> true
+  end &&
+
+  (* ARM ARM states store-release and load-acquire from the same thread
+  are ordered. *)
+  ((is_fe_read_acquire new_event && is_fe_write_release old_event)
+      --> (tid_new <> tid_old)) &&
+
+
+  (* (acquire token) new satisfied load-acquire can not be reordered with
+  old store-release from the same thread that satisfied the load *)
+  ((is_fe_read_acquire new_event && is_fe_write_release old_event)
+      -->
+      let (_, _, writes_read_from) = unsafeFRead new_event in
+      let release_fps = expected_release_sequence_fps exclusive_reads exclusive_writes writes_read_from in
+      forall ((tid, sliced_fp) MEM release_fps).
+        overlapping_slices (slices_of_fe old_event) sliced_fp
+        -->
+        tid <> tid_old
+  ) &&
+
+  ((is_fe_read_or_write new_event && is_fe_read_or_write old_event)
+      --> not (fe_addrs_intersect new_event old_event)) &&
+
+  (* a write that satisfied a read can't reorder with that read *)
+  (* For mixed-size with write-subsumption we also need to consider
+  this case (CO-MIXED-20c2):
+      a:W x=( _,1)   d:W x=(22,3)
+      b:R x=(22,1)
+      c:W x=( _,2)
+  with co: a --> c --> d. This is a violation of single-copy atomicity.
+  A conceivable execution: a is forwarded to b; b is issued; c is
+  committed; c and b are reordered; c flows to memory; d is committed;
+  d flows to memory; b flows to memory (reading the 22 from d).
+  To prevent this execution, we prevent reordering of an old read with
+  new write from the same thread, if the read was partially satisfied
+  by a write from the same thread that intersects with the new write. *)
+  match (new_event, old_event) with
+  | ((FWrite write), (FRead _ _ writes_read_from)) ->
+      (* we compare weiid as the sliced_write might be from forward-without-value
+      and the committed write is after the write got the value *)
+      forall ((w, s) MEM writes_read_from).
+        w.weiid <> write.weiid &&
+        (* prevent CO-MIXED-20c2: *)
+        ((tid_new = tid_old && tid_new = w.w_thread) -->
+            not $ overlapping_slices (slices_of_fe new_event) (w.w_addr, s))
+  | _ -> true
+  end &&
+
+  (* See private comment in notes84: FLOWING2 *)
+  not (is_fe_barrier_st new_event && is_fe_write old_event && tid_new = tid_old) &&
+  not (is_fe_barrier_st old_event && is_fe_write new_event) &&
+  (* DMB LD is like address dependency, see notes60 *)
+
+  (* changes for transactional memory: *)
+  not (is_fe_tstart new_event) && (* don't let old events join the transaction *)
+  not (is_fe_write new_event && is_fe_tstart old_event) (* don't let transactional writes escape *)
+
+(** exclusives order ************************************************)
+
+(* a store-exclusive that po-follows load-exclusive to a different address
+is handled like plain store, hence we can not rely on is_write_exclusive *)
+let is_successful_write_exclusive state : (flowing_event -> bool) = function
+  | FWrite w ->
+      is_write_exclusive w && Map.member w state.flowing_ss_exclusive_writes
+  | FFWrite _ _ -> true
+  | _ -> false
+  end
+
+let is_successful_read_exclusive state : (flowing_event -> bool) = function
+  | FRead r _ _ ->
+      is_read_exclusive r && Map.member r state.flowing_ss_exclusive_reads
+  | _ -> false
+  end
+
+let exclusives_future_edges exclusives order =
+  let prev_slices r_exc prev_ws e =
+    match e with
+    | FWrite w ->
+        match [s | forall ((w', s) MEM prev_ws) | w' = w] with
+        | []  -> Nothing
+        | sls -> Just (w.w_addr, List.concat sls)
+        end
+    | FRead r unsat _ ->
+        if r = r_exc then Just (r.r_addr, unsat)
+        else Nothing
+    | _ -> Nothing
+    end
+  in
+
+  {(w_exc, e')
+    | forall  ((r_exc, (prev_ws, w_exc)) IN exclusives)
+              ((e, e') IN order.relon_rel)
+    | (is_fe_write e' || is_fe_future_write e') &&
+      thread_of_flowing_event e' <> thread_of_flowing_event w_exc && (* ==> e' <> w_exc *)
+      match prev_slices r_exc prev_ws e with
+      | Just s  -> overlapping_slices (slices_of_fe e') s
+      | Nothing -> false
+      end
+  } union
+
+  {(o, e)
+    | forall  ((r_exc, (prev_ws, w_exc)) IN exclusives)
+              (o IN (relonLeftOf w_exc order))
+              (e IN order.relon_set)
+    | o <> e && thread_of_flowing_event o <> thread_of_flowing_event w_exc &&
+      (is_fe_write o || is_fe_future_write o) &&
+      overlapping_slices (slices_of_fe o) (slices_of_fe w_exc) &&
+      match prev_slices r_exc prev_ws e with
+      | Just s  -> overlapping_slices (slices_of_fe o) s
+      | Nothing -> false
+      end
+  } union
+
+  {(w_exc, fw_exc)
+    | forall  ((r_exc, (prev_ws, w_exc)) IN exclusives)
+              ((_, (_, fw_exc)) IN exclusives)
+              (e IN (relonLeftOf fw_exc order))
+    | is_fe_future_write fw_exc &&
+      thread_of_flowing_event fw_exc <> thread_of_flowing_event w_exc && (* ==> fw_exc <> w_exc *)
+      prev_slices r_exc prev_ws e <> Nothing
+  }
+
+
+(* also used by POP *)
+let add_exclusive_futures exclusives order =
+  transitiveLeastFixedPoint
+    ((Set.size order.relon_set) ** 2)
+    (fun r ->
+        relonFromSetAndRelation order.relon_set r
+        $> exclusives_future_edges exclusives)
+    order.relon_rel
+
+(* calculate the order induced by the buffers and exclusive guarantees *)
+let exclusives_order params state =
+  let exclusives = Map.toSet state.flowing_ss_exclusive_reads in
+
+  (* add future write-exclusives *)
+  let state =
+    List.foldl
+      (fun state (_, (_, w)) ->
+        if is_fe_future_write w then
+          let seg = segment_of_thread state (thread_of_flowing_event w) in
+          let buf = buffer_of_segment state seg in
+          <| state with flowing_ss_buffers = Map.insert seg (w :: buf) state.flowing_ss_buffers |>
+        else state)
+      state
+      (Set_extra.toList exclusives)
+  in
+
+  induced_order state
+      (is_successful_write_exclusive state)
+      (fun e e' ->
+          (* future write-exclusives are ordered with everything (except
+          other future write-exclusives) *)
+          (is_fe_future_write e' && not (is_fe_future_write e)) ||
+          (* read-acquires are ordered with everything newer *)
+          is_fe_read_acquire e ||
+          (e, e') IN state.flowing_ss_reordered ||
+          (* the regular reorder condition *)
+          not (internal_reorder_events_cand params state.flowing_ss_exclusive_reads state.flowing_ss_exclusive_writes e' e))
+  $> relonTransitiveClosure
+  $> add_exclusive_futures exclusives
+
+(*************************** accept event ***************************)
+
+(* accept_event: the storage subsystem can always accept any write,
+read-request or barrier from a thread, placing it at the top of the
+buffer associated with the thread *)
+let flowing_ss_accept_event_action _params state event =
+  let tid = thread_of_flowing_event event in
+  let segment = segment_of_thread state tid in
+
+  let buffers =
+    if Map.lookup tid state.flowing_ss_tm <> Nothing && is_fe_barrier event then
+      (* throw away barriers from threads that are in transaction mode *)
+      state.flowing_ss_buffers
+    else
+      let buffer = buffer_of_segment state segment in
+      Map.insert segment (event :: buffer) state.flowing_ss_buffers
+  in
+
+  <| state with flowing_ss_buffers = buffers |>
+
+let flowing_ss_accept_event_cand params state event : bool =
+  (* changes for load/store-exclusive: *)
+  let () = ensure
+    (state.flowing_ss_exclusive_reads <> Map.empty
+      -->
+        flowing_ss_accept_event_action params state event
+        $> exclusives_order params
+        $> Relation.isIrreflexive)
+    "flowing_ss_accept_event_cand is false"
+  in
+  true
+
+let flowing_ss_accept_event params state event =
+  guard (flowing_ss_accept_event_cand params state event) >>
+  let state_cont = fun () ->
+    flowing_ss_accept_event_action params state event
+  in
+  return state_cont
+
+(******************* accept read-exclusive event ********************)
+
+let flowing_ss_accept_read_exclusive_action params state read slices rf se_ioids =
+  let state =
+    if slices = [] && not (is_read_acquire read) then state else
+    flowing_ss_accept_event_action params state (FRead read slices rf)
+  in
+
+  let exclusive_reads =
+    Map.insert read (rf, (FFWrite read se_ioids)) state.flowing_ss_exclusive_reads
+  in
+
+  <| state with flowing_ss_exclusive_reads = exclusive_reads |>
+
+let flowing_ss_accept_read_exclusive_cand params state read slices rf se_ioids : bool =
+  flowing_ss_accept_event_cand params state (FRead read slices rf)
+
+let flowing_ss_accept_read_exclusive params state read slices rf se_ioids =
+  guard (flowing_ss_accept_read_exclusive_cand params state read slices rf se_ioids) >>
+  let state_cont = fun () ->
+    flowing_ss_accept_read_exclusive_action params state read slices rf se_ioids
+  in
+  return state_cont
+
+(******************* accept write-exclusive event *******************)
+
+let flowing_ss_accept_write_exclusive_action params state write paired_read =
+  let state = flowing_ss_accept_event_action params state (FWrite write) in
+
+  let (exclusive_reads, exclusive_writes) =
+    match Map.lookup paired_read state.flowing_ss_exclusive_reads with
+    | Just (rf, w) ->
+        let () = ensure (is_fe_future_write w) "the read-exclusive is already paired with non-future write-exclusive" in
+        (Map.insert paired_read (rf, (FWrite write)) state.flowing_ss_exclusive_reads,
+          Map.insert write paired_read state.flowing_ss_exclusive_writes)
+    | Nothing -> fail
+    end
+  in
+
+  <| state with
+      flowing_ss_exclusive_reads  = exclusive_reads;
+      flowing_ss_exclusive_writes = exclusive_writes;
+  |>
+
+let flowing_ss_accept_write_exclusive_cand params state write paired_read : bool =
+  flowing_ss_accept_event_cand params state (FWrite write)
+
+let flowing_ss_accept_write_exclusive params state write paired_read =
+  guard (flowing_ss_accept_write_exclusive_cand params state write paired_read) >>
+  let state_cont = fun () ->
+    flowing_ss_accept_write_exclusive_action params state write paired_read
+  in
+  return state_cont
+
+(******************* guarantee exclusive success ********************)
+
+let flowing_ss_guarantee_exclusive_success_action params state read rf se_ioid =
+  let exclusive_reads =
+    match Map.lookup read state.flowing_ss_exclusive_reads with
+    | Nothing ->
+        let rf =
+          match rf with
+          | Just rf -> rf (* the read_request was already satisfied, i.e., it is not in storage *)
+          | Nothing ->
+              (* the read_request was not satisfied yet, i.e., it is in storage *)
+              let is_read = function FRead r _ _ -> r = read | _ -> false end in
+              match List.find is_read (events_propagated_to state read.r_thread) with
+              | Just read -> let (_, _, rf) = unsafeFRead read in rf
+              | Nothing   -> failwith "could not find the read-exclusive in storage"
+              end
+          end
+        in
+        Map.insert read (rf, (FFWrite read {se_ioid})) state.flowing_ss_exclusive_reads
+
+    | Just (rf, FFWrite r ioids) ->
+        Map.insert read (rf, (FFWrite r (ioids union {se_ioid}))) state.flowing_ss_exclusive_reads
+
+    | Just (_, _) -> fail
+    end
+  in
+
+  <| state with flowing_ss_exclusive_reads = exclusive_reads |>
+
+let flowing_ss_guarantee_exclusive_success_cand params state read rf se_ioid : bool =
+  match Map.lookup read state.flowing_ss_exclusive_reads with
+  | Nothing ->
+      flowing_ss_guarantee_exclusive_success_action params state read rf se_ioid
+      $> exclusives_order params
+      $> Relation.isIrreflexive
+  | Just _ -> true (* some other store-exclusive on a different control
+                    path has already asked for this load-exclusive to be
+                    guaranteed so no need to check again; at the end only
+                    one of these stores will be propagated to storage *)
+  end
+
+let flowing_ss_guarantee_exclusive_success params state read rf se_ioid =
+  guard (flowing_ss_guarantee_exclusive_success_cand params state read rf se_ioid) >>
+  let state_cont = fun () ->
+    flowing_ss_guarantee_exclusive_success_action params state read rf se_ioid
+  in
+  return state_cont
+
+(**************************** flow event ****************************)
+
+(* flow_event: an event at the end of one segment can cross a
+join point to the start of the next segment *)
+
+let flowing_ss_flow_event_action params state feic =
+  match feic.feic_parent_segment with
+  | Nothing -> fail
+  | Just new_segment ->
+      let tid = thread_of_flowing_event feic.feic_event in
+      let buffers =
+        state.flowing_ss_buffers
+        $> Map.insert new_segment (feic.feic_event :: (buffer_of_segment state new_segment))
+        $> Map.insert feic.feic_segment feic.feic_buffer_above
+      in
+
+      (* changes for transactional memory: *)
+      let tm' =
+        match (feic.feic_event, Map.lookup tid state.flowing_ss_tm) with
+        (* when a TM-read crosses a join point we record it and prevent writes to
+        overlapping footprints from different branches from crossing the join point *)
+        | (FRead r _ _, Just rs) -> Map.insert tid (rs union {r}) state.flowing_ss_tm
+        | _ -> state.flowing_ss_tm
+        end
+      in
+
+      <| state with
+          flowing_ss_buffers = buffers;
+          flowing_ss_reordered = restrict_relation_from {feic.feic_event} state.flowing_ss_reordered;
+          flowing_ss_tm = tm';
+      |>
+  end
+
+let flowing_ss_flow_event_cand params state feic : bool =
+  (* event is at the bottom of the buffer *)
+  feic.feic_buffer_below = [] &&
+
+  (* event is not in the root segment *)
+  feic.feic_parent_segment <> Nothing &&
+
+  (* changes for load/store-exclusive: *)
+  (state.flowing_ss_exclusive_reads <> Map.empty
+    -->
+      flowing_ss_flow_event_action params state feic
+      $> exclusives_order params
+      $> Relation.isIrreflexive) &&
+
+  (* changes for transactional memory: *)
+  match feic.feic_event with
+  | FWrite w ->
+      (* don't let writes cross the join point if an overlapping TM-read
+      from a different branch already crossed the join point *)
+      let tm_rs =
+        Map.delete (thread_of_flowing_event feic.feic_event) state.flowing_ss_tm
+        $> Map.range
+        $> Set.bigunion
+      in
+      forall (r IN tm_rs). not (non_empty_intersection w.w_addr r.r_addr)
+  | FTStart _ -> false (* don't let tstart escape *)
+  | _ -> true
+  end
+
+let flowing_ss_flow_event params state feic =
+  guard (flowing_ss_flow_event_cand params state feic) >>
+  let state_cont = fun () -> flowing_ss_flow_event_action params state feic in
+  return (SS_only (SS_Flowing_flow_to_segment feic.feic_event) state_cont)
+
+(************************** reorder events **************************)
+
+let flowing_ss_reorder_events_action _params state feic = fun e es ->
+  let buffer = feic.feic_buffer_above ++ (e :: feic.feic_event :: es) in
+  <| state with
+    flowing_ss_buffers = Map.insert feic.feic_segment buffer state.flowing_ss_buffers;
+    flowing_ss_reordered = {(feic.feic_event, e)} union state.flowing_ss_reordered;
+  |>
+
+let flowing_ss_reorder_events_cand params state feic : maybe (flowing_event * list flowing_event) =
+  match feic.feic_buffer_below with
+  | []     -> Nothing
+  | e :: es ->
+      (* the events have not previously been reordered with each
+      other in this segment *)
+      guard ((e, feic.feic_event) NIN state.flowing_ss_reordered) >>
+
+      (* the two events can be reordered *)
+      guard (internal_reorder_events_cand params state.flowing_ss_exclusive_reads state.flowing_ss_exclusive_writes feic.feic_event e) >>
+
+      (* changes for load/store-exclusive *)
+      guard (state.flowing_ss_exclusive_reads <> Map.empty
+      (* optimization: && not (internal_reorder_events_cand params state.flowing_ss_exclusives e feic.feic_event) *)
+        -->
+          flowing_ss_reorder_events_action params state feic e es
+          $> exclusives_order params
+          $> Relation.isIrreflexive) >>
+      return (e, es)
+  end
+
+let flowing_ss_reorder_events params state feic =
+  flowing_ss_reorder_events_cand params state feic >>= fun (e, es) ->
+  let state_cont = fun () -> flowing_ss_reorder_events_action params state feic e es in
+  return (SS_only (SS_Flowing_reorder_events feic.feic_event e) state_cont)
+
+(********************* satisfy read from segment ********************)
+
+let flowing_ss_satisfy_read_from_segment_action params state feic =
+      fun write_event es read_slices' write_slices' ->
+
+  let (read, _, write_slices) = unsafeFRead feic.feic_event in
+
+  let state =
+    match Map.lookup read state.flowing_ss_exclusive_reads with
+    | Just (_, w) ->
+        <| state with flowing_ss_exclusive_reads = Map.insert read (write_slices' ++ write_slices, w) state.flowing_ss_exclusive_reads |>
+    | Nothing -> state
+    end
+  in
+
+  if read_slices' <> [] || is_fe_read_acquire feic.feic_event then
+    (* the read is acquire or was partially satisfied *)
+
+    (* update the read to record the write that satisfied it and the remaining unsat slices *)
+    let event' = FRead read read_slices' (write_slices' ++ write_slices) in
+
+    (* reorder the read and write for acquire-token and single-copy atomicity *)
+    let buffers =
+      Map.insert
+        feic.feic_segment
+        (feic.feic_buffer_above ++ (write_event :: (event' :: es)))
+        state.flowing_ss_buffers
+    in
+
+    let reordered =
+      let update e = if e = feic.feic_event then event' else e in
+      {(update e1, update e2) | forall ((e1, e2) IN state.flowing_ss_reordered)
+                              | true}
+    in
+
+    <| state with flowing_ss_buffers = buffers;
+                  flowing_ss_reordered = reordered;
+    |>
+  (* the read is not acquire and it was completely satisfied *)
+  else remove_flowing_event state feic
+
+(* satisfy_read_from_segment: satisfy a read request from an adjacent
+write in the same segment *)
+let flowing_ss_satisfy_read_from_segment_cand params state feic =
+  tryFRead feic.feic_event >>= fun (read, read_slices, _) ->
+
+  match feic.feic_buffer_below with
+  | []               -> Nothing
+  | write_event :: es -> Just (write_event, es)
+  end >>= fun (write_event, es) ->
+
+  (* the event below in the buffer is a write *)
+  tryFWrite write_event >>= fun write ->
+
+  (* changes for transactional memory: *)
+  guard (
+    (* TM-read can read from transactional writes or memory *)
+    let tid = thread_of_flowing_event feic.feic_event in
+    Map.lookup tid state.flowing_ss_tm <> Nothing
+      --> exists (e MEM es). is_fe_tstart e) >>
+
+  (* read-acq can only be satisfied from write-rel that reached memory
+        see private notes19-2014-11-11-flowing.txt *)
+  guard (is_fe_read_acquire feic.feic_event
+          --> not (is_fe_write_release write_event)) >>
+
+  (* read-acq can be satisfied from write-exclusive only in memory. This
+  is to match MCA axiomatic model's "[range(rmw)]; rfi; [A | Q]" *)
+  guard ((is_fe_read_acquire feic.feic_event && is_fe_write_exclusive write_event)
+          --> thread_of_flowing_event feic.feic_event <> thread_of_flowing_event write_event) >>
+
+  let (read_slices', write_slices') =
+    match_writes
+      read.r_addr
+      read_slices
+      [write_with_complete_slice write]
+      []
+  in
+
+  (* read and write to the same address *)
+  guard (write_slices' <> []) >>
+
+  (* changes for load/store-exclusive *)
+  guard (state.flowing_ss_exclusive_reads <> Map.empty
+        -->
+          flowing_ss_satisfy_read_from_segment_action params state feic
+              write_event es read_slices' write_slices'
+          $> exclusives_order params
+          $> Relation.isIrreflexive) >>
+
+  return (write_event, es, read_slices', write_slices')
+
+
+let flowing_ss_satisfy_read_from_segment params state feic =
+  flowing_ss_satisfy_read_from_segment_cand params state feic >>=
+  fun (write_event, es, read_slices, write_slices) ->
+    let (read, _, writes_read_from) = unsafeFRead feic.feic_event in
+    let state_cont = fun () ->
+      flowing_ss_satisfy_read_from_segment_action params state feic
+          write_event es read_slices write_slices
+    in
+
+    if read_slices = [] then
+      let value =
+        write_slices ++ writes_read_from
+        $> value_of_write_slices_with_unknowns read.r_addr
+      in
+      let mrs =
+        <|  mrs_footprint = read.r_addr;
+            mrs_value = value;
+            mrs_writes_read_from = write_slices ++ writes_read_from;
+        |>
+      in
+      return (SS_sync (SS_Flowing_seg_read_response read mrs) state_cont ())
+
+    else return (SS_only (SS_Flowing_partially_satisfy_read read write_slices) state_cont)
+
+(********************* satisfy read from memory *********************)
+
+(* satisfy a read request that has reached the root, from the memory *)
+let flowing_ss_satisfy_read_from_memory_action _params state feic =
+      fun write_slices' ->
+
+  let (read, _, write_slices) = unsafeFRead feic.feic_event in
+
+  let state =
+    match Map.lookup read state.flowing_ss_exclusive_reads with
+    | Just (_, w) ->
+        <| state with flowing_ss_exclusive_reads = Map.insert read (write_slices' ++ write_slices, w) state.flowing_ss_exclusive_reads |>
+    | Nothing -> state
+    end
+  in
+
+  remove_flowing_event state feic
+
+let flowing_ss_satisfy_read_from_memory_cand _params state feic =
+  (* is a read event *)
+  is_fe_read feic.feic_event &&
+
+  (* at the bottom of the root segment *)
+  feic.feic_buffer_below = [] &&
+  feic.feic_parent_segment = Nothing
+
+let flowing_ss_satisfy_read_from_memory params state feic =
+  guard (flowing_ss_satisfy_read_from_memory_cand params state feic) >>
+
+  match feic.feic_event with
+  | FRead read [] sliced_writes -> (* acquire token flowing to memory *)
+      let state_cont = fun () ->
+        flowing_ss_satisfy_read_from_memory_action params state feic []
+      in
+
+      SS_only (SS_Flowing_flow_satisfied_read_to_memory read) state_cont
+      $> return
+
+  | FRead read read_slices write_slices ->
+      match
+        match_writes
+          read.r_addr
+          read_slices
+          state.flowing_ss_memory_writes
+          write_slices
+      with
+      | ([], write_slices') ->
+          let state_cont = fun () ->
+            flowing_ss_satisfy_read_from_memory_action params state feic write_slices'
+          in
+
+          let mrs=
+            <|  mrs_footprint = read.r_addr;
+                mrs_value = value_of_write_slices_with_unknowns read.r_addr write_slices';
+                mrs_writes_read_from = write_slices';
+            |>
+          in
+
+          SS_sync (SS_Flowing_mem_read_response read mrs) state_cont ()
+          $> return
+      | _ -> failwith "read from uninitialized address"
+      end
+
+  | _ -> fail
+  end
+
+(*********************** flow write to memory ***********************)
+
+
+let add_write_to_memory state write =
+  (* remove slices that will not be visible after adding the new write *)
+  let old_mem =
+    List.mapMaybe
+      (fun (old_write, old_slices) ->
+        match_writes
+          old_write.w_addr
+          old_slices
+          [ write_with_complete_slice write;
+            (old_write, old_slices);
+          ]
+          []
+        $> snd $> List.lookup old_write >>= fun old_slices' ->
+        return (old_write, old_slices')
+      )
+      state.flowing_ss_memory_writes
+  in
+
+  let (_, new_mem) =
+    match_writes
+      write.w_addr
+      [complete_slice write.w_addr]
+      [write_with_complete_slice write]
+      []
+  in
+
+  <| state with
+      flowing_ss_memory_writes = new_mem ++ old_mem;
+      flowing_ss_old_writes = write :: state.flowing_ss_old_writes;
+  |>
+
+let flowing_ss_flow_write_to_memory_action _params state feic =
+  let state = remove_flowing_event state feic in
+
+  let write = unsafeFWrite feic.feic_event in
+
+  (* when a write from a store-exclusive flows to memory we can remove
+  it, and the paired read_request, from the exclusive maps *)
+  let state =
+    match Map.lookup write state.flowing_ss_exclusive_writes with
+    | Just r ->
+        <| state with
+            flowing_ss_exclusive_reads  = Map.delete r state.flowing_ss_exclusive_reads;
+            flowing_ss_exclusive_writes = Map.delete write state.flowing_ss_exclusive_writes;
+        |>
+    | Nothing -> state
+    end
+  in
+
+  add_write_to_memory state write
+
+
+let flowing_ss_flow_write_to_memory_cand _params _state feic =
+  (* is a write event *)
+  is_fe_write feic.feic_event &&
+
+  (* at the bottom of the root segment *)
+  feic.feic_buffer_below = [] &&
+  feic.feic_parent_segment = Nothing
+
+let flowing_ss_flow_write_to_memory params state feic =
+  guard (flowing_ss_flow_write_to_memory_cand params state feic) >>
+  let state_cont = fun () ->
+    flowing_ss_flow_write_to_memory_action params state feic
+  in
+  let write = unsafeFWrite feic.feic_event in
+  return (SS_only (SS_Flowing_flow_write_to_memory write) state_cont)
+
+(********************** flow barrier to memory **********************)
+
+let flowing_ss_flow_barrier_to_memory_action _params state feic =
+  remove_flowing_event state feic
+
+let flowing_ss_flow_barrier_to_memory_cand _params state feic =
+  (* is a barrier event *)
+  is_fe_barrier feic.feic_event &&
+
+  (* at the bottom of the root segment *)
+  feic.feic_buffer_below = [] && feic.feic_parent_segment = Nothing
+
+let flowing_ss_flow_barrier_to_memory params state feic =
+  guard (flowing_ss_flow_barrier_to_memory_cand params state feic) >>
+  let state_cont = fun () ->
+    flowing_ss_flow_barrier_to_memory_action params state feic
+  in
+  let barrier = unsafeFBarrier feic.feic_event in
+  return (SS_only (SS_Flowing_flow_barrier_to_memory barrier) state_cont)
+
+(************************* accept TM start **************************)
+
+let flowing_ss_accept_tstart_action params state tstart =
+  let state = flowing_ss_accept_event_action params state (FTStart tstart) in
+  <| state with
+     flowing_ss_tm = Map.insert tstart.ts_thread {} state.flowing_ss_tm;
+  |>
+
+let flowing_ss_accept_tstart_cond params state tstart : bool =
+  flowing_ss_accept_event_cand params state (FTStart tstart) &&
+  Map.lookup tstart.ts_thread state.flowing_ss_tm = Nothing
+
+let flowing_ss_accept_tstart params state tstart =
+  guard (flowing_ss_accept_tstart_cond params state tstart) >>
+  let state_cont = fun () ->
+    flowing_ss_accept_tstart_action params state tstart
+  in
+  return state_cont
+
+(******************* accept successful TM commit ********************)
+
+let flowing_ss_accept_successful_tcommit_action _params state tstart =
+  let segment = segment_of_thread state tstart.ts_thread in
+  let buffer = buffer_of_segment state segment in
+  match List.reverse buffer with
+  | t :: ws -> (* first element is the FTStart *)
+      let buffers = Map.insert segment [] state.flowing_ss_buffers in
+      let reordered = restrict_relation_from (Set.fromList (t :: ws)) state.flowing_ss_reordered in
+      let tm = Map.delete tstart.ts_thread state.flowing_ss_tm in
+
+      let state =
+        List.foldl
+          (fun state w ->
+            let write = unsafeFWrite w in
+            add_write_to_memory state write)
+          state
+          ws
+      in
+
+      <|  state with
+          flowing_ss_buffers = buffers;
+          flowing_ss_reordered = reordered;
+          flowing_ss_tm = tm;
+      |>
+  | [] -> fail
+  end
+
+let flowing_ss_accept_successful_tcommit_cond _params state tstart : bool =
+  let es = events_propagated_to state tstart.ts_thread in
+  match List.splitWhile (fun e -> not (is_fe_tstart e)) es with
+  | (ws, _ :: []) -> (* found FTStart and there are no events older then it *)
+      let tm_rs =
+        Map.delete tstart.ts_thread state.flowing_ss_tm
+        $> Map.range
+        $> Set.bigunion
+      in
+      forall (w MEM ws) (r IN tm_rs).
+        let w = unsafeFWrite w in
+        not (non_empty_intersection w.w_addr r.r_addr)
+  | _ -> false (* did not find FTStart (i.e. the thread is not in TM mode),
+                  or there are events after the FTStart *)
+  end
+
+let flowing_ss_accept_successful_tcommit params state tstart =
+  guard (flowing_ss_accept_successful_tcommit_cond params state tstart) >>
+  let state_cont = fun () ->
+    flowing_ss_accept_successful_tcommit_action params state tstart
+  in
+  return state_cont
+
+(************************ abort transaction *************************)
+
+let flowing_ss_abort_transaction_action params state tstart =
+  let tid = tstart.ts_thread in
+
+  let buffers =
+    Map.map
+      (fun buf -> List.filter (fun e -> thread_of_flowing_event e <> tid) buf)
+      state.flowing_ss_buffers
+  in
+
+  let reordered =
+    {(e, e')  | forall ((e, e') IN state.flowing_ss_reordered)
+              | thread_of_flowing_event e <> tid &&
+                thread_of_flowing_event e' <> tid}
+  in
+
+  let tm = Map.delete tid state.flowing_ss_tm in
+
+  <| state with
+      flowing_ss_buffers = buffers;
+      flowing_ss_reordered = reordered;
+      flowing_ss_tm = tm;
+  |>
+
+let flowing_ss_abort_transaction_cand _params state tstart : bool =
+  Map.lookup tstart.ts_thread state.flowing_ss_tm <> Nothing
+
+let flowing_ss_abort_transaction params state tstart =
+  guard (flowing_ss_abort_transaction_cand params state tstart) >>
+  let state_cont = fun () ->
+    flowing_ss_abort_transaction_action params state tstart
+  in
+  return state_cont
+
+(********************************************************************)
+
+let flowing_ss_initial_state params tids initial_writes =
+  (* TODO: ensure initial writes don't overlap *)
+  let (tree, tid_to_seg, buffers, _) = flowing_tree_from_topology params.ss.flowing_topology flowing_segment_initial in
+  <|  flowing_ss_threads           = tids;
+      flowing_ss_topology          = tree;
+      flowing_ss_thread_to_segment = tid_to_seg;
+      flowing_ss_buffers           = buffers;
+      flowing_ss_reordered         = {};
+      flowing_ss_exclusive_reads   = Map.empty;
+      flowing_ss_exclusive_writes  = Map.empty;
+      flowing_ss_memory_writes     = complete_writes initial_writes;
+      flowing_ss_old_writes        = initial_writes;
+      flowing_ss_tm                = Map.empty;
+  |>
+
+
+let flowing_ss_thread_memory_value_of_footprint _params state tid footprint =
+  let topo_writes =
+    let write_slices = function
+      | FWrite w -> Just (write_with_complete_slice w)
+      | _        -> Nothing
+      end
+    in
+    events_propagated_to state tid
+    $> List.mapMaybe write_slices
+  in
+  let writes = topo_writes ++ state.flowing_ss_memory_writes in
+  match mrs_from_writes footprint writes with
+  | Just mrs' -> mrs'.mrs_value
+  | Nothing -> failwith ("flowing_ss_thread_memory_value_of_footprint " ^ show footprint)
+  end
+
+let enumerate_event_trans params state feic =
+  (* transitions of the bottom most event in the root segment *)
+  List.mapMaybe
+    (fun t -> t params state feic)
+    [ flowing_ss_flow_event;
+      flowing_ss_reorder_events;
+      flowing_ss_satisfy_read_from_segment;
+      flowing_ss_satisfy_read_from_memory;
+      flowing_ss_flow_write_to_memory;
+      flowing_ss_flow_barrier_to_memory;
+    ]
+
+let rec enumerate_buffer_trans params state acc feic =
+  let trans = enumerate_event_trans params state feic in
+
+  match feic.feic_buffer_below with
+  | [] -> trans ++ acc
+  | e' :: es' ->
+      <| feic with
+          feic_buffer_above = feic.feic_buffer_above ++ [feic.feic_event];
+          feic_event        = e';
+          feic_buffer_below = es';
+      |>
+      $> enumerate_buffer_trans params state (trans ++ acc)
+  end
+
+let rec enumerate_trans params state parent_seg (FT_join seg subtrees) =
+  let trans = List.concatMap (enumerate_trans params state (Just seg)) subtrees in
+
+  match buffer_of_segment state seg with
+  | []      -> trans
+  | e :: es ->
+      <|  feic_buffer_above =   [];
+          feic_event =          e;
+          feic_buffer_below =   es;
+          feic_segment =        seg;
+          feic_parent_segment = parent_seg;
+      |>
+      $> enumerate_buffer_trans params state []
+      $> (++) trans
+  end
+
+(* collect all the storage subsystem transitions that are initiated *)
+(* by the storage subsystem.                                        *)
+let flowing_ss_enumerate_transitions
+    (params: ss_params)
+    (state:  flowing_storage_subsystem_state)
+    : list (ss_trans flowing_storage_subsystem_state)
+  =
+  enumerate_trans params state Nothing state.flowing_ss_topology
+  (*
+  match enumerate_trans params state Nothing state.flowing_ss_topology with
+  | [] ->
+      (* if there are no enabled transitions and there are exclusives
+      in the topology, it is possible that flowing_ss_reordered is disabling
+      valid transitions; remove the exclusives-order minimal events from
+      flowing_ss_reordered, and try again *)
+      if Map.null state.flowing_ss_exclusive_reads then []
+      else
+        let exc_writes =
+          {FWrite w | forall (w IN (Map.domain state.flowing_ss_exclusive_writes)) | true}
+        in
+        let old_writes =
+          {FWrite w | forall (w MEM state.flowing_ss_old_writes) | true}
+        in
+        let order = exclusives_order params state $> restrict_relation_from old_writes in
+        let mins = ((Relation.relDomain order) union exc_writes) \ Relation.relRange order in
+        let state' =
+          <| state with flowing_ss_reordered = restrict_relation_from mins state.flowing_ss_reordered |>
+        in
+        enumerate_trans params state' Nothing state.flowing_ss_topology
+
+  | trans -> trans
+  end
+  *)
+
+let flowing_ss_receive_transition params state = function
+  | T_fetch _ -> failwith "fetch is handled globally right now"
+  | T_mem_read_request tl ->
+      let tl' = <| tl with tl_suppl = Just true |> in
+      match tl.tl_label with
+      | (rr, slices, rf, Just se_ioids)  ->
+          flowing_ss_accept_read_exclusive params state rr slices rf se_ioids >>= fun state_cont ->
+          return (T_mem_read_request tl', Just state_cont)
+      | (rr, slices, rf, Nothing) ->
+          if slices = [] && not (is_read_acquire rr) then
+            return (T_mem_read_request tl', Nothing)
+          else
+            flowing_ss_accept_event params state (FRead rr slices rf) >>= fun state_cont ->
+            return (T_mem_read_request tl', Just state_cont)
+      end
+  | T_propagate_write tl ->
+      let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+      match tl.tl_label with
+      | (write, Just read_excl, _) -> flowing_ss_accept_write_exclusive params state write read_excl
+      | (write, Nothing, _)        -> flowing_ss_accept_event params state (FWrite write)
+      end >>= fun state_cont ->
+      return (T_propagate_write tl', Just state_cont)
+  | T_propagate_barrier tl ->
+      let b = tl.tl_label in
+      flowing_ss_accept_event params state (FBarrier b) >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_propagate_barrier tl', Just state_cont)
+  | T_try_store_excl tl ->
+      let (read, rf, se_ioid) = tl.tl_label in
+      flowing_ss_guarantee_exclusive_success params state read rf se_ioid >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_try_store_excl tl', Just state_cont)
+  | T_POP_tm_start tl ->
+      let tstart = tl.tl_label in
+      flowing_ss_accept_tstart params state tstart >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_POP_tm_start tl', Just state_cont)
+  | T_POP_tm_commit tl ->
+      let tstart = tl.tl_label in
+      flowing_ss_accept_successful_tcommit params state tstart >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_POP_tm_commit tl', Just state_cont)
+  | T_POP_tm_abort tl ->
+      let (tstart, _) = tl.tl_label in
+      flowing_ss_abort_transaction params state tstart >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_POP_tm_abort tl', Just state_cont)
+  | T_PLDI11_mem_satisfy_read _    -> fail
+  | T_Flat_mem_satisfy_read _      -> fail
+  | T_Flat_try_commit_store_cond _ -> fail
+  | T_TSO_mem_satisfy_read _       -> fail
+  | T_Promising_fulfil_promise _   -> fail
+  | T_Promising_propagate_write _  -> fail
+  | T_Promising_mem_satisfy_read _ -> fail
+  | T_Promising_propagate_write_nonshared _  -> fail
+  | T_Promising_mem_satisfy_read_nonshared _ -> fail
+  end
+
+let flowing_ss_coherence params state =
+  let co = induced_order state is_fe_write
+    (fun e e' ->
+      match (e, e') with
+      | (FWrite w, FWrite w') -> non_empty_intersection w.w_addr w'.w_addr
+      | _ -> false
+      end)
+  in
+  {(unsafeFWrite w, unsafeFWrite w') | forall ((w, w') IN co.relon_rel) | true}
+  $> Relation.transitiveClosure
+
+
+let flowing_ss_is_final_state _params (state: flowing_storage_subsystem_state) : bool =
+  Map.all (fun _ es -> es = []) state.flowing_ss_buffers
+
+let flowing_make_ui_storage_subsystem_state
+    (ss: maybe flowing_storage_subsystem_state)
+    (ss': flowing_storage_subsystem_state)
+    (transitions: list (ui_trans 'ts 'ss))
+    : ui_storage_subsystem_state 'ts 'ss
+  =
+  let ss = fromMaybe ss' ss in
+  let threads = Set_extra.toList ss'.flowing_ss_threads in
+
+  let transitions_of_event transitions event =
+    [(n, trans) | forall ((n, trans) MEM transitions)
+                | match (trans, event) with
+                  | (SS_trans (SS_only (SS_Flowing_flow_write_to_memory write') _), FWrite write) -> write' = write
+                  | (SS_trans (SS_only (SS_Flowing_flow_barrier_to_memory barrier') _), FBarrier barrier) -> barrier' = barrier
+                  | (SS_trans (SS_only (SS_Flowing_flow_satisfied_read_to_memory read') _), FRead read _ _) -> read' = read
+                  | (SS_trans (SS_only (SS_Flowing_reorder_events event' _) _), _) -> event' = event
+                  | (SS_trans (SS_only (SS_Flowing_flow_to_segment event') _), _) -> event' = event
+                  | (SS_trans (SS_only (SS_Flowing_partially_satisfy_read read' _) _), FRead read _ _) -> read' = read
+                  | (SS_trans (SS_sync (SS_Flowing_seg_read_response read' _ ) _ _), FRead read _ _) -> read' = read
+                  | (SS_trans (SS_sync (SS_Flowing_mem_read_response read' _ ) _ _), FRead read _ _) -> read' = read
+                  | _ -> false
+                  end ] in
+
+  let ui_buffers_map =
+    Map.map
+      (fun buffer ->
+          let trans = List.map (transitions_of_event transitions) buffer in
+          List.zip trans buffer)
+      ss'.flowing_ss_buffers in
+
+  let ui_buffers =
+    (fun segment ->
+      Map_extra.find segment ui_buffers_map) in
+
+  let tid_to_seg = Map.toSet ss'.flowing_ss_thread_to_segment in
+  let seg_to_tid =
+    (fun seg -> Set_extra.choose {tid | forall ((tid,seg') IN tid_to_seg) | seg' = seg}) in
+
+  Flowing_UI_storage
+    <|  (* storage state *)
+        ui_flowing_ss_threads = threads;
+        ui_flowing_ss_topology = ss'.flowing_ss_topology;
+        ui_flowing_ss_segment_to_thread = seg_to_tid;
+        ui_flowing_ss_buffers = ui_buffers;
+        ui_flowing_ss_reordered = ui_set_diff3 ss.flowing_ss_reordered ss'.flowing_ss_reordered;
+        ui_flowing_ss_memory_writes =
+          let cmp_write_addrs (w1, _) (w2, _) = compare w1.w_addr w2.w_addr in
+          let sorted_writes  = Sorting.sortByOrd cmp_write_addrs ss.flowing_ss_memory_writes in
+          let sorted_writes' = Sorting.sortByOrd cmp_write_addrs ss'.flowing_ss_memory_writes in
+          ui_list_diff3 sorted_writes sorted_writes';
+
+
+        (* storage transitions *)
+        ui_flowing_transitions_write_to_mem =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flowing_flow_write_to_memory _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+
+        ui_flowing_transitions_barrier_to_mem =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flowing_flow_barrier_to_memory _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+
+        ui_flowing_transitions_satisfied_read_to_mem =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flowing_flow_satisfied_read_to_memory _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+
+        ui_flowing_transitions_reorder =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flowing_reorder_events _ _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+
+        ui_flowing_transitions_flow_to_seg =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flowing_flow_to_segment _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+
+        ui_flowing_transitions_partially_satisfy_read =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flowing_partially_satisfy_read _ _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+
+        ui_flowing_transitions_read_response =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_sync (SS_Flowing_seg_read_response _ _) _ _) -> true
+              | SS_trans (SS_sync (SS_Flowing_mem_read_response _ _) _ _) -> true
+              | _ -> false
+              end)
+            transitions;
+    |>
+
+
+val flowing_storage : storageSubsystem flowing_storage_subsystem_state
+let flowing_storage = 
+   <| ss_thread_memory_value_of_footprint = 
+        flowing_ss_thread_memory_value_of_footprint;
+      ss_initial_state          = flowing_ss_initial_state;
+      ss_is_final_state         = flowing_ss_is_final_state;
+      ss_coherence              = flowing_ss_coherence;
+      ss_clean_reads            = remove_old_read_requests;
+      ss_stopped_promising = fun _ -> false;
+  |>
+
+
+val flowing_machine_storage : forall 'ts. machineStorageSubsystem 'ts flowing_storage_subsystem_state
+let flowing_machine_storage = 
+   <| ss_enumerate_transitions  = flowing_ss_enumerate_transitions;
+      ss_receive_transition =
+        fun params s tl -> ListMonad.option_guard (flowing_ss_receive_transition params s tl);
+      ss_enumerate_final_transitions = fun s -> [];
+      ss_make_ui_storage_state = flowing_make_ui_storage_subsystem_state
+  |>

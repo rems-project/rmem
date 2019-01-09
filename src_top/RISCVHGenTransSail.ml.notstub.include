@@ -1,0 +1,203 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Jon French, University of Cambridge 2018                           *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open String
+open Big_int
+open RISCVHGenBase
+
+
+open Interp_interface
+open Sail_impl_base
+
+type instruction = RISCVHGenBase.instruction
+
+type labelmap = (string * int) list
+
+module IInt = Sail_impl_base
+module IImp = Interp_inter_imp
+
+
+open Riscv_types
+(* #include "build_isa_models/riscv/gen/herdtools_types_to_shallow_types.hgen" *)
+    
+let herdtools_ast_to_shallow_ast (instr : instruction) =
+  let instr = match instr with
+  (* #include "build_isa_models/riscv/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  | i ->
+      begin
+        Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
+        failwith "Translation failure"
+      end
+  in
+  MachineDefTypes.RISCV_instr instr
+
+
+let unlabelize_ins lookup_loc label_map i ins =
+  begin match ins with
+  | `RISCVJALLabel (label, rs) ->
+     let offset = (List.assoc label label_map - i) in
+     `RISCVJAL (offset, rs)
+  | `RISCVBTypeLabel (label, rs2, rs1, op) ->
+     let offset = (List.assoc label label_map - i) in
+     `RISCVBType (offset, rs2, rs1, op)
+  | ins -> ins
+  end
+
+let end_ins = `RISCVStopFetching
+
+
+(* #include "build_isa_models/riscv/gen/shallow_types_to_herdtools_types.hgen" *)
+
+let trans_out_int fbits =
+  Nat_big_num.to_int (Sail_values.unsigned fbits)
+
+let trans_out_reg flv =
+  let n = trans_out_int flv in
+  match n with
+  | 0 -> R0
+  | 1 -> R1
+  | 2 -> R2
+  | 3 -> R3
+  | 4 -> R4
+  | 5 -> R5
+  | 6 -> R6
+  | 7 -> R7
+  | 8 -> R8
+  | 9 -> R9
+  | 10 -> R10
+  | 11 -> R11
+  | 12 -> R12
+  | 13 -> R13
+  | 14 -> R14
+  | 15 -> R15
+  | 16 -> R16
+  | 17 -> R17
+  | 18 -> R18
+  | 19 -> R19
+  | 20 -> R20
+  | 21 -> R21
+  | 22 -> R22
+  | 23 -> R23
+  | 24 -> R24
+  | 25 -> R25
+  | 26 -> R26
+  | 27 -> R27
+  | 28 -> R28
+  | 29 -> R29
+  | 30 -> R30
+  | 31 -> R31
+  | _  -> failwith "trans_out_reg number not 0 to 31"
+ 
+
+let shallow_ast_to_herdtools_ast instr : instruction =
+  let open Riscv_types in
+  match instr with
+  | MachineDefTypes.RISCV_instr instr ->
+     begin match instr with
+     (* #include "build_isa_models/riscv/gen/shallow_ast_to_herdtools_ast.hgen" *)
+     | i -> failwith "cannot translate instruction"
+     end
+  | _ -> failwith "not a RISCV instruction"
+
+
+
+(* #dontinclude "build_isa_models/riscv/gen/types_sail_trans_out.hgen" *)
+
+let trans_out_int ( _fname, _fsize, fbits ) =
+  Nat_big_num.to_int (IInt.integer_of_bit_list fbits)
+
+let trans_out_reg flv =
+  let n = trans_out_int flv in
+  match n with
+  | 0 -> R0
+  | 1 -> R1
+  | 2 -> R2
+  | 3 -> R3
+  | 4 -> R4
+  | 5 -> R5
+  | 6 -> R6
+  | 7 -> R7
+  | 8 -> R8
+  | 9 -> R9
+  | 10 -> R10
+  | 11 -> R11
+  | 12 -> R12
+  | 13 -> R13
+  | 14 -> R14
+  | 15 -> R15
+  | 16 -> R16
+  | 17 -> R17
+  | 18 -> R18
+  | 19 -> R19
+  | 20 -> R20
+  | 21 -> R21
+  | 22 -> R22
+  | 23 -> R23
+  | 24 -> R24
+  | 25 -> R25
+  | 26 -> R26
+  | 27 -> R27
+  | 28 -> R28
+  | 29 -> R29
+  | 30 -> R30
+  | 31 -> R31
+  | _  -> failwith "trans_out_reg number not 0 to 31"
+
+let interp_instruction_to_herdtools_ast inst : instruction = failwith "RISCV interp_instruction_to_herdtools_ast stub"
+  (* let (name, parms) = inst in
+   * begin match (name, parms) with
+   * (\* #dontinclude "build_isa_models/riscv/gen/sail_trans_out.hgen" *\)
+   * | _ -> failwith ("unrecognized instruction: " ^ name)
+   * end *)
+
+
+(* #dontinclude "build_isa_models/riscv/gen/types_trans_sail.hgen" *)
+
+let herdtools_ast_to_interp_instruction (i : instruction) = failwith "RISCV herdtools_ast_to_interp_instruction stub"
+  (* let (instr,parms,_) = match i with
+ * (\* #dontinclude "build_isa_models/riscv/gen/trans_sail.hgen" *\)
+ *   | i ->
+ *       begin
+ *         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
+ *         failwith "Translation failure"
+ *       end in
+ *   (instr,parms) *)
+
+    
+let labelize_ins
+    (lookup_symbol: address -> string option)
+    (program_loc: address)
+    ins
+  =
+
+  let label offset =
+    let addr = Sail_impl_base.add_address_nat program_loc offset in
+    lookup_symbol addr
+  in
+
+  begin match ins with
+  | `RISCVJAL (imm, rs) -> 
+     begin match label imm with
+      | None -> ins
+      | Some l -> `RISCVJALLabel (l, rs)
+     end
+  | `RISCVBType (imm, rs2, rs1, op) -> 
+     begin match label imm with
+      | None -> ins
+      | Some l -> `RISCVBTypeLabel (l, rs2, rs1, op)
+     end
+  | ins -> ins
+  end

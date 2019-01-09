@@ -1,0 +1,687 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Shaked Flur, University of Cambridge                            2014-2018   *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2016-2018   *)
+(*  Copyright Peter Sewell, University of Cambridge                           2014-2015   *)
+(*  Copyright Susmit Sarkar, University of St Andrews                              2014   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)        2015   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           *)
+(*  For author information see README.md.                                                 *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+import Relation
+import Map_extra
+import Set_extra
+open import Assert_extra
+
+open import MachineDefTypes
+open import MachineDefFragments
+open import MachineDefFlowingStorageSubsystem
+open import MachineDefUtils
+open import MachineDefUI
+open MaybeMonad
+
+(** state abstraction ***********************************************)
+
+let propagated_to state event : set thread_id =
+  Map.findWithDefault event {} state.pop_ss_events_seen
+
+let ordered params state e e' : bool =
+  not (internal_reorder_events_cand params state.pop_ss_exclusive_reads state.pop_ss_exclusive_writes e' e)
+
+let clean_order_constraints params state =
+  let order =
+    {(e, e')  | forall ((e, e') IN state.pop_ss_order_constraints_closure)
+              | ordered params state e e'}
+    $> Relation.transitiveClosure
+  in
+  <| state with pop_ss_order_constraints_closure = order |>
+
+let is_fully_propagated state event : bool =
+  propagated_to state event = state.pop_ss_threads &&
+  (* the following is important for RWC+poaa+dmb.sy+L / WRR+2W+poaa+poll+L *)
+  (forall ((e, e') IN state.pop_ss_order_constraints_closure).
+      e' = event -->
+          (* morally we should check "is_fully_propagated state e" but
+          since the order is transitive the following is equivalent *)
+          propagated_to state e = state.pop_ss_threads)
+
+let check_exclusives state : bool =
+  let future_writes =
+    let fset =
+      {w  | forall ((_, w) IN (Map.range state.pop_ss_exclusive_reads))
+          | is_fe_future_write w}
+    in
+    let frel =
+      {(e, fw)  | forall ((e, tids) IN (Map.toSet state.pop_ss_events_seen)) (fw IN fset)
+                | thread_of_flowing_event fw IN tids}
+    in
+
+    relonFromSetAndRelation (fset union (Relation.relDomain frel)) frel
+  in
+
+  relonFromSetAndRelation
+      (Map.domain state.pop_ss_events_seen)
+      state.pop_ss_order_constraints_closure
+  $> relonUnion future_writes
+  $> add_exclusive_futures (Map.toSet state.pop_ss_exclusive_reads)
+  $> Relation.isIrreflexive
+
+(* change event to event' in all the data structures (does not clean up
+order-constraints) *)
+let pop_update_flowing_event state event event' : pop_storage_subsystem_state =
+  let events_seen =
+    Map.delete event state.pop_ss_events_seen
+    $> Map.insert event' (propagated_to state event)
+  in
+
+  let order_constraints =
+    let update e = if e = event then event' else e in
+    {(update e1, update e2) | forall ((e1, e2) IN state.pop_ss_order_constraints_closure)
+                            | true}
+  in
+
+  <| state with pop_ss_events_seen = events_seen;
+                pop_ss_order_constraints_closure = order_constraints;
+  |>
+
+
+(* remove event from all the data structures (does not clean up
+order-constraints) *)
+let pop_remove_flowing_event state event : pop_storage_subsystem_state =
+  let () = ensure (is_fe_read event) "can only remove reads" in
+
+  let order_constraints = restrict_relation_from {event} state.pop_ss_order_constraints_closure in
+
+  <| state with pop_ss_events_seen = Map.delete event state.pop_ss_events_seen;
+                pop_ss_order_constraints_closure = order_constraints;
+  |>
+
+(** accept event ****************************************************)
+
+let pop_ss_accept_event_action params state event =
+  let tid = thread_of_flowing_event event in
+
+  let order_constraints =
+    state.pop_ss_order_constraints_closure
+    union
+    {(e, event) | forall ((e, tids) IN (Map.toSet state.pop_ss_events_seen))
+                | tid IN tids && ordered params state e event}
+  in
+
+  <| state with pop_ss_events_seen = Map.insert event {tid} state.pop_ss_events_seen;
+                pop_ss_order_constraints_closure = Relation.transitiveClosure order_constraints;
+  |>
+
+let pop_ss_accept_event_cand params state event =
+  (* changes for load/store-exclusive: *)
+  let () = ensure
+    (state.pop_ss_exclusive_reads <> Map.empty
+      -->
+        pop_ss_accept_event_action params state event
+        $> check_exclusives)
+    "pop_ss_accept_event_cand is false"
+  in
+  true
+
+let pop_ss_accept_event params state event =
+  guard (pop_ss_accept_event_cand params state event) >>
+  let state_cont = fun () ->
+    pop_ss_accept_event_action params state event
+  in
+  return state_cont
+
+(******************* accept read-exclusive event ********************)
+
+let pop_ss_accept_read_exclusive_action params state read slices rf se_ioids =
+  let state =
+    if slices = [] && not (is_read_acquire read) then state else
+    pop_ss_accept_event_action params state (FRead read slices rf)
+  in
+
+  let exclusive_reads =
+    Map.insert read (rf, (FFWrite read se_ioids)) state.pop_ss_exclusive_reads
+  in
+
+  <| state with pop_ss_exclusive_reads = exclusive_reads |>
+
+let pop_ss_accept_read_exclusive_cand params state read slices rf se_ioids : bool =
+  pop_ss_accept_event_cand params state (FRead read slices rf)
+
+let pop_ss_accept_read_exclusive params state read slices rf se_ioids =
+  guard (pop_ss_accept_read_exclusive_cand params state read slices rf se_ioids) >>
+  let state_cont = fun () ->
+    pop_ss_accept_read_exclusive_action params state read slices rf se_ioids
+  in
+  return state_cont
+
+(******************* accept write-exclusive event *******************)
+
+let pop_ss_accept_write_exclusive_action params state write paired_read =
+  let state = pop_ss_accept_event_action params state (FWrite write) in
+
+  let (exclusive_reads, exclusive_writes) =
+    match Map.lookup paired_read state.pop_ss_exclusive_reads with
+    | Just (rf, w) ->
+        let () = ensure (is_fe_future_write w) "the read-exclusive is already paired with non-future write-exclusive" in
+        (Map.insert paired_read (rf, (FWrite write)) state.pop_ss_exclusive_reads,
+          Map.insert write paired_read state.pop_ss_exclusive_writes)
+    | Nothing -> fail
+    end
+  in
+
+  <| state with
+      pop_ss_exclusive_reads  = exclusive_reads;
+      pop_ss_exclusive_writes = exclusive_writes;
+  |>
+
+let pop_ss_accept_write_exclusive_cand params state write paired_read : bool =
+  pop_ss_accept_event_cand params state (FWrite write)
+
+let pop_ss_accept_write_exclusive params state write paired_read =
+  guard (pop_ss_accept_write_exclusive_cand params state write paired_read) >>
+  let state_cont = fun () ->
+    pop_ss_accept_write_exclusive_action params state write paired_read
+  in
+  return state_cont
+
+(******************* guarantee exclusive success ********************)
+
+let pop_ss_guarantee_exclusive_success_action params state read rf se_ioid =
+  let exclusive_reads =
+    match Map.lookup read state.pop_ss_exclusive_reads with
+    | Nothing ->
+        let rf =
+          match rf with
+          | Just rf -> rf (* the read_request was already satisfied, i.e., it is not in storage *)
+          | Nothing ->
+              (* the read_request was not satisfied yet, i.e., it is in storage *)
+              let rfs =
+                Set.mapMaybe
+                  function (FRead r _ rf, _) -> if r = read then Just rf else Nothing
+                  | _ -> Nothing
+                  end
+                  (Map.toSet state.pop_ss_events_seen)
+              in
+              if Set.size rfs = 0 then failwith "could not find the read-exclusive in storage"
+              else if Set.size rfs = 1 then Set_extra.choose rfs
+              else failwith "found multiple copies of the read-exclusive in storage"
+          end
+        in
+        Map.insert read (rf, (FFWrite read {se_ioid})) state.pop_ss_exclusive_reads
+
+    | Just (rf, FFWrite r ioids) ->
+        Map.insert read (rf, (FFWrite r (ioids union {se_ioid}))) state.pop_ss_exclusive_reads
+
+    | Just (_, _) -> fail
+    end
+  in
+
+  <| state with pop_ss_exclusive_reads = exclusive_reads |>
+
+let pop_ss_guarantee_exclusive_success_cand params state read rf se_ioid : bool =
+  match Map.lookup read state.pop_ss_exclusive_reads with
+  | Nothing ->
+      pop_ss_guarantee_exclusive_success_action params state read rf se_ioid
+      $> check_exclusives
+  | Just _ -> true (* some other store-exclusive on a different control
+                    path has already asked for this load-exclusive to be
+                    guaranteed so no need to check again; at the end only
+                    one of these stores will be propagated to storage *)
+  end
+
+let pop_ss_guarantee_exclusive_success params state read rf se_ioid =
+  guard (pop_ss_guarantee_exclusive_success_cand params state read rf se_ioid) >>
+  let state_cont = fun () ->
+    pop_ss_guarantee_exclusive_success_action params state read rf se_ioid
+  in
+  return state_cont
+
+(** propagate event *************************************************)
+
+let pop_ss_propagate_event_action params state event tid' =
+  let tid = thread_of_flowing_event event in
+
+  let events_seen =
+    let tids = propagated_to state event in
+    Map.insert event (tids union {tid'}) state.pop_ss_events_seen
+  in
+
+  let order =
+    (state.pop_ss_order_constraints_closure
+    union
+    {(event, event')  | forall ((event', tids') IN (Map.toSet state.pop_ss_events_seen))
+                      | tid' IN tids' && tid NIN tids' &&
+                        (event', event) NIN state.pop_ss_order_constraints_closure &&
+                        ordered params state event event'})
+    $> Relation.transitiveClosure
+  in
+
+  <| state with pop_ss_events_seen = events_seen;
+                pop_ss_order_constraints_closure = order;
+  |>
+
+let pop_ss_propagate_event_cand params state event tid' =
+  tid' NIN propagated_to state event &&
+
+  (forall ((e, tids) IN (Map.toSet state.pop_ss_events_seen)).
+    (e, event) IN state.pop_ss_order_constraints_closure
+        --> tid' IN tids) &&
+
+  (* changes for load/store-exclusive: *)
+  (state.pop_ss_exclusive_reads <> Map.empty
+    -->
+      pop_ss_propagate_event_action params state event tid'
+      $> check_exclusives)
+
+let pop_ss_propagate_event params state (event, tid) =
+  guard (pop_ss_propagate_event_cand params state event tid) >>
+  let state_cont = fun () ->
+    pop_ss_propagate_event_action params state event tid
+  in
+  return (SS_only (SS_POP_propagate_event_to_thread event tid) state_cont)
+
+(** satisfy read ****************************************************)
+
+let pop_ss_satisfy_read_action params state read_request write_request =
+    fun read_slices' write_slices' ->
+
+  let (read, _, write_slices) = unsafeFRead read_request in
+
+  let state =
+    match Map.lookup read state.pop_ss_exclusive_reads with
+    | Just (_, w) ->
+        <| state with pop_ss_exclusive_reads = Map.insert read (write_slices' ++ write_slices, w) state.pop_ss_exclusive_reads |>
+    | Nothing -> state
+    end
+  in
+
+  match (is_fe_read_acquire read_request, read_slices') with
+  | (false, []) ->
+      (* the read is not acquire and it was completely satisfied *)
+      (* should we add 'e --oc-> write_request' for every 'e --oc-> read_request'
+      (i.e. first flip the write_request --oc-> read_request' edge and only then
+      remove the read_request?)? This is observable, see POP1.litmus. I don't think
+      it affects the soundness of C11. *)
+      (*
+        let order_constraints =
+          state.pop_ss_order_constraints_closure
+          union
+          {(e, write_request) | forall (e IN (Map.domain state.pop_ss_events_seen))
+                              | e <> write_request &&
+                                (e, read_request) IN state.pop_ss_order_constraints_closure &&
+                                not (is_fully_propagated state e) &&
+                                (write_request, e) NIN state.pop_ss_order_constraints_closure}
+        in
+        let state = <| state with pop_ss_order_constraints_closure = order_constraints |> in
+      *)
+      pop_remove_flowing_event state read_request
+
+  | _ ->
+      (* the read is acquire or was partially satisfied *)
+      (* update the read to record the write that satisfied it and the remaining unsat slices *)
+      let read_request' =
+        let (read, _, write_slices) = unsafeFRead read_request in
+        FRead read read_slices' (write_slices' ++ write_slices)
+      in
+      let state = pop_update_flowing_event state read_request read_request' in
+
+      (* if the read (and the write) are fully-propagated, we don't
+      reorder them, the clean-up might remove the edge though. *)
+      if is_fully_propagated state read_request' then state
+      else
+        (* reorder the read and write *)
+        let order_constraints =
+          (state.pop_ss_order_constraints_closure \ {(write_request, read_request')})
+          union
+          {(read_request', write_request)}
+        in
+        <| state with pop_ss_order_constraints_closure = order_constraints |>
+  end
+  $> clean_order_constraints params
+
+let pop_ss_satisfy_read_cand params state read_request write_request =
+  tryFRead read_request >>= fun (read, read_slices, _) ->
+  tryFWrite write_request >>= fun write ->
+
+  (* We require that the read has propagated to the same threads as the
+     write. This is similar to the requirement that the read and write
+     are adjacent in the same segment in flowing.
+     Notice that it forbids MP+popl+poap (PodWWPL RfeLA PodRRAP Fre)
+     which is important for C11 compilation. *)
+  let read_tids = propagated_to state read_request in
+  guard (read_tids = propagated_to state write_request) >>
+  (* fully-propagated must also match, similar to being sat from memory *)
+  guard (is_fully_propagated state write_request <-> is_fully_propagated state read_request) >>
+
+  (* Changes for load.acquire/store.release: *)
+  guard ((is_fe_read_acquire read_request && is_fe_write_release write_request) -->
+      is_fully_propagated state write_request) >>
+
+  (* read-acq can be satisfied from write-exclusive only in memory. This
+  is to match the MCA ARMv8 axiomatic model's "[range(rmw)]; rfi; [A | Q]" *)
+  guard ((is_fe_read_acquire read_request && is_fe_write_exclusive write_request
+              && not (is_fully_propagated state write_request))
+          --> thread_of_flowing_event read_request <> thread_of_flowing_event write_request) >>
+
+  guard ((write_request, read_request) IN state.pop_ss_order_constraints_closure) >>
+
+  let (read_slices, write_slices) =
+    match_writes
+      read.r_addr
+      read_slices
+      [write_with_complete_slice write]
+      []
+  in
+  guard (write_slices <> []) >>
+
+  guard (forall ((e, tids) IN (Map.toSet state.pop_ss_events_seen)).
+      ((write_request, e) IN state.pop_ss_order_constraints_closure &&
+      (e, read_request) IN state.pop_ss_order_constraints_closure &&
+      (exists (tid IN read_tids). tid IN tids))
+          --> (is_fully_propagated state e &&
+              (is_fe_read_or_write e -->
+                not (fe_addrs_intersect e read_request)))) >>
+
+  (* changes for load/store-exclusive: *)
+  guard (state.pop_ss_exclusive_reads <> Map.empty
+    -->
+      pop_ss_satisfy_read_action params state read_request write_request
+          read_slices write_slices
+      $> check_exclusives) >>
+
+  return (read_slices, write_slices)
+
+let pop_ss_satisfy_read params state (write_request, read_request) =
+  pop_ss_satisfy_read_cand params state read_request write_request >>=
+  fun (read_slices', write_slices') ->
+  let state_cont = fun () ->
+    pop_ss_satisfy_read_action params state read_request write_request
+        read_slices' write_slices'
+  in
+
+  let (read, _, write_slices) = unsafeFRead read_request in
+
+  match read_slices' with
+  | [] ->
+      let value = value_of_write_slices_with_unknowns read.r_addr (write_slices' ++ write_slices) in
+      let mrs =
+          <|  mrs_footprint        = read.r_addr;
+              mrs_value            = value;
+              mrs_writes_read_from = (write_slices' ++ write_slices);
+          |>
+      in
+      SS_sync (SS_POP_read_response read mrs) state_cont ()
+
+  | _ -> SS_only (SS_POP_partially_satisfy_read read write_slices') state_cont
+  end $> return
+
+(** public interface ************************************************)
+
+let pop_ss_initial_state _params tids initial_writes =
+  let inits = Map.fromList [(FWrite w, tids) | forall (w MEM initial_writes) | true] in
+  <|  pop_ss_threads = tids;
+      pop_ss_events_seen = inits;
+      pop_ss_order_constraints_closure = Relation.relEmpty;
+      pop_ss_exclusive_reads = Map.empty;
+      pop_ss_exclusive_writes = Map.empty;
+  |>
+
+let pop_ss_thread_memory_value_of_footprint _params state tid footprint =
+  let write_slices =
+    let tid_writes =
+      {e  | forall ((e, tids) IN (Map.toSet state.pop_ss_events_seen))
+          | is_fe_write e && tid IN tids}
+    in
+    order_to_list tid_writes state.pop_ss_order_constraints_closure
+    $> List.reverse
+    $> List.mapMaybe
+          (function
+          | FWrite w -> Just (write_with_complete_slice w)
+          | _ -> Nothing
+          end)
+  in
+  match mrs_from_writes footprint write_slices with
+  | Just mrs -> mrs.mrs_value
+  | Nothing -> failwith "pop_ss_thread_memory_value_of_footprint"
+  end
+
+
+let pop_ss_remove_old_read_requests params state tid restarted_ioids discarded_ioids =
+  if restarted_ioids = {} && discarded_ioids = {} then Nothing else
+
+  let old_ioids = restarted_ioids union discarded_ioids in
+  let is_active = function
+    | FRead read _ _ -> read.r_thread = tid --> read.r_ioid NIN old_ioids
+    | _              -> true
+    end
+  in
+
+  let events_seen =
+    Map_extra.mapMaybe
+      (fun e tids -> guard (is_active e) >> return tids)
+      state.pop_ss_events_seen
+  in
+
+  guard (Map.size events_seen <> Map.size state.pop_ss_events_seen ||
+      Map.any
+        (fun r (rf, w) ->
+            r.r_thread = tid &&
+            (r.r_ioid IN old_ioids ||
+              match w with
+              | FWrite w -> w.w_ioid IN discarded_ioids
+              | FFWrite _ ioids -> Set.intersection ioids discarded_ioids <> {}
+              | _ -> fail
+              end))
+        state.pop_ss_exclusive_reads) >>
+
+  let exclusive_reads =
+    Map_extra.mapMaybe
+      (fun r (rf, w) ->
+          if r.r_thread = tid then
+            guard (r.r_ioid NIN old_ioids) >>
+            match w with
+            | FWrite w ->
+                guard (w.w_ioid NIN discarded_ioids) >>
+                return (rf, FWrite w)
+            | FFWrite r ioids ->
+                let ioids = ioids \ discarded_ioids in
+                guard (ioids <> {}) >>
+                return (rf, FFWrite r ioids)
+            | _ -> fail
+            end
+          else Just (rf, w))
+      state.pop_ss_exclusive_reads
+  in
+
+  let order_constraints =
+    Relation.relRestrict state.pop_ss_order_constraints_closure (Map.domain events_seen)
+  in
+
+  <| state with pop_ss_events_seen = events_seen;
+                pop_ss_order_constraints_closure = order_constraints;
+                pop_ss_exclusive_reads = exclusive_reads;
+  |>
+  $> clean_order_constraints params
+  $> return
+
+(* enumerate_transitions_of_pop_storage_subsystem: collect all the *)
+(* storage subsystem transitions that are initiated by the storage *)
+(* subsystem.                                                      *)
+let pop_ss_enumerate_transitions
+    (params: ss_params)
+    (state: pop_storage_subsystem_state)
+    : list (ss_trans pop_storage_subsystem_state)
+  =
+  let events = Map.domain state.pop_ss_events_seen in
+
+  let propagate_event_cands =
+    Set.cross events state.pop_ss_threads
+    $> Set_extra.toList
+    $> List.mapMaybe (pop_ss_propagate_event params state)
+  in
+
+  let satisfy_read_cands =
+    let (reads, not_reads) = Set.partition is_fe_read events in
+    let (writes, _) = Set.partition is_fe_write not_reads in
+
+    Set.cross writes reads
+    $> Set_extra.toList
+    $> List.mapMaybe (pop_ss_satisfy_read params state)
+  in
+
+  propagate_event_cands ++ satisfy_read_cands
+
+let pop_ss_receive_transition params state t_send =
+  match t_send with
+  | T_fetch _ -> failwith "fetch is handled globally right now"
+  | T_mem_read_request tl ->
+      let tl' = <| tl with tl_suppl = Just true |> in
+      match tl.tl_label with
+      | (rr, slices, rf, Just se_ioids)  ->
+          pop_ss_accept_read_exclusive params state rr slices rf se_ioids >>= fun state_cont ->
+          return (T_mem_read_request tl', Just state_cont)
+      | (rr, slices, rf, Nothing) ->
+          if slices = [] && not (is_read_acquire rr) then
+            return (T_mem_read_request tl', Nothing)
+          else
+            pop_ss_accept_event params state (FRead rr slices rf) >>= fun state_cont ->
+            return (T_mem_read_request tl', Just state_cont)
+      end
+  | T_propagate_write tl ->
+      let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+      match tl.tl_label with
+      | (write, Just read_excl, _) -> pop_ss_accept_write_exclusive params state write read_excl
+      | (write, Nothing, _)        -> pop_ss_accept_event params state (FWrite write)
+      end >>= fun state_cont ->
+      return (T_propagate_write tl', Just state_cont)
+  | T_propagate_barrier tl ->
+      let b = tl.tl_label in
+      pop_ss_accept_event params state (FBarrier b) >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_propagate_barrier tl', Just state_cont)
+  | T_try_store_excl tl ->
+      let (read, rf, se_ioid) = tl.tl_label in
+      pop_ss_guarantee_exclusive_success params state read rf se_ioid >>= fun state_cont ->
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_try_store_excl tl', Just state_cont)
+  | T_PLDI11_mem_satisfy_read _    -> fail
+  | T_Flat_mem_satisfy_read _      -> fail
+  | T_Flat_try_commit_store_cond _ -> fail
+  | T_TSO_mem_satisfy_read _       -> fail
+  | T_POP_tm_start _               -> fail
+  | T_POP_tm_commit _              -> fail
+  | T_POP_tm_abort _               -> fail
+  | T_Promising_fulfil_promise _   -> fail
+  | T_Promising_propagate_write _  -> fail
+  | T_Promising_mem_satisfy_read _ -> fail
+  | T_Promising_propagate_write_nonshared _  -> fail
+  | T_Promising_mem_satisfy_read_nonshared _ -> fail
+  end
+
+let pop_ss_is_final_state _params (state: pop_storage_subsystem_state) : bool =
+  Map.all (fun _ tids -> tids = state.pop_ss_threads) state.pop_ss_events_seen
+
+let pop_ss_coherence _params state =
+  let intersecting = function
+    | (FWrite w, FWrite w') ->
+        if non_empty_intersection w.w_addr w'.w_addr then Just (w, w')
+        else Nothing
+    | _ -> Nothing
+    end
+  in
+  Set.mapMaybe intersecting state.pop_ss_order_constraints_closure
+  $> Relation.transitiveClosure
+
+
+
+
+
+let pop_make_ui_storage_subsystem_state
+    (ss: maybe pop_storage_subsystem_state)
+    (ss': pop_storage_subsystem_state)
+    (transitions: list (ui_trans 'ts 'ss))
+    : ui_storage_subsystem_state 'ts 'ss
+  =
+  let ss = fromMaybe ss' ss in
+  let threads = Set_extra.toList ss'.pop_ss_threads in
+  POP_UI_storage
+    <|  ui_pop_ss_threads = threads;
+        ui_pop_ss_events_seen = ui_set_diff3 (Map.domain ss.pop_ss_events_seen) (Map.domain ss'.pop_ss_events_seen);
+        ui_pop_ss_order_constraints_closure = pop_diff_coherence ss.pop_ss_order_constraints_closure ss'.pop_ss_order_constraints_closure;
+
+        ui_pop_ss_events_propagated_to =
+            List.map
+              (fun tid ->
+                let es ss =
+                  {e  | forall ((e, tids) IN (Map.toSet ss.pop_ss_events_seen))
+                      | tid IN tids}
+                in
+                (tid, ui_set_diff3 (es ss) (es ss')))
+              threads;
+
+        (*ui_pop_ss_store_exclusive_map =
+            ui_set_diff2 (Map.toSet ss.pop_ss_store_exclusive_map) (Map.toSet ss'.pop_ss_store_exclusive_map);*)
+
+        ui_pop_ss_transitions_prop_event =
+            List.filter
+              (fun (n, t) ->
+                match t with
+                | SS_trans (SS_only (SS_POP_propagate_event_to_thread _ _) _) -> true
+                | _ -> false
+                end)
+              transitions;
+
+        ui_pop_ss_transitions_partially_satisfy_read =
+            List.filter
+              (fun (n, t) ->
+                match t with
+                | SS_trans (SS_only (SS_POP_partially_satisfy_read _ _) _) -> true
+                | _ -> false
+                end)
+              transitions;
+
+        ui_pop_ss_transitions_read_response =
+            List.filter
+              (fun (n, t) ->
+                match t with
+                | SS_trans (SS_sync (SS_POP_read_response _ _) _ _) -> true
+                | _ -> false
+                end)
+              transitions;
+    |>
+
+
+val pop_storage : storageSubsystem pop_storage_subsystem_state
+let pop_storage = 
+  <| ss_thread_memory_value_of_footprint = 
+       pop_ss_thread_memory_value_of_footprint ;
+     ss_initial_state          = pop_ss_initial_state;
+     ss_is_final_state         = pop_ss_is_final_state;
+     ss_coherence              = pop_ss_coherence;
+     ss_clean_reads            = pop_ss_remove_old_read_requests ;
+     ss_stopped_promising = fun _ -> false;
+ |>
+
+
+val pop_machine_storage : forall 'ts. machineStorageSubsystem 'ts pop_storage_subsystem_state
+let pop_machine_storage = 
+  <| ss_enumerate_transitions  = pop_ss_enumerate_transitions;
+     ss_receive_transition = 
+       fun p s tl -> ListMonad.option_guard (pop_ss_receive_transition p s tl);
+     ss_enumerate_final_transitions = fun s -> [];
+     ss_make_ui_storage_state = pop_make_ui_storage_subsystem_state;
+ |>

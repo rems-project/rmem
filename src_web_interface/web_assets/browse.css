@@ -1,0 +1,136 @@
+/*========================================================================================*/
+/*                                                                                        */
+/*                rmem executable model                                                   */
+/*                =====================                                                   */
+/*                                                                                        */
+/*  This file is:                                                                         */
+/*                                                                                        */
+/*  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)         2011   */
+/*  Copyright Shaked Flur, University of Cambridge                            2016-2018   */
+/*  Copyright Peter Sewell, University of Cambridge                          2011, 2014   */
+/*  Copyright Ohad Kammar, University of Cambridge (when this work was done)       2013   */
+/*  Copyright Francesco Zappa Nardelli, INRIA Paris                                2011   */
+/*  Copyright Susmit Sarkar, University of St Andrews                              2014   */
+/*  Copyright Jon French, University of Cambridge                                  2017   */
+/*                                                                                        */
+/*  All rights reserved.                                                                  */
+/*                                                                                        */
+/*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           */
+/*  For author information see README.md.                                                 */
+/*                                                                                        */
+/*========================================================================================*/
+
+.browse {
+  width: 870px;
+}
+
+.browse .close {
+  float: right;
+}
+
+.browse .category_wrapper {
+  overflow: hidden;
+  float: left;
+  height: 500px;
+  width: 170px;
+}
+
+.browse .category {
+  position: relative;
+  top: 30px;
+  z-index: 9999;
+}
+
+.browse .category > ul {
+  padding: 0px;
+  margin: 0px;
+  list-style-type: none;
+}
+
+.browse .category > ul > li {
+  position: relative;
+  width: 170px;
+  margin-bottom: 5px;
+
+  background-color: rgba(0, 0, 0, 0);
+
+  line-height: 2em;
+  text-align: center;
+  color: #bbbbbb;
+}
+
+.browse .category > ul > li.selected {
+  padding-right: 20px;
+
+  background-color: #fafafa !important;
+
+  color: black;
+/*   font-weight: bold; */
+
+  border: 1px solid #ddd;
+  border-right: none;
+  border-top-left-radius: 5px;
+  border-bottom-left-radius: 5px;
+
+  cursor:pointer;
+}
+
+.browse .category > ul > li.filter_match {
+/*   color: black; */
+/*   font-weight: bold; */
+}
+
+.browse .category > ul > li.filter_miss {
+  display: none;
+}
+
+.browse .contents {
+  position: relative;
+  height: 500px;
+  padding: 12px;
+  padding-right: 35px;
+  margin-left: -1px;
+  float: left;
+  width: 650px;
+
+  background-color: #fafafa;
+
+  border: 1px solid #ddd;
+  border-radius: 20px;
+
+  overflow: auto;
+}
+
+.browse .contents > h4 {
+  color: #800;
+  font-size: 14pt;
+  border-bottom: 1px dotted #800;
+  margin-top: 0;
+  margin-bottom: 0;
+  text-align: center;
+}
+
+.browse .contents > ul {
+  -webkit-columns: auto 2; /* Chrome, Safari, Opera */
+  -moz-columns:    auto 2; /* Firefox */
+  columns:         auto 2;
+
+  list-style-type: none;
+}
+
+.browse .contents > ul > li.filter_match {
+/*   font-weight: bold; */
+}
+
+.browse .contents > ul > li.filter_miss {
+  display: none;
+}
+
+.browse .litmus_name {
+  cursor: pointer;
+}
+
+.browse .litmus_name:hover {
+  text-decoration: underline;
+  background: #f9edbe;
+}

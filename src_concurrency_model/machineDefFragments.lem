@@ -1,0 +1,451 @@
+(*============================================================================================*)
+(*                                                                                            *)
+(*                rmem executable model                                                       *)
+(*                =====================                                                       *)
+(*                                                                                            *)
+(*  This file is:                                                                             *)
+(*                                                                                            *)
+(*  Copyright Shaked Flur, University of Cambridge                                2015-2017   *)
+(*  Copyright Peter Sewell, University of Cambridge                               2014-2016   *)
+(*  Copyright Christopher Pulte, University of Cambridge                    2015-2016, 2018   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)            2015   *)
+(*  Copyright Jon French, University of Cambridge                                      2017   *)
+(*                                                                                            *)
+(*  All rights reserved.                                                                      *)
+(*                                                                                            *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.               *)
+(*  For author information see README.md.                                                     *)
+(*                                                                                            *)
+(*============================================================================================*)
+
+open import Pervasives_extra
+open import MachineDefTypes
+open import MachineDefUtils
+open import Sail_impl_base
+
+(** memory footprint support  ***************************************)
+
+let integer_footprint_of_footprint ((addr, size): footprint) =
+  (integer_of_address addr, integerFromNat size)
+
+
+let offset_in_footprint (footprint: footprint) (a': address) =
+  let (a, size) = integer_footprint_of_footprint footprint in
+  let a' = integer_of_address a' in
+  if a <= a' && a' < a + size then Just (natFromInteger (a' - a))
+  else Nothing
+
+let non_empty_intersection (fp1: footprint) (fp2: footprint) : bool =
+  let (a1, sz1) = integer_footprint_of_footprint fp1 in
+  let (a2, sz2) = integer_footprint_of_footprint fp2 in
+  (a2 < a1 + sz1) && (a1 < a2 + sz2)
+
+
+let non_empty_intersection_set fps1 fps2 =
+  exists (fp1 IN fps1). exists (fp2 IN fps2). non_empty_intersection fp1 fp2
+
+
+let non_empty_intersection_write_set ws1 ws2 =
+  exists (w1 IN ws1). exists (w2 IN ws2). non_empty_intersection w1.w_addr w2.w_addr
+
+
+let slice_footprints ((a, _): footprint) (sls: slices) : set footprint =
+  { (add_address_nat a i1, (i2+1)-i1)  | forall ((i1,i2) MEM sls) | true }
+
+
+let overlapping_slices ((fp1,sls1): (footprint*slices)) ((fp2,sls2): (footprint*slices)) : bool =
+  let fps1 = slice_footprints fp1 sls1 in
+  let fps2 = slice_footprints fp2 sls2 in
+  non_empty_intersection_set fps1 fps2
+
+
+(* see if there is a pair of distinct writes in wss1 and wss2 whose slices footprint-intersect and where the second does not come from an instruction in ifeed_ioids *)
+let overlapping_slices_from_different_writes (wss1: set (write*slices)) (wss2: set (write*slices)) (ifeed_ioids: set MachineDefTypes.ioid) =
+  exists ((w1, sls1) IN wss1). exists ((w2, sls2) IN wss2).
+    (w2.w_ioid NIN ifeed_ioids) &&
+    (w1 <> w2) &&
+    overlapping_slices (w1.w_addr, sls1) (w2.w_addr, sls2)
+
+
+(* fp1 is equal to or contained in fp2 *)
+let sub_footprint (fp1:footprint) (fp2:footprint) : bool =
+  let (a1,sz1) = integer_footprint_of_footprint fp1 in
+  let (a2,sz2) = integer_footprint_of_footprint fp2 in
+  (a2 <= a1) && (a2+sz2 >= a1 + sz1)
+
+
+let footprints_read_from (wrfs : list (read_request * (list (write * slices)))) : set footprint =
+  let writes = List.concat (snd (List.unzip wrfs)) in
+  Set.bigunion {slice_footprints (w.w_addr) s | forall ((w, s) MEM writes) | true}
+
+
+let check_tiling fps fp : unit =
+  let (addr, size) = integer_footprint_of_footprint fp in
+  let fps = List.map integer_footprint_of_footprint fps in
+  let fps_sorted = Sorting.sortByOrd compare fps in
+  let range_top =
+    List.foldl
+      (fun next (addr, size) ->
+          if addr = next then addr + size
+          else failwith "is_tiling gap")
+      addr
+      fps_sorted
+  in
+  ensure (range_top = addr + size) "is_tiling didn't match up"
+
+
+(* reduces the number of footprints by merging overlapping footprints.
+'cons' determines if we merge consecutive fps (e.g. merge (1000,4) and
+(1004,4) to (1000,8)) *)
+let merge_footprints (cons: bool) (fps: set footprint) : set footprint =
+  let rangeFromFootprint (addr, size) =
+    let addr = integer_of_address addr in
+    (addr, addr + (integerFromNat size) - 1)
+  in
+
+  let footprintFromRange (min, max) =
+    (address_of_integer min, max - min + 1 $> natFromInteger)
+  in
+
+  Set.map rangeFromFootprint fps
+  $> Set_extra.toOrderedList
+  $> List.foldl (function
+      | [] -> fun r -> r :: []
+      | (rmin, rmax) :: rs -> fun (rmin', rmax') ->
+          if cons && rmin' <= rmax + 1 then (rmin, max rmax rmax') :: rs
+          else if (not cons) && rmin' <= rmax then (rmin, max rmax rmax') :: rs
+          else (rmin', rmax') :: (rmin, rmax) :: rs
+      end
+  ) []
+  $> List.map footprintFromRange
+  $> Set.fromList
+
+
+let fp_overlap new_coherence_basis w =
+  { fp | forall (fp IN new_coherence_basis)
+       | non_empty_intersection fp w.w_addr }
+
+let fp_overlap_pair new_coherence_basis w1 w2 =
+  { fp | forall (fp IN new_coherence_basis)
+       | non_empty_intersection fp w1.w_addr &&
+         non_empty_intersection fp w2.w_addr }
+
+
+(** slices support, used for register and memory ********************)
+
+let complete_slice ((_, size): footprint) : slice = (0, size - 1)
+
+(* pair write with its complete slice *)
+let write_with_complete_slice (w: write) : write * slices =
+  (w, [complete_slice w.w_addr])
+
+let complete_writes (ws: list write) : list (write *slices) =
+  List.map write_with_complete_slice ws
+
+(* find the sublist indexed by i1..i2 inclusive of value (starting at 0)
+   (precondition i1 <= i2 and value big enough) *)
+let slice_value (value: list 'a) ((i1, i2): slice) : list 'a =
+  let () = ensure (i2 < List.length value && i1 <= i2) "slice_value" in
+  List.drop i1 (List.take (i2 + 1) value)
+
+
+let trunc_transform_slice (source_addr: integer) (dest_addr: integer) (slice: slice) : maybe slice =
+  let trans (i: nat) : integer = source_addr - dest_addr + (integerFromNat i) in
+  let i1 = trans (fst slice) in
+  let i2 = trans (snd slice) in
+  if i2 < 0 then Nothing
+  else if i1 < 0 then Just (0, natFromInteger i2)
+  else Just (natFromInteger i1, natFromInteger i2)
+
+
+let slices_intersection ((i1, i2): slice) ((j1, j2): slice) : maybe (slices * slice) =
+  if j1 <= i2 && i1 <= j2 then
+    (* non empty intersection *)
+    if j1 <= i1 && i2 <= j2 then Just ([],                           (i1, i2))
+    else if j1 <= i1 then        Just ([(j2 + 1, i2)],               (i1, j2))
+    else if i2 <= j2 then        Just ([(i1, j1 - 1)],               (j1, i2))
+    else                         Just ([(i1, j1 - 1); (j2 + 1, i2)], (j1, j2))
+  else (* empty intersection *)  Nothing
+
+
+(* check if a bunch of fragments are adjacent and return their concatenation *)
+let concatenate_adjacent_fragments (fs: list (value_fragment 'a)) : (list 'a) =
+  let (slices, bs) = List.unzip fs in
+  let () = (* make sure slices are adjacent to each other *)
+    (* unzip the slices, drop the initial index and then zip back. We
+    get pairs that should be consecutive *)
+    match List.unzip slices with
+    | (_ :: fsts, snds) -> ensure (forall ((i, j) MEM (List.zip snds fsts)). (i + 1) = j)
+                                  "concatenate_adjacent_fragments"
+    | ([], [])     -> ()
+    | ([], _ :: _) -> () (* this case is unreachable because unzip returns
+                            two lists of the same length *)
+    end
+  in
+  List.concat bs
+
+
+(* check that all maybe_value_fragments have data - if so, return their underlying value_fragments, otherwise return Nothing *)
+let rec check_value_fragments (mvfs: list (maybe_value_fragment 'a)) : maybe (list (value_fragment 'a)) =
+  let vfs =
+    List.mapMaybe
+      (fun (slice, mvf) ->
+        match mvf with
+        | Just vf -> Just (slice, vf)
+        | Nothing -> Nothing
+        end)
+      mvfs
+  in
+  if List.length vfs = List.length mvfs then Just vfs
+  else Nothing
+
+
+(* sort fragments by first index *)
+let sort_fragments fragments =
+  let cmp ((i, _), _) ((j, _), _) = compare i j in
+  Sorting.sortByOrd cmp fragments
+
+
+let value_of_maybe_value_fragments (mfs: list (maybe_value_fragment 'a)) : maybe (list 'a) =
+  match check_value_fragments mfs with
+  | Nothing -> Nothing
+  | Just fs -> Just (concatenate_adjacent_fragments (sort_fragments fs))
+  end
+
+
+
+
+
+let value_of_write_slices (writes: list (write * slices)) : memory_value =
+  match MachineDefUtils.list_minimumBy (fun (w1, _) (w2, _) -> compare w1.w_addr w2.w_addr) writes with
+  | Nothing -> []
+  | Just (min_addr_w, _) ->
+      let min_addr = integer_of_address (fst min_addr_w.w_addr) in
+      let values =
+        List.map
+          (fun (w, slices) ->
+              let iaddr = integer_of_address (fst w.w_addr) in
+              let value = ensure_just w.w_value ("write (" ^ show w ^ ") with unknown value") in
+              List.map
+                (fun s ->
+                    match trunc_transform_slice iaddr min_addr s with
+                    | Just s' -> (s', slice_value value s)
+                    | Nothing -> failwith "this slice should translate with no truncation"
+                    end)
+                slices)
+          writes
+      in
+      concatenate_adjacent_fragments (sort_fragments (List.concat values))
+  end
+
+
+let footprint_of_write_slice (w:write) (((i1:nat),(i2:nat)):slice) : footprint =
+  let (a,sz) = w.w_addr in
+  let a' = add_address_nat a i1 in
+  let sz' = i2 - i1 + 1 in
+  (a',sz')
+
+(* return a memory value with unknowns in the gaps *)
+let value_of_write_slices_with_unknowns
+    ((addr, size): footprint)
+    (writes:       list (write * slices))
+    : memory_value
+  =
+  let iaddr = integer_of_address addr in
+  let trans_values =
+    List.map
+      (fun (w, slices) ->
+          let iaddr' = integer_of_address (fst w.w_addr) in
+          let value =
+            (* ensure_just w.w_value ("write (" ^ show w ^ ") with unknown value") *)
+            match w.w_value with
+            | Just v  -> v
+            | Nothing -> memory_value_unknown (snd w.w_addr)
+            end
+          in
+          List.map
+            (fun s ->
+                match trunc_transform_slice iaddr' iaddr s with
+                | Just s' -> (s', slice_value value s)
+                | Nothing -> failwith "this slice should translate with no truncation"
+                end)
+            slices)
+      writes
+  in
+
+  let (next_index, value) =
+    List.foldl
+      (fun (next_index, value) ((i1, i2), bs) ->
+          let () = ensure (next_index <= i1) "value_of_write_slices_with_unknowns" in
+          (i2 + 1, value ++ (memory_value_unknown (i1 - next_index)) ++ bs))
+      (0, [])
+      (sort_fragments (List.concat trans_values))
+  in
+  let () = ensure (next_index <= size) "value_of_write_slices_with_unknowns" in
+  value ++ (memory_value_unknown (size - next_index))
+
+
+(** matching read and write slices **********************************)
+
+let rec match_slice (needed: slices) (got: slice) (acc_needed: slices) (acc_found: slices) : slices * slices =
+  match needed with
+  | [] -> (acc_needed, acc_found)
+  | n_slice :: needed ->
+      match slices_intersection n_slice got with
+      | Just (needed', inters) -> match_slice needed got (needed' ++ acc_needed) (inters :: acc_found)
+      | Nothing                -> match_slice needed got (n_slice :: acc_needed) acc_found
+      end
+  end
+
+let rec match_slices (needed: slices) (got: slices) (acc_found: slices) : slices * slices =
+  match (needed, got) with
+  | ([], _) -> ([], acc_found)
+  | (_, []) -> (needed, acc_found)
+  | (_, g_slice :: got) ->
+      let (needed', found) = match_slice needed g_slice [] [] in
+      match_slices needed' got (found ++ acc_found)
+  end
+
+(* given a footprint and some required slices within it, and a write,
+   and some provided slices with that, check whether the write's
+   slices overlap any of the required slices.  If not, return Nothing;
+   if they do, return the remaining required slices and the slices
+   satisfied by the write (indexed wrt the read base address, but
+   tupled with the write and the start index of the slice wrt the
+   write base address) *)
+let match_write
+    (fp_needed:         footprint)
+    (slices_needed:     slices)
+    ((write, w_slices): (write * slices))
+    : maybe (slices * (write * slices)) (* unsat-read-slices, writes-read-from-slices *)
+  =
+  let (r_address, r_size) = integer_footprint_of_footprint fp_needed in
+  let (w_address, w_size) = integer_footprint_of_footprint write.w_addr in
+
+  let empty_fp_intersection = (w_address >= r_address + r_size) || (r_address >= w_address + w_size) in
+  if empty_fp_intersection then Nothing else
+
+  let (slices_needed, found) =
+    match_slices
+      slices_needed
+      (List.mapMaybe (trunc_transform_slice w_address r_address) w_slices)
+      []
+  in
+  match found with
+  | [] -> Nothing
+  |_ ->
+      let found =
+        List.map
+          (fun s ->
+            match trunc_transform_slice r_address w_address s with
+            | Just s' -> s'
+            | Nothing -> failwith "this slice should translate with no truncation"
+            end)
+          found
+        in
+      Just (slices_needed, (write, found))
+  end
+
+
+(* given a footprint and some required slices within it, and a list of
+writes (with most recent at the head), look back and calculate how the
+required slices can be provided by the writes.  Return the slices
+still needed and the pieces of each write used *)
+let rec match_writes
+    (fp_needed:     footprint)
+    (slices_needed: slices)
+    (writes:        list (write * slices))
+    (acc_found:     list (write * slices))
+    : slices * list (write * slices) (* unsat-read-slices, writes-read-from-slices *)
+  =
+  match (slices_needed, writes) with
+  | ([], _) -> ([], List.reverse acc_found)
+  | (_, []) -> (slices_needed, List.reverse acc_found)
+  | (_ , write_slices :: writes) ->
+      match match_write fp_needed slices_needed write_slices with
+      | Nothing -> match_writes fp_needed slices_needed writes acc_found
+      | Just (slices_needed', write_slices') ->
+          match_writes fp_needed slices_needed' writes (write_slices' :: acc_found)
+      end
+  end
+
+
+let match_maybe_value_fragment
+    (needed:     slices)
+    (got:        maybe_value_fragment 'a)
+    : slices * list (maybe_value_fragment 'a)
+  =
+  let (g_slice, mv) = got in
+  let (needed, found) = match_slice needed g_slice [] [] in
+  let found' =
+    List.map_tr []
+      (fun slice ->
+        let mv' =
+          match mv with
+          | Nothing -> Nothing
+          | Just bs ->
+              match trunc_transform_slice 0 (integerFromNat (fst g_slice)) slice with
+              | Just slice' -> Just (slice_value bs slice')
+              | Nothing -> failwith "this slice should translate with no truncation"
+              end
+          end
+        in
+        (slice, mv'))
+      found
+  in
+  (needed, found')
+
+
+(* for each sublist in needed (assumed all disjoint), find all the
+parts with actual valuelist values provided by got (not necessarily
+disjoint, but with those near the head taking priority) and the
+unprovided "still needed".  Or, if some part is in principle provided
+by got but the value is not available, return a maybe_value_fragment
+containing nothing (but still calculate all the remainder, as we need
+that for regs-feedings-addresses *)
+let rec match_maybe_value_fragments
+    (needed:    slices)
+    (got:       list (maybe_value_fragment 'a))
+    (acc_found: list (maybe_value_fragment 'a))
+    : (slices *                        (* still needed *)
+       list (maybe_value_fragment 'a)) (* found - Nothing if blocked, or Just with data *)
+  =
+  match (needed, got) with
+  | ([], _) -> ([], acc_found)
+  | (_, []) -> (needed, acc_found)
+  | (_, g_mvf :: got) ->
+      let (needed, found) = match_maybe_value_fragment needed g_mvf in
+      match_maybe_value_fragments needed got (found ++ acc_found)
+  end
+
+
+let mrs_from_writes
+    (footprint:    footprint)
+    (write_slices: list (write * slices))
+    : maybe memory_read_source
+  =
+  match match_writes footprint [complete_slice footprint] write_slices [] with
+  | ([], writes_read_from) ->
+      Just <| mrs_footprint        = footprint;
+              mrs_value            = value_of_write_slices writes_read_from;
+              mrs_writes_read_from = writes_read_from;
+           |>
+  | (_ :: _, _) -> Nothing
+  end
+
+
+(* NEWTODO: currently returns a singleton list for success or fails - the former is ok as in this model there should be a unique possible mrss, but we should report the error case better *)
+let possible_mrs_for_read
+    (footprint:    footprint)
+    (write_slices: list (write * slices))
+    : memory_read_source
+  =
+  match mrs_from_writes footprint write_slices with
+  | Just mrs -> mrs
+  | Nothing ->
+      (* this should bever happen, we do unmapped memory access check *)
+      failwith
+        ("possible_mrss_for_read could not completely satisfy a read\n"
+         ^ "  footprint=" ^ stringFromFootprint footprint ^ "\n"
+         ^ "  write_slices=" ^ show write_slices ^ "\n")
+  end

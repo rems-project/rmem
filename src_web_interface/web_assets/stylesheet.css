@@ -1,0 +1,991 @@
+/*========================================================================================*/
+/*                                                                                        */
+/*                rmem executable model                                                   */
+/*                =====================                                                   */
+/*                                                                                        */
+/*  This file is:                                                                         */
+/*                                                                                        */
+/*  Copyright Jon French, University of Cambridge                                  2017   */
+/*  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)         2011   */
+/*  Copyright Shaked Flur, University of Cambridge                            2015-2017   */
+/*  Copyright Peter Sewell, University of Cambridge                          2011, 2014   */
+/*  Copyright Ohad Kammar, University of Cambridge (when this work was done)       2013   */
+/*  Copyright Francesco Zappa Nardelli, INRIA Paris                                2011   */
+/*  Copyright Susmit Sarkar, University of St Andrews                              2014   */
+/*                                                                                        */
+/*  All rights reserved.                                                                  */
+/*                                                                                        */
+/*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           */
+/*  For author information see README.md.                                                 */
+/*                                                                                        */
+/*========================================================================================*/
+
+html, body {
+  background-color: #A0A0A0;
+  margin: 0px;
+  font-family: "Liberation Sans",Arial,Helvetica,sans-serif;
+  font-size: 10pt;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+#main_container {
+  background-color: #FFFFFF;
+  margin: 0;
+  overflow: hidden;
+  height: 100%;
+  position: relative;
+  padding: 0;
+}
+
+.dot_container {
+    position: relative;
+    overflow: hidden;
+}
+
+#interact_page, .input_cmd, #interact_vsplit, .dot {
+    flex: 1 0 0;
+}
+
+#interact_hsplit {
+    flex: 5 0 0;
+}
+
+#main_container, #interact_view, #interact_vsplit, #dot_container {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.split, #split_root {
+    display: flex;
+    overflow: hidden;
+    flex: 1 0 0;
+    position: relative;
+}
+
+.pane {
+    display: flex;
+    overflow: hidden;
+    flex-direction: column;
+    flex: 1 0 0;
+    position: relative;
+    border: 1px solid #333;
+}
+
+.split.vertical {
+    flex-direction: column;
+}
+
+.split.horizontal {
+    flex-direction: row;
+}
+
+.interact_prompt_line, #interact_hsplit, #interact_page {
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+}
+
+#interact_hsplit, .main_fieldset {
+    overflow: hidden;
+}
+
+.main_fieldset, .dot_fieldset {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+}
+
+.main {
+  overflow: hidden;
+}
+
+hr {
+  border: #EEEEEE 2px solid;
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+.justify > * {
+  float: left;
+  width: 125px;
+}
+
+.justify > *:last-child {
+  float: none;
+  width: auto;
+}
+
+.main_fieldset {
+    background: white;
+    position: relative;
+}
+
+.system_state, .interact_prompt_line, .trace_prompt_lines {
+  padding: 5px;
+  font-family: monospace;
+  font-size: 0.9em;
+  color: black;
+  background: white;
+}
+
+.trace {
+    background: white;
+}
+
+.trace_prompt_lines {
+    margin: 10px;
+    border-top: 1px solid dimgray;
+    padding-top: 10px;
+}
+
+.system_state {
+  overflow-y: scroll;
+  flex: 1 1 0;
+  position: relative;
+}
+
+.main_fieldset hr {
+    height: 1px;
+    width: 98%;
+    display: block;
+    padding: 0;
+    border: 0;
+    margin: 5px;
+    background: white;
+    align-self: center;
+}
+
+.warnings {
+  display: none;
+  margin: 10px;
+  color: red;
+}
+
+.messages {
+  display: none;
+  margin: 10px;
+
+  white-space: pre-wrap;
+  font-family: monospace;
+
+  max-height: 100px;
+  overflow-y: auto; /* show scrollbar when needed */
+}
+
+/* #litmus_test { */
+/*   overflow: auto; */
+/*   padding: 15px; */
+/*   box-shadow: 3px 3px 15px #555555; */
+/*   border: 1px black none; */
+/*   border-radius: 10px; */
+/*   max-width: 90%; */
+/*   font-family:"Courier New",Courier,monospace; */
+/* } */
+
+.trans {
+    text-decoration: underline;
+    color: blue;
+}
+
+.trans.default {
+    font-weight: bold;
+    background: yellow;
+}
+
+.trans:hover {
+  cursor: pointer;
+}
+
+.flowingstorage {
+  font-family: monospace;
+  word-spacing: 0px;
+}
+
+.window hr, .dialog hr {
+  border: none;
+}
+
+#options input[type='number'] {
+  width: 40px;
+  margin-left: 5px;
+}
+
+.window h1, .dialog h1 {
+  font-size: 1em;
+  text-align: center;
+  margin-top: 1.5em;
+  margin-bottom: 0;
+  border-bottom: #BBBBBB 1px solid;
+}
+
+.window h1:first-child, .dialog h1:first-child {
+  margin-top: 0;
+}
+
+.window h2, .dialog h2 {
+  font-size: 1em;
+  font-weight: normal;
+  margin-bottom: 0;
+}
+
+.window input[type=button], .dialog input[type=button] {
+  min-width: 100px;
+  margin-right: 50px;
+}
+
+.window input[type=button]:last-child, .dialog input[type=button]:last-child {
+  margin-right: auto
+}
+
+span.tran_id {
+    color: blue;
+}
+
+span.memory_action {
+    color: darkcyan;
+}
+
+span.warning {
+    color: darkgoldenrod;
+    font-weight: bold;
+}
+
+span.info {
+    color: darkcyan;
+}
+
+span.final {
+    color: darkgreen;
+}
+
+span.sail {
+    color: darkgreen;
+}
+
+span.changed_gone {
+    color: gray;
+}
+
+span.changed_new {
+    color: red;
+}
+
+span.dwarf_source_lines {
+    color: darkgoldenrod;
+}
+
+.interact_prompt {
+    float: left;
+}
+
+.input_cmd {
+    border: none;
+    background: white;
+    color: black;
+    text-weight: bold;
+    margin-left: 10px;
+    display: block;
+}
+
+.system_state_lines, .trace_prompt_lines {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.system_state_lines p {
+    margin: 0;
+    padding: 0;
+}
+
+.gutter {
+    background-color: #eeeeee;
+    background-repeat: no-repeat;
+    background-position: 50%;
+}
+
+.gutter.gutter-horizontal {
+    background-image: url("../images/vertical_grip.png");
+    cursor: ew-resize;
+    height: 100%;
+}
+
+.gutter.gutter-vertical {
+    background-image: url("../images/horizontal_grip.png");
+    cursor: ns-resize;
+    width: 100%;
+}
+
+.error {
+    font-weight: bold;
+    color: red;
+}
+
+#options-row {
+    display: flex;
+    flex-flow: row wrap;
+}
+
+.option:not(.button_row) {
+    display: flex;
+    flex-flow: column;
+    flex: 0 0 auto;
+    padding: 3px;
+}
+
+.option-name {
+    display: block;
+    text-align: left;
+}
+
+.option .top .option-name:not(:first-child) {
+    margin-left: 5px;
+}
+
+.option .top .option-name:first-child {
+    margin-right: 5px;
+}
+
+.option-control {
+    display: flex;
+    margin-left: 10px;
+    justify-content: flex-end;
+}
+
+.option-control select {
+    flex: 1;
+}
+
+.option.toggler .option-name {
+    flex: 1;
+}
+
+.option.dropdown .option-control {
+    flex: 1;
+}
+
+.option.int_option .option-control {
+    flex: 1;
+    display: flex;
+}
+
+.option.int_option .int_option_control {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    align-items: center;
+}
+
+.option.int_option button, .option.int button {
+    flex: 1;
+    margin-left: 10px;
+    min-width: 40pt;
+}
+
+.options_button_row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.options_button_row a {
+    flex: 1;
+    text-align: center;
+    color: white;
+    text-decoration: none;
+    display: block;
+    padding: 3px;
+}
+
+.options_button_row a:hover {
+    background: #375a90;
+}
+
+.options_button_row a:not(:last-child) {
+    margin-right: 5px;
+    border-right: 1px solid #5a5a5a;
+}
+
+.option-desc {
+    font-style: italic;
+    color: gray;
+    font-size: 0.7em;
+    padding-top: 3px;
+    break-before: always;
+}
+
+.option .top {
+    display: flex;
+    flex-flow: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.option .bottom {
+
+}
+
+.dot_inner_container {
+    position: relative;
+    overflow: hidden;
+}
+
+.dot_inner_container, .dot_fieldset, .dot {
+    display: flex;
+    flex: 1;
+    position: relative;
+    background: white;
+}
+
+.sources {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 0;
+     background: white;
+}
+
+.sources .ui-tabs {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1 1 0;
+}
+
+.sources .ui-tabs-nav {
+    cursor: default;
+}
+
+/* curse CSS's arcane specificity-precedence rules */
+.source_tabs.ui-tabs .source_tab.ui-tabs-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    overflow: hidden;
+    padding: 0;
+}
+
+.source_tabs .ui-tabs-panel, .source_tabs.ui-tabs {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.sources .source_tabs.ui-tabs {
+    background: white;
+}
+
+#top_bar {
+    background: #373f44;
+    color: white;
+    padding: 3px;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-bottom: 1px solid #ddd;
+}
+
+#top_bar_title {
+    font-weight: bold;
+    padding: 3px;
+    text-shadow: 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+#top_bar span.sys_state_title {
+    padding: 3px;
+    text-shadow: 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+.top_bar_section {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.top_bar_section > legend {
+    padding: 3px;
+    font-weight: bold;
+}
+
+#top_bar_options {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+#top_bar_options .option_section {
+    position: relative;
+    display: block;
+}
+
+#top_bar_options button > .ui-icon {
+    padding-left: 5px;
+}
+
+.option_group {
+    display: none;
+    position: absolute;
+    z-index: 210;
+    overflow: visible;
+    white-space: nowrap;
+    padding: 3px;
+    color: white;
+    background: #373f44;
+    border: 1px solid darkgray;
+    box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.5);
+    border-radius: 5px;
+}
+
+#top_bar button, #top_bar input[type=button] {
+    min-width: 60px;
+}
+
+#load_buttons input[type=button] {
+    min-width: 100px;
+}
+
+#flowing_topology_na {
+    text-style: italic;
+    text-align: center;
+}
+
+button {
+    z-index: 99;
+}
+
+.mid_bar {
+    background: #373f44;
+    color: white;
+    position: relative;
+    padding: 3px;
+    border-bottom: 1px solid #333;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.toolbar.end {
+    flex: 1;
+    display: flex;
+    justify-content: flex-end;
+    align-self: flex-start;
+}
+
+.menubar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+/*    margin-bottom: 2px;*/
+}
+.menubar.end {
+    flex: 1;
+    justify-content: flex-end;
+}
+
+.toolbar, .top_bar_section {
+    white-space: nowrap;
+    position: relative;
+    /* silly hack to deal with z-ordering issues */
+    opacity: 0.999;
+}
+
+.nowrap {
+    white-space: nowrap;
+    display: inline-block;
+}
+
+.ui-front.ui-selectmenu-open {
+    /* fix issues with the select boxes in dropdown panels showing behind the panels */
+    z-index: 1000 !important;
+}
+
+#load_litmus_dialog {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+}
+
+#load_litmus_dialog > button, #load_litmus_dialog > div.file {
+    width: 80%;
+    margin-left: 10%;
+}
+
+#load_litmus_dialog > * {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+#load_litmus_dialog .editor {
+    flex: 1;
+    background: white;
+}
+
+/* fixes for interaction between jQuery UI and codeflask */
+.ui-widget textarea.CodeFlask__textarea {
+    font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* space out dialog buttons a little more, to taste */
+.ui-dialog-buttonpane button {
+    min-width: 100px;
+    margin-left: 20px !important;
+}
+
+p.ui-state-highlight {
+    padding: 3px;
+}
+
+p.ui-state-highlight .ui-icon {
+    margin: 5px;
+}
+
+template {
+    display: none;
+}
+
+#search_random_trials {
+    width: 40px;
+}
+
+span.top_bar {
+    padding: 3px;
+}
+
+.help_loader {
+    flex: 1 0 0;
+    overflow-y: scroll;
+    overflow-x: auto;
+    padding: 10px;
+}
+
+.graph .mid_bar .toolbar .ui-selectmenu-button.ui-button {
+    width: 70px;
+}
+
+.CodeMirror {
+    flex: 1 0 0;
+    border: 1px solid gray;
+    height: auto !important;
+}
+
+.adjust_font_size {
+    font-size: 0.9em;
+}
+
+.flex-row {
+    display: flex;
+    flex-direction: row;
+}
+
+.flex-column {
+    display: flex;
+    flex-direction: column;
+}
+
+.flex {
+    flex: 1 0 0;
+}
+
+select[multiple="multiple"] {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+#load_litmus_dialog button:not(:last-child), #load_elf_dialog button:not(:last-child) {
+    margin-right: 20px;
+}
+
+.interact_loading, .dot_loading {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    opacity: 0.6;
+    z-index: 99;
+    display: none;
+}
+
+.dot_outdated {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
+    background: rgba(128, 128, 128, 0.2);
+    z-index: 90;
+    /* allow mouse events to pass through to underneath */
+    pointer-events: none;
+    display: none;
+}
+
+.dot_outdated p {
+    position: absolute;
+    top: 0px;
+    right: 0px;
+    margin: 0;
+    padding: 3px;
+    color: red;
+    background: #ffcccc;
+    padding: 2px;
+    border: 1px solid red;
+    font-weight: bold;
+}
+
+.source_tab .CodeMirror {
+    flex: 1 0 0;
+}
+
+.toolbutton {
+    color: white;
+    text-decoration: none;
+    cursor: pointer;
+    padding: 3px;
+    display: inline-block;
+    margin-bottom: 1px;
+}
+
+.toolbutton .ui-icon {
+    background-image: url("lib/images/ui-icons_ffffff_256x240.png") !important;
+}
+
+.toolbutton.disabled .ui-icon {
+    background-image: url("lib/images/ui-icons_777777_256x240.png") !important;
+}
+
+.toolbutton.disabled {
+    color: gray;
+    font-style: italic;
+    pointer-events: none;
+    cursor: default;
+}
+
+.toolbutton:not(:last-child) {
+    margin-right: 10px;
+}
+
+.toolbutton:not(.disabled):hover, .toolbutton:not(.disabled).hover,.toolbutton:not(.disabled):active, .toolbutton:not(.disabled).active {
+    border: 1px solid transparent;
+    background: #375a90;
+    border-radius: 2px;
+    margin-left: -1px;
+    margin-right: -1px;
+    /*    margin-top: 1px;*/
+    padding-top: 2px;
+    margin-bottom: 0px;
+}
+
+.toolbutton:not(.disabled):not(:last-child):hover, .toolbutton:not(.disabled):not(:last-child).hover, .toolbutton:not(.disabled):not(:last-child):active, .toolbutton:not(.disabled):not(:last-child).active {
+    margin-right: 9px;
+}
+
+.toolbutton:not(.disabled):active {
+    background: gray;
+}
+
+.vertical_separator {
+    border-left: 1px solid lightgray;
+    border-right: 1px solid dimgray;
+    display: inline-block;
+    margin-left: 10px;
+    margin-right: 10px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    align-self: stretch;
+}
+
+
+.clear {
+    clear: both;
+}
+
+textarea:focus, input:focus, a:focus {
+    outline: none;
+}
+
+.disabled .option-name {
+    text-style: italic;
+    color: gray;
+}
+
+.toggler .top, .int_option .top {
+    cursor: pointer;
+}
+
+.toggler .top.disabled, .int_option .top.disabled {
+    cursor: default;
+}
+
+.mid_bar .ui-selectmenu-button.ui-button {
+    width: auto;
+}
+
+.flex_spacer {
+    flex: 1;
+}
+
+.split_loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translateX(-50%) translateY(-50%);
+    display: flex;
+    align-items: center;
+    font-weight: bold;
+}
+
+.notification {
+    padding: 5px;
+    font-style: italic;
+    font-weight: bold;
+    visibility: hidden;
+}
+
+.option .top select {
+    flex: 1;
+    margin-left: 5px;
+}
+
+.no_titlebar .ui-dialog-titlebar {
+    display: none;
+}
+
+.popup_dialog {
+    display: flex;
+    align-items: center;
+}
+
+.popup_dialog .msg {
+    flex: 1 0 0;
+    margin-left: 25px;
+    white-space: pre;
+}
+
+.popup_dialog > img, .popup_dialog > span.ui-ico {
+    margin: 5px;
+}
+
+svg text { */
+     font-family: "Liberation Sans" !important; */
+}
+
+.option input[type=checkbox] {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+
+    /* TODO fixme when appropriate */
+    -ms-appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+.option input[type=checkbox]:not(:checked) {
+    border: 1px solid #5a5a5a;
+}
+
+.option input[type=checkbox]:checked::after {
+    content: '\2714';
+    font-weight: bold;
+    color: white;
+}
+
+.option:not(.group_separator):not(.line_separator):not(.button_row):not(.disabled):hover {
+    background: #375a90;
+}
+
+.disabled_msg {
+    display: none;
+}
+
+.disabled .option-name .disabled_msg {
+    display: inline;
+}
+
+.option_group .group_header, .option_group .group_separator, .option_group .line_separator {
+    margin: 5px;
+    border-bottom: 1px solid #5a5a5a;
+    font-weight: bold;
+    color: darkgray;
+    padding-bottom: 5px;
+    display: block;
+}
+
+.option_group .group_separator {
+    padding-top: 5px;
+    border-top: 1px solid #5a5a5a;
+}
+
+span.follow_list {
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.option_group .line_separator {
+    margin-top: 0px;
+    height: 0px;
+    padding-top: 5px;
+    padding-bottom: 0px;
+}
+
+.button_row a {
+    text-align: left;
+    padding-left: 2em;
+    margin-left: 2px;
+}
+
+.help_loader #header {
+    display: inline-block;
+}
+
+.help_loader #header h1.title {
+    margin: 0;
+}
+
+.help_loader #TOC {
+    border: 1px solid darkgray;
+    background: whitesmoke;
+    float: right;
+    font-size: 0.9em;
+    padding: 1em;
+    margin-left: 1em;
+    margin-bottom: 1em;
+}
+
+.help_loader #TOC::before {
+    content: "Help Contents";
+    font-weight: bold;
+    font-size: 1.2em;
+}
+
+.help_loader #TOC ul {
+    padding-left: 2em;
+}
+
+.help_loader h1 {
+    font-size: 1.6em;
+    font-weight: bold;
+}
+
+.help_loader h2 {
+    font-size: 1.4em;
+    font-weight: bold;
+}
+
+.help_loader h3 {
+    font-size: 1.2em;
+    font-weight: bold;
+    font-style: italic;
+}
+
+.help_loader pre {
+    font-size: 0.9em;
+}

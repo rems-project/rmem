@@ -1,0 +1,1141 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017-2018               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives_extra
+open import MachineDefUtils
+
+open import Sail_impl_base
+open import MachineDefTypes
+open import MachineDefFragments
+     import MachineDefFreshIds
+     import MachineDefEvents
+open import MachineDefDebug
+
+(** read_kind *******************************************************)
+
+let is_AArch64_read_weak_acquire (r: read_kind) : bool =
+  match r with
+  | Read_acquire                -> true
+  | Read_weak_acquire            -> true
+  | Read_exclusive_acquire      -> true
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_exclusive              -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> false
+  | Read_RISCV_acquire_release          -> false
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> false
+  | Read_RISCV_reserved_acquire_RCsc    -> false
+  | Read_RISCV_reserved_acquire_release -> false
+  | Read_X86_locked             -> false
+  end
+
+
+let is_AArch64_read_acquire (r: read_kind) : bool =
+  match r with
+  | Read_acquire                -> true
+  | Read_weak_acquire            -> false
+  | Read_exclusive_acquire      -> true
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_exclusive              -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> false
+  | Read_RISCV_acquire_release          -> false
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> false
+  | Read_RISCV_reserved_acquire_RCsc    -> false
+  | Read_RISCV_reserved_acquire_release -> false
+  | Read_X86_locked             -> false
+  end
+
+let is_AArch64_read_exclusive (r: read_kind) : bool =
+  match r with
+  | Read_exclusive              -> true
+  | Read_exclusive_acquire      -> true
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_weak_acquire           -> false
+  | Read_acquire                -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> false
+  | Read_RISCV_acquire_release          -> false
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> false
+  | Read_RISCV_reserved_acquire_RCsc    -> false
+  | Read_RISCV_reserved_acquire_release -> false
+  | Read_X86_locked             -> false
+  end
+
+let is_PPC_read_reserve (r: read_kind) : bool =
+  match r with
+  | Read_exclusive              -> false
+  | Read_exclusive_acquire      -> false
+  | Read_plain                  -> false
+  | Read_reserve                -> true
+  | Read_acquire                -> false
+  | Read_weak_acquire           -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> false
+  | Read_RISCV_acquire_release          -> false
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> false
+  | Read_RISCV_reserved_acquire_RCsc    -> false
+  | Read_RISCV_reserved_acquire_release -> false
+  | Read_X86_locked             -> false
+  end
+
+let is_RISCV_read_acquire (r: read_kind) : bool =
+  match r with
+  | Read_exclusive              -> false
+  | Read_exclusive_acquire      -> false
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_acquire                -> false
+  | Read_weak_acquire           -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> true
+  | Read_RISCV_acquire_RCsc             -> true
+  | Read_RISCV_acquire_release          -> true
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> true
+  | Read_RISCV_reserved_acquire_RCsc    -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | Read_X86_locked             -> false
+  end
+
+let is_RISCV_read_strong_acquire (r: read_kind) : bool =
+  match r with
+  | Read_exclusive              -> false
+  | Read_exclusive_acquire      -> false
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_acquire                -> false
+  | Read_weak_acquire           -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> true
+  | Read_RISCV_acquire_release          -> true
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> false
+  | Read_RISCV_reserved_acquire_RCsc    -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | Read_X86_locked             -> false
+  end
+
+let is_RISCV_read_release (r: read_kind) : bool =
+  match r with
+  | Read_exclusive              -> false
+  | Read_exclusive_acquire      -> false
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_acquire                -> false
+  | Read_weak_acquire           -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> false
+  | Read_RISCV_acquire_release          -> true
+  | Read_RISCV_reserved                 -> false
+  | Read_RISCV_reserved_acquire_RCpc    -> false
+  | Read_RISCV_reserved_acquire_RCsc    -> false
+  | Read_RISCV_reserved_acquire_release -> true
+  | Read_X86_locked             -> false
+  end
+
+let is_RISCV_read_reserved (r: read_kind) : bool =
+  match r with
+  | Read_exclusive              -> false
+  | Read_exclusive_acquire      -> false
+  | Read_plain                  -> false
+  | Read_reserve                -> false
+  | Read_acquire                -> false
+  | Read_weak_acquire           -> false
+  | Read_stream                 -> false
+  | Read_RISCV_acquire_RCpc             -> false
+  | Read_RISCV_acquire_RCsc             -> false
+  | Read_RISCV_acquire_release          -> false
+  | Read_RISCV_reserved                 -> true
+  | Read_RISCV_reserved_acquire_RCpc    -> true
+  | Read_RISCV_reserved_acquire_RCsc    -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | Read_X86_locked             -> false
+  end
+
+let is_atomic_read (r: read_kind) : bool =
+  is_PPC_read_reserve r
+  || is_AArch64_read_exclusive r
+  || is_RISCV_read_reserved r
+  || r = Read_X86_locked
+
+(** write_kind ******************************************************)
+
+let is_AArch64_write_release (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> false
+  | Write_release                   -> true
+  | Write_exclusive                 -> false
+  | Write_exclusive_release         -> true
+  | Write_RISCV_release_RCpc                -> false
+  | Write_RISCV_release_RCsc                -> false
+  | Write_RISCV_acquire_release             -> false
+  | Write_RISCV_conditional                 -> false
+  | Write_RISCV_conditional_release_RCpc    -> false
+  | Write_RISCV_conditional_release_RCsc    -> false
+  | Write_RISCV_conditional_acquire_release -> false
+  | Write_X86_locked                -> false
+  end
+
+let is_AArch64_write_exclusive (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> false
+  | Write_release                   -> false
+  | Write_exclusive                 -> true
+  | Write_exclusive_release         -> true
+  | Write_RISCV_release_RCpc                -> false
+  | Write_RISCV_release_RCsc                -> false
+  | Write_RISCV_acquire_release             -> false
+  | Write_RISCV_conditional                 -> false
+  | Write_RISCV_conditional_release_RCpc    -> false
+  | Write_RISCV_conditional_release_RCsc    -> false
+  | Write_RISCV_conditional_acquire_release -> false
+  | Write_X86_locked                -> false
+  end
+
+let is_RISCV_write_release (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> false
+  | Write_release                   -> false
+  | Write_exclusive                 -> false
+  | Write_exclusive_release         -> false
+  | Write_RISCV_release_RCpc                -> true
+  | Write_RISCV_release_RCsc                -> true
+  | Write_RISCV_acquire_release             -> true
+  | Write_RISCV_conditional                 -> false
+  | Write_RISCV_conditional_release_RCpc    -> true
+  | Write_RISCV_conditional_release_RCsc    -> true
+  | Write_RISCV_conditional_acquire_release -> true
+  | Write_X86_locked                -> false
+  end
+
+let is_RISCV_write_strong_release (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> false
+  | Write_release                   -> false
+  | Write_exclusive                 -> false
+  | Write_exclusive_release         -> false
+  | Write_RISCV_release_RCpc                -> false
+  | Write_RISCV_release_RCsc                -> true
+  | Write_RISCV_acquire_release             -> true
+  | Write_RISCV_conditional                 -> false
+  | Write_RISCV_conditional_release_RCpc    -> false
+  | Write_RISCV_conditional_release_RCsc    -> true
+  | Write_RISCV_conditional_acquire_release -> true
+  | Write_X86_locked                -> false
+  end
+
+let is_RISCV_write_acquire (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> false
+  | Write_release                   -> false
+  | Write_exclusive                 -> false
+  | Write_exclusive_release         -> false
+  | Write_RISCV_release_RCpc                -> false
+  | Write_RISCV_release_RCsc                -> false
+  | Write_RISCV_acquire_release             -> true
+  | Write_RISCV_conditional                 -> false
+  | Write_RISCV_conditional_release_RCpc    -> false
+  | Write_RISCV_conditional_release_RCsc    -> false
+  | Write_RISCV_conditional_acquire_release -> true
+  | Write_X86_locked                -> false
+  end
+
+let is_RISCV_write_conditional (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> false
+  | Write_release                   -> false
+  | Write_exclusive                 -> false
+  | Write_exclusive_release         -> false
+  | Write_RISCV_release_RCpc                -> false
+  | Write_RISCV_release_RCsc                -> false
+  | Write_RISCV_acquire_release             -> false
+  | Write_RISCV_conditional                 -> true
+  | Write_RISCV_conditional_release_RCpc    -> true
+  | Write_RISCV_conditional_release_RCsc    -> true
+  | Write_RISCV_conditional_acquire_release -> true
+  | Write_X86_locked                -> false
+  end
+
+let is_PPC_write_conditional (w: write_kind) : bool =
+  match w with
+  | Write_plain                     -> false
+  | Write_conditional               -> true
+  | Write_release                   -> false
+  | Write_exclusive                 -> false
+  | Write_exclusive_release         -> false
+  | Write_RISCV_release_RCpc                -> false
+  | Write_RISCV_release_RCsc                -> false
+  | Write_RISCV_acquire_release             -> false
+  | Write_RISCV_conditional                 -> false
+  | Write_RISCV_conditional_release_RCpc    -> false
+  | Write_RISCV_conditional_release_RCsc    -> false
+  | Write_RISCV_conditional_acquire_release -> false
+  | Write_X86_locked                -> false
+  end
+
+let is_atomic_write (w: write_kind) : bool =
+  is_PPC_write_conditional w
+  || is_AArch64_write_exclusive w
+  || is_RISCV_write_conditional w
+  || w = Write_X86_locked
+
+
+
+(** for uniformly doing ARM and RISC-V, used by Promising ***********)
+
+let is_acquire_R = function
+  | Read_acquire -> true
+  | Read_exclusive_acquire -> true
+  | Read_weak_acquire -> true
+  | Read_RISCV_acquire_RCpc -> true
+  | Read_RISCV_acquire_RCsc -> true
+  | Read_RISCV_acquire_release -> true
+  | Read_RISCV_reserved_acquire_RCpc -> true 
+  | Read_RISCV_reserved_acquire_RCsc -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | _ -> false
+end
+
+let is_strong_acquire_R = function
+  | Read_acquire -> true
+  | Read_exclusive_acquire -> true
+  | Read_RISCV_acquire_RCsc -> true
+  | Read_RISCV_acquire_release -> true
+  | Read_RISCV_reserved_acquire_RCsc -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | _ -> false
+end
+
+let is_release_R = function
+  | Read_RISCV_acquire_release -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | _ -> false
+end
+
+let is_strong_release_R = function
+  | Read_RISCV_acquire_release -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | _ -> false
+end
+
+let is_release_W = function
+  | Write_release -> true
+  | Write_exclusive_release -> true
+  | Write_RISCV_release_RCpc -> true
+  | Write_RISCV_release_RCsc -> true
+  | Write_RISCV_acquire_release -> true
+  | Write_RISCV_conditional_release_RCpc -> true
+  | Write_RISCV_conditional_release_RCsc -> true 
+  | Write_RISCV_conditional_acquire_release -> true
+  | _ -> false
+end
+
+let is_strong_release_W = function
+  | Write_release -> true
+  | Write_exclusive_release -> true
+  | Write_RISCV_release_RCsc -> true
+  | Write_RISCV_acquire_release -> true
+  | Write_RISCV_conditional_release_RCsc -> true 
+  | Write_RISCV_conditional_acquire_release -> true
+  | _ -> false
+end
+
+let is_acquire_W = function
+  | Write_RISCV_conditional_acquire_release -> true
+  | _ -> false
+end
+
+let is_strong_acquire_W = function
+  | Write_RISCV_conditional_acquire_release -> true
+  | _ -> false
+end
+
+let is_exclusive_R = function
+  | Read_reserve -> true
+  | Read_exclusive -> true
+  | Read_exclusive_acquire -> true
+  | Read_RISCV_reserved -> true
+  | Read_RISCV_reserved_acquire_RCpc -> true
+  | Read_RISCV_reserved_acquire_RCsc -> true
+  | Read_RISCV_reserved_acquire_release -> true
+  | _ -> false
+end
+
+let is_exclusive_W = function
+  | Write_conditional -> true
+  | Write_exclusive -> true
+  | Write_exclusive_release -> true
+  | Write_RISCV_conditional -> true
+  | Write_RISCV_conditional_release_RCpc -> true
+  | Write_RISCV_conditional_release_RCsc -> true
+  | Write_RISCV_conditional_acquire_release -> true
+  | _ -> false
+end
+                        
+let is_branch = function
+  | AArch64_instr (ArmV8_embed_types.CompareAndBranch _) -> true
+  | AArch64_instr (ArmV8_embed_types.BranchConditional _) -> true
+  | AArch64_instr (ArmV8_embed_types.TestBitAndBranch _) -> true
+  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) -> true
+  | AArch64_instr (ArmV8_embed_types.BranchRegister _) -> true
+  | RISCV_instr (Riscv_types.BTYPE _) -> true
+  | _ -> false
+end
+
+let is_amo = function
+  | RISCV_instr (Riscv_types.AMO _) -> true
+  | _ -> false
+end
+
+
+
+
+(** instruction_instance ********************************************)
+
+let is_memory_load_instruction (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier _   -> false
+  | IK_mem_read _  -> true
+  | IK_mem_write _ -> false
+  | IK_mem_rmw _   -> true
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+(* see is_viable_memory_store_instruction for cases where it's important
+to destinguish failed store-conditional/exclusive *)
+let is_memory_store_instruction (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier _   -> false
+  | IK_mem_read _  -> false
+  | IK_mem_write _ -> true
+  | IK_mem_rmw _   -> true
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+(* A failed store-conditional/exclusive is not considered a memory access after it is finished *)
+let is_viable_memory_store_instruction (i: instruction_instance) : bool =
+  is_memory_store_instruction i &&
+  not (i.successful_atomic_store = Just false && i.finished)
+
+(* is_memory_rmw does not mean the memory accesses are atomic *)
+let is_memory_rmw (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier _   -> false
+  | IK_mem_read _  -> false
+  | IK_mem_write _ -> false
+  | IK_mem_rmw _   -> true
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_viable_memory_access (i: instruction_instance) : bool =
+  is_memory_load_instruction i || is_viable_memory_store_instruction i
+
+
+let is_branch_instruction (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier _   -> false
+  | IK_mem_read _  -> false
+  | IK_mem_write _ -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> true
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_cond_branch_instruction (i: instruction_instance) : bool =
+  Set.size i.nias > 1
+
+let is_indirect_branch_instruction (i: instruction_instance) : bool =
+  exists (nia IN i.nias). nia = NIA_indirect_address
+
+let is_barrier (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier _   -> true
+  | IK_mem_read _  -> false
+  | IK_mem_write _ -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_sync (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_Sync  -> true
+  | _ -> false
+  end
+
+let is_lwsync (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_LwSync  -> true
+  | _ -> false
+  end
+
+let is_eieio (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_Eieio -> true
+  | _ -> false
+  end
+
+let is_eieo (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_Eieo -> true
+  | _ -> false
+  end
+
+let is_isync (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_Isync  -> true
+  | _ -> false
+  end
+
+
+let is_AArch64_load_acquire (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_AArch64_read_acquire r
+  | IK_mem_rmw (r, _) -> is_AArch64_read_acquire r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_AArch64_load_exclusive (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_AArch64_read_exclusive r
+  | IK_mem_rmw (r, _) -> is_AArch64_read_exclusive r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+
+let is_PPC_load_reserve (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_PPC_read_reserve r
+  | IK_mem_rmw (r, _) -> is_PPC_read_reserve r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_load_reserved (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_RISCV_read_reserved r
+  | IK_mem_rmw (r, _) -> is_RISCV_read_reserved r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_atomic_load (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_atomic_read r
+  | IK_mem_rmw (r, _) -> is_atomic_read r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_load_acquire (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_RISCV_read_acquire r
+  | IK_mem_rmw (r, _) -> is_RISCV_read_acquire r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_load_strong_acquire (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_RISCV_read_strong_acquire r
+  | IK_mem_rmw (r, _) -> is_RISCV_read_strong_acquire r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_load_release (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_read r     -> is_RISCV_read_release r
+  | IK_mem_rmw (r, _) -> is_RISCV_read_release r
+  | IK_barrier _      -> false
+  | IK_mem_write _    -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_AArch64_store_release (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_AArch64_write_release w
+  | IK_mem_rmw (_, w) -> is_AArch64_write_release w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_store_release (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_RISCV_write_release w
+  | IK_mem_rmw (_, w) -> is_RISCV_write_release w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_store_strong_release (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_RISCV_write_strong_release w
+  | IK_mem_rmw (_, w) -> is_RISCV_write_strong_release w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_store_acquire (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_RISCV_write_acquire w
+  | IK_mem_rmw (_, w) -> is_RISCV_write_acquire w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_AArch64_store_exclusive (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_AArch64_write_exclusive w
+  | IK_mem_rmw (_, w) -> is_AArch64_write_exclusive w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+
+let is_PPC_store_conditional (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_PPC_write_conditional w
+  | IK_mem_rmw (_, w) -> is_PPC_write_conditional w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_store_conditional (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_RISCV_write_conditional w
+  | IK_mem_rmw (_, w) -> is_RISCV_write_conditional w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_atomic_store (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write w    -> is_atomic_write w
+  | IK_mem_rmw (_, w) -> is_atomic_write w
+  | IK_mem_read _     -> false
+  | IK_barrier _      -> false
+  | IK_branch         -> false
+  | IK_trans _        -> false
+  | IK_simple         -> false
+  end
+
+let is_RISCV_AMO (i: instruction_instance) : bool =
+  is_RISCV_load_reserved i && is_RISCV_store_conditional i
+
+let is_tstart (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_barrier _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> true
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+
+let is_tcommit (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_barrier _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> true
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+
+let is_tabort (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_barrier _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> true
+  | IK_simple      -> false
+  end
+
+let is_RISCV_fence_pr  (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_RISCV_rw_rw -> true
+  | IK_barrier Barrier_RISCV_r_rw  -> true
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> true
+  | IK_barrier Barrier_RISCV_r_r   -> true
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> true
+  | IK_barrier Barrier_RISCV_r_w   -> true
+  | IK_barrier Barrier_RISCV_w_w   -> false
+
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+
+let is_RISCV_fence_pw  (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_RISCV_rw_rw -> true
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> true
+  | IK_barrier Barrier_RISCV_rw_r  -> true
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> true
+  | IK_barrier Barrier_RISCV_rw_w  -> true
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> true
+
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+
+let is_RISCV_fence_sr  (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_RISCV_rw_rw -> true
+  | IK_barrier Barrier_RISCV_r_rw  -> true
+  | IK_barrier Barrier_RISCV_w_rw  -> true
+  | IK_barrier Barrier_RISCV_rw_r  -> true
+  | IK_barrier Barrier_RISCV_r_r   -> true
+  | IK_barrier Barrier_RISCV_w_r   -> true
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+
+let is_RISCV_fence_sw  (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_RISCV_rw_rw -> true
+  | IK_barrier Barrier_RISCV_r_rw  -> true
+  | IK_barrier Barrier_RISCV_w_rw  -> true
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> true
+  | IK_barrier Barrier_RISCV_r_w   -> true
+  | IK_barrier Barrier_RISCV_w_w   -> true
+
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+
+let is_RISCV_fence_tso (i: instruction_instance) : bool =
+  match i.instruction_kind with
+  | IK_barrier Barrier_RISCV_tso   -> true
+
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+
+  | IK_barrier Barrier_RISCV_i     -> false
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans Transaction_start  -> false
+  | IK_trans Transaction_commit -> false
+  | IK_trans Transaction_abort  -> false
+  | IK_simple      -> false
+  end
+(** The is_pop_... functions are abstractions for handling barriers
+uniformly when possible *)
+
+let is_pop_memory_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB         -> true
+  | IK_barrier Barrier_DSB_ST      -> true
+  | IK_barrier Barrier_DSB_LD      -> true
+  | IK_barrier Barrier_DMB         -> true
+  | IK_barrier Barrier_DMB_ST      -> true
+  | IK_barrier Barrier_DMB_LD      -> true
+  | IK_barrier Barrier_Sync        -> true
+  | IK_barrier Barrier_LwSync      -> true
+  | IK_barrier Barrier_Eieio       -> true
+  | IK_barrier Barrier_MIPS_SYNC   -> true
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> true
+  | IK_barrier Barrier_RISCV_r_rw  -> true
+  | IK_barrier Barrier_RISCV_w_rw  -> true
+  | IK_barrier Barrier_RISCV_rw_r  -> true
+  | IK_barrier Barrier_RISCV_r_r   -> true
+  | IK_barrier Barrier_RISCV_w_r   -> true
+  | IK_barrier Barrier_RISCV_rw_w  -> true
+  | IK_barrier Barrier_RISCV_r_w   -> true
+  | IK_barrier Barrier_RISCV_w_w   -> true
+  | IK_barrier Barrier_RISCV_tso   -> true
+  | IK_barrier Barrier_x86_MFENCE  -> true
+
+  | IK_barrier Barrier_Isync   -> false
+  | IK_barrier Barrier_ISB     -> false
+  | IK_barrier Barrier_RISCV_i -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_pop_strong_memory_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB         -> true
+  | IK_barrier Barrier_DMB         -> true
+  | IK_barrier Barrier_Sync        -> true
+  | IK_barrier Barrier_MIPS_SYNC   -> true
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> true
+  | IK_barrier Barrier_x86_MFENCE  -> true
+
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB_LD      -> true
+  | IK_barrier Barrier_DMB_LD      -> true
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_AArch64_st_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB_ST     -> true
+  | IK_barrier Barrier_DMB_ST     -> true
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end
+
+let is_pop_instruction_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_ISB         -> true
+  | IK_barrier Barrier_Isync       -> true
+  | IK_barrier Barrier_RISCV_i     -> true
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  end

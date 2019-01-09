@@ -1,0 +1,65 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge 2017                          *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+{
+open Lexing
+open Shared_memory_parser
+
+exception SyntaxError of string
+
+let next_line lexbuf =
+  let pos = lexbuf.lex_curr_p in
+  lexbuf.lex_curr_p <-
+    { pos with pos_bol = lexbuf.lex_curr_pos;
+               pos_lnum = pos.pos_lnum + 1
+    }
+}
+
+let digit = ['0'-'9']
+let hexadigit = ['0'-'9' 'a'-'f' 'A'-'F']
+let decimal = digit+
+let hexadecimal = ("0x"|"0X") hexadigit+
+let num = decimal | hexadecimal
+
+let alpha = ['a'-'z' 'A'-'Z']
+let name  = (alpha | '_') (alpha | digit | '_' | '.' | '$')*
+
+let white = [' ' '\t']+
+let newline = '\r' | '\n' | "\r\n"
+
+rule read = parse
+  | white   { read lexbuf }
+  | newline { next_line lexbuf; read lexbuf }
+
+  | '#' { skip_comment lexbuf; read lexbuf }
+
+  | '['  { LEFT_BRACK }
+  | ']'  { RIGHT_BRACK }
+  | ';'  { SEMICOLON }
+  | '/'  { FORWARD_SLASH }
+  | '-'  { MINUS }
+  | '+'  { PLUS }
+
+  | num as n  { NUM (Misc.big_num_of_string n) }
+  | name as s { IDENT s }
+
+  | _   { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
+  | eof { EOF }
+
+and skip_comment = parse
+  | newline { next_line lexbuf }
+  | eof     {}
+  | _       { skip_comment lexbuf}

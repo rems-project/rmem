@@ -1,0 +1,92 @@
+(**************************************************************************)
+(*                                  DIY                                   *)
+(*                                                                        *)
+(* Jade Alglave, Luc Maranget, INRIA Paris-Rocquencourt, France.          *)
+(* Shaked Flur, Susmit Sarkar, Peter Sewell, University of Cambridge, UK. *)
+(*                                                                        *)
+(*  Copyright 2015 Institut National de Recherche en Informatique et en   *)
+(*  Automatique and the authors. All rights reserved.                     *)
+(*  This file is distributed  under the terms of the Lesser GNU General   *)
+(*  Public License.                                                       *)
+(**************************************************************************)
+
+{
+module Make(O:LexUtils.Config) = struct
+open Lexing
+open LexMisc
+open X86HGenParser
+module X86 = X86HGenBase
+open X86
+module LU = LexUtils.Make(O)
+
+let instruction_table = Hashtbl.create 300
+let () =
+  List.iter (fun (kwd, tok) -> Hashtbl.add instruction_table kwd tok)
+  [
+  (* #include "build_isa_models/x86/gen/lexer.hgen" *)
+  ]
+}
+
+let digit = [ '0'-'9' ]
+let hexadigit = [ '0'-'9' 'a'-'f' 'A'-'F']
+let alpha = [ 'a'-'z' 'A'-'Z']
+let name  = alpha (alpha|digit|'_' | '/' | '.' | '-')*
+let decimal = '-' ? digit+
+let hexadecimal = ("0x"|"0X") hexadigit+
+let num = decimal | hexadecimal
+
+rule token = parse
+| [' ''\t'] { token lexbuf }
+| '\n'      { incr_lineno lexbuf; token lexbuf }
+| "(*"      { LU.skip_comment lexbuf ; token lexbuf }
+| '-' ? num as num { try NUM (int_of_string num) with
+                     | Failure _ -> BIG_NUM (Misc.big_num_of_string num) }
+                                    (* if number is too big for int *)
+| 'P' (num as x)
+      { PROC (int_of_string x) }
+| "b%" name as name { SYMB_BREG (Symbolic_reg name) }
+| "h%" name as name { SYMB_HREG (Symbolic_reg name) }
+| "w%" name as name { SYMB_WREG (Symbolic_reg name) }
+| "l%" name as name { SYMB_LREG (Symbolic_reg name) }
+| "q%" name as name { SYMB_QREG (Symbolic_reg name) }
+| '$' { DOLLAR }
+| ',' { COMMA }
+| ':' { COLON }
+| ';' { SEMI }
+| '|' { PIPE }
+| '+' { PLUS }
+| '(' { LPAR }
+| ')' { RPAR }
+| "lock" { LOCK }
+| "%rip" { RIP }
+| '%' name as x
+      { match X86HGenBase.parse_reg_size x with
+        | Some (X86S8 false, r) -> ARCH_BHREG {high=false; reg=r}
+        | Some (X86S8 true, r)  -> ARCH_BHREG {high=true;  reg=r}
+        | Some (X86S16, r)      -> ARCH_WREG (IReg r)
+        | Some (X86S32, r)      -> ARCH_LREG (IReg r)
+        | Some (X86S64, r)      -> ARCH_QREG (IReg r)
+        | None -> NAME x }
+| name as x
+      { (* Generated instructions *)
+        try Hashtbl.find instruction_table x with
+        | Not_found -> NAME x
+      }
+| eof { EOF }
+| ""  { error "X86 lexer" lexbuf }
+
+
+{
+let token lexbuf =
+   let tok = token lexbuf in
+   if O.debug then begin
+     Printf.eprintf
+       "%a: Lexed '%s'\n"
+       Pos.pp_pos2
+       (lexeme_start_p lexbuf,lexeme_end_p lexbuf)
+       (lexeme lexbuf)
+   end ;
+   tok
+end
+}
+

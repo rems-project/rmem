@@ -1,0 +1,336 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2017-2018   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*  Copyright Shaked Flur, University of Cambridge                            2017-2018   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.           *)
+(*  For author information see README.md.                                                 *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+import Map_extra
+
+open import Sail_impl_base
+open import MachineDefTypes
+import MachineDefFragments
+import MachineDefInstructionPredicates
+open import MachineDefUtils
+open import MachineDefUI
+open MaybeMonad
+
+(************************* propagate write *************************)
+
+let tso_ss_propagate_write_action _params state tid buffer' write =
+  let buffers' = Map.insert tid buffer' state.tso_ss_buffers in
+
+  let lock' =
+    if state.tso_ss_lock <> Nothing &&
+       buffer' = [] && MachineDefInstructionPredicates.is_atomic_write write.w_write_kind then
+      Nothing (* release the lock *)
+    else state.tso_ss_lock
+  in
+
+  let memory_writes' =
+    let old_mem =
+      List.mapMaybe
+        (fun (old_write, old_slices) ->
+          MachineDefFragments.match_writes
+            old_write.w_addr
+            old_slices
+            [ MachineDefFragments.write_with_complete_slice write;
+              (old_write, old_slices);
+            ]
+            []
+          $> snd $> List.lookup old_write >>= fun old_slices' ->
+          return (old_write, old_slices')
+        )
+        state.tso_ss_memory_writes
+    in
+    (write, [MachineDefFragments.complete_slice write.w_addr]) :: old_mem
+  in
+
+  <| tso_ss_buffers       = buffers';
+     tso_ss_lock          = lock';
+     tso_ss_memory_writes = memory_writes';
+     tso_ss_old_writes    = write :: state.tso_ss_old_writes;
+  |>
+
+let tso_ss_propagate_write_cand _params state tid : maybe (list write * write) =
+  guard (match state.tso_ss_lock with
+        | Nothing  -> true
+        | Just t -> t = tid
+        end) >>
+  Map.lookup tid state.tso_ss_buffers >>= fun buffer ->
+  List.dest_init buffer
+
+let tso_ss_propagate_write params state tid =
+  tso_ss_propagate_write_cand params state tid >>= fun (buffer', write) ->
+  let state_cont = fun () -> tso_ss_propagate_write_action params state tid buffer' write in
+  return (SS_only (SS_TSO_propagate_write_to_memory write) state_cont)
+
+(*************** storage system enumerate transitions ******************)
+
+let enumerate_trans_of_buffer params state (tid, _buffer)
+    : list (ss_trans tso_storage_subsystem_state)
+  =
+  match tso_ss_propagate_write params state tid with
+  | Nothing     -> []
+  | Just transition  -> [transition]
+  end
+
+(* collect all the storage subsystem transitions that are initiated *)
+(* by the storage subsystem.                                        *)
+let tso_ss_enumerate_transitions
+    (params: ss_params)
+    (state:  tso_storage_subsystem_state)
+    : list (ss_trans tso_storage_subsystem_state)
+  =
+  List.concatMap (enumerate_trans_of_buffer params state) (Map_extra.toList state.tso_ss_buffers)
+
+(*************************** accept write ***************************)
+
+(* accept_write: the storage subsystem can always accept any write from
+a thread, placing it at the top of the buffer associated with the thread *)
+let tso_ss_accept_write_action params state write =
+  let buffers = state.tso_ss_buffers in
+  let writes =
+    match Map.lookup write.w_thread buffers with
+    | Nothing     -> failwith "tso_ss_accept_write_action thread not found"
+    | Just buffer -> buffer
+    end
+  in
+  let writes' = write :: writes in
+  let buffers' = Map.insert write.w_thread writes' buffers in
+  let state' = <| state with tso_ss_buffers = buffers' |> in
+
+  if MachineDefInstructionPredicates.is_atomic_write write.w_write_kind then
+    let () = ensure (tso_ss_propagate_write_cand params state' write.w_thread = Just ([], write)) "fail" in
+    tso_ss_propagate_write_action params state' write.w_thread [] write
+  else
+    state'
+
+
+let tso_ss_accept_write_cand params state write : bool =
+  match state.tso_ss_lock with
+  | Nothing  -> true
+  | Just tid ->
+      tid = write.w_thread
+      && (MachineDefInstructionPredicates.is_atomic_write write.w_write_kind -->
+            match Map.lookup write.w_thread state.tso_ss_buffers with
+            | Nothing     -> failwith "tso_ss_accept_write_action thread not found"
+            | Just buffer -> buffer = []
+            end)
+  end
+
+let tso_ss_accept_write params state write =
+  guard (tso_ss_accept_write_cand params state write) >>
+  let state_cont = fun () -> tso_ss_accept_write_action params state write in
+  return state_cont
+
+(*************************** accept read ****************************)
+
+let tso_ss_accept_read_action _params state read =
+  let lock' =
+    if MachineDefInstructionPredicates.is_atomic_read read.r_read_kind then
+      Just read.r_thread
+    else
+      state.tso_ss_lock
+  in
+  <| state with tso_ss_lock = lock' |>
+
+let tso_ss_accept_read_cand _params state read : maybe memory_read_source =
+  guard (match state.tso_ss_lock with
+        | Nothing  -> true
+        | Just tid -> tid = read.r_thread
+        end) >>
+
+  let buffer =
+    match Map.lookup read.r_thread state.tso_ss_buffers with
+    | Nothing -> failwith "T_TSO_mem_satisfy_read can't find thread"
+    | Just ws -> List.map MachineDefFragments.write_with_complete_slice ws
+    end
+  in
+
+  let writes_slices =
+    if MachineDefInstructionPredicates.is_RISCV_read_strong_acquire read.r_read_kind &&
+        exists ((w, _) MEM buffer). MachineDefInstructionPredicates.is_RISCV_write_strong_release w.w_write_kind
+    then
+      List.takeWhile (fun (w, _) -> not (MachineDefInstructionPredicates.is_RISCV_write_strong_release w.w_write_kind)) buffer
+    else
+      buffer ++ state.tso_ss_memory_writes
+  in
+
+  MachineDefFragments.mrs_from_writes read.r_addr writes_slices
+
+let tso_ss_accept_read_request params state read =
+  tso_ss_accept_read_cand   params state read >>= fun mrs ->
+  let state_cont = fun () -> tso_ss_accept_read_action params state read in
+  return (state_cont, mrs)
+
+(********************* propagate barrier ****************************)
+
+let tso_ss_accept_strong_barrier_cand params state (b: barrier) =
+  match state.tso_ss_lock with
+  | Nothing  -> true
+  | Just tid -> tid = b.b_thread
+  end &&
+  match Map.lookup b.b_thread state.tso_ss_buffers with
+  | Nothing     -> failwith "tso_ss_accept_strong_barrier_cand no such thread"
+  | Just buffer -> buffer = []
+  end
+
+(************** storage system receive transitions ******************)
+
+let tso_ss_receive_transition params state = function
+  | T_fetch                   _ -> failwith "fetch is handled globally right now"
+  | T_propagate_write tl ->
+      let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+      match tl.tl_label with
+      | (write, Nothing, []) -> tso_ss_accept_write params state write
+      | (write, Just _, [])  -> tso_ss_accept_write params state write
+      | (_, _, _)            -> failwith "T_propagate_write expecting empty rf list"
+      end >>= fun state_cont ->
+      return (T_propagate_write tl', Just state_cont)
+  | T_propagate_barrier tl ->
+      (* currently assume any barrier is a strong barrier for TSO purposes *)
+      let b = tl.tl_label in
+      guard (tso_ss_accept_strong_barrier_cand params state b) >>
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_propagate_barrier tl', Nothing)
+  | T_TSO_mem_satisfy_read tl ->
+      let read = tl.tl_label in
+      tso_ss_accept_read_request params state read >>= fun (state_cont, mrs) ->
+      let tl' = <| tl with tl_suppl = Just (Just [mrs]) |> in
+      return (T_TSO_mem_satisfy_read tl', Just state_cont)
+  | T_try_store_excl tl ->
+      let (read, _, _) = tl.tl_label in
+      guard (match state.tso_ss_lock with
+            | Nothing  -> true
+            | Just tid -> tid = read.r_thread
+            end) >>
+      let tl' = <| tl with tl_suppl = Just () |> in
+      return (T_try_store_excl tl', Nothing)
+  | T_PLDI11_mem_satisfy_read _    -> fail
+  | T_Flat_mem_satisfy_read _      -> fail
+  | T_Flat_try_commit_store_cond _ -> fail
+  | T_mem_read_request _           -> fail
+  | T_POP_tm_start _               -> fail
+  | T_POP_tm_commit _              -> fail
+  | T_POP_tm_abort _               -> fail
+  | T_Promising_fulfil_promise _   -> fail
+  | T_Promising_propagate_write _  -> fail
+  | T_Promising_mem_satisfy_read _ -> fail
+  | T_Promising_propagate_write_nonshared _  -> fail
+  | T_Promising_mem_satisfy_read_nonshared _ -> fail
+  end
+
+
+(******************** initialise and finalise ***********************)
+
+let tso_ss_initial_state params tids initial_writes =
+  (* TODO: ensure initial writes don't overlap *)
+  let buffers = Map_extra.fromSet (fun id -> []) tids in
+  <|  tso_ss_buffers        = buffers;
+      tso_ss_lock           = Nothing;
+      tso_ss_memory_writes  = MachineDefFragments.complete_writes initial_writes;
+      tso_ss_old_writes     = initial_writes;
+  |>
+
+let tso_ss_is_final_state _params (state: tso_storage_subsystem_state) : bool =
+  Map.all (fun _ es -> es = []) state.tso_ss_buffers
+  && state.tso_ss_lock = Nothing
+
+(****************************** utils *******************************)
+
+let tso_ss_thread_memory_value_of_footprint _params state tid addr : memory_value =
+  let buffer =
+    match Map.lookup tid state.tso_ss_buffers with
+    | Nothing     -> failwith "T_TSO_mem_satisfy_read can't find thread"
+    | Just buffer -> buffer
+    end
+  in
+  let buffer_slices = List.map MachineDefFragments.write_with_complete_slice buffer in
+  let writes_slices = buffer_slices ++ state.tso_ss_memory_writes in
+  let write_slices_read_from =
+    match MachineDefFragments.match_writes addr [(MachineDefFragments.complete_slice addr)] writes_slices [] with
+    | ([], write_slices') -> write_slices'
+    | _                   -> failwith "read from uninitialized address"
+    end 
+  in
+  MachineDefFragments.value_of_write_slices write_slices_read_from
+
+let rec tso_ss_induced_order (cur: relon 'a) (pred: 'a -> 'a -> bool) (todo: list 'a) : relon 'a =
+  match todo with
+  | [] -> cur
+  | h :: tail -> tso_ss_induced_order (relonAddToTheLeft h (pred h) cur) pred tail
+  end
+
+let tso_ss_coherence params state =
+  let pred = fun w w' -> MachineDefFragments.non_empty_intersection w.w_addr w'.w_addr in
+  let relons = Map.range (Map.map (tso_ss_induced_order relonEmpty pred) state.tso_ss_buffers) in
+  let bigrelon = relonBigUnion relons in
+  (tso_ss_induced_order bigrelon pred state.tso_ss_old_writes).relon_rel
+  $> Relation.transitiveClosure
+
+
+let tso_make_ui_storage_subsystem_state
+    (ss:          maybe tso_storage_subsystem_state)
+    (ss':         tso_storage_subsystem_state)
+    (transitions: list (ui_trans 'ts 'ss))
+    : ui_storage_subsystem_state 'ts 'ss
+  =
+  let ss = fromMaybe ss' ss in
+  TSO_UI_storage
+    <|  (* ui storage state *)
+        ui_tso_ss_buffers = ss'.tso_ss_buffers;
+        ui_tso_ss_lock = ui_eq_diff2b ss.tso_ss_lock ss'.tso_ss_lock;
+        ui_tso_ss_memory_writes =
+          let cmp_write_addrs (w1, _) (w2, _) = compare w1.w_addr w2.w_addr in
+          let sorted_writes  = Sorting.sortByOrd cmp_write_addrs ss.tso_ss_memory_writes in
+          let sorted_writes' = Sorting.sortByOrd cmp_write_addrs ss'.tso_ss_memory_writes in
+          ui_list_diff3 sorted_writes sorted_writes';
+        (* storage transitions *)
+        ui_tso_transitions_propagate_write =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_TSO_propagate_write_to_memory _) _) -> true
+              | _ -> false
+              end)
+            transitions;
+    |>
+
+
+
+val tso_storage : storageSubsystem tso_storage_subsystem_state
+let tso_storage = 
+  <| ss_thread_memory_value_of_footprint = 
+       tso_ss_thread_memory_value_of_footprint;
+     ss_initial_state          = tso_ss_initial_state;
+     ss_is_final_state         = tso_ss_is_final_state;
+     ss_coherence              = tso_ss_coherence;
+     ss_clean_reads            = fun _ _ _ _ _ -> Nothing;
+     ss_stopped_promising = fun _ -> false;
+ |>
+
+val tso_machine_storage : forall 'ts. machineStorageSubsystem 'ts tso_storage_subsystem_state
+let tso_machine_storage = 
+  <| ss_enumerate_transitions  = tso_ss_enumerate_transitions;
+     ss_receive_transition = 
+       fun p s tl -> ListMonad.option_guard (tso_ss_receive_transition p s tl);
+     ss_enumerate_final_transitions = fun _ -> [];
+     ss_make_ui_storage_state = tso_make_ui_storage_subsystem_state;
+ |>

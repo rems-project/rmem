@@ -1,0 +1,223 @@
+(*=============================================================================================*)
+(*                                                                                             *)
+(*                rmem executable model                                                        *)
+(*                =====================                                                        *)
+(*                                                                                             *)
+(*  This file is:                                                                              *)
+(*                                                                                             *)
+(*  Copyright Christopher Pulte, University of Cambridge                           2016-2018   *)
+(*  Copyright Peter Sewell, University of Cambridge                                2014-2015   *)
+(*  Copyright Shaked Flur, University of Cambridge                           2014, 2016-2017   *)
+(*  Copyright Susmit Sarkar, University of St Andrews                                   2014   *)
+(*  Copyright Ohad Kammar, University of Cambridge (when this work was done)            2013   *)
+(*                                                                                             *)
+(*  All rights reserved.                                                                       *)
+(*                                                                                             *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.                *)
+(*  For author information see README.md.                                                      *)
+(*                                                                                             *)
+(*=============================================================================================*)
+
+open import Pervasives_extra
+
+(* Help emacs fontification -*-caml-*- *)
+
+(** Utility Definitions *)
+
+(* map key 'k' to value 'v' in associative list 'm' (add the pair or
+replace the value of existing key) *)
+val updateAssocList : forall 'a 'b. Eq 'a => 'a -> 'b -> list ('a * 'b) -> list ('a * 'b)
+let updateAssocList k v m =
+  match List.splitWhile (fun (k', _) -> k' <> k) m with
+  | (left, (_, _) :: right) -> left ++ ((k, v) :: right)
+  | (left, [])              -> (k, v) :: left
+  end
+
+
+let rec mapWithContext_helper f prefix suffix accum =
+  match suffix with
+  | [] -> List.reverse accum
+  | x::xs -> mapWithContext_helper f (prefix ++ [x]) xs ((f prefix x xs) :: accum)
+  end
+
+
+(* apply 'f prefix x suffix' to all (prefix ++ [x] ++ suffix) = l,
+ and return the results in a list *)
+val mapWithContext : forall 'a 'b. (list 'a -> 'a -> list 'a -> 'b) -> list 'a -> list 'b
+let mapWithContext f l = mapWithContext_helper f [] l []
+
+
+let rec list_minimumBy (ord: 'a -> 'a -> ordering) (l: list 'a) : maybe 'a =
+  List.foldl
+    (fun min a ->
+      match min with
+      | Just b  -> if ord a b = LT then Just a else Just b
+      | Nothing -> Just a
+      end)
+    Nothing
+    l
+
+(*: Map-like functions and Sets :*)
+let funupd f x y = fun x' -> if x'=x then y else f x'
+
+
+(*: \subsection{Relations} :*)
+open import Relation
+
+let acyclic (r : rel 'a 'a) = isIrreflexive (transitiveClosure r)
+
+
+(*: \subsection{Lists as FIFO's} :*)
+let add_event l e =
+      List.snoc e l
+
+let add_events l es =
+      l ++ es
+
+
+(* these propagated_before* functions assume xs is most-recent first, while
+events_propagated_to is stored most-recent last.  Probably we should switch globally to the former *)
+let rec propagated_before y xs =
+  match xs with
+  | [] -> failwith "propagated_before not found"
+  | x::xs' -> if x=y then xs else propagated_before y xs'
+  end
+
+let rec propagated_before_by_strict p xs = 
+  match xs with
+  | [] -> failwith "propagated_before_by_strict not found"
+  | x::xs' -> if p x then xs' else propagated_before_by_strict p xs'
+  end
+
+let rec propagated_before_by p xs = 
+  match xs with
+  | [] -> []
+  | x::xs' -> if p x then xs' else propagated_before_by p xs'
+  end
+
+
+
+
+
+(* From POP *)
+
+let rec order_to_list_helper domain order minimals =
+  if Set.null order then minimals ++ (Set_extra.toList domain)
+  else
+    let minimals' = (Relation.relDomain order) \ (Relation.relRange order) in
+    order_to_list_helper
+      (domain \ minimals')
+      {(a, b) | forall ((a, b) IN order) | a NIN minimals'}
+      (minimals ++ (Set_extra.toList minimals'))
+
+(* 'order_to_list d o' returns a list l such that e in l iff e in d,
+and (a,b) in o --> a appears in l before (closer to the head) b *)
+let order_to_list domain order =
+  let order = Relation.relRestrict order domain in
+  order_to_list_helper domain order []
+
+
+(* for initial-state writes we allow them to be any power of 2 sized-and-aligned *)
+
+let aligned (a: integer) (n: nat) = (a mod (integerFromNat n)) = 0
+
+let max_exp : nat = 29
+let max_size : nat = 2 ** max_exp
+
+let rec biggest_initial_aligned_two_to_the_n_region' (a:integer) (sz:nat) (exp:nat) =
+  if sz = 0 then
+    failwith "sz = 0 illegal for biggest_initial_aligned_two_to_the_n_region'"
+  else
+    let size = 2 ** exp in
+    if sz >= size && aligned a size then
+      size
+    else
+      biggest_initial_aligned_two_to_the_n_region' a sz (exp-1)
+
+let rec repartition ((a:integer),(sz:nat)) : list (integer*nat) =
+  if sz=0 then
+    []
+  else
+    if sz > max_size then failwith "repartition given too big a footprint" else
+    let size = biggest_initial_aligned_two_to_the_n_region' a sz max_exp in
+    let a' = a + (integerFromNat size) in
+    let fp = (a,size) in
+    let fps = repartition (a',sz-size) in
+      fp::fps
+
+
+let inline ensure_just (a : maybe 'a) (err : string) : 'a =
+  match a with
+  | Just a -> a
+  | Nothing -> failwith err
+  end
+
+let inline ensure_singleton (xs : list 'x) (err : string) : 'x = 
+  match xs with
+  | [] -> failwith err
+  | [x] -> x
+  | _ -> failwith err
+  end
+
+val head : forall 'a. list 'a -> 'a
+let head l = ensure_just (index l 0) "head: empty list"
+
+
+module ListMonad = struct
+  val (>>=) : forall 'a 'b. list 'a -> ('a -> list 'b) -> list 'b
+  let inline (>>=) = flip List.concatMap
+
+  val (>>) : forall 'b. list unit -> list 'b -> list 'b
+  let inline (>>) m n = m >>= fun () -> n
+
+  let inline return x = [x]
+  let mzero = []
+
+  val guard : bool -> list unit
+  let inline guard b = if b then return () else mzero
+
+
+  let inline option_guard = function
+    | Just a -> return a
+    | Nothing -> mzero
+  end
+
+end
+
+
+
+module SetMonad = struct
+  val (>>=) : forall 'a 'b. SetType 'a, SetType 'b => set 'a -> ('a -> set 'b) -> set 'b
+  let inline (>>=) = flip Set.bigunionMap
+
+  val (>>) : forall 'b. SetType 'b => set unit -> set 'b -> set 'b
+  let inline (>>) m n = m >>= fun () -> n
+
+  let inline return = Set.singleton
+  let mzero = Set.empty
+
+  val guard : bool -> set unit
+  let inline guard b = if b then return () else mzero
+
+  let inline option_guard = function
+    | Just a -> return a
+    | Nothing -> mzero
+  end
+
+end
+
+
+module MaybeMonad = struct
+  let inline (>>=) = Maybe.bind
+  let inline (>>) m n = m >>= fun () -> n
+
+  let inline return = Just
+  let mzero = Nothing
+
+  val guard : bool -> maybe unit
+  let inline guard b = if b then Just () else Nothing
+
+  let inline option_guard = id
+end
+
+

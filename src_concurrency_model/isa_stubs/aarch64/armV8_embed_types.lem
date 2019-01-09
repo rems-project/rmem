@@ -1,0 +1,28 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017                    *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives
+
+type reg_index = integer
+
+type ast =
+  | BranchImmediate of unit
+  | BranchConditional of unit
+  | CompareAndBranch of unit
+  | TestBitAndBranch of unit
+  | BranchRegister of (reg_index * unit)
+  | AArch64_ast_stub

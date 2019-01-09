@@ -1,0 +1,28 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017                    *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
+(*  For author information see README.md.                                        *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives_extra
+open import Power_embed_types
+open import State
+
+let decode _ : maybe ast = failwith "PPCGEN decode stub"
+let execute _ : M unit = failwith "PPCGEN execute stub"
+
+let supported_instructions _ : maybe ast = Nothing (*failwith "PPCGEN supported_instructions stub" *)
+let initial_analysis _ = failwith "PPCGEN initial_analysis stub"
+let recalculate_lswx_reg_footprint _ = failwith "POWER recalculate_lswx_reg_footprint stub"
+let recalculate_stswx_reg_footprint _ = failwith "POWER recalculate_stswx_reg_footprint stub"
