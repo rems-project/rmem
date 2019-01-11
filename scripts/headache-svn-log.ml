@@ -15,8 +15,8 @@
 (*                                                                               *)
 (*  All rights reserved.                                                         *)
 (*                                                                               *)
-(*  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  *)
-(*  For author information see README.md.                                        *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
 (*                                                                               *)
 (*===============================================================================*)
 
@@ -151,8 +151,8 @@ let make_header authors =
   let rmem_string1 = "              rmem executable model\n" in
   let rmem_string2 = "              =====================\n\nThis file is:\n" in
   let rights_string = "All rights reserved.\n" in
-  let license_string = "The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.\n" in
-  let contributors_string = "For author information see README.md.            \n" in
+  let license_string = "It is part of the rmem tool, distributed under the 2-clause BSD licence in \n" in
+  let contributors_string = "LICENCE.txt.                                     \n" in
   Printf.sprintf "\n%s%s\n%s\n%s\n%s%s"
     rmem_string1
     rmem_string2

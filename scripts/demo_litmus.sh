@@ -13,8 +13,8 @@
 #                                                                               #
 #  All rights reserved.                                                         #
 #                                                                               #
-#  The rmem tool is distributed under the 2-clause BSD license in LICENCE.txt.  #
-#  For author information see README.md.                                        #
+#  It is part of the rmem tool, distributed under the 2-clause BSD licence in   #
+#  LICENCE.txt.                                                                 #
 #                                                                               #
 #===============================================================================#
 
