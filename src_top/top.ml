@@ -12,7 +12,7 @@
 (*  Copyright Kathy Gray, University of Cambridge (when this work was done)              2014-2015, 2017   *)
 (*  Copyright Jon French, University of Cambridge                                              2017-2018   *)
 (*  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)                     2011-2012   *)
-(*  Copyright Luc Maranget, INRIA Paris                                                       2012, 2014   *)
+(*  Copyright Luc Maranget, INRIA, Paris, France                                              2012, 2014   *)
 (*  Copyright Robert Norton-Wright, University of Cambridge                                         2016   *)
 (*  Copyright Ohad Kammar, University of Cambridge (when this work was done)                        2013   *)
 (*  Copyright Dominic Mulligan, University of Cambridge (when this work was done)              2013-2014   *)

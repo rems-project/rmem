@@ -7,7 +7,7 @@
 (*                                                                                                    *)
 (*  Copyright Peter Sewell, University of Cambridge                                 2011-2012, 2014   *)
 (*  Copyright Susmit Sarkar, University of St Andrews                               2011-2012, 2014   *)
-(*  Copyright Luc Maranget, INRIA Paris                                                        2012   *)
+(*  Copyright Luc Maranget, INRIA, Paris, France                                               2012   *)
 (*  Copyright Sela Mador-Haim, University of Pennsylvania (when this work was done)       2011-2012   *)
 (*  Copyright Ohad Kammar, University of Cambridge (when this work was done)              2013-2014   *)
 (*  Copyright Shaked Flur, University of Cambridge                                        2016-2017   *)

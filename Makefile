@@ -13,9 +13,9 @@
 #  Copyright Susmit Sarkar, University of St Andrews                               2011-2012, 2014-2015   #
 #  Copyright Ohad Kammar, University of Cambridge (when this work was done)                   2013-2014   #
 #  Copyright Kathy Gray, University of Cambridge (when this work was done)                   2015, 2017   #
-#  Copyright Francesco Zappa Nardelli, INRIA Paris                                                 2011   #
+#  Copyright Francesco Zappa Nardelli, INRIA, Paris, France                                        2011   #
 #  Copyright Robert Norton-Wright, University of Cambridge                                    2016-2017   #
-#  Copyright Luc Maranget, INRIA Paris                                                  2011-2012, 2015   #
+#  Copyright Luc Maranget, INRIA, Paris, France                                         2011-2012, 2015   #
 #  Copyright Sela Mador-Haim, University of Pennsylvania (when this work was done)                 2012   #
 #  Copyright Jean Pichon-Pharabod, University of Cambridge                                    2013-2014   #
 #  Copyright Gabriel Kerneis, University of Cambridge (when this work was done)                    2014   #

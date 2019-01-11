@@ -9,7 +9,7 @@
 (*  Copyright Christopher Pulte, University of Cambridge                                     2015-2018   *)
 (*  Copyright Peter Sewell, University of Cambridge                               2011-2014, 2016-2017   *)
 (*  Copyright Susmit Sarkar, University of St Andrews                                        2011-2015   *)
-(*  Copyright Francesco Zappa Nardelli, INRIA Paris                                               2011   *)
+(*  Copyright Francesco Zappa Nardelli, INRIA, Paris, France                                      2011   *)
 (*  Copyright Ohad Kammar, University of Cambridge (when this work was done)                      2013   *)
 (*  Copyright Linden Ralph, University of Cambridge (when this work was done)                     2017   *)
 (*  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)                        2011   *)

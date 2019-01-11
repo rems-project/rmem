@@ -21,7 +21,7 @@ Copyright Stephen Kell, University of Cambridge (when this work was done)       
 Copyright Ohad Kammar, University of Cambridge (when this work was done)                   2013-2014 
 Copyright Sela Mador-Haim, University of Pennsylvania (when this work was done)            2011-2012 
 Copyright Linden Ralph, University of Cambridge (when this work was done)                  2017-2017 
-Copyright Francesco Zappa Nardelli, INRIA Paris                                            2011-2011 
+Copyright Francesco Zappa Nardelli, INRIA, Paris, France                                   2011-2011 
 Copyright Gabriel Kerneis, University of Cambridge (when this work was done)               2014-2014 
 Copyright Jean Pichon-Pharabod, University of Cambridge                                    2013-2015 
 Copyright Kyndylan Nienhuis, University of Cambridge                                       2016-2016 

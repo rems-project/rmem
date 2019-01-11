@@ -11,7 +11,7 @@
 (*  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)               2011-2012   *)
 (*  Copyright Christopher Pulte, University of Cambridge                                      2016   *)
 (*  Copyright Ohad Kammar, University of Cambridge (when this work was done)                  2013   *)
-(*  Copyright Luc Maranget, INRIA Paris                                                       2012   *)
+(*  Copyright Luc Maranget, INRIA, Paris, France                                              2012   *)
 (*                                                                                                   *)
 (*  All rights reserved.                                                                             *)
 (*                                                                                                   *)

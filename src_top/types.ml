@@ -8,7 +8,7 @@
 (*  Copyright Peter Sewell, University of Cambridge                          2011-2012, 2014, 2016   *)
 (*  Copyright Shaked Flur, University of Cambridge                                 2014-2015, 2017   *)
 (*  Copyright Susmit Sarkar, University of St Andrews                                    2011-2014   *)
-(*  Copyright Francesco Zappa Nardelli, INRIA Paris                                           2011   *)
+(*  Copyright Francesco Zappa Nardelli, INRIA, Paris, France                                  2011   *)
 (*  Copyright Ohad Kammar, University of Cambridge (when this work was done)                  2013   *)
 (*  Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)                    2011   *)
 (*                                                                                                   *)

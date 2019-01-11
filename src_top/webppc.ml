@@ -12,7 +12,7 @@
 (*  Copyright Susmit Sarkar, University of St Andrews                             2012, 2014   *)
 (*  Copyright Ohad Kammar, University of Cambridge (when this work was done)            2013   *)
 (*  Copyright Jean Pichon-Pharabod, University of Cambridge                             2014   *)
-(*  Copyright Francesco Zappa Nardelli, INRIA Paris                                     2011   *)
+(*  Copyright Francesco Zappa Nardelli, INRIA, Paris, France                            2011   *)
 (*                                                                                             *)
 (*  All rights reserved.                                                                       *)
 (*                                                                                             *)

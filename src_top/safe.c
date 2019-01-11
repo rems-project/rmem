@@ -5,7 +5,7 @@
 /*                                                                                        */
 /*  This file is:                                                                         */
 /*                                                                                        */
-/*  Copyright Luc Maranget, INRIA Paris                                       2011-2012   */
+/*  Copyright Luc Maranget, INRIA, Paris, France                              2011-2012   */
 /*  Copyright Peter Sewell, University of Cambridge                          2011, 2014   */
 /*  Copyright Ohad Kammar, University of Cambridge (when this work was done)       2013   */
 /*  Copyright Susmit Sarkar, University of St Andrews                              2014   */

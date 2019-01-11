@@ -11,7 +11,7 @@
 (*  Copyright Christopher Pulte, University of Cambridge                    2015-2016, 2018   *)
 (*  Copyright Robert Norton-Wright, University of Cambridge                       2016-2017   *)
 (*  Copyright Peter Sewell, University of Cambridge                                    2014   *)
-(*  Copyright Luc Maranget, INRIA Paris                                                2017   *)
+(*  Copyright Luc Maranget, INRIA, Paris, France                                       2017   *)
 (*  Copyright Kathy Gray, University of Cambridge (when this work was done)            2015   *)
 (*                                                                                            *)
 (*  All rights reserved.                                                                      *)

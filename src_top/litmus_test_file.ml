@@ -10,7 +10,7 @@
 (*  Copyright Jon French, University of Cambridge                             2016-2018   *)
 (*  Copyright Robert Norton-Wright, University of Cambridge                        2017   *)
 (*  Copyright Peter Sewell, University of Cambridge                                2016   *)
-(*  Copyright Luc Maranget, INRIA Paris                                            2017   *)
+(*  Copyright Luc Maranget, INRIA, Paris, France                                   2017   *)
 (*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
 (*                                                                                        *)
 (*  All rights reserved.                                                                  *)

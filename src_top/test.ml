@@ -8,7 +8,7 @@
 (*  Copyright Susmit Sarkar, University of St Andrews     2014-2015              *)
 (*  Copyright Shaked Flur, University of Cambridge        2016-2018              *)
 (*  Copyright Peter Sewell, University of Cambridge      2014, 2016              *)
-(*  Copyright Luc Maranget, INRIA Paris                        2017              *)
+(*  Copyright Luc Maranget, INRIA, Paris, France               2017              *)
 (*  Copyright Christopher Pulte, University of Cambridge       2016              *)
 (*  Copyright Jon French, University of Cambridge              2016              *)
 (*                                                                               *)
