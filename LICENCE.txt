@@ -4,9 +4,9 @@ rmem tool
 LICENCE
 -------
 
-The rmem tool is licensed under the 2-Clause BSD Licence below, also called
-the "Simplified BSD Licence" or the "FreeBSD Licence", except the files
-listed under EXCEPTIONS below.
+The rmem tool is licensed under the 2-Clause BSD Licence below, also
+called the "Simplified BSD Licence" or the "FreeBSD Licence", except
+the files listed under EXCEPTIONS below.
 
 Copyright Peter Sewell, University of Cambridge                                            2011-2018 
 Copyright Shaked Flur, University of Cambridge                                             2014-2018 
