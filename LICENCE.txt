@@ -1,21 +1,19 @@
-NOTE:
-
-This licence applies to all files of the rmem tool distribution,
-except the files listed under EXCEPTIONS.
-
+rmem tool
+=========
 
 LICENCE
 -------
 
-The rmem tool is licensed under the 2-Clause BSD Licence, also called
-the "Simplified BSD License" or the "FreeBSD Licence".
+The rmem tool is licensed under the 2-Clause BSD Licence below, also called
+the "Simplified BSD Licence" or the "FreeBSD Licence", except the files
+listed under EXCEPTIONS below.
 
 Copyright Peter Sewell, University of Cambridge                                            2011-2018 
 Copyright Shaked Flur, University of Cambridge                                             2014-2018 
 Copyright Christopher Pulte, University of Cambridge                                       2014-2018 
 Copyright Jon French, University of Cambridge                                              2015-2018 
 Copyright Kathy Gray, University of Cambridge (when this work was done)                    2014-2017 
-Copyright Luc Maranget, INRIA Paris-Rocquencourt                                2011-2012, 2014-2018 
+Copyright Luc Maranget, INRIA, Paris, France                                    2011-2012, 2014-2018 
 Copyright Susmit Sarkar, University of St Andrews                                          2011-2016 
 Copyright Robert Norton-Wright, University of Cambridge                                    2016-2017 
 Copyright Pankaj Pawan, IIT Kanpur and INRIA (when this work was done)                     2011-2012 
