@@ -153,7 +153,8 @@ type search_state =
     (* back track when these states are reached but also record them as if they were final *)
     targets:       sst_predicate list;
 
-    (* filter out transitions that do not match any of these predicates *)
+    (* filter out transitions that do not match all of these predicates,
+    i.e., a transition must satisfy all the filters to not be filtered out *)
     filters:       trans_predicate list;
 
     test_info:     Test.info;
