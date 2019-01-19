@@ -573,20 +573,23 @@ CLEANFILES += sail2_version.ml
 get_all_deps: get_all_isa_models
 .PHONY: get_all_isa_models
 
-get_isa_model_%: ISABUILDDIR=build_isa_models/$*
-get_isa_model_%: BUILDISA=true
-get_isa_model_%: BUILDISATARGET=all
+get_isa_model_%: ISABUILDDIR ?= build_isa_models/$*
+get_isa_model_%: BUILDISA ?= true
+get_isa_model_%: BUILDISATARGET ?= all
+get_isa_model_%: ISASAILDIR ?= $(ISADIR)
+get_isa_model_%: ISALEMDIRS ?= $(ISADIR)
+get_isa_model_%: ISAGENDIR ?= $(ISADIR)/gen
 get_isa_model_%: FORCE
 	rm -rf $(ISABUILDDIR)
 	mkdir -p $(ISABUILDDIR)
 	$(if $(call equal,$(BUILDISA),true),\
 	  $(MAKE) -C $(ISADIR) $(BUILDISATARGET) &&\
-	  cp -a $(ISADIR)/*.sail $(ISABUILDDIR) &&\
+	  cp -a $(ISASAILDIR)/*.sail $(ISABUILDDIR) &&\
 	  { [ ! -f $(ISADIR)/$(ISANAME).ml ] || cp -a $(ISADIR)/$(ISANAME).ml $(ISABUILDDIR)/$(ISANAME).ml.notstub; })
-	cp -a $(ISADIR)/*.lem $(ISABUILDDIR)
+	cp -a $(ISALEMDIRS:=/*.lem) $(ISABUILDDIR)
 	cp -a src_top/generic_sail_ast_def_stub.ml $(ISABUILDDIR)/$(ISANAME).ml.stub
 	mkdir -p $(ISABUILDDIR)/gen
-	cp -a $(ISADIR)/gen/* $(ISABUILDDIR)/gen
+	cp -a $(ISAGENDIR)/* $(ISABUILDDIR)/gen/
 	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
@@ -643,9 +646,13 @@ get_all_isa_models: get_isa_model_mips
 
 get_isa_model_riscv: ISANAME=riscv
 get_isa_model_riscv: ISADIR=$(riscvdir)
+get_isa_model_riscv: ISASAILDIR=$(ISADIR)/model
+get_isa_model_riscv: ISALEMDIRS=$(ISADIR)/generated_definitions/lem
+get_isa_model_riscv: ISALEMDIRS+=$(ISADIR)/handwritten_support
+get_isa_model_riscv: ISAGENDIR=$(ISADIR)/handwritten_support/hgen
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
-get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv.lem riscv_sequential.lem
+get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" generated_definitions/lem/riscv.lem generated_definitions/lem/riscv_sequential.lem
 ifeq ($(filter RISCV,$(ISA_LIST)),)
   get_isa_model_riscv: BUILDISA=false
   RMEMSTUBS += build_isa_models/riscv/riscv.ml
