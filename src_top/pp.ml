@@ -1067,6 +1067,18 @@ let pp_write_and_time_uncoloured m (w,t) =
     (pp_write_value m w)
     (pp_t t)
 
+let pp_write_time_and_maybetid_uncoloured m (w,t,maybetid) =
+  sprintf "%s%s %s=%s @ %s%s"
+    (pp_pretty_eiid m w.weiid)
+    (pp_brief_write_kind m w.w_write_kind)
+    (pp_footprint m (Some w.w_ioid) w.w_addr)
+    (pp_write_value m w)
+    (pp_t t)
+    (match maybetid with
+     | Some tid -> " (owned by " ^ string_of_int tid ^ ")"
+     | None -> ""
+    )
+
 let pp_write_and_view_uncoloured m (w,v) =
   sprintf "%s%s %s=%s. View = %s"
     (pp_pretty_eiid m w.weiid)
@@ -1780,6 +1792,7 @@ let pp_t_thread_start_label ?(graph=false) m tl =
 
 let pp_trans_label_only ?(graph=false) m (t: ('ts,'ss) trans) =
   begin match t with
+  | Sys_trans _ -> "Finalise Promising execution"
   | SS_trans (SS_only (t, _))    -> fst (pp_ss_only_label ~graph m t)
   | SS_trans (SS_sync (t, _, _)) -> fst (pp_ss_sync_label ~graph m t)
   | T_trans (T_only tl)          -> fst (pp_t_only_label ~graph m tl)
@@ -1819,6 +1832,7 @@ let pp_t_thread_start_trans ?(graph=false) m tl =
 
 let pp_trans ?(graph=false) m (t: ('ts,'ss) trans) =
   match t with
+  | Sys_trans _ -> "Finalise Promising execution"
   | SS_trans (SS_only (t', _))    -> pp_ss_only_trans ~graph m t'
   | SS_trans (SS_sync (t', _, _)) -> pp_ss_sync_trans ~graph m t'
   | T_trans (T_only tl)           -> pp_t_only_trans ~graph m tl
@@ -2194,7 +2208,8 @@ let tso_pp_ui_storage_subsystem_state m model ss =
 
 let pp_pssto_state m model ss =
   let memory =
-    pp_changed3_list_body m pp_write_and_time_uncoloured ss.ui_pssto_memory
+    pp_changed3_list_body m
+      pp_write_time_and_maybetid_uncoloured ss.ui_pssto_memory
   in
 
   let stopped_promising = 

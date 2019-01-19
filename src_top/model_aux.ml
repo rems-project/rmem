@@ -474,6 +474,9 @@ let fuzzy_compare_transitions trans1 trans2 =
   | (T_trans _, _) -> 1
   | (_, T_trans _) -> -1
   *)
+    
+  | (Sys_trans _, _) -> 1
+  | (_, Sys_trans _) -> -1
   end
 
 
@@ -902,6 +905,13 @@ let thread_certify_after_stop_promising_update params value =
   {params with t = {params.t with thread_certify_after_stop_promising = value}}
 let thread_certify_after_stop_promising_value params = params.t.thread_certify_after_stop_promising
 
+let thread_run_after_stop_promising_assoc =
+  [(true,       "promising_run_after_stop_promising");
+   (false,      "promising_stop_running_after_stop_promising")]
+let thread_run_after_stop_promising_update params value = 
+  {params with t = {params.t with thread_run_after_stop_promising = value}}
+let thread_run_after_stop_promising_value params = params.t.thread_run_after_stop_promising
+
 let promising_partial_order_assoc =
   [(true,       "promising_partial_order");
    (false,      "promising_total_order")]
@@ -962,6 +972,7 @@ let parsers =
     gen_parser thread_allow_write_subsumption_assoc thread_allow_write_subsumption_update;
     gen_parser thread_fail_on_loop_assoc thread_fail_on_loop_update;
     gen_parser thread_certify_after_stop_promising_assoc thread_certify_after_stop_promising_update;
+    gen_parser thread_run_after_stop_promising_assoc thread_run_after_stop_promising_update;
     gen_parser promising_partial_order_assoc promising_partial_order_update;
 
 (*    gen_parser coherence_commit_assoc coherence_commit_update;*)
@@ -983,6 +994,7 @@ let model_strings =
   (assoc_image thread_allow_write_subsumption_assoc) @
   (assoc_image thread_fail_on_loop_assoc) @
   (assoc_image thread_certify_after_stop_promising_assoc) @
+  (assoc_image thread_run_after_stop_promising_assoc) @
   (assoc_image promising_partial_order_assoc) @
   (* storage: *)
 (*  (assoc_image coherence_commit_assoc) @*)
@@ -1004,6 +1016,7 @@ let current_model params =
     (List.assoc (thread_allow_write_subsumption_value params) thread_allow_write_subsumption_assoc);
     (List.assoc (thread_fail_on_loop_value params) thread_fail_on_loop_assoc);
     (List.assoc (thread_certify_after_stop_promising_value params) thread_certify_after_stop_promising_assoc);
+    (List.assoc (thread_run_after_stop_promising_value params) thread_run_after_stop_promising_assoc);
     (List.assoc (promising_partial_order_value params) promising_partial_order_assoc);
     (* storage: *)
 (*    (List.assoc (coherence_commit_value params) coherence_commit_assoc);*)

@@ -1105,7 +1105,7 @@ type writedata = <| wd_w : write;
                     wd_req_view : view |>
 
 type pssto = 
-  <| pssto_memory : list (write * t); 
+  <| pssto_memory : list (write * t * maybe thread_id); 
      pssto_stopped_promising : bool; |>
 
 type psspo = 
@@ -1802,6 +1802,7 @@ type thread_params =
 
      branch_targets: branch_targets_map;
 
+     thread_run_after_stop_promising : bool;
      thread_certify_after_stop_promising : bool;
      thread_promising_fuel : nat;
 
@@ -2203,6 +2204,11 @@ let ioid_of_thread_trans = function
   | T_thread_start tl -> tl.tl_cont.tc_ioid
   end
 
+let is_t_sync = function
+  | T_only _ -> false
+  | T_sync _ _ -> true
+  | T_thread_start _ -> false
+  end
 
 
 (** whole-system states and transitions *)
@@ -2213,21 +2219,25 @@ for the synced counter part (thread/storage) *)
 type trans 'ts 'ss =
   | SS_trans of sys_ss_trans 'ts 'ss
   | T_trans  of sys_thread_trans 'ts 'ss
+  | Sys_trans of map thread_id 'ts * 'ss
 
 let principal_ioid_of_trans (t: trans 'ts 'ss) =
   match t with
   | SS_trans t -> principal_ioid_of_ss_trans t
   | T_trans t  -> ioid_of_thread_trans t
+  | Sys_trans _ _ -> (1000,0) (* bogus ioid *)
   end
    
 let is_storage_transition : trans 'ts 'ss -> bool = function
   | SS_trans _ -> true
   | T_trans _  -> false
+  | Sys_trans _ _ -> false
   end
 
 let ioid_of_thread_transition : trans 'ts 'ss -> maybe ioid = function
   | SS_trans _ -> Nothing
   | T_trans t  -> Just (ioid_of_thread_trans t)
+  | Sys_trans _ _ -> Nothing
   end
 
 let is_transition_of_ioid (target_ioid: ioid) (transition: trans 'ts 'ss) : bool =
@@ -2238,6 +2248,7 @@ let is_transition_of_ioid (target_ioid: ioid) (transition: trans 'ts 'ss) : bool
 let thread_id_of_thread_transition : trans 'ts 'ss -> maybe thread_id = function
   | SS_trans _ -> Nothing
   | T_trans t  -> Just (tid_of_thread_trans t)
+  | Sys_trans _ _ -> Nothing
   end
 
 let is_transition_of_thread (target_tid : nat) (transition: trans 'ts 'ss) : bool =
@@ -2245,7 +2256,11 @@ let is_transition_of_thread (target_tid : nat) (transition: trans 'ts 'ss) : boo
   $> Maybe.map ((=) target_tid)
   $> fromMaybe false
 
-
+let is_thread_transition = function
+  | SS_trans _ -> false
+  | T_trans _ -> true
+  | Sys_trans _ _ -> false
+end
 
 (** ***********************  UI auxiliary types ******************)
 
@@ -2345,7 +2360,7 @@ type tso_ui_storage_subsystem_state 'ts 'ss =
 
 type pssto_ui_state 'ts 'ss =
   <|  (* storage state *)
-      ui_pssto_memory: list (changed3 (write * t));
+      ui_pssto_memory: list (changed3 (write * t * maybe thread_id));
       ui_pssto_stopped_promising: changed2b bool;
       ui_pssto_transitions: list (ui_trans 'ts 'ss);
   |>

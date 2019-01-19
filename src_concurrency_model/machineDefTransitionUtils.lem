@@ -37,6 +37,7 @@ open import Sail_values
 let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe MachineDefTypes.footprint =
   match transition with
   | SS_trans _ -> Nothing
+  | Sys_trans _ _ -> Nothing
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_internal_outcome      -> Nothing
@@ -108,6 +109,7 @@ let trans_reads_footprint
 let write_footprints_of_trans (transition: trans 'ts 'ss) : list MachineDefTypes.footprint =
   match transition with
   | SS_trans _ -> []
+  | Sys_trans _ _ -> []
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_internal_outcome       -> []
@@ -231,6 +233,7 @@ let is_register_read_or_write_transition : (trans 'ts 'ss -> bool) = function
   end
 
 let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = function
+  | Sys_trans _ _ -> false
   | SS_trans ss_trans ->
       match ss_trans with
       | SS_only ss_only_trans _ ->
@@ -517,6 +520,8 @@ let priority_transitions params (ss_final_state : bool) (_: eager_mode) :
   | Promising_thread_model -> (* also see optimised transition enumeration *)
      if not params.ss.promise_first then
        []
+     else if ss_final_state && not (params.t.thread_run_after_stop_promising) then
+       [(fun t -> true, false)]
      else if ss_final_state (* stopped_promising = true *) then
        [(fun t -> not (MachineDefPromisingARM.promising_shared_write t), true);
         (fun t -> true, true)] 
