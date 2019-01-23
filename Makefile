@@ -430,8 +430,7 @@ ifneq ($(MISSING_PKGS),)
 	$(OPAM) install $(MISSING_PKGS)
   else
 	$(warning missing packages: $(MISSING_PKGS))
-	$(warning please install the packages above (e.g. using the scripts in ./regression-rems/))
-	$(warning or install OPAM and try again)
+	$(warning please install the packages above or install OPAM and try again)
 	$(error missing OCaml packages)
   endif
 else
@@ -888,11 +887,6 @@ headers_makefiles:
 		echo "Processing $(FILE)"; scripts/headache-svn-log.ml $(FILE); \
 	)
 
-headers_regression:
-	@$(foreach FILE, $(shell find regression -maxdepth 1 -type f -name "*.sh" -or -name "Makefile*"), \
-		echo "Processing $(FILE)"; scripts/headache-svn-log.ml $(FILE); \
-	)
-
 # headers_scripts:
 # 	@$(foreach FILE, $(shell find scripts), \
 # 		echo "Processing $(FILE)"; scripts/headache-svn-log.ml $(FILE); \
@@ -903,7 +897,6 @@ headers_src_concurrency_model \
 headers_src_top \
 headers_src_marshal_defs \
 headers_src_web_interface \
-headers_regression \
 headers_makefiles
 #headers_scripts \
 
@@ -912,7 +905,6 @@ headers_src_concurrency_model \
 headers_src_top \
 headers_src_marshal_defs \
 headers_src_web_interface \
-headers_regression \
 headers_makefiles
 # headers_scripts \
 
@@ -959,17 +951,21 @@ sloc_isa_model_%: FORCE
 
 ######################################################################
 
-sanity:
-	$(MAKE) -s -C regression suite-sanity ISADRIVERS="interp shallow" TARGETS=clean-model
-	$(MAKE) -s -C regression suite-sanity ISADRIVERS="interp shallow"
-	$(MAKE) -s -C regression suite-sanity ISADRIVERS="interp shallow" TARGETS=report-junit-testcase > sanity.tmp
+jenkins-sanity: sanity.xml
+.PHONY: jenkins-sanity
+
+sanity.xml: REGRESSIONDIR = ../litmus-tests-regression-machinery
+sanity.xml: FORCE
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity ISADRIVERS="interp shallow" TARGETS=clean-model
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity ISADRIVERS="interp shallow"
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity ISADRIVERS="interp shallow" TARGETS=report-junit-testcase > '$@.tmp'
 	{ printf '<testsuites>\n' &&\
-	  printf '  <testsuite name="sanity" tests="%d" failures="%d" timestamp="%s">\n' "$$(grep -c -F '<testcase name=' sanity.tmp)" "$$(grep -c -F '<error message="fail">' sanity.tmp)" "$$(date)" &&\
-	  sed 's/^/    /' sanity.tmp &&\
+	  printf '  <testsuite name="sanity" tests="%d" failures="%d" timestamp="%s">\n' "$$(grep -c -F '<testcase name=' '$@.tmp')" "$$(grep -c -F '<error message="fail">' '$@.tmp')" "$$(date)" &&\
+	  sed 's/^/    /' '$@.tmp' &&\
 	  printf '  </testsuite>\n' &&\
 	  printf '</testsuites>\n';\
-	} > sanity.xml
-	rm -rf sanity.tmp
+	} > '$@'
+	rm -rf '$@.tmp'
 
 ######################################################################
 
