@@ -956,9 +956,9 @@ jenkins-sanity: sanity.xml
 
 sanity.xml: REGRESSIONDIR = ../litmus-tests-regression-machinery
 sanity.xml: FORCE
-	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity ISADRIVERS="interp shallow" TARGETS=clean-model
-	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity ISADRIVERS="interp shallow"
-	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity ISADRIVERS="interp shallow" TARGETS=report-junit-testcase > '$@.tmp'
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow" TARGETS=clean-model
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow"
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow" TARGETS=report-junit-testcase > '$@.tmp'
 	{ printf '<testsuites>\n' &&\
 	  printf '  <testsuite name="sanity" tests="%d" failures="%d" timestamp="%s">\n' "$$(grep -c -F '<testcase name=' '$@.tmp')" "$$(grep -c -F '<error message="fail">' '$@.tmp')" "$$(date)" &&\
 	  sed 's/^/    /' '$@.tmp' &&\
