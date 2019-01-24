@@ -117,7 +117,7 @@ let make_tikz_graph
     let es =
       match events with
       | e :: [] -> e
-      | _ -> "\n    " ^ (String.concat "\n    " events) ^ "\n  "
+      | _ -> "\n    " ^ (String.concat ",\n    " events) ^ "\n  "
     in
     sprintf "%s/.events={%s}," ioid es
   in
@@ -127,7 +127,7 @@ let make_tikz_graph
   in
 
   let pp_tikz_edge label start target : string =
-    sprintf "(%s) edge[%s] (%s)" start label target
+    sprintf "(%s) edge[/litmus/%s] (%s)" start label target
   in
 
   let pp_tikz_instruction_pic
@@ -168,8 +168,8 @@ let make_tikz_graph
       |> IoidMap.bindings
       |> List.map
           (fun (ioid, bys) ->
-            List.mapi
-              (fun i by -> pp_tikz_edge by (pp_tikz_pretty_ioid ioid) pp_ioid)
+            List.map
+              (fun by -> pp_tikz_edge by (pp_tikz_pretty_ioid ioid) pp_ioid)
               bys)
       |> List.concat
       |> String.concat "\n          "
@@ -241,7 +241,7 @@ let make_tikz_graph
             let events =
               List.map
                 (fun (r, mrs) ->
-                  sprintf "node[mem read={%s:%s %s=%s}]"
+                  sprintf "%s/.mem read={%s %s=%s}"
                       (pp_tikz_pretty_eiid m r.reiid)
                       (Pp.pp_brief_read_kind m r.r_read_kind)
                       (pp_tikz_footprint r.r_addr)
@@ -264,7 +264,7 @@ let make_tikz_graph
             let events =
               List.map
                 (fun w ->
-                    sprintf "node[mem write={%s:%s %s=%s}]"
+                    sprintf "%s/.mem write={%s %s=%s}"
                       (pp_tikz_pretty_eiid m w.weiid)
                       (Pp.pp_brief_write_kind m w.w_write_kind)
                       (pp_tikz_footprint w.w_addr)
@@ -287,7 +287,7 @@ let make_tikz_graph
           | rs ->
               List.map
                 (fun (r, mrs) ->
-                  sprintf "node[mem read={%s:%s %s=%s}]"
+                  sprintf "%s/.mem read={%s %s=%s}"
                       (pp_tikz_pretty_eiid m r.reiid)
                       (Pp.pp_brief_read_kind m r.r_read_kind)
                       (pp_tikz_footprint r.r_addr)
@@ -302,7 +302,7 @@ let make_tikz_graph
           | ws ->
               List.map
                 (fun w ->
-                    sprintf "node[mem write={%s:%s %s=%s}]"
+                    sprintf "%s/.mem write={%s %s=%s}"
                       (pp_tikz_pretty_eiid m w.weiid)
                       (Pp.pp_brief_write_kind m w.w_write_kind)
                       (pp_tikz_footprint w.w_addr)
@@ -364,37 +364,33 @@ let make_tikz_graph
             *)
           in
 
+          let assem =
+            sprintf "\\node[/litmus/assem={%s}] {\\assem|%s|}; \\litmusendinst"
+              (pp_tikz_pretty_ioid inst.cex_instance_ioid)
+              pp_instruction
+          in
 
           begin match Pp.lookup_symbol m.pp_symbol_table inst.cex_program_loc with
-          | None ->
-            [ sprintf "\\node[assem={%s}] {\\assem|%s|};"
-                (pp_tikz_pretty_ioid inst.cex_instance_ioid)
-                pp_instruction
-            ]
+          | None -> [assem]
           | Some label ->
-            [ sprintf "\\node[assem label={%s}];"
-                label
-              ;
-              sprintf "\\node[assem={%s}] {\\assem|%s|};"
-                (pp_tikz_pretty_ioid inst.cex_instance_ioid)
-                pp_instruction
+            [ sprintf "\\node[/litmus/assem label={%s}]; \\litmusendinst" label;
+              assem
             ]
           end)
       |> List.concat
-      |> String.concat " \\|\n    "
+      |> String.concat "\n    "
     in
 
-    (sprintf  "\\begin{scope}[thread=%d,\n" tid) ^
+    (sprintf  "\\begin{scope}[/litmus/thread=%d,\n" tid) ^
     (sprintf  "  %s\n" (String.concat "\n  " (List.rev pics))) ^
               "]\n" ^
-    (sprintf  "  \\node[instructions] (instructions %d) {\n" tid) ^
+    (sprintf  "  \\node[/litmus/instructions] (instructions %d) {\n" tid) ^
     (*(sprintf  "    %s\n" insts) ^
               "    \\\\ % instructions must always end with this\n" ^*)
-    (sprintf  "    %s \\lastinst\n" insts) ^
-              "  };\n" ^
-    (sprintf  "  \\node[thread header, above=of instructions %d] {Thread %d};\n\n" tid tid) ^
+    (sprintf  "    %s\n" insts) ^
+              "  };\n\n" ^
     (sprintf  "  %% Thread %d dependencies:\n" tid) ^
-              "  \\begin{scope}[instruction relations]\n" ^
+              "  \\begin{scope}[/litmus/instruction relations]\n" ^
     (sprintf  "    \\path %s;\n" (String.concat "\n          " (List.rev deps))) ^
               "  \\end{scope}\n" ^
               "\\end{scope}"
@@ -436,7 +432,7 @@ let make_tikz_graph
           (fun ((w, ss), r) -> (* TODO: slices *)
               if List.mem w cex.cex_initial_writes then
                 let pp_eiid = pp_tikz_pretty_eiid m r.reiid in
-                sprintf "node[init=%s] {} edge[rf'=%s] (%s)"
+                sprintf "node[/litmus/init=%s] {} edge[/litmus/rf'=%s] (%s)"
                   pp_eiid
                   (pp_tikz_write_slices_uncoloured m (w, ss))
                   pp_eiid
@@ -472,10 +468,9 @@ let make_tikz_graph
   pp_tex_header tikz_out test_info;
 
   fprintf tikz_out "%s\n\n" nodes;
-  fprintf tikz_out "\\begin{scope}[event relations]\n";
-  fprintf tikz_out "%s\n\n" co;
-  fprintf tikz_out "%s\n\n" rf;
-  fprintf tikz_out "%s\n" fr;
+  fprintf tikz_out "\\begin{scope}[/litmus/event relations]\n";
+  fprintf tikz_out "%s\n"
+    (List.filter (fun s -> s <> "") [co; rf; fr] |> String.concat "\n\n");
   fprintf tikz_out "\\end{scope}\n";
 
   close_out tikz_out
