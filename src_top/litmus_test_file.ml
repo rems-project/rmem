@@ -402,15 +402,21 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
 
     | (X86_ism, TSO_storage_model, TSO_thread_model)
     | (X86_ism, Flat_storage_model, Relaxed_thread_model) ->
-        let syntax = begin try List.assoc "Syntax" test_splitted.Splitter.info with
-                     | Not_found -> "intel" end in
-        if (syntax = "gas") then
-          let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseGas) in
-          Parser.parse in_chan test_splitted
-        else 
-          let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
-          Parser.parse in_chan test_splitted
-
+        begin match List.assoc "Syntax" test_splitted.Splitter.info with
+        | "gas" ->
+            Globals.x86syntax := Some X86_gas;
+            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseGas) in
+            Parser.parse in_chan test_splitted
+        | "intel" ->
+            Globals.x86syntax := Some X86_intel;
+            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
+            Parser.parse in_chan test_splitted
+        | _ -> failwith "anknown x86 Syntax (expected 'gas' or 'intel')"
+        | exception Not_found -> (* intel by default *)
+            Globals.x86syntax := Some X86_intel;
+            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
+            Parser.parse in_chan test_splitted
+        end
     | _ -> failwith "unsupported model configuration"
     end
   in

@@ -111,6 +111,12 @@ val isa_defs_path: (string option) ref
 
 (** PP stuff ********************************************************)
 
+type x86syntax =
+  | X86_gas
+  | X86_intel
+
+val x86syntax : (x86syntax option) ref
+
 type ppstyle =
   | Ppstyle_full
   | Ppstyle_compact

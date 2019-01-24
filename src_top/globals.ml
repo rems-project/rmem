@@ -312,6 +312,12 @@ let isa_defs_path = ref None
 
 (** PP options ******************************************************)
 
+type x86syntax =
+  | X86_gas
+  | X86_intel
+
+let x86syntax = ref None
+
 type ppstyle =
   | Ppstyle_full
   | Ppstyle_compact
