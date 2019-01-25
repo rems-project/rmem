@@ -14,16 +14,19 @@
 #                                                                               #
 #===============================================================================#
 
-TESTSDIR=tests
+PPCTESTSDIR = ../litmus-tests-power-private/tests
+AArch64TESTSDIR = ../litmus-tests-armv8a-private/tests
+RISCVTESTSDIR = ../litmus-tests-riscv/tests
+x86TESTSDIR = ../litmus-tests-x86-private/tests
+# MIPSTESTSDIR = ../litmus-tests-mips-private/tests
 
 $(INSTALLDIR)/tests:
 	mkdir -p $(INSTALLDIR)/tests
 # TODO: when the tests repository is made public we can just checkout a copy
-	cp -a $(TESTSDIR)/LICENCE $(TESTSDIR)/README.md $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/PPC $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/AArch64 $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/RISCV $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/x86 $(INSTALLDIR)/tests
+	cp -ar $(PPCTESTSDIR) $(INSTALLDIR)/tests/PPC
+	cp -ar $(AArch64TESTSDIR) $(INSTALLDIR)/tests/AArch64
+	cp -ar $(RISCVTESTSDIR) $(INSTALLDIR)/tests/RISCV
+	cp -ar $(x86TESTSDIR) $(INSTALLDIR)/tests/x86
 
 # $(eval $(call gen-at,<arch>,<name>,<pp name>,<@file>)) will add rules
 # for generating the tests file <name> in the install folder for architecture
@@ -97,9 +100,9 @@ endef
 .PHONY: $(INSTALLDIR)/litmus_library.json
 $(INSTALLDIR)/litmus_library.json:
 #	the sed part replaces "|COMMA|" with an actual comma, except
-#	for the last line (JSON does not allow trailing commas).
+#	for the last line where it is removed (JSON does not allow trailing commas).
 	{ echo '[' &&\
-	  $(MAKE) -s --no-print-directory $(foreach isa,$(ISA_LIST),library_json_$(isa)) | sed '$$!s/|COMMA|/,/' | sed 's/|COMMA|//' &&\
+	  $(MAKE) -s --no-print-directory $(foreach isa,$(ISA_LIST),library_json_$(isa)) | sed '$$!s/|COMMA|/,/; s/|COMMA|//' &&\
 	  echo ']';\
 	} > $@
 
@@ -176,4 +179,3 @@ library_json_X86: library_json_x86
 $(eval $(call gen-at,x86,HAND.files,Hand-written,non-mixed-size/HAND/@all))
 $(eval $(call gen-at,x86,basic.files,DIY7 generated,non-mixed-size/BASIC_2_THREAD/@all))
 # $(call gen-basic-shapes,x86)
-
