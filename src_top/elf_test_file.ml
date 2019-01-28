@@ -76,10 +76,11 @@ let rec read_mem_new mem addr length : word8 list =
   if length = 0
   then []
   else
-    let byte =
-      try (Pmap.find addr mem) with
-      | Not_found -> failwith "start address not found" in
-    byte ::(read_mem_new mem (Nat_big_num.succ addr) (length - 1))
+    begin match (Pmap.find addr mem) with
+    | byte ->
+        byte ::(read_mem_new mem (Nat_big_num.succ addr) (length - 1))
+    | exception Not_found -> failwith "start address not found"
+    end
 
 
 (** ************************************************ *)
@@ -532,9 +533,10 @@ let initial_state_aux
   let empty_map = Pmap.empty Nat_big_num.compare in
 
   let ((program_memory  : (Nat_big_num.num, word8) Pmap.map),
-        (all_data_memory : (Nat_big_num.num, word8) Pmap.map)) =
+        (data_memory : (Nat_big_num.num, word8) Pmap.map)) =
     load_memory_segments elf_test.segments (empty_map, empty_map)
   in
+  let all_data_memory = Pmap.union program_memory data_memory in
 
   let (startaddr, initial_stack_data, initial_register_abi_data) =
     match Nat_big_num.to_int elf_test.e_machine with
