@@ -89,7 +89,7 @@
                         "name": "loop5-O0",
                         "binary_url": "tests/AArch64-elf/basic/build/loop5-O0",
                         "source_urls": [
-                            "tests/AArch64-elf/basic/loop5.c",
+                            "tests/AArch64-elf/basic/loop.c",
                             "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 1
@@ -199,7 +199,7 @@
                         "name": "loop5-O0",
                         "binary_url": "tests/PPC-elf/basic/build/loop5-O0",
                         "source_urls": [
-                            "tests/PPC-elf/basic/loop5.c",
+                            "tests/PPC-elf/basic/loop.c",
                             "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
@@ -309,7 +309,7 @@
                         "name": "loop5-O0",
                         "binary_url": "tests/RISCV-elf/basic/build/loop5-O0",
                         "source_urls": [
-                            "tests/RISCV-elf/basic/loop5.c",
+                            "tests/RISCV-elf/basic/loop.c",
                             "tests/RISCV-elf/basic/thread_start_riscv64.h"
                         ],
                         "n_threads": 1
