@@ -14,26 +14,42 @@
 #                                                                               #
 #===============================================================================#
 
-PPCTESTSDIR = ../litmus-tests-power-private/tests
-AArch64TESTSDIR = ../litmus-tests-armv8a-private/tests
-RISCVTESTSDIR = ../litmus-tests-riscv/tests
-x86TESTSDIR = ../litmus-tests-x86-private/tests
-# MIPSTESTSDIR = ../litmus-tests-mips-private/tests
+PPCTESTSDIR = ../litmus-tests-power-private
+AArch64TESTSDIR = ../litmus-tests-armv8a-private
+RISCVTESTSDIR = ../litmus-tests-riscv
+x86TESTSDIR = ../litmus-tests-x86-private
+# MIPSTESTSDIR = ../litmus-tests-mips-private
 
-$(INSTALLDIR)/tests:
-	mkdir -p $(INSTALLDIR)/tests
-# TODO: when the tests repository is made public we can just checkout a copy
-	cp -ar $(PPCTESTSDIR) $(INSTALLDIR)/tests/PPC
-	cp -ar $(AArch64TESTSDIR) $(INSTALLDIR)/tests/AArch64
-	cp -ar $(RISCVTESTSDIR) $(INSTALLDIR)/tests/RISCV
-	cp -ar $(x86TESTSDIR) $(INSTALLDIR)/tests/x86
+$(INSTALLDIR)/tests/PPC:
+	cp -ar $(PPCTESTSDIR)/tests $@
+
+install_PPC_tests: | $(INSTALLDIR)/tests/PPC-elf
+$(INSTALLDIR)/tests/PPC-elf:
+	cp -ar $(PPCTESTSDIR)/elf-tests $@
+
+$(INSTALLDIR)/tests/AArch64:
+	cp -ar $(AArch64TESTSDIR)/tests $@
+
+install_AArch64_tests: | $(INSTALLDIR)/tests/AArch64-elf
+$(INSTALLDIR)/tests/AArch64-elf:
+	cp -ar $(AArch64TESTSDIR)/elf-tests $@
+
+$(INSTALLDIR)/tests/RISCV:
+	cp -ar $(RISCVTESTSDIR)/tests $@
+
+install_RISCV_tests: | $(INSTALLDIR)/tests/RISCV-elf
+$(INSTALLDIR)/tests/RISCV-elf:
+	cp -ar $(RISCVTESTSDIR)/elf-tests $@
+
+$(INSTALLDIR)/tests/x86:
+	cp -ar $(x86TESTSDIR)/tests $@
 
 # $(eval $(call gen-at,<arch>,<name>,<pp name>,<@file>)) will add rules
 # for generating the tests file <name> in the install folder for architecture
 # <arch>, including all the files pointed by <@file>; <pp name> will be
 # used in the web-interface;
 define gen-at
-$$(INSTALLDIR)/tests/$(1)/$(2): $(INSTALLDIR)/tests
+$$(INSTALLDIR)/tests/$(1)/$(2): | $(INSTALLDIR)/tests/$(1)
 	cd $$(dir $$@) && msort7 $(4) > $$@
 
 install_$(1)_tests: $$(INSTALLDIR)/tests/$(1)/$(2)
@@ -52,7 +68,7 @@ endef
 # the variable <arch>_PRUNES can be set to exclude subfolders of <tests-path>
 # from the search; <pp name> will be used in the web-interface;
 define gen-prefix
-$$(INSTALLDIR)/tests/$(1)/$(2): $(INSTALLDIR)/tests
+$$(INSTALLDIR)/tests/$(1)/$(2): | $(INSTALLDIR)/tests/$(1)
 	cd $$(dir $$@) && find $(4) \( -false $$(foreach p,$$($(1)_PRUNES),-o -path $$(p)) \) -prune -o \( -false $(foreach p,$(5),-o -name "$(p).litmus" -o -name "$(p)+*.litmus") \) -print | msort7 > $$@
 
 install_$(1)_tests: $$(INSTALLDIR)/tests/$(1)/$(2)

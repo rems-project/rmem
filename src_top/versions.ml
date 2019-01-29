@@ -58,6 +58,9 @@ module type Git = sig
   (* the output of: git describe --dirty --always --abbrev= *)
   val describe : string
 
+  (* the output of: git log -1 --format=%ci *)
+  val last_changed : string
+
   (* the output of: git status -suno *)
   val status   : string
 end
