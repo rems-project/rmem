@@ -31,7 +31,7 @@ import Riscv_types
 let riscv_is_system_call_instruction (_: instruction_ast) = Nothing
 
 let riscv_is_thread_start_instruction = function
-(*  | RISCV_instr (Riscv_embed_types.SYSCALL_THREAD_START) -> true*)
+  | RISCV_instr (Riscv_types.THREAD_START ()) -> true
   | _ -> false
   end
 
@@ -139,14 +139,14 @@ let riscv_fixed_pseudo_registers =
 
 let riscv_thread_start_info =
   <|  (* these registers hold the arguments of the thread_start function *)
-      tsi_addr  = riscv_reg_name "x4"; (* XXX *)
+      tsi_addr  = riscv_reg_name "x10";
       tsi_toc   = Nothing;
       tsi_extra = Nothing;
       (* this register holds the value returned by the thread_start function *)
-      tsi_return = riscv_reg_name "x2";
+      tsi_return = riscv_reg_name "x10";
 
       (* these registers hold the arguments of the new-thread function *)
-      tsi_f_tid  = riscv_reg_name "x4"; (* XXX *)
+      tsi_f_tid  = riscv_reg_name "x10";
       tsi_f_toc  = Nothing;
       (* XXX For RISCV ABI t9 should point to function entry point on entry *)
       tsi_f_addr = Nothing;
