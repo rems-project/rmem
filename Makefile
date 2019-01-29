@@ -582,6 +582,7 @@ get_isa_model_%: FORCE
 	rm -rf $(ISABUILDDIR)
 	mkdir -p $(ISABUILDDIR)
 	$(if $(call equal,$(BUILDISA),true),\
+	  $(if $(call equal,$(CLEANDEPS),true),$(MAKE) -C $(ISADIR) clean &&)\
 	  $(MAKE) -C $(ISADIR) $(BUILDISATARGET) &&\
 	  cp -a $(ISASAILDIR)/*.sail $(ISABUILDDIR) &&\
 	  { [ ! -f $(ISADIR)/$(ISANAME).ml ] || cp -a $(ISADIR)/$(ISANAME).ml $(ISABUILDDIR)/$(ISANAME).ml.notstub; })
@@ -646,12 +647,12 @@ get_all_isa_models: get_isa_model_mips
 get_isa_model_riscv: ISANAME=riscv
 get_isa_model_riscv: ISADIR=$(riscvdir)
 get_isa_model_riscv: ISASAILDIR=$(ISADIR)/model
-get_isa_model_riscv: ISALEMDIRS=$(ISADIR)/generated_definitions/lem
+get_isa_model_riscv: ISALEMDIRS=$(ISADIR)/generated_definitions/lem-for-rmem
 get_isa_model_riscv: ISALEMDIRS+=$(ISADIR)/handwritten_support
 get_isa_model_riscv: ISAGENDIR=$(ISADIR)/handwritten_support/hgen
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
-get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" generated_definitions/lem/riscv.lem generated_definitions/lem/riscv_sequential.lem
+get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv_rmem
 ifeq ($(filter RISCV,$(ISA_LIST)),)
   get_isa_model_riscv: BUILDISA=false
   RMEMSTUBS += build_isa_models/riscv/riscv.ml
