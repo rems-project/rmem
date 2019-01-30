@@ -111,7 +111,7 @@ let initial_stack tid : ((Nat_big_num.num * int) (* entire footprint *) *
   (stack_footprint, stack_pointer, stack_data, stack_pp_symbol)
 
 
-let initial_stack_and_reg_data_of_PPC_elf_file e_entry all_data_memory elf_threads_list =
+let initial_stack_and_reg_data_of_PPC_elf_file e_entry memory elf_threads_list =
   let reg name =
     match MachineDefTypes.reg_from_data MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefTypes.register_data_info name with
     | Some r -> r
@@ -139,7 +139,7 @@ let initial_stack_and_reg_data_of_PPC_elf_file e_entry all_data_memory elf_threa
 
   (* read TOC from the second field of the function descriptor pointed to by e_entry*)
   let initial_GPR2_TOC =
-    Sail_impl_base.register_value_of_address (Sail_impl_base.address_of_byte_list (List.map Sail_impl_base.byte_of_int (read_mem_new all_data_memory (Nat_big_num.add (Nat_big_num.of_int 8) e_entry) 8))) Sail_impl_base.D_increasing
+    Sail_impl_base.register_value_of_address (Sail_impl_base.address_of_byte_list (List.map Sail_impl_base.byte_of_int (read_mem_new memory (Nat_big_num.add (Nat_big_num.of_int 8) e_entry) 8))) Sail_impl_base.D_increasing
   in
   (* these initial register values are all mandated to be zero, but that's handled by the generic zeroing below
       let initial_GPR3_argc = (Nat_big_num.of_int 0) in
@@ -164,7 +164,7 @@ let initial_stack_and_reg_data_of_PPC_elf_file e_entry all_data_memory elf_threa
   (initial_stack_data, initial_register_abi_data)
 
 
-let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry all_data_memory elf_threads_list =
+let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_list =
   let reg name =
     let registerdata =
       if !Globals.aarch64gen then
@@ -237,7 +237,7 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry all_data_memory elf_
   (initial_stack_data, initial_register_abi_data)
 
 
-let initial_stack_and_reg_data_of_mips_elf_file e_entry all_data_memory elf_threads_list =
+let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list =
       let reg name =
         match MachineDefTypes.reg_from_data MachineDefISAInfoMIPS.mips_ism.MachineDefTypes.register_data_info name with
         | Some r -> r
@@ -269,7 +269,7 @@ let initial_stack_and_reg_data_of_mips_elf_file e_entry all_data_memory elf_thre
   (initial_stack_data, initial_register_abi_data)
 
 
-let initial_stack_and_reg_data_of_riscv_elf_file e_entry all_data_memory elf_threads_list =
+let initial_stack_and_reg_data_of_riscv_elf_file symbol_map memory elf_threads_list =
       let reg name =
         match MachineDefTypes.reg_from_data MachineDefISAInfoRISCV.riscv_ism.MachineDefTypes.register_data_info name with
         | Some r -> r
@@ -289,16 +289,26 @@ let initial_stack_and_reg_data_of_riscv_elf_file e_entry all_data_memory elf_thr
     Sail_impl_base.register_value_for_reg_of_integer (reg "x2") stack_pointer
   in
 
-  let initial_LR_sentinel_value = Sail_impl_base.register_value_for_reg_of_integer (reg "x1") initial_LR_sentinel in
-
-  let initial_register_abi_data tid : (string * Sail_impl_base.register_value) list =
-    [("x2", initial_SP_value tid);
-     ("x1", initial_LR_sentinel_value);
-     ("cur_privilege", Sail_impl_base.register_value_for_reg_of_integer (reg "cur_privilege") (Nat_big_num.of_int 2)); (* initially at Machine privilege *)
-     ("misa", Sail_impl_base.register_value_for_reg_of_integer (reg "misa") (Nat_big_num.of_string "0x8000000000000881")); (* RV64IMA *)
+  let initial_register_abi_data : (string * Sail_impl_base.register_value) list =
+    [ ("x1", Sail_impl_base.register_value_for_reg_of_integer (reg "x1") initial_LR_sentinel);
+      ("cur_privilege", Sail_impl_base.register_value_for_reg_of_integer (reg "cur_privilege") (Nat_big_num.of_int 2)); (* initially at Machine privilege *)
+      ("misa", Sail_impl_base.register_value_for_reg_of_integer (reg "misa") (Nat_big_num.of_string "0x8000000000000881")); (* RV64IMA *)
     ]
   in
-  (initial_stack_data, initial_register_abi_data)
+
+  (* The gp register (alias of x3) is initialised by the linker to "__global_pointer$" *)
+  let initial_register_abi_data : (string * Sail_impl_base.register_value) list =
+    match List.assoc "__global_pointer$" symbol_map with
+    | (_, _, address, _, _) ->
+        let gp_value = Sail_impl_base.register_value_for_reg_of_integer (reg "x3") address in
+        ("x3", gp_value) :: initial_register_abi_data
+    | exception Not_found -> initial_register_abi_data
+  in
+
+  let initial_register_abi_data_of_tid tid : (string * Sail_impl_base.register_value) list =
+    ("x2", initial_SP_value tid) :: initial_register_abi_data
+  in
+  (initial_stack_data, initial_register_abi_data_of_tid)
 
 
 type test =
@@ -529,14 +539,12 @@ let initial_state_aux
   Debug.print_string "elf initial_state\n";
   let elf_threads_list = mk_elf_threads_list elf_test.elf_threads in
 
-  (* construct program memory and start address *)
-  let empty_map = Pmap.empty Nat_big_num.compare in
-
-  let ((program_memory  : (Nat_big_num.num, word8) Pmap.map),
-        (data_memory : (Nat_big_num.num, word8) Pmap.map)) =
+  let (program_memory  : (Nat_big_num.num, word8) Pmap.map),
+      (data_memory     : (Nat_big_num.num, word8) Pmap.map) =
+    let empty_map = Pmap.empty Nat_big_num.compare in
     load_memory_segments elf_test.segments (empty_map, empty_map)
   in
-  let all_data_memory = Pmap.union program_memory data_memory in
+  let memory = Pmap.union program_memory data_memory in
 
   let (startaddr, initial_stack_data, initial_register_abi_data) =
     match Nat_big_num.to_int elf_test.e_machine with
@@ -548,7 +556,7 @@ let initial_state_aux
             | Error.Success s -> s
         in
         let (initial_stack_data, initial_register_abi_data) =
-          initial_stack_and_reg_data_of_PPC_elf_file elf_test.e_entry all_data_memory elf_threads_list in
+          initial_stack_and_reg_data_of_PPC_elf_file elf_test.e_entry memory elf_threads_list in
 
         (startaddr,
           initial_stack_data,
@@ -563,7 +571,7 @@ let initial_state_aux
         in
 
         let (initial_stack_data, initial_register_abi_data) =
-          initial_stack_and_reg_data_of_AAarch64_elf_file elf_test.e_entry all_data_memory elf_threads_list in
+          initial_stack_and_reg_data_of_AAarch64_elf_file elf_test.e_entry memory elf_threads_list in
 
         (startaddr,
           initial_stack_data,
@@ -576,7 +584,7 @@ let initial_state_aux
             | Error.Success s -> s
         in
         let (initial_stack_data, initial_register_abi_data) =
-          initial_stack_and_reg_data_of_mips_elf_file elf_test.e_entry all_data_memory elf_threads_list in
+          initial_stack_and_reg_data_of_mips_elf_file elf_test.e_entry memory elf_threads_list in
 
         (startaddr,
           initial_stack_data,
@@ -589,7 +597,7 @@ let initial_state_aux
          | Error.Success s -> s
        in
        let (initial_stack_data, initial_register_abi_data) =
-         initial_stack_and_reg_data_of_riscv_elf_file elf_test.e_entry all_data_memory elf_threads_list in
+         initial_stack_and_reg_data_of_riscv_elf_file elf_test.symbol_map memory elf_threads_list in
        (startaddr, initial_stack_data, initial_register_abi_data)
 
     | _ -> failwith (Printf.sprintf "ppcmem can't handle the e_machine value %s, only EM_PPC64, EM_AARCH64 and EM_RISCV are supported." (Nat_big_num.to_string elf_test.e_machine))
@@ -626,8 +634,8 @@ let initial_state_aux
 
   (* Now we examine the rest of the data memory, removing the footprint of the object symbols and chunking it into aligned chunks *)
   (*
-  Debug.print_string "all_data_memory: \n";
-  List.iter (fun (bs,b) -> Debug.print_string "all_data_memory %s %s \n" (debug_pp_byte_list bs) (debug_pp_byte_list [b])) (Pmap.bindings_list all_data_memory);
+  Debug.print_string "memory: \n";
+  List.iter (fun (bs,b) -> Debug.print_string "memory %s %s \n" (debug_pp_byte_list bs) (debug_pp_byte_list [b])) (Pmap.bindings_list memory);
   *)
   let rec remove_symbols_from_data_memory data_mem symbols =
     match symbols with
@@ -642,7 +650,7 @@ let initial_state_aux
         remove_symbols_from_data_memory data_mem' symbols' in
 
   let trimmed_data_memory : (Nat_big_num.num * word8) list =
-    Pmap.bindings_list (remove_symbols_from_data_memory all_data_memory symbol_table) in
+    Pmap.bindings_list (remove_symbols_from_data_memory memory symbol_table) in
 
   (* make sure that's ordered increasingly.... *)
   let trimmed_data_memory =
