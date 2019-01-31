@@ -107,18 +107,23 @@ let lookup_dwarf_symbol m ioid (a:Sail_impl_base.address) : string option =
       | Some ((instruction_address: Nat_big_num.num (*natural*)), ev0) ->
           let a' = Sail_impl_base.integer_of_address a in
           let ev = wrap_ev ev0 in
-          let alspc = Dwarf.analysed_locations_at_pc ev ds instruction_address in
-          (*"analysed_location_data_at_pc:\n"
-          ^ Dwarf.pp_analysed_location_data_at_pc ds.Dwarf.ds_dwarf alspc *)
-          let names = Dwarf.names_of_address ds.Dwarf.ds_dwarf alspc a' in
-          begin match names with
-          | [] -> None
-          | _ -> Some (String.concat "/" names)
+          begin match Dwarf.analysed_locations_at_pc ev ds instruction_address with
+          | alspc ->
+              (*"analysed_location_data_at_pc:\n"
+              ^ Dwarf.pp_analysed_location_data_at_pc ds.Dwarf.ds_dwarf alspc *)
+              let names = Dwarf.names_of_address ds.Dwarf.ds_dwarf alspc a' in
+              begin match names with
+              | [] -> None
+              | _ -> Some (String.concat "/" names)
+              end
+          (* FIXME: Dwarf.analysed_locations_at_pc fails sometimes, e.g., when running
+          the AArch64 ELF thread_start_test it fails for the first instruction of
+          start_thread with the message "evaluate_cfa: no fde encloding pc" s*)
+          | exception _ -> None
           end
       | None -> None (*"<failure: get_dwarf_evaluation_context>"*)
       end
   | _,_ -> None
-
 
 
 let source_file_cache = ref ([] : (string * (string array option)) list)
