@@ -19,7 +19,8 @@
 open Sail_lib
 
 let dram_base  = 0x00000000L;;  (* Spike::DRAM_BASE *)
-let dram_size  = Int64.(shift_left 2048L 20)
+(* dram_size has to be big enough to include Elf_test_file.stack_base_address *)
+let dram_size  = 0xffffff00000L;;
 let clint_base = 0x82000000L;;  (* Spike::CLINT_BASE *)
 let clint_size = 0x800c0000L;;  (* Spike::CLINT_SIZE *)
 let rom_base   = 0x80001000L;;  (* Spike::DEFAULT_RSTVEC *)

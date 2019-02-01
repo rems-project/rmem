@@ -8,28 +8,28 @@
                 "tests": [
                     {
                         "name": "broken_spinlock",
-                        "binary_url": "tests-web/spinlock/broken_spinlock",
+                        "binary_url": "tests/AArch64-elf/spinlock/broken_spinlock",
                         "source_urls": [
-                            "tests-web/spinlock/broken_spinlock.S",
-                            "tests-web/spinlock/common.S"
+                            "tests/AArch64-elf/spinlock/broken_spinlock.S",
+                            "tests/AArch64-elf/spinlock/common.S"
                         ],
                         "n_threads": 3
                     },
                     {
                         "name": "fixed_spinlock",
-                        "binary_url": "tests-web/spinlock/fixed_spinlock",
+                        "binary_url": "tests/AArch64-elf/spinlock/fixed_spinlock",
                         "source_urls": [
-                            "tests-web/spinlock/fixed_spinlock.S",
-                            "tests-web/spinlock/common.S"
+                            "tests/AArch64-elf/spinlock/fixed_spinlock.S",
+                            "tests/AArch64-elf/spinlock/common.S"
                         ],
                         "n_threads": 3
                     },
                     {
                         "name": "spinlock",
-                        "binary_url": "tests-web/spinlock/spinlock",
+                        "binary_url": "tests/AArch64-elf/spinlock/spinlock",
                         "source_urls": [
-                            "tests-web/spinlock/spinlock.S",
-                            "tests-web/spinlock/common.S"
+                            "tests/AArch64-elf/spinlock/spinlock.S",
+                            "tests/AArch64-elf/spinlock/common.S"
                         ],
                         "n_threads": 3
                     }
@@ -37,78 +37,78 @@
                 ]
             },
             {
-                "folder": "tests-web",
-                "name": "Ad hoc tests",
+                "folder": "basic",
+                "name": "Basic tests",
                 "tests": [
                     {
                         "name": "atomics_test_1-O0",
-                        "binary_url": "tests-web/aarch64-binaries/atomics_test_1-O0",
+                        "binary_url": "tests/AArch64-elf/basic/build/atomics_test_1-O0",
                         "source_urls": [
-                            "tests-web/atomics_test_1.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/atomics_test_1.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomics_test_1-O2",
-                        "binary_url": "tests-web/aarch64-binaries/atomics_test_1-O2",
+                        "binary_url": "tests/AArch64-elf/basic/build/atomics_test_1-O2",
                         "source_urls": [
-                            "tests-web/atomics_test_1.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/atomics_test_1.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomics_test_2-O1",
-                        "binary_url": "tests-web/aarch64-binaries/atomics_test_2-O1",
+                        "binary_url": "tests/AArch64-elf/basic/build/atomics_test_2-O1",
                         "source_urls": [
-                            "tests-web/atomics_test_2.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/atomics_test_2.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 3
                     },
                     {
                         "name": "atomics_test_2-O2",
-                        "binary_url": "tests-web/aarch64-binaries/atomics_test_2-O2",
+                        "binary_url": "tests/AArch64-elf/basic/build/atomics_test_2-O2",
                         "source_urls": [
-                            "tests-web/atomics_test_2.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/atomics_test_2.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 3
                     },
                     {
                         "name": "function_call_1-O0",
-                        "binary_url": "tests-web/aarch64-binaries/function_call_1_O0",
+                        "binary_url": "tests/AArch64-elf/basic/build/function_call_1_O0",
                         "source_urls": [
-                            "tests-web/function_call_1.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/function_call_1.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "loop5-O0",
-                        "binary_url": "tests-web/aarch64-binaries/loop5-O0",
+                        "binary_url": "tests/AArch64-elf/basic/build/loop5-O0",
                         "source_urls": [
-                            "tests-web/loop5.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/loop.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "thread_init_test",
-                        "binary_url": "tests-web/aarch64-binaries/thread_init_test",
+                        "binary_url": "tests/AArch64-elf/basic/build/thread_init_test",
                         "source_urls": [
-                            "tests-web/thread_init_test.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/thread_init_test.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "thread_start_test",
-                        "binary_url": "tests-web/aarch64-binaries/thread_start_test",
+                        "binary_url": "tests/AArch64-elf/basic/build/thread_start_test",
                         "source_urls": [
-                            "tests-web/thread_start_test.c",
-                            "tests-web/thread_start_aarch64.h"
+                            "tests/AArch64-elf/basic/thread_start_test.c",
+                            "tests/AArch64-elf/basic/thread_start_aarch64.h"
                         ],
                         "n_threads": 3
                     }
@@ -120,105 +120,215 @@
         "arch": "PPC",
         "categories": [
             {
-                "folder": "tests-web",
-                "name": "Ad hoc tests",
+                "folder": "basic",
+                "name": "Basic tests",
                 "tests": [
                     {
                         "name": "atomic_bool_1-O0",
-                        "binary_url": "tests-web/ppc-binaries/atomic_bool_1-O0",
+                        "binary_url": "tests/PPC-elf/basic/build/atomic_bool_1-O0",
                         "source_urls": [
-                            "tests-web/atomic_bool_1.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomic_bool_1.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomic_bool_1-O2",
-                        "binary_url": "tests-web/ppc-binaries/atomic_bool_1-O2",
+                        "binary_url": "tests/PPC-elf/basic/build/atomic_bool_1-O2",
                         "source_urls": [
-                            "tests-web/atomic_bool_1.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomic_bool_1.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomic_bool_2-O2",
-                        "binary_url": "tests-web/ppc-binaries/atomic_bool_2-O2",
+                        "binary_url": "tests/PPC-elf/basic/build/atomic_bool_2-O2",
                         "source_urls": [
-                            "tests-web/atomic_bool_2.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomic_bool_2.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomics_test_1-O0",
-                        "binary_url": "tests-web/ppc-binaries/atomics_test_1-O0",
+                        "binary_url": "tests/PPC-elf/basic/build/atomics_test_1-O0",
                         "source_urls": [
-                            "tests-web/atomics_test_1.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomics_test_1.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomics_test_1-O2",
-                        "binary_url": "tests-web/ppc-binaries/atomics_test_1-O2",
+                        "binary_url": "tests/PPC-elf/basic/build/atomics_test_1-O2",
                         "source_urls": [
-                            "tests-web/atomics_test_1.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomics_test_1.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "atomics_test_2-O1",
-                        "binary_url": "tests-web/ppc-binaries/atomics_test_2-O1",
+                        "binary_url": "tests/PPC-elf/basic/build/atomics_test_2-O1",
                         "source_urls": [
-                            "tests-web/atomics_test_2.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomics_test_2.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 3
                     },
                     {
                         "name": "atomics_test_2-O2",
-                        "binary_url": "tests-web/ppc-binaries/atomics_test_2-O2",
+                        "binary_url": "tests/PPC-elf/basic/build/atomics_test_2-O2",
                         "source_urls": [
-                            "tests-web/atomics_test_2.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/atomics_test_2.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 3
                     },
                     {
                         "name": "function_call_1-O0",
-                        "binary_url": "tests-web/ppc-binaries/function_call_1_O0",
+                        "binary_url": "tests/PPC-elf/basic/build/function_call_1_O0",
                         "source_urls": [
-                            "tests-web/function_call_1.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/function_call_1.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "loop5-O0",
-                        "binary_url": "tests-web/ppc-binaries/loop5-O0",
+                        "binary_url": "tests/PPC-elf/basic/build/loop5-O0",
                         "source_urls": [
-                            "tests-web/loop5.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/loop.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "thread_init_test",
-                        "binary_url": "tests-web/ppc-binaries/thread_init_test",
+                        "binary_url": "tests/PPC-elf/basic/build/thread_init_test",
                         "source_urls": [
-                            "tests-web/thread_init_test.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/thread_init_test.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
                         ],
                         "n_threads": 1
                     },
                     {
                         "name": "thread_start_test",
-                        "binary_url": "tests-web/ppc-binaries/thread_start_test",
+                        "binary_url": "tests/PPC-elf/basic/build/thread_start_test",
                         "source_urls": [
-                            "tests-web/thread_start_test.c",
-                            "tests-web/thread_start_ppc.h"
+                            "tests/PPC-elf/basic/thread_start_test.c",
+                            "tests/PPC-elf/basic/thread_start_ppc.h"
+                        ],
+                        "n_threads": 3
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "arch": "RISCV",
+        "categories": [
+            {
+                "folder": "basic",
+                "name": "Basic tests",
+                "tests": [
+                    {
+                        "name": "atomic_bool_1-O0",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomic_bool_1-O0",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomic_bool_1.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "atomic_bool_1-O2",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomic_bool_1-O2",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomic_bool_1.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "atomic_bool_2-O2",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomic_bool_2-O2",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomic_bool_2.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "atomics_test_1-O0",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomics_test_1-O0",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomics_test_1.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "atomics_test_1-O2",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomics_test_1-O2",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomics_test_1.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "atomics_test_2-O1",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomics_test_2-O1",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomics_test_2.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 3
+                    },
+                    {
+                        "name": "atomics_test_2-O2",
+                        "binary_url": "tests/RISCV-elf/basic/build/atomics_test_2-O2",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/atomics_test_2.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 3
+                    },
+                    {
+                        "name": "function_call_1-O0",
+                        "binary_url": "tests/RISCV-elf/basic/build/function_call_1_O0",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/function_call_1.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "loop5-O0",
+                        "binary_url": "tests/RISCV-elf/basic/build/loop5-O0",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/loop.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "thread_init_test",
+                        "binary_url": "tests/RISCV-elf/basic/build/thread_init_test",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/thread_init_test.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
+                        "name": "thread_start_test",
+                        "binary_url": "tests/RISCV-elf/basic/build/thread_start_test",
+                        "source_urls": [
+                            "tests/RISCV-elf/basic/thread_start_test.c",
+                            "tests/RISCV-elf/basic/thread_start_riscv64.h"
                         ],
                         "n_threads": 3
                     }

@@ -14,23 +14,42 @@
 #                                                                               #
 #===============================================================================#
 
-TESTSDIR=tests
+PPCTESTSDIR = ../litmus-tests-power-private
+AArch64TESTSDIR = ../litmus-tests-armv8a-private
+RISCVTESTSDIR = ../litmus-tests-riscv
+x86TESTSDIR = ../litmus-tests-x86-private
+# MIPSTESTSDIR = ../litmus-tests-mips-private
 
-$(INSTALLDIR)/tests:
-	mkdir -p $(INSTALLDIR)/tests
-# TODO: when the tests repository is made public we can just checkout a copy
-	cp -a $(TESTSDIR)/LICENCE $(TESTSDIR)/README.md $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/PPC $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/AArch64 $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/RISCV $(INSTALLDIR)/tests
-	cp -ar $(TESTSDIR)/x86 $(INSTALLDIR)/tests
+$(INSTALLDIR)/tests/PPC:
+	cp -ar $(PPCTESTSDIR)/tests $@
+
+install_PPC_tests: | $(INSTALLDIR)/tests/PPC-elf
+$(INSTALLDIR)/tests/PPC-elf:
+	cp -ar $(PPCTESTSDIR)/elf-tests $@
+
+$(INSTALLDIR)/tests/AArch64:
+	cp -ar $(AArch64TESTSDIR)/tests $@
+
+install_AArch64_tests: | $(INSTALLDIR)/tests/AArch64-elf
+$(INSTALLDIR)/tests/AArch64-elf:
+	cp -ar $(AArch64TESTSDIR)/elf-tests $@
+
+$(INSTALLDIR)/tests/RISCV:
+	cp -ar $(RISCVTESTSDIR)/tests $@
+
+install_RISCV_tests: | $(INSTALLDIR)/tests/RISCV-elf
+$(INSTALLDIR)/tests/RISCV-elf:
+	cp -ar $(RISCVTESTSDIR)/elf-tests $@
+
+$(INSTALLDIR)/tests/x86:
+	cp -ar $(x86TESTSDIR)/tests $@
 
 # $(eval $(call gen-at,<arch>,<name>,<pp name>,<@file>)) will add rules
 # for generating the tests file <name> in the install folder for architecture
 # <arch>, including all the files pointed by <@file>; <pp name> will be
 # used in the web-interface;
 define gen-at
-$$(INSTALLDIR)/tests/$(1)/$(2): $(INSTALLDIR)/tests
+$$(INSTALLDIR)/tests/$(1)/$(2): | $(INSTALLDIR)/tests/$(1)
 	cd $$(dir $$@) && msort7 $(4) > $$@
 
 install_$(1)_tests: $$(INSTALLDIR)/tests/$(1)/$(2)
@@ -49,7 +68,7 @@ endef
 # the variable <arch>_PRUNES can be set to exclude subfolders of <tests-path>
 # from the search; <pp name> will be used in the web-interface;
 define gen-prefix
-$$(INSTALLDIR)/tests/$(1)/$(2): $(INSTALLDIR)/tests
+$$(INSTALLDIR)/tests/$(1)/$(2): | $(INSTALLDIR)/tests/$(1)
 	cd $$(dir $$@) && find $(4) \( -false $$(foreach p,$$($(1)_PRUNES),-o -path $$(p)) \) -prune -o \( -false $(foreach p,$(5),-o -name "$(p).litmus" -o -name "$(p)+*.litmus") \) -print | msort7 > $$@
 
 install_$(1)_tests: $$(INSTALLDIR)/tests/$(1)/$(2)
@@ -97,9 +116,9 @@ endef
 .PHONY: $(INSTALLDIR)/litmus_library.json
 $(INSTALLDIR)/litmus_library.json:
 #	the sed part replaces "|COMMA|" with an actual comma, except
-#	for the last line (JSON does not allow trailing commas).
+#	for the last line where it is removed (JSON does not allow trailing commas).
 	{ echo '[' &&\
-	  $(MAKE) -s --no-print-directory $(foreach isa,$(ISA_LIST),library_json_$(isa)) | sed '$$!s/|COMMA|/,/' | sed 's/|COMMA|//' &&\
+	  $(MAKE) -s --no-print-directory $(foreach isa,$(ISA_LIST),library_json_$(isa)) | sed '$$!s/|COMMA|/,/; s/|COMMA|//' &&\
 	  echo ']';\
 	} > $@
 
@@ -176,4 +195,3 @@ library_json_X86: library_json_x86
 $(eval $(call gen-at,x86,HAND.files,Hand-written,non-mixed-size/HAND/@all))
 $(eval $(call gen-at,x86,basic.files,DIY7 generated,non-mixed-size/BASIC_2_THREAD/@all))
 # $(call gen-basic-shapes,x86)
-
