@@ -570,12 +570,14 @@ let is_eager options shared_locations shared_program_locations sst = fun transit
   in
   let (tid, iid) = MachineDefTypes.principal_ioid_of_trans transition in
   let is_shared_program_location =
-    Lem.is_some 
-      (MachineDefThreadSubsystemUtils.ts_find_instruction sst.sst_state.t_model
-          (fun _ i -> i.instance_ioid = (tid,iid) && 
-                        not (Pset.mem i.program_loc shared_program_locations))
-          (Pmap.find tid sst.sst_state.thread_states)
-      )
+    match Pmap.lookup tid sst.sst_state.thread_states with
+    | None -> false
+    | Some ts ->
+       Lem.is_some 
+         (MachineDefThreadSubsystemUtils.ts_find_instruction sst.sst_state.t_model
+            (fun _ i -> i.instance_ioid = (tid,iid) && 
+                          not (Pset.mem i.program_loc shared_program_locations))
+            ts)
   in
   inherently_eager || (options.eager_up_to_shared && MachineDefTransitionUtils.is_rw_transition transition
                        && not touches_shared_location && not is_shared_program_location)
