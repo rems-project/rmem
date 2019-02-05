@@ -113,8 +113,8 @@ type search_state =
     observed_finals:           (trace * int) StateMap.t;
     (* the above states that pass the (litmus file) filter property *)
     observed_filterred_finals: (trace * int) StateMap.t;
-    (* model deadlock states *)
-    observed_deadlocks:        (trace * int) StateMap.t;
+    (* model deadlocks *)
+    observed_deadlocks:        (trace * int) option;
     (* unhandled ISA exception states *)
     observed_exceptions:       (trace * int) ExceptionMap.t;
 
@@ -141,6 +141,7 @@ type search_state =
     loop_limit_count:       int;
 
     print_partial_results: search_state -> unit;
+    ui_trace_of_trace:     trace -> string;
 
     (*** control the search ***)
 
@@ -401,10 +402,12 @@ let print_last_state title search_state : unit =
           let (ppmode', ui_state) =
             ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state []
           in
-          Screen.show_message ppmode "%s"              (Pp.pp_ui_system_state ppmode' ui_state);
-          Screen.show_message ppmode "via %s"          (pp_choices (choices_so_far search_state));
+          Screen.show_message ppmode "%s"     (Pp.pp_ui_system_state ppmode' ui_state);
+          Screen.show_message ppmode "via %s" (pp_choices (choices_so_far search_state));
+          Screen.show_message ppmode "via UI transitions %s"
+                                              (search_state.ui_trace_of_trace (choices_so_far search_state));
           Screen.show_message ppmode "last (non eager) transition: %s"
-            (Pp.pp_trans ppmode tran);
+                                              (Pp.pp_trans ppmode tran);
           if ts <> [] then
             Screen.show_message ppmode "(followed by eager transitions: %s)"
               (List.map string_of_int ts |> String.concat ",");
@@ -523,9 +526,9 @@ let record_final_state search_state search_node : search_state =
 
   let search_state = update_observed_branch_targets_and_shared_memory search_state search_node in
 
-  let final_state = reduced_final_state search_state.test_info.Test.show_regs search_state.test_info.Test.show_mem search_node.system_state.sst_state in
-
   if ConcModel.is_final_state search_node.system_state.sst_state then
+    let final_state = reduced_final_state search_state.test_info.Test.show_regs search_state.test_info.Test.show_mem search_node.system_state.sst_state in
+
     let (choices, count) =
       try StateMap.find final_state search_state.observed_finals with
       | Not_found -> (choices_so_far search_state, 0)
@@ -550,13 +553,18 @@ let record_final_state search_state search_node : search_state =
       observed_filterred_finals = observed_filterred_finals;
     }
   else
-    let (choices, count) =
-      try StateMap.find final_state search_state.observed_deadlocks with
-      | Not_found -> (choices_so_far search_state, 0)
-    in
-    {search_state with observed_deadlocks =
-        StateMap.add final_state (choices, count + 1) search_state.observed_deadlocks}
-
+    let choices' = choices_so_far search_state in
+    match search_state.observed_deadlocks with
+    | Some (choices, count) ->
+        { search_state with
+            observed_deadlocks =
+              if List.length choices' < List.length choices then
+                Some (choices', count + 1)
+              else
+                Some (choices, count + 1)
+        }
+    | None ->
+        {search_state with observed_deadlocks = Some (choices', 1)}
 
 let is_eager options shared_locations shared_program_locations sst = fun transition ->
   let inherently_eager = MachineDefTransitionUtils.is_eager_transition
@@ -755,6 +763,7 @@ type search_outcome =
   | Complete    of search_state
   | Breakpoint  of search_state * breakpoint * breakpoint_reason (* which breakpoint was hit and why *)
   | Interrupted of search_state * string (* explanation of why interrupted *)
+  | OcamlExn    of search_state * string
 
 (* search for final states (exhaustive/random) with breakpoints
    IMPORTANT: all calls to 'search' must be tail calls, otherwise the
@@ -1104,30 +1113,36 @@ let rec search search_state : search_outcome =
     end
   in
 
-  begin match search_state.search_nodes with
-  | [] -> Complete search_state (* no more nodes to explore *)
+  try
+    begin match search_state.search_nodes with
+    | [] -> Complete search_state (* no more nodes to explore *)
 
-  | _ :: _ ->
-      (* explore the transitions of the head node *)
-      print_status_message search_state;
+    | _ :: _ ->
+        (* explore the transitions of the head node *)
+        print_status_message search_state;
 
-      ( check_limits
-        @@ check_state_breakpoints
-        @@ check_targets
-        @@ check_bound
-        @@ prune_restarts
-        @@ prune_discards
-        @@ prune_late_writes
-        @@ take_eager_transition
-        (* @@ assert_no_eager *)
-        @@ hash_prune
-        @@ loop_limit
-        @@ priority_reduction
-        @@ check_final
-        @@ take_next_transition
-        (* if all else fails, pop and continue *)
-        @@ (fun search_state -> pop search_state |> search)
-      ) search_state
+        ( check_limits
+          @@ check_state_breakpoints
+          @@ check_targets
+          @@ check_bound
+          @@ prune_restarts
+          @@ prune_discards
+          @@ prune_late_writes
+          @@ take_eager_transition
+          (* @@ assert_no_eager *)
+          @@ hash_prune
+          @@ loop_limit
+          @@ priority_reduction
+          @@ check_final
+          @@ take_next_transition
+          (* if all else fails, pop and continue *)
+          @@ (fun search_state -> pop search_state |> search)
+        ) search_state
+    end
+  with e -> begin
+    let msg = Printexc.to_string e in
+    let stack = Printexc.get_backtrace () in
+    OcamlExn (search_state, Printf.sprintf "there was an error: %s\n%s\n" msg stack)
   end
 
 exception RandomResult of search_outcome
@@ -1143,9 +1158,24 @@ let search_from_state
     (targets:        sst_predicate list)
     (filters:        trans_predicate list)
     (print_partial_results: search_state -> unit)
+    (ui_trace_of_trace:     trace -> string)
     : search_outcome
   =
   let started_timestamp = Sys.time () |> int_of_float in
+
+  let options =
+    { options with
+        (* Every iteration of the random search starts from the initial state.
+        Hence, if hash_prune is enabled, every iteration following the first
+        one, will be hash-pruned immediately. *)
+        hash_prune =
+          if options.pseudorandom then false else options.hash_prune;
+
+        (* eager_up_to_shared must imply record_shared_locations to work *)
+        record_shared_locations =
+          options.record_shared_locations || options.eager_up_to_shared;
+    }
+  in
 
   let initial_search_state =
     { search_nodes = [];
@@ -1154,7 +1184,7 @@ let search_from_state
 
       observed_finals           = StateMap.empty;
       observed_filterred_finals = StateMap.empty;
-      observed_deadlocks        = StateMap.empty;
+      observed_deadlocks        = None;
       observed_exceptions       = ExceptionMap.empty;
 
       observed_branch_targets = system_state.sst_state.model.t.branch_targets;
@@ -1178,6 +1208,7 @@ let search_from_state
       loop_limit_count       = 0;
 
       print_partial_results = print_partial_results;
+      ui_trace_of_trace     = ui_trace_of_trace;
 
       breakpoints = breakpoints;
 
@@ -1186,12 +1217,7 @@ let search_from_state
       filters     = filters;
 
       test_info = test_info;
-
-      (* eager_up_to_shared must imply record_shared_locations to work *)
-      options   = { options with
-                    record_shared_locations =
-                      options.record_shared_locations || options.eager_up_to_shared;
-                  };
+      options   = options;
       ppmode    = ppmode;
     } |> add_search_node system_state
   in

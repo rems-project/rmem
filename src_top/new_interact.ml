@@ -839,41 +839,27 @@ let print_observed_finals interact_state interact_node observed_finals : Screen_
   OTConcat [states_count_output; states_output]
 
 let print_observed_deadlocks interact_state interact_node observed_deadlocks : Screen_base.output_tree =
-  let symtab =
-    List.map
-      (fun ((addr, _), s) -> (Test.C.interp_address_to_address addr, s))
-      interact_state.ppmode.Globals.pp_symbol_table
-  in
+  match observed_deadlocks with
+  | Some (deadlock_choices, deadlock_count) ->
+      let via =
+        match ui_choices_of_search_trace interact_state interact_node deadlock_choices with
+        | (choices, _) ->
+            OTConcat [
+              OTString "via \"";
+              OTFollowList (Interact_parser_base.history_to_string choices);
+              OTString "\"";
+            ]
+        | exception (TraceRecon s) ->
+            otString "(could not reconstruct trace (%s))" s
+      in
 
-  let deadlock_states_count_output = otVerbose Globals.Normal @@ otStrLine "Deadlock states %i" (Runner.StateMap.cardinal observed_deadlocks) in
-
-  let deadlock_states_output =
-    otVerbose Globals.Normal @@
-    OTConcat
-      (List.map
-        (fun (state, (choices, count)) ->
-          let ui_choices =
-            match ui_choices_of_search_trace interact_state interact_node choices with
-            | (choices, _) -> Interact_parser_base.history_to_string choices
-            | exception (TraceRecon s) ->
-                Printf.sprintf "could not reconstruct trace (%s)" s
-          in
-          otLine @@ OTConcat [otString "%-6d:>" count;
-                              otString "%s" (Test.C.pp_state symtab state);
-                              if !Globals.deterministic_output then
-                                OTString "via (suppressed for deterministic comparison)"
-                              else
-                                OTConcat [
-                                    OTString "via \"";
-                                    OTFollowList ui_choices;
-                                    OTString "\""
-                                  ]
-                             ]
-        )
-        (Runner.StateMap.bindings observed_deadlocks))
-  in
-
-  OTConcat [deadlock_states_count_output; deadlock_states_output]
+      otVerbose Globals.Normal @@ otLine @@
+        OTConcat [
+          otString "Deadlock states %i" deadlock_count;
+          OTString " ";
+          via;
+        ]
+  | None -> OTEmpty
 
 let print_observed_exceptions interact_state interact_node observed_exceptions : Screen_base.output_tree =
   let exceptions_count_output = otVerbose Globals.Normal @@ otStrLine "Unhandled exceptions %i" (Runner.ExceptionMap.cardinal observed_exceptions) in
@@ -962,6 +948,25 @@ let update_shared interact_state search_state =
   else
     interact_state
 
+let ui_trace_of_search_trace
+    interact_state
+    (search_trace: Runner.trace) (* head is the last transition *)
+    : string
+  =
+  match interact_state.interact_nodes with
+  | [] -> assert false
+  | interact_node :: _ ->
+      let (ui_choices, ui_transitions) =
+        match ui_choices_of_search_trace interact_state interact_node search_trace with
+        | (choices, transitions) -> (Interact_parser_base.history_to_string choices, transitions)
+        | exception (TraceRecon s) ->
+            (Printf.sprintf "could not reconstruct trace (%s)" s, "")
+      in
+      OTConcat [
+        otLine (OTFollowList ui_choices);
+        OTVerbose (Globals.Debug, otLine (OTString ui_transitions));
+      ] |> Screen.of_output_tree
+
 
 let do_search mode interact_state breakpoints bounds targets filters: interact_state =
   begin match interact_state.interact_nodes with
@@ -1000,6 +1005,7 @@ let do_search mode interact_state breakpoints bounds targets filters: interact_s
           bounds targets filters
           (* TODO: bounds, targets, filters from interact_state*)
           (fun _ -> ()) (* TODO: print_partial_results? *)
+          (ui_trace_of_search_trace interact_state)
       with
       | Runner.Complete search_state ->
           Screen_base.OTConcat
@@ -1040,6 +1046,19 @@ let do_search mode interact_state breakpoints bounds targets filters: interact_s
               Screen.show_warning interact_state.ppmode "%s" (Screen.escape s);
               interact_state
           end
+      | Runner.OcamlExn (search_state, msg) ->
+          Screen.show_warning interact_state.ppmode "%s" msg;
+          Screen.show_warning interact_state.ppmode "%s" ("***********************\n" ^
+                                                          "*** PARTIAL RESULTS ***\n" ^
+                                                          "***********************");
+          Screen_base.OTConcat
+            [ print_observed_finals interact_state node search_state.Runner.observed_filterred_finals;
+              print_observed_deadlocks interact_state node search_state.Runner.observed_deadlocks;
+              print_observed_exceptions interact_state node search_state.Runner.observed_exceptions;
+            ]
+          |> Screen.of_output_tree |> Screen.final_message interact_state.ppmode false;
+          Screen.show_warning interact_state.ppmode "*** Error ***\n";
+          interact_state
       end
   end
 
@@ -2108,7 +2127,7 @@ let print_search_results interact_state interact_node search_state runtime : uni
       else "Sometimes")
       (List.length matches)
       (List.length non_matches)
-      (if not (Runner.StateMap.is_empty search_state.Runner.observed_deadlocks) then " with deadlocks" else "")
+      (if search_state.Runner.observed_deadlocks <> None then " with deadlocks" else "")
       (if not (Runner.ExceptionMap.is_empty search_state.Runner.observed_exceptions) then " with unhandled exceptions" else "")
   in
 
@@ -2249,6 +2268,7 @@ let run_exhaustive_search
         [] (* targets *)
         [] (* filters *)
         print_partial_results
+        (ui_trace_of_search_trace (initial_interact_state options ppmode test_info system_state))
   in
   let rec search_fixed_point n system_state : unit =
     if Globals.is_verbosity_at_least Globals.ThrottledInformation then
@@ -2350,6 +2370,12 @@ let run_exhaustive_search
     | Runner.Interrupted (search_state, reason) ->
         Screen.show_warning ppmode "Interrupted because %s" reason;
         print_results true search_state
+
+    | Runner.OcamlExn (search_state, msg) ->
+        Screen.show_warning ppmode "%s" msg;
+        print_results true search_state;
+        Screen.show_warning ppmode "*** Error ***\n";
+        exit 1
   in
 
   let rec search_random options system_state : unit =
@@ -2418,7 +2444,16 @@ let run_exhaustive_search
 
     | Runner.Interrupted (search_state, reason) ->
         Screen.show_warning ppmode "Interrupted because %s" reason;
-          print_results search_state
+        print_results search_state
+
+    | Runner.OcamlExn (search_state, msg) ->
+        Screen.show_warning ppmode "%s" msg;
+        Screen.show_warning ppmode "%s" ( "***********************\n" ^
+                                          "*** PARTIAL RESULTS ***\n" ^
+                                          "***********************");
+        print_results search_state;
+        Screen.show_warning ppmode "*** Error ***\n";
+        exit 1
   in
 
   let initial_states =
