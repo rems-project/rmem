@@ -55,8 +55,6 @@ val dont_tool: bool ref (* "Dont" output *)
 
 val debug_sail_interp : bool ref
 
-val deterministic_output : bool ref
-
 (** model options ***************************************************)
 
 val model_params: MachineDefTypes.model_params ref

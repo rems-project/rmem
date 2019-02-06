@@ -788,6 +788,26 @@ let ui_choices_of_search_trace
   )
 
 
+let ui_trace_of_search_trace
+    interact_state
+    (search_trace: Runner.trace) (* head is the last transition *)
+    : string
+  =
+  match interact_state.interact_nodes with
+  | [] -> assert false
+  | interact_node :: _ ->
+      let (ui_choices, ui_transitions) =
+        match ui_choices_of_search_trace interact_state interact_node search_trace with
+        | (choices, transitions) -> (Interact_parser_base.history_to_string choices, transitions)
+        | exception (TraceRecon s) ->
+            (Printf.sprintf "could not reconstruct trace (%s)" s, "")
+      in
+      OTConcat [
+        otLine (OTFollowList ui_choices);
+        OTVerbose (Globals.Debug, otLine (OTString ui_transitions));
+      ] |> Screen.of_output_tree
+
+
 let print_history interact_state : unit =
   Screen.show_message interact_state.ppmode "\"%s\"" (List.rev interact_state.cmd_history |> List.map Interact_parser_base.pp |> String.concat ";" |> Screen.escape)
 
@@ -820,14 +840,11 @@ let print_observed_finals interact_state interact_node observed_finals : Screen_
           in
           OTConcat (otLine (OTConcat [otStrVerbose Globals.Normal "%-6d%s>" count (if check_prop state then "*" else ":");
                                       otString "%s" (Test.C.pp_state symtab state);
-                                      if !Globals.deterministic_output then
-                                        otStrVerbose Globals.Normal "via (suppressed for deterministic comparison)"
-                                      else
-                                        OTVerbose (Globals.Normal, OTConcat [
-                                                                       OTString "via \"";
-                                                                       OTFollowList ui_choices;
-                                                                       OTString "\""
-                                                  ])])
+                                      OTVerbose (Globals.Normal, OTConcat [
+                                                                      OTString "via \"";
+                                                                      OTFollowList ui_choices;
+                                                                      OTString "\""
+                                                ])])
                     :: if Globals.is_verbosity_at_least Globals.Debug then
                          [otLine (OTString ui_transitions)]
                        else
@@ -877,14 +894,11 @@ let print_observed_exceptions interact_state interact_node observed_exceptions :
           in
           otLine @@ OTConcat [otString "%-6d:>" count;
                               otString "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception interact_state.ppmode ioid exception_type);
-                              if !Globals.deterministic_output then
-                                OTString "via (suppressed for deterministic comparison)"
-                              else
-                                OTConcat [
-                                    OTString "via \"";
-                                    OTFollowList ui_choices;
-                                    OTString "\""
-                                  ]
+                              OTConcat [
+                                  OTString "via \"";
+                                  OTFollowList ui_choices;
+                                  OTString "\""
+                                ]
                              ]
         )
         (Runner.ExceptionMap.bindings observed_exceptions))
@@ -947,25 +961,6 @@ let update_shared interact_state search_state =
     }
   else
     interact_state
-
-let ui_trace_of_search_trace
-    interact_state
-    (search_trace: Runner.trace) (* head is the last transition *)
-    : string
-  =
-  match interact_state.interact_nodes with
-  | [] -> assert false
-  | interact_node :: _ ->
-      let (ui_choices, ui_transitions) =
-        match ui_choices_of_search_trace interact_state interact_node search_trace with
-        | (choices, transitions) -> (Interact_parser_base.history_to_string choices, transitions)
-        | exception (TraceRecon s) ->
-            (Printf.sprintf "could not reconstruct trace (%s)" s, "")
-      in
-      OTConcat [
-        otLine (OTFollowList ui_choices);
-        OTVerbose (Globals.Debug, otLine (OTString ui_transitions));
-      ] |> Screen.of_output_tree
 
 
 let do_search mode interact_state breakpoints bounds targets filters: interact_state =
@@ -2131,12 +2126,7 @@ let print_search_results interact_state interact_node search_state runtime : uni
       (if not (Runner.ExceptionMap.is_empty search_state.Runner.observed_exceptions) then " with unhandled exceptions" else "")
   in
 
-  let runtime_output =
-    if !Globals.deterministic_output then
-      otStrLine "Runtime: 0.0 sec (suppressed for deterministic comparison)"
-    else
-      otStrLine "Runtime: %f sec" runtime
-  in
+  let runtime_output = otStrLine "Runtime: %f sec" runtime in
 
   OTConcat
     [ test_name_output;

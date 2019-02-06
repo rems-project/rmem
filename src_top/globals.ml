@@ -90,8 +90,6 @@ let dont_tool = ref false (* "Dont" output *)
 
 let debug_sail_interp = ref false
 
-let deterministic_output = ref false
-
 (** model options ***************************************************)
 
 (* model_params should probably not be changed after the initial state

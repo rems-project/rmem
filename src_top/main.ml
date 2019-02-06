@@ -389,10 +389,6 @@ let opts = [
     Arg.Unit (fun () -> Printf.printf "%s" Console_help.help_message; exit 0),
     " print the help message for the console and then exit");
 
-("-deterministic_output",
-    Arg.Bool (fun b -> Globals.deterministic_output := b),
-    Printf.sprintf "<bool> suppress non-deterministic output, e.g. runtime, command line, for test suite diffs (%b)" !Globals.deterministic_output);
-
 (** deprecated ******************************************************)
 ("-auto",
     Arg.Unit (fun () -> fatal_error "-auto was renamed to -dont"),
@@ -641,10 +637,7 @@ let main = fun () ->
       && not !Globals.dont_tool then
   begin
     Screen.show_message ppmode "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
-    if !Globals.deterministic_output then
-      Screen.show_message ppmode "#Command line: (suppressed for deterministic comparison)"
-    else
-      Screen.show_message ppmode "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
+    Screen.show_message ppmode "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
     Screen.show_message ppmode "#Model: %s" (Model_aux.pp_model !Globals.model_params)
   end;
 

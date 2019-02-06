@@ -91,11 +91,8 @@ let snapshot_of_transition ppmode (trans: ConcModel.trans) : unit =
 
 
 let pp_choices choices =
-  if !Globals.deterministic_output then
-    "(suppressed for deterministic comparison)"
-  else
-    let choices = List.rev choices in
-    "\"" ^ (String.concat ";" (List.map string_of_int choices)) ^ "\""
+  let choices = List.rev choices in
+  "\"" ^ (String.concat ";" (List.map string_of_int choices)) ^ "\""
 
 
 let debug_print_state verb ppmode choices_so_far trans description state : unit =
@@ -1338,12 +1335,7 @@ let print_results
   in
   *)
 
-  let runtime_output =
-    if !Globals.deterministic_output then
-      otStrLine "Runtime: 0.0 sec (suppressed for deterministic comparison)"
-    else
-      otStrLine "Runtime: %f sec" (Sys.time ())
-  in
+  let runtime_output = otStrLine "Runtime: %f sec" (Sys.time ()) in
 
   let output_tree =
     OTConcat
@@ -1415,12 +1407,7 @@ let print_results_sequential
         (ExceptionMap.bindings !observed_exceptions))
   in
 
-  let runtime_output =
-    if !Globals.deterministic_output then
-      otStrLine "Runtime: 0.0 sec (suppressed for deterministic comparison)"
-    else
-      otStrLine "Runtime: %f sec" (Sys.time ())
-  in
+  let runtime_output = otStrLine "Runtime: %f sec" (Sys.time ()) in
 
   let output_tree =
     OTConcat [test_name_output;
