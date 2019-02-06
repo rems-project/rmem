@@ -354,27 +354,14 @@ let print_last_state interact_state : unit =
   begin match interact_state.interact_nodes with
   | [] -> Screen.show_message interact_state.ppmode "no state"
 
-  | [node] ->
+  | node :: ns ->
       let ts = sorted_filtered_transitions node in
       let (ppmode', ui_state) =
-        ConcModel.make_ui_system_state ppmode None node.system_state.sst_state ts
-      in
-      let ppmode'' = { ppmode' with Globals.pp_default_cmd = interact_state.default_cmd } in
-      let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in
-      Screen.draw_system_state
-        ppmode''
-        (choices_so_far interact_state)
-        interact_state.follow_suffix
-        node.system_state.sst_state
-        ui_state
-        (Some cand_ex)
-        ts
-        (filtered_out_transitions node)
-
-  | node :: node' :: _ ->
-      let ts = sorted_filtered_transitions node in
-      let (ppmode', ui_state) =
-        ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state ts
+        match ns with
+        | [] ->
+            ConcModel.make_ui_system_state ppmode None node.system_state.sst_state ts
+        | node' :: _ ->
+            ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state ts
       in
       let ppmode'' = { ppmode' with Globals.pp_default_cmd = interact_state.default_cmd } in
       let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in
@@ -788,7 +775,7 @@ let ui_choices_of_search_trace
   )
 
 
-let ui_trace_of_search_trace
+let ui_choices_string_of_search_trace
     interact_state
     (search_trace: Runner.trace) (* head is the last transition *)
     : string
@@ -1000,7 +987,7 @@ let do_search mode interact_state breakpoints bounds targets filters: interact_s
           bounds targets filters
           (* TODO: bounds, targets, filters from interact_state*)
           (fun _ -> ()) (* TODO: print_partial_results? *)
-          (ui_trace_of_search_trace interact_state)
+          (ui_choices_string_of_search_trace interact_state)
       with
       | Runner.Complete search_state ->
           Screen_base.OTConcat
@@ -2258,7 +2245,7 @@ let run_exhaustive_search
         [] (* targets *)
         [] (* filters *)
         print_partial_results
-        (ui_trace_of_search_trace (initial_interact_state options ppmode test_info system_state))
+        (ui_choices_string_of_search_trace (initial_interact_state options ppmode test_info system_state))
   in
   let rec search_fixed_point n system_state : unit =
     if Globals.is_verbosity_at_least Globals.ThrottledInformation then
