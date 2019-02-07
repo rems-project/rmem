@@ -765,6 +765,11 @@ type search_outcome =
   | Interrupted of search_state * string (* explanation of why interrupted *)
   | OcamlExn    of search_state * string
 
+type search_try_outcome =
+  | Terminate_search of search_outcome
+  | Continue_search  of search_state
+let continue_search s = Continue_search s
+
 (* search for final states (exhaustive/random) with breakpoints
    IMPORTANT: all calls to 'search' must be tail calls, otherwise the
    stack will explode *)
@@ -803,7 +808,7 @@ let rec search search_state : search_outcome =
           hit_time_limit;
         ]
     with
-    | Some reason -> Interrupted (search_state, reason)
+    | Some reason -> Terminate_search (Interrupted (search_state, reason))
     | None -> cont search_state
   in
 
@@ -823,7 +828,7 @@ let rec search search_state : search_outcome =
           in
 
           match List.find (function (_, NoReason) -> false | _ -> true) reasons with
-          | (bp, reason) -> Breakpoint (search_state, bp, reason)
+          | (bp, reason) -> Terminate_search (Breakpoint (search_state, bp, reason))
           | exception Not_found -> cont search_state
         else
           cont search_state
@@ -837,7 +842,7 @@ let rec search search_state : search_outcome =
         if search_node.open_transition = []
           && List.exists (fun f -> f search_node.system_state) search_state.targets
         then
-          record_final_state search_state search_node |> pop |> search
+          Continue_search (record_final_state search_state search_node |> pop)
         else
           cont search_state
     end
@@ -853,7 +858,7 @@ let rec search search_state : search_outcome =
         if search_node.open_transition = []
             && List.exists (fun f -> f search_node.system_state) search_state.bounds
         then
-          pop search_state |> search
+          Continue_search (pop search_state)
         else
           cont search_state
     end
@@ -868,7 +873,7 @@ let rec search search_state : search_outcome =
         then
           { search_state with
             restart_prune_count = search_state.restart_prune_count + 1
-          } |> pop |> search
+          } |> pop |> continue_search
         else
           cont search_state
     end
@@ -883,7 +888,7 @@ let rec search search_state : search_outcome =
         then
           { search_state with
             discard_prune_count = search_state.discard_prune_count + 1
-          } |> pop |> search
+          } |> pop |> continue_search
         else
           cont search_state
     end
@@ -898,7 +903,7 @@ let rec search search_state : search_outcome =
         then
           { search_state with
             late_write_prune_count = search_state.late_write_prune_count + 1
-          } |> pop |> search
+          } |> pop |> continue_search
         else
           cont search_state
     end
@@ -915,10 +920,9 @@ let rec search search_state : search_outcome =
           with
           | transition ->
               begin match take_transition search_state search_node.system_state transition true with
-              | NextState next_state -> search next_state
-              | TransBreakpoint (break_state, i, transition, bp, reason) -> Breakpoint (search_state, bp, reason)
-              | exception Failure s ->
-                  Interrupted (search_state, Printf.sprintf "encountered an exception while taking an eager transition\nFailure '%s'" s)
+              | NextState next_state -> Continue_search next_state
+              | TransBreakpoint (break_state, i, transition, bp, reason) ->
+                  Terminate_search (Breakpoint (search_state, bp, reason))
               end
           | exception Not_found -> cont search_state
           end
@@ -969,7 +973,7 @@ let rec search search_state : search_outcome =
             (* we have already seen this state *)
             { search_state with
               prune_count = search_state.prune_count + 1;
-            } |> pop |> search
+            } |> pop |> continue_search
           else
             { search_state with
               state_hashes = StateHashSet.add hash search_state.state_hashes;
@@ -1096,31 +1100,32 @@ let rec search search_state : search_outcome =
             in
 
             match take_transition search_state' search_node'.system_state transition false with
-            | NextState next_state -> search next_state
-            | TransBreakpoint (break_state, i, transition, bp, reason) -> Breakpoint (search_state, bp, reason)
+            | NextState next_state -> Continue_search next_state
+            | TransBreakpoint (break_state, i, transition, bp, reason) ->
+                Terminate_search (Breakpoint (search_state, bp, reason))
         end
     end
   in
 
   let check_final cont = fun search_state ->
     begin match search_state.search_nodes with
-    | [] -> Complete search_state (* no more nodes to explore *)
+    | [] -> Terminate_search (Complete search_state) (* no more nodes to explore *)
     | search_node :: _ ->
         if search_node.open_transition = [] && search_node.system_state.sst_system_transitions = [] then
-          record_final_state search_state search_node |> pop |> search
+          Continue_search (record_final_state search_state search_node |> pop)
         else
           cont search_state
     end
   in
 
-  try
-    begin match search_state.search_nodes with
-    | [] -> Complete search_state (* no more nodes to explore *)
+  begin match search_state.search_nodes with
+  | [] -> Complete search_state (* no more nodes to explore *)
 
-    | _ :: _ ->
-        (* explore the transitions of the head node *)
-        print_status_message search_state;
+  | _ :: _ ->
+      (* explore the transitions of the head node *)
+      print_status_message search_state;
 
+      begin match
         ( check_limits
           @@ check_state_breakpoints
           @@ check_targets
@@ -1136,13 +1141,16 @@ let rec search search_state : search_outcome =
           @@ check_final
           @@ take_next_transition
           (* if all else fails, pop and continue *)
-          @@ (fun search_state -> pop search_state |> search)
+          @@ (fun search_state -> Continue_search (pop search_state))
         ) search_state
-    end
-  with e -> begin
-    let msg = Printexc.to_string e in
-    let stack = Printexc.get_backtrace () in
-    OcamlExn (search_state, Printf.sprintf "there was an error: %s\n%s\n" msg stack)
+      with
+      | Terminate_search r -> r
+      | Continue_search s  -> search s
+      | exception e ->
+          let msg = Printexc.to_string e in
+          let stack = Printexc.get_backtrace () in
+          OcamlExn (search_state, Printf.sprintf "there was an error: %s\n%s\n" msg stack)
+      end
   end
 
 exception RandomResult of search_outcome
