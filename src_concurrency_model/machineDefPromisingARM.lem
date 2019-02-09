@@ -1198,6 +1198,11 @@ let promising_shared_write : trans 'ts 'ss -> bool = function
   | _ -> false
 end
 
+let promising_stop_promising : trans 'ts 'ss -> bool = function
+  | SS_trans (SS_only SS_Promising_stop_promising _)  -> true
+  | _ -> false
+end
+
 let promising_write : trans 'ts 'ss -> bool = function
   | T_trans (T_sync (T_Promising_propagate_write _) _) -> true
   | T_trans (T_sync (T_Promising_propagate_write_nonshared _) _) -> true
@@ -1302,9 +1307,11 @@ let rec certprom_s params
   | cj :: cjs ->
     let fulfilled = cj.CJfulfilled || promises_fulfilled cj.CJpts in
     let next_transitions = 
-      guard (cj.CJfuel > 0) >>
-      promising_enumerate_transitions_of_thread params isem cj.CJpts >>=
-      thread_trans_to_trans cj.CJpss
+      if not (cj.CJfuel > 0)
+      then let () = print_endline "\nWarning: ran out of fuel\n" in []
+      else
+        promising_enumerate_transitions_of_thread params isem cj.CJpts >>=
+        thread_trans_to_trans cj.CJpss
     in 
     if not (List.null next_transitions) then
       let cj = <| cj with CJfulfilled = fulfilled |> in
@@ -1630,14 +1637,7 @@ let promising_enumerate_transitions_of_system
     stopped_promising && not (state.model.t.thread_certify_after_stop_promising) in
 
 
-  let filter (tr,cert_no_write) = 
-    ((state.model.t.thread_certify_after_stop_promising && stopped_promising) --> 
-       cert_no_write) &&
-    ((state.model.t.thread_certify_after_stop_promising && stopped_promising) --> 
-       not (promising_shared_write tr) &&
-    (state.model.ss.promise_first && not stopped_promising) --> 
-      promising_shared_write tr)
-  in
+
 
   let sys_thread_transitions : map thread_id (list (trans pts pss * bool)) =
 
@@ -1654,7 +1654,7 @@ let promising_enumerate_transitions_of_system
               match promising_enumerate_promising_transitions
                       state.model isem stop_certifying ts state.storage_subsystem with
               | Just [] -> (Map.insert tid [] m, false, deadlock)
-              | Just trs -> (Map.insert tid (List.filter filter trs) m, true, deadlock)
+              | Just trs -> (Map.insert tid trs m, true, deadlock)
               | Nothing -> (m, true, true)
               end
          end
@@ -1679,7 +1679,14 @@ let promising_enumerate_transitions_of_system
     promising_ss_enumerate_transitions state.model state.storage_subsystem 
   in
 
-
+  let filter (tr,cert_no_write) = 
+    ((state.model.t.thread_certify_after_stop_promising && stopped_promising) --> 
+       cert_no_write) &&
+    ((state.model.t.thread_certify_after_stop_promising && stopped_promising) --> 
+       not (promising_shared_write tr)) &&
+    ((state.model.ss.promise_first && not stopped_promising) --> 
+      promising_shared_write tr)
+  in
   let thread_transitions = 
     Map_extra.fold (fun _ trs acc -> acc ++ (List.filter filter trs))
       sys_thread_transitions []

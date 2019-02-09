@@ -74,7 +74,7 @@ let default_model_params =
 
         thread_run_after_stop_promising = true;
         thread_certify_after_stop_promising = false;
-        thread_promising_fuel = 100000;
+        thread_promising_fuel = 10000;
 
         branch_targets                 = Map.empty;
 
