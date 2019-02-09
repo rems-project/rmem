@@ -1570,7 +1570,7 @@ type pts' 'v =
    ; vRel : 'v
    ; fwd_bank : map address (w_eiid * bool * 'v)
    ; xcl_bank : maybe ((w_eiid * address) * 'v) (* v is read exclusive view, for RISCV *)
-   ; promises : set w_eiid
+   ; promises : set (w_eiid * 'v * address)
    ; prog     : address -> fetch_and_decode_outcome
    ; initAddr : maybe address
    ; retAddr  : address
@@ -1603,6 +1603,7 @@ class (View 'v)
   val toPTS : pts' 'v -> promising_thread_state
   val to_ui_view : 'v -> ui_view
 end
+
 
 instance (View nat)
   let join = max

@@ -562,9 +562,9 @@ let vRel s = s.vRel
 let fwd_bank addr s = Map.lookup addr s.fwd_bank
 let xcl_bank s = s.xcl_bank
 let promises s = s.promises
-let promises' = function
-  | PTSTO s -> promises s
-  | PTSPO s -> promises s
+let emptypromises' = function
+  | PTSTO s -> Set.null (promises s)
+  | PTSPO s -> Set.null (promises s)
 end
 let prog s     = s.prog
 let initAddr s = s.initAddr
@@ -601,11 +601,22 @@ let inline set_initAddr' x = function
   | PTSTO s -> PTSTO (set_initAddr x s)
   | PTSPO s -> PTSPO (set_initAddr x s)
 end
-let set_promises x s = <| s with promises = x |>
-val set_promises' : set w_eiid -> pts -> pts
-let set_promises' x = function
-  | PTSTO s -> PTSTO (set_promises x s)
-  | PTSPO s -> PTSPO (set_promises x s)
+let add_promise x s = <| s with promises = Set.insert x s.promises |>
+val add_promise' : w_eiid * view * address -> pts -> pts
+let add_promise' (wid,v,addr) s = match (v,s) with
+  | (Timestamp x, PTSTO s) -> PTSTO (add_promise (wid,x,addr) s)
+  | (Write_Ids x, PTSPO s) -> PTSPO (add_promise (wid,x,addr) s)
+  | _ -> fail
+end
+let remove_promise wid s =
+  <| s with promises = Set.filter (fun (w,_,_) -> w <> wid) s.promises |>
+let remove_promise' wid = function
+  | PTSTO s -> PTSTO (remove_promise wid s)
+  | PTSPO s -> PTSPO (remove_promise wid s)
+end
+let empty_promises' = function
+  | PTSTO s -> Set.null s.promises
+  | PTSPO s -> Set.null s.promises
 end
 let set_ids x s    = <| s with ids = x |>
 let set_instrs x s  = <| s with instrs = x |>
@@ -1022,7 +1033,7 @@ let run_load_instruction params (s,ii,view,o) =
 
 (* see also run_store_exclusive_instruction *)
 val run_store_instruction : 
-  forall 'v. View 'v => 
+  forall 'v. View 'v, SetType 'v => 
     (Maybe.maybe ((MachineDefTypes.w_eiid * Sail_impl_base.address) * 'v)) ->
     instr_runner 'v
 let run_store_instruction xinfo params (s,ii,view,o) = 
@@ -1059,12 +1070,12 @@ let run_store_instruction xinfo params (s,ii,view,o) =
         $> ifA (is_acquire_W wk) (inc_vWp post_view)
         $> ifA (is_exclusive_W wk) (set_xcl_bank Nothing)
         $> set_fwd_bank addr (w.weiid,is_exclusive_W wk, addr_data_view)
-        $> set_promises (Set.delete w.weiid (promises s))
+        $> remove_promise w.weiid
     in
     let (s,ii,view,o) = do_local_effs (s,ii,post_view,c true) in
     make_tc (fst (finish_instruction params (s,ii,view,o)))
   in
-  if exists (p IN (promises s)). p = w.weiid then
+  if exists ((p,_,_) IN (promises s)). p = w.weiid then
     let tl = make_label' (tid s) ii.instance_ioid wd state' in
     return (T_sync (T_Promising_fulfil_promise tl) ())
   else if in_shared_memory params (addr,sz) then
@@ -1075,7 +1086,7 @@ let run_store_instruction xinfo params (s,ii,view,o) =
     return (T_sync (T_Promising_propagate_write_nonshared tl) ())
 
 
-val run_store_exclusive_instruction : forall 'v. View 'v => instr_runner 'v
+val run_store_exclusive_instruction : forall 'v. View 'v, SetType 'v => instr_runner 'v
 let run_store_exclusive_instruction params (s,ii,view,o) = 
   let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
   let c = ensure_excl_res_outcome o in
@@ -1151,13 +1162,34 @@ let cia_of_state' params = function
   | PTSPO s -> cia_of_state params s
 end
 
+let quick_detect_deadlock = function
+  | PTSTO ts ->
+     exists ((wid,v,addr) IN promises ts). 
+     not ((joinS [vWp ts;vCAP ts;vCoh addr ts]) < v)
+  | PTSPO ts ->
+     exists ((wid,WI v,addr) IN promises ts). 
+     not (le (joinS [vWp ts;vCAP ts;vCoh addr ts]) (WI (Set.delete wid v)))
+  | _ -> fail
+  end
+
+let quick_quick_detect_deadlock = function
+  | PTSTO ts ->
+     exists ((wid,v,addr) IN promises ts). not (vCAP ts < v)
+  | PTSPO ts ->
+     exists ((wid,WI v,addr) IN promises ts). not (le (vCAP ts) (WI (Set.delete wid v)))
+  | _ -> fail
+  end
+
+
 let promising_enumerate_transitions_of_thread
     (params : model_params)
     (isem : instruction_semantics)
     (s : pts)
   : list (thread_trans pts) =
   let cia = cia_of_state' params.t s in
-  guard (isJust (initAddr' s) && cia <> (retAddr' s)) >>
+  guard (isJust (initAddr' s) && 
+         cia <> (retAddr' s) &&
+         not (quick_quick_detect_deadlock s)) >>
   match s with
   | PTSTO s -> run_addr params isem s cia
   | PTSPO s -> run_addr params isem s cia
@@ -1166,7 +1198,7 @@ let promising_enumerate_transitions_of_thread
 
 (* fix the params.thread_run_after_stop_promising case *)
 let is_final_tstate params (s : pts) : bool =
-  Set.null (promises' s) && (cia_of_state' params s) = retAddr' s
+  empty_promises' s && (cia_of_state' params s) = retAddr' s
     (* not params.thread_run_after_stop_promising *)
 
 
@@ -1248,15 +1280,17 @@ let thread_trans_to_trans pts = function
   end
 
 let promise_write (ss : pss) (ts : pts) (wd : writedata) : list (trans pts pss) = 
-  let tc_cont mwo = 
-    let ts' = set_promises' (Set.insert wd.wd_w.weiid (promises' ts)) ts in
-    make_tc' ts'
-  in
+  let tc_cont = function
+    | MWO_successful v ->
+       let ts' = add_promise' (wd.wd_w.weiid,v,fst wd.wd_w.w_addr) ts in
+       make_tc' ts'
+    | _ -> fail
+  end in
   let tl = make_label' wd.wd_w.w_thread wd.wd_w.w_ioid (wd,true) tc_cont in
   let thread_t = T_Promising_propagate_write tl in
   promising_ss_receive_transitions ss thread_t
 
-let promises_fulfilled t = Set.null (promises' t)
+let promises_fulfilled t = empty_promises' t
 
 
 type certjob =
@@ -1342,21 +1376,6 @@ let certprom_transition params isem pts pss tr =
            |> in
   certprom_s params isem [cj] NotCertified
 
-let quick_detect_deadlock pss pts = 
-  match (pts,pss) with
-  | (PTSTO ts, PSSTO pss) ->
-     exists (p IN promises ts). 
-     let (w,v,_) = pssto_find_write pss p in
-     (* exists ((w,v) MEM pss.pssto_memory).
-      * w.weiid IN promises ts && *)
-     not ((joinS [vWp ts;vCAP ts;vCoh (fst w.w_addr) ts]) < v)
-  | (PTSPO ts, PSSPO pss) ->
-     exists (p IN promises ts). 
-     let (w,WI v) = psspo_find_write pss p in
-     let v = v \ {p} in
-     not (le (joinS [vWp ts;vCAP ts;vCoh (fst w.w_addr) ts]) (WI v))
-  | _ -> fail
-  end
 
 
 
@@ -1370,7 +1389,7 @@ let promising_enumerate_promising_transitions
     (pss : pss)
     : maybe (list (trans pts pss * bool)) =  (* 'Nothing' indicates a deadlock *)
 
-  if stopped_promising && quick_detect_deadlock pss pts then Nothing else
+  if stopped_promising && quick_detect_deadlock pts then Nothing else
 
   let trs = 
     promising_enumerate_transitions_of_thread params isem pts >>= 
@@ -1468,7 +1487,7 @@ let merge_pss_states s1 s2 =
 
 
 val make_ui_promising_thread_state_1 :
-  forall 'v 'pts 'pss. View 'v => pts' 'v -> ('v -> 'v) -> ui_thread_state 'pts 'pss
+  forall 'v 'pts 'pss. View 'v, SetType 'v => pts' 'v -> ('v -> 'v) -> ui_thread_state 'pts 'pss
 let make_ui_promising_thread_state_1 (t' : pts' 'v) view_transform = 
   UI_promising_thread_state 
   <| ui_promising_reg = List.map C3_unchanged (Map_extra.toList t'.reg);
@@ -1492,7 +1511,7 @@ let make_ui_promising_thread_state_1 (t' : pts' 'v) view_transform =
          (Map_extra.toList t'.fwd_bank) ;
      ui_promising_xcl_bank =
        C2b_unchanged (Maybe.map (fun (x,v) -> (x,to_ui_view (view_transform v))) (t'.xcl_bank));
-     ui_promising_promises = unchanged3_set t'.promises;
+     ui_promising_promises = unchanged3_set (Set.map (fun (p,_,_) -> p) t'.promises);
      ui_promising_initAddr = C2b_unchanged t'.initAddr ;
      ui_promising_initRegS = t'.initRegS;
      ui_promising_last_ioid = Maybe.map (fun i -> i.instance_ioid) (index t'.instrs 0);
@@ -1500,7 +1519,7 @@ let make_ui_promising_thread_state_1 (t' : pts' 'v) view_transform =
 
 
 val make_ui_promising_thread_state_2 :
-  forall 'v 'pts 'pss. View 'v => pts' 'v -> pts' 'v -> list (ui_trans 'pts 'pss) ->
+  forall 'v 'pts 'pss. View 'v, SetType 'v => pts' 'v -> pts' 'v -> list (ui_trans 'pts 'pss) ->
   ui_thread_state 'pts 'pss
 let make_ui_promising_thread_state_2 t t' ncands = 
   UI_promising_thread_state 
@@ -1530,7 +1549,7 @@ let make_ui_promising_thread_state_2 t t' ncands =
        let fwd = List.map (fun (a,(x,b,v)) -> (a,(x,b,to_ui_view v))) (Map_extra.toList t.fwd_bank) in
        let fwd' = List.map (fun (a,(x,b,v)) -> (a,(x,b,to_ui_view v))) (Map_extra.toList t'.fwd_bank) in
        ui_list_diff3 fwd fwd';
-     ui_promising_promises = ui_set_diff3 t.promises t'.promises;
+     ui_promising_promises = ui_set_diff3 (Set.map (fun (p,_,_) -> p) t.promises) (Set.map (fun (p,_,_) -> p) t'.promises);
      ui_promising_initAddr = ui_eq_diff2b t.initAddr t'.initAddr;
      ui_promising_initRegS = t'.initRegS;
      ui_promising_last_ioid = Maybe.map (fun i -> i.instance_ioid) (index t'.instrs 0);
