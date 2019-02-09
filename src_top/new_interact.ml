@@ -69,7 +69,6 @@ type interact_node =
     trace to an interact trace). *)
     filtered_transitions: (int option * ConcModel.trans) list;
     eager_mode:           MachineDefTypes.eager_mode;
-    model:                MachineDefTypes.model_params;
     follow_ast:           Interact_parser_base.ast option;
   }
 
@@ -435,7 +434,6 @@ let add_interact_node ?(open_transition=[]) ?follow_ast node_type interact_state
       open_transition      = open_transition;
       filtered_transitions = transitions;
       eager_mode           = interact_state.options.eager_mode;
-      model                = !Globals.model_params;
       follow_ast           = follow_ast;
     }
   in
@@ -774,27 +772,6 @@ let ui_choices_of_search_trace
                               ui_state)
   )
 
-
-let ui_choices_string_of_search_trace
-    interact_state
-    (search_trace: Runner.trace) (* head is the last transition *)
-    : string
-  =
-  match interact_state.interact_nodes with
-  | [] -> assert false
-  | interact_node :: _ ->
-      let (ui_choices, ui_transitions) =
-        match ui_choices_of_search_trace interact_state interact_node search_trace with
-        | (choices, transitions) -> (Interact_parser_base.history_to_string choices, transitions)
-        | exception (TraceRecon s) ->
-            (Printf.sprintf "could not reconstruct trace (%s)" s, "")
-      in
-      OTConcat [
-        otLine (OTFollowList ui_choices);
-        OTVerbose (Globals.Debug, otLine (OTString ui_transitions));
-      ] |> Screen.of_output_tree
-
-
 let print_history interact_state : unit =
   Screen.show_message interact_state.ppmode "\"%s\"" (List.rev interact_state.cmd_history |> List.map Interact_parser_base.pp |> String.concat ";" |> Screen.escape)
 
@@ -987,7 +964,6 @@ let do_search mode interact_state breakpoints bounds targets filters: interact_s
           bounds targets filters
           (* TODO: bounds, targets, filters from interact_state*)
           (fun _ -> ()) (* TODO: print_partial_results? *)
-          (ui_choices_string_of_search_trace interact_state)
       with
       | Runner.Complete search_state ->
           Screen_base.OTConcat
@@ -2230,12 +2206,42 @@ let run_exhaustive_search
     | _ -> []
   in
 
-  let run_search print_partial_results options system_state : Runner.search_outcome =
+  let print_diffs search_state bt_union bt_diff sm_union sm_diff : unit =
+    if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
+      if not (Pmap.is_empty bt_union) then begin
+        Screen.show_message ppmode
+          "Branch-register targets that were observed:\n%s"
+          (MachineDefSystem.branch_targets_to_list bt_union |> Runner.sprint_branch_targets ppmode);
+
+        if bt_diff <> [] then
+          Screen.show_message ppmode
+            "(from which the following are new: %s)"
+            (Runner.sprint_branch_targets ppmode bt_diff);
+      end;
+
+      if options.eager_mode.eager_local_mem then begin
+        if Pset.is_empty sm_union then
+          Screen.show_message ppmode "No shared memory footprints were observed!"
+        else begin
+          Screen.show_message ppmode
+            "Shared memory footprints that were observed:\n%s"
+            (Runner.sprint_shared_memory ppmode sm_union);
+
+          if not (Pset.is_empty sm_diff) then
+            Screen.show_message ppmode
+              "(from which the following are new: %s)"
+              (Runner.sprint_shared_memory ppmode sm_diff);
+        end
+      end;
+    end;
+  in
+
+  let run_search print_partial_results options sst : Runner.search_outcome =
     Runner.search_from_state
         ~ppmode:ppmode
         options
         test_info
-        (ConcModel.sst_of_state options system_state)
+        sst
         (* HACK *)
         (List.map
             (fun (pred, _) ->
@@ -2245,76 +2251,40 @@ let run_exhaustive_search
         [] (* targets *)
         [] (* filters *)
         print_partial_results
-        (ui_choices_string_of_search_trace (initial_interact_state options ppmode test_info system_state))
   in
+
   let rec search_fixed_point n system_state : unit =
     if Globals.is_verbosity_at_least Globals.ThrottledInformation then
       Screen.show_message ppmode
         "%s Starting exhaustive search (%d)." (Runner.sprint_time ()) n;
+
+    let interact_state = initial_interact_state options ppmode test_info system_state in
 
     let print_results partial = fun search_state ->
       if partial then
         Screen.show_warning ppmode "%s" ( "***********************\n" ^
                                           "*** PARTIAL RESULTS ***\n" ^
                                           "***********************");
-      let interact_state = initial_interact_state options ppmode test_info system_state in
-      begin match interact_state.interact_nodes with
-      | [] -> assert false
-      | node :: _ ->
-          print_search_results interact_state node search_state (Sys.time ())
-      end
+      print_search_results
+        interact_state
+        (List.hd interact_state.interact_nodes)
+        search_state
+        (Sys.time ())
     in
 
-    let print_not_fixed_point search_state bt_union bt_diff sm_union sm_diff : unit =
-      if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
-        Screen.show_message ppmode
-          "%s An exhaustive search (%d) was finished but a fixed point was not reached."
-          (Runner.sprint_time ())
-          n;
-
-        if not (Pmap.is_empty bt_union) then begin
-          Screen.show_message ppmode
-            "Branch-register targets that were observed:\n%s"
-            (MachineDefSystem.branch_targets_to_list bt_union |> Runner.sprint_branch_targets ppmode);
-
-          if bt_diff <> [] then
-            Screen.show_message ppmode
-              "(from which the following are new: %s)"
-              (Runner.sprint_branch_targets ppmode bt_diff);
-        end;
-
-        if options.eager_mode.eager_local_mem then begin
-          if Pset.is_empty sm_union then
-            Screen.show_message ppmode "No shared memory footprints were observed!"
-          else begin
-            Screen.show_message ppmode
-              "Shared memory footprints that were observed:\n%s"
-              (Runner.sprint_shared_memory ppmode sm_union);
-
-            if not (Pset.is_empty sm_diff) then
-              Screen.show_message ppmode
-                "(from which the following are new: %s)"
-                (Runner.sprint_shared_memory ppmode sm_diff);
-          end;
-        end;
-
-        if options.allow_partial then print_results true search_state;
-      end;
-      ()
-    in
-
-    match run_search (print_results true) options system_state with
+    let sst = (List.hd interact_state.interact_nodes).system_state in
+    match run_search (print_results true) options sst with
     | Runner.Complete search_state' ->
         let (bt_union, bt_diff) =
           MachineDefSystem.union_and_diff_branch_targets
             search_state'.Runner.observed_branch_targets
-            system_state.model.t.branch_targets
+            sst.sst_state.model.t.branch_targets
         in
 
         let (sm_union, sm_diff) =
           MachineDefSystem.union_and_diff_shared_memory
             search_state'.Runner.observed_shared_memory
-            system_state.model.shared_memory
+            sst.sst_state.model.shared_memory
         in
 
         if bt_diff = [] && (not options.eager_mode.eager_local_mem || Pset.is_empty sm_diff) then
@@ -2322,15 +2292,24 @@ let run_exhaustive_search
           print_results false search_state'
 
         else begin
-          print_not_fixed_point search_state' bt_union bt_diff sm_union sm_diff;
+          if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
+            Screen.show_message ppmode
+              "%s An exhaustive search (%d) was finished but a fixed point was not reached."
+              (Runner.sprint_time ())
+              n;
+              print_diffs search_state' bt_union bt_diff sm_union sm_diff;
+              if options.allow_partial then print_results true search_state';
+          end;
 
           let model' =
-            { system_state.model with
-              t = {system_state.model.t with branch_targets = bt_union};
+            { sst.sst_state.model with
+              t = {sst.sst_state.model.t with branch_targets = bt_union};
               shared_memory = sm_union;
             }
           in
-          {system_state with model = model'}
+
+          let initial_node = List.rev interact_state.interact_nodes |> List.hd in
+          {initial_node.system_state.sst_state with model = model'}
           |> search_fixed_point (n + 1)
         end
 
@@ -2361,53 +2340,37 @@ let run_exhaustive_search
         (Runner.sprint_time ())
         options.pseudorandom_traces;
 
+    let interact_state = initial_interact_state options ppmode test_info system_state in
+
     let print_results = fun search_state ->
-      let interact_state = initial_interact_state options ppmode test_info system_state in
-      begin match interact_state.interact_nodes with
-      | [] -> assert false
-      | node :: _ ->
-          OTConcat [
-            otStrLine "---------------------------------------------";
-            print_observations interact_state node search_state;
-            otStrLine "---------------------------------------------";
-          ]
-          |> Screen.of_output_tree
-          |> Screen.show_message ppmode "%s";
-      end
+      OTConcat [
+        otStrLine "---------------------------------------------";
+        print_observations interact_state (List.hd interact_state.interact_nodes) search_state;
+        otStrLine "---------------------------------------------";
+      ]
+      |> Screen.of_output_tree
+      |> Screen.show_message ppmode "%s"
     in
-    match run_search (fun _ -> ()) options system_state with
-    | Runner.Complete search_state' when search_state'.Runner.trace_count < options.pseudorandom_traces ->
-        let (bt_union, _) =
+
+    let sst = (List.hd interact_state.interact_nodes).system_state in
+    match run_search (fun _ -> ()) options sst with
+    | Runner.Complete search_state' ->
+        let (bt_union, bt_diff) =
           MachineDefSystem.union_and_diff_branch_targets
             search_state'.Runner.observed_branch_targets
-            system_state.model.t.branch_targets
+            sst.sst_state.model.t.branch_targets
         in
 
-        let (sm_union, _) =
+        let (sm_union, sm_diff) =
           MachineDefSystem.union_and_diff_shared_memory
             search_state'.Runner.observed_shared_memory
-            system_state.model.shared_memory
+            sst.sst_state.model.shared_memory
         in
 
-        print_results search_state';
+        if bt_diff <> [] || (options.eager_mode.eager_local_mem && not (Pset.is_empty sm_diff)) then
+          print_diffs search_state' bt_union bt_diff sm_union sm_diff;
 
-        let options' =
-          { options with
-            pseudorandom_traces = options.pseudorandom_traces - search_state'.Runner.trace_count;
-          }
-        in
-
-        let model' =
-          { system_state.model with
-            t = {system_state.model.t with branch_targets = bt_union};
-            shared_memory = sm_union;
-          }
-        in
-
-        {system_state with model = model'}
-        |> search_random options'
-
-    | Runner.Complete search_state' -> print_results search_state'
+        print_results search_state'
 
     | Runner.Breakpoint ({Runner.search_nodes = {Runner.system_state = sst} :: _}, bp, reason) ->
         (* a breakpoint was triggered *)

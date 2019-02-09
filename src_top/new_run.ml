@@ -141,7 +141,6 @@ type search_state =
     loop_limit_count:       int;
 
     print_partial_results: search_state -> unit;
-    ui_trace_of_trace:     trace -> string;
 
     (*** control the search ***)
 
@@ -404,8 +403,6 @@ let print_last_state title search_state : unit =
           in
           Screen.show_message ppmode "%s"     (Pp.pp_ui_system_state ppmode' ui_state);
           Screen.show_message ppmode "via %s" (pp_choices (choices_so_far search_state));
-          Screen.show_message ppmode "via UI transitions %s"
-                                              (search_state.ui_trace_of_trace (choices_so_far search_state));
           Screen.show_message ppmode "last (non eager) transition: %s"
                                               (Pp.pp_trans ppmode tran);
           if ts <> [] then
@@ -959,7 +956,7 @@ let rec search search_state : search_outcome =
     | search_node :: _ ->
         if search_node.open_transition = [] && 
              search_state.options.hash_prune 
-             && not (search_node.system_state.sst_state.MachineDefTypes.s_model.ss_stopped_promising 
+             && not (search_node.system_state.sst_state.MachineDefTypes.s_model.ss_stopped_promising
                      search_node.system_state.sst_state.storage_subsystem)
         then
           let hash =
@@ -1153,6 +1150,7 @@ let rec search search_state : search_outcome =
       end
   end
 
+(* This exception is just to break out of the for loop below *)
 exception RandomResult of search_outcome
 
 let search_from_state
@@ -1166,7 +1164,6 @@ let search_from_state
     (targets:        sst_predicate list)
     (filters:        trans_predicate list)
     (print_partial_results: search_state -> unit)
-    (ui_trace_of_trace:     trace -> string)
     : search_outcome
   =
   let started_timestamp = Sys.time () |> int_of_float in
@@ -1216,7 +1213,6 @@ let search_from_state
       loop_limit_count       = 0;
 
       print_partial_results = print_partial_results;
-      ui_trace_of_trace     = ui_trace_of_trace;
 
       breakpoints = breakpoints;
 
@@ -1254,60 +1250,6 @@ let search_from_state
     else []
   in
 
-(* REMOVE:
-  let search_iter search_state =
-    if options.pseudorandom then
-      (* we use for-loop because js_of_ocaml does not handle tail call so well *)
-      let r = ref (Complete search_state) in
-      for _ = 0 to options.pseudorandom_traces - 1 do
-        match !r with
-        | Breakpoint _ -> ()
-        | Interrupted _ -> ()
-        | Complete r' ->
-           r := search {r' with search_nodes = search_state.search_nodes}
-      done;
-      !r
-    else
-      search search_state
-  in
-
-  let search_iter_count = ref 0 in
-
-  let rec search_until_fixed_shared search_state =
-    let m = search_state.ppmode in
-    if Globals.is_verbosity_at_least Globals.UnthrottledInformation then begin
-        search_iter_count := !search_iter_count + 1;
-        Screen.show_message m "Fixed shared iteration %d: [%s]" !search_iter_count (Pp.pp_list m (Pp.pp_raw_footprint m) search_state.shared_locations);
-      end;
-    let previous_shared_locations = search_state.shared_locations in
-    let results = search_iter search_state in
-    match results with
-    | Breakpoint _
-      | Interrupted _ -> results
-    | Complete state' ->
-       let new_shared_locations = state'.shared_locations in
-       if Globals.is_verbosity_at_least Globals.UnthrottledInformation then
-         Screen.show_message m "                      completed with %d transitions" state'.transitions_count;
-       if previous_shared_locations = new_shared_locations then begin
-           if Globals.is_verbosity_at_least Globals.UnthrottledInformation then
-             Screen.show_message m "                      and reached fixed point";
-           results
-         end
-       else
-         search_until_fixed_shared { search_state with read_locations = state'.read_locations;
-                                                       written_locations = state'.written_locations;
-                                                       shared_locations = state'.shared_locations;
-                                   }
-  in
-
-  let search_results =
-    if options.eager_up_to_shared then
-      search_until_fixed_shared init_search_state
-    else
-      search_iter init_search_state
-  in
-*)
-
   let search_random initial_search_state : search_outcome =
     let search_state = ref initial_search_state in
     try
@@ -1315,27 +1257,10 @@ let search_from_state
       for _ = 0 to options.pseudorandom_traces - 1 do
         match search !search_state with
         | (Complete search_state') as result ->
-            let (_, bt_diff) =
-              MachineDefSystem.union_and_diff_branch_targets
-                search_state'.observed_branch_targets
-                initial_search_state.observed_branch_targets
-            in
-            if bt_diff <> [] then
-              raise (RandomResult result); (* caught a few lines below *)
-
-
-            if options.eager_mode.eager_local_mem &&
-              let (_, sm_diff) =
-                MachineDefSystem.union_and_diff_shared_memory
-                  search_state'.observed_shared_memory
-                  initial_search_state.observed_shared_memory
-              in
-              not (Pset.is_empty sm_diff)
-            then raise (RandomResult result); (* caught a few lines below *)
-
             search_state := {search_state' with search_nodes = initial_search_state.search_nodes}
 
-        | result -> raise (RandomResult result) (* caught a few lines below *)
+        (* This is just to break out of the loop; caught a few lines below *)
+        | result -> raise (RandomResult result)
       done;
       Complete !search_state
     with
