@@ -1,7 +1,7 @@
 % [RMEM](./)
 
 RMEM is a tool for exploring the relaxed-memory concurrency behaviour allowed by
-the ARM and IBM POWER architectures; it also has experimental support for x86-TSO and a candidate RISC-V model.
+the ARM, IBM POWER, and RISC-V architectures; it also has experimental support for a mixed-size version of x86-TSO.
 
 It lets one take small test programs, either concurrency litmus tests or
 standalone ELF binaries, and explore the envelope of all their architecturally
@@ -10,18 +10,6 @@ allowed behaviour -- interactively, randomly, or exhaustively.
 There is a web version for convenient use, compiled to JavaScript and running in
 the browser (best used in chrome/chromium), and a command-line version (not
 included here) for better performance and batch use.
-
-#ifdef ANON
-
-This version of RMEM is associated with an anonymous submission to POPL18 - it
-is essentially frozen as of that submission time, except that we have fixed a
-few simple issues (most notably, we forgot to include the paper test library).
-
-The current version of RMEM is
-[available here **(non-anonymous)**](https://is.gd/OpRyFy).
-It has a slightly improved UI.
-
-#endif
 
 # Getting Started
 
@@ -46,6 +34,7 @@ To use the web version:
       model; and
     - for IBM POWER, the model described in the PLDI 11, PLDI 12, MICRO 15, and
       POPL 17 papers.
+    - for RISC-V, the operational RVWMO model described in the RISC-V architecture specification.
 
     These are all operational models, defining model states and transitions.
 
@@ -77,7 +66,7 @@ To use the web version:
   * Many things can be done either with menus or by typing commands into the
     console.  [The full console command help is below.](#full-console-help)
 
-For both ARM and POWER, the models include essentially all the integer
+For ARM, POWER, and RISC-V, the models include essentially all the integer
 non-vector user-mode instructions, with instruction semantics based on or
 derived from the vendor pseudocode.  They include mixed-size behaviour; ARM
 release/acquires and exclusives, `isb`, `dmb sy`, `dmb ld`, and `dmb st`; and
@@ -92,13 +81,14 @@ floating-point, vector instructions, MMU aspects, or self-modifying code.
     `--js-flags="--harmony-tailcalls"`, which enables experimental tail call
     optimisation.
 
-#ifndef ANON
 
 # Papers
 
+* [ISA Semantics for ARMv8-A, RISC-V, and CHERI-MIPS](http://www.cl.cam.ac.uk/users/pes20/sail/sail-popl2019.pdf). Alasdair Armstrong, Thomas Bauereiss, Brian Campbell, Alastair Reid, Kathryn E. Gray, Robert M. Norton, Prashanth Mundkur, Mark Wassell, Jon French, Christopher Pulte, Shaked Flur, Ian Stark, Neel Krishnaswami, and Peter Sewell. In POPL 2019, Proc. ACM Program. Lang. 3, POPL, Article 71
+
 * [Simplifying ARM Concurrency: Multicopy-atomic Axiomatic and Operational Models for ARMv8](http://www.cl.cam.ac.uk/~pes20/armv8-mca/armv8-mca-draft.pdf).
   Christopher\ Pulte, Shaked\ Flur, Will\ Deacon, Jon\ French, Susmit\ Sarkar,
-  Peter\ Sewell. Draft. July\ 2017. [Further details](http://www.cl.cam.ac.uk/~pes20/armv8-mca/).
+  Peter\ Sewell. In POPL 2018. [Further details](http://www.cl.cam.ac.uk/~pes20/armv8-mca/).
 
 * [The Sail instruction-set semantics specification language](http://www.cl.cam.ac.uk/~pes20/sail/manual.pdf).
   Kathryn\ E.\ Gray, Peter\ Sewell, Christopher\ Pulte, Shaked\ Flur, Robert\ Norton-Wright. March\ 2017.
@@ -200,11 +190,6 @@ RMEM also builds on earlier work on tool and model development, for the
 and
 [Francesco\ Zappa\ Nardelli](http://moscova.inria.fr/~zappa) (INRIA\ Paris).
 
-#else
-
-*Author information and links to papers have been omitted here for anonymous review purposes.*
-
-#endif
 
 # Disclaimer
 
@@ -213,20 +198,12 @@ experiment, by discussion with the vendors, and (for the ARM Flat model) by an
 equivalence proof with the revised ARM architecture axiomatic model, they are
 not the vendor architecture documents of either IBM or ARM.
 
-#ifndef ANON
-
 # Funding
 
 This work is funded by
 [REMS: Rigorous Engineering for Mainstream Systems](http://www.cl.cam.ac.uk/users/pes20/rems),
 by an EPSRC iCASE studentship, and by an EPSRC Impact Acceleration Account
 Knowledge Transfer Fellowship (with ARM).
-
-#else
-
-*Funding information has been omitted here for anonymous review purposes.*
-
-#endif
 
 # User Guide
 
