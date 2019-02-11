@@ -115,7 +115,11 @@ let opts = [
 
 ("-new_run",
     Arg.Unit (fun () -> Globals.use_new_run := true),
-    (Printf.sprintf " use new_run.ml instead of run.ml"));
+    (Printf.sprintf " use new_run.ml instead of run.ml (default)"));
+
+("-old_run",
+    Arg.Unit (fun () -> Globals.use_new_run := false),
+    (Printf.sprintf " use run.ml instead of new_run.ml"));
 
 (** interactive mode options ****************************************)
 

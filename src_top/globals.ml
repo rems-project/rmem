@@ -32,7 +32,7 @@
 (* let candidates = ref None *)
 
 
-let use_new_run = ref false;
+let use_new_run = ref true;
 
 (** output options **************************************************)
 
