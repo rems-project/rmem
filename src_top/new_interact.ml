@@ -1016,7 +1016,7 @@ let do_search mode interact_state breakpoints bounds targets filters: interact_s
             ]
           |> Screen.of_output_tree |> Screen.final_message interact_state.ppmode false;
           Screen.show_warning interact_state.ppmode "*** Error ***\n";
-          interact_state
+          exit 1
       end
   end
 
