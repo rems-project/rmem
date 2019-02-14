@@ -261,7 +261,7 @@ let address_lifted_of_address a =
     Address bytes i -> Address_lifted (List.map byte_lifted_of_byte bytes) (Just i)
   end
 
-let sail2_addr_to_sail1 addr = address_lifted_of_address (address_of_integer (fromJust (Sail2_values.unsigned_of_bits addr)))
+let sail2_addr_to_sail1 addr = address_lifted_of_address (address_of_integer (integerFromNat addr))
 
 val sail1_memval_to_sail2 : memory_value -> list Sail2_values.memory_byte
 let sail1_memval_to_sail2 mv =
@@ -278,21 +278,21 @@ let sail2_memval_to_sail1 mv =
 val sail2_prompt_to_outcome : forall 'a 'e. Sail2_prompt_monad.monad Riscv_types.register_value 'a 'e -> outcome 'a
 let rec sail2_prompt_to_outcome p =
   match p with
-  | Sail2_prompt_monad.Done a                -> Sail_impl_base.Done a
-  | Sail2_prompt_monad.Exception e           -> Sail_impl_base.Fail (Just "*Sail2 exception escaped*") (* TODO *)
-  | Sail2_prompt_monad.Fail s                -> Sail_impl_base.Fail (Just s)
-  | Sail2_prompt_monad.Print s next          -> sail2_prompt_to_outcome next (* TODO *)
-  | Sail2_prompt_monad.Footprint next        -> Sail_impl_base.Footprint (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Undefined _           -> failwith "unsupported Undefined constructor of prompt monad"
-  | Sail2_prompt_monad.Read_tag _ _          -> failwith "unsupported Read_tag constructor of prompt monad"
-  | Sail2_prompt_monad.Write_tag _ _ _       -> failwith "unsupported Write_tag constructor of prompt monad"
-  | Sail2_prompt_monad.Read_reg name f       -> Sail_impl_base.Read_reg (string_to_sail1_reg name) (fun v -> (sail2_prompt_to_outcome (f (sail1_regval_to_riscv v)), Nothing))
-  | Sail2_prompt_monad.Write_reg name v next -> Sail_impl_base.Write_reg (string_to_sail1_reg name, riscv_regval_to_sail v) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Barrier bk next       -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Read_mem rk a sz f    -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (sail2_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
-  | Sail2_prompt_monad.Write_ea wk a sz next -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Write_memv mv f       -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
-  | Sail2_prompt_monad.Excl_res f            -> Sail_impl_base.Excl_res (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Done a                 -> Sail_impl_base.Done a
+  | Sail2_prompt_monad.Exception e            -> Sail_impl_base.Fail (Just "*Sail2 exception escaped*") (* TODO *)
+  | Sail2_prompt_monad.Fail s                 -> Sail_impl_base.Fail (Just s)
+  | Sail2_prompt_monad.Print s next           -> sail2_prompt_to_outcome next (* TODO *)
+  | Sail2_prompt_monad.Footprint next         -> Sail_impl_base.Footprint (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Choose _ _             -> failwith "unsupported Choose constructor of prompt monad"
+  | Sail2_prompt_monad.Read_memt _ _ _ _      -> failwith "unsupported Read_memt constructor of prompt monad"
+  | Sail2_prompt_monad.Write_memt _ _ _ _ _ _ -> failwith "unsupported Write_memt constructor of prompt monad"
+  | Sail2_prompt_monad.Read_reg name f        -> Sail_impl_base.Read_reg (string_to_sail1_reg name) (fun v -> (sail2_prompt_to_outcome (f (sail1_regval_to_riscv v)), Nothing))
+  | Sail2_prompt_monad.Write_reg name v next  -> Sail_impl_base.Write_reg (string_to_sail1_reg name, riscv_regval_to_sail v) (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Barrier bk next        -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Read_mem rk a sz f     -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (sail2_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
+  | Sail2_prompt_monad.Write_ea wk a sz next  -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Write_mem _ _ _ mv f   -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Excl_res f             -> Sail_impl_base.Excl_res (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
 end
 
 val outcome_bind : forall 'a 'b. Sail_impl_base.outcome 'a -> ('a -> Sail_impl_base.outcome 'b) -> Sail_impl_base.outcome 'b
