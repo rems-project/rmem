@@ -1,0 +1,6 @@
+let power_externs = []
+let power_read_memory_functions = []
+let power_memory_writes = []
+let power_memory_eas = []
+let power_memory_vals = []
+let power_barrier_functions = []

@@ -1,0 +1,5 @@
+let x86_read_memory_functions = []
+let x86_memory_writes = []
+let x86_memory_eas = []
+let x86_memory_vals = []
+let x86_barrier_functions = []

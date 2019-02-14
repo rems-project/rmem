@@ -568,21 +568,21 @@ get_all_deps: get_all_isa_models
 get_isa_model_%: ISABUILDDIR ?= build_isa_models/$*
 get_isa_model_%: BUILDISA ?= true
 get_isa_model_%: BUILDISATARGET ?= all
-get_isa_model_%: ISASAILDIR ?= $(ISADIR)
-get_isa_model_%: ISALEMDIRS ?= $(ISADIR)
-get_isa_model_%: ISAGENDIR ?= $(ISADIR)/gen
+get_isa_model_%: ISASAILFILES ?= $(ISADIR)/*.sail
+get_isa_model_%: ISALEMFILES ?= $(ISADIR)/*.lem
+get_isa_model_%: ISAGENFILES ?= $(ISADIR)/gen/*
 get_isa_model_%: FORCE
 	rm -rf $(ISABUILDDIR)
 	mkdir -p $(ISABUILDDIR)
 	$(if $(call equal,$(BUILDISA),true),\
 	  $(if $(call equal,$(CLEANDEPS),true),$(MAKE) -C $(ISADIR) clean &&)\
 	  $(MAKE) -C $(ISADIR) $(BUILDISATARGET) &&\
-	  cp -a $(ISASAILDIR)/*.sail $(ISABUILDDIR) &&\
+	  cp -a $(ISASAILFILES) $(ISABUILDDIR) &&\
+	  cp -a $(ISALEMFILES) $(ISABUILDDIR) &&\
 	  { [ ! -f $(ISADIR)/$(ISANAME).ml ] || cp -a $(ISADIR)/$(ISANAME).ml $(ISABUILDDIR)/$(ISANAME).ml.notstub; })
-	cp -a $(ISALEMDIRS:=/*.lem) $(ISABUILDDIR)
 	cp -a src_top/generic_sail_ast_def_stub.ml $(ISABUILDDIR)/$(ISANAME).ml.stub
 	mkdir -p $(ISABUILDDIR)/gen
-	cp -a $(ISAGENDIR)/* $(ISABUILDDIR)/gen/
+	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
 	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
@@ -639,10 +639,10 @@ get_all_isa_models: get_isa_model_mips
 
 get_isa_model_riscv: ISANAME=riscv
 get_isa_model_riscv: ISADIR=$(riscvdir)
-get_isa_model_riscv: ISASAILDIR=$(ISADIR)/model
-get_isa_model_riscv: ISALEMDIRS=$(ISADIR)/generated_definitions/lem-for-rmem
-get_isa_model_riscv: ISALEMDIRS+=$(ISADIR)/handwritten_support
-get_isa_model_riscv: ISAGENDIR=$(ISADIR)/handwritten_support/hgen
+get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
+get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/lem-for-rmem/*.lem
+get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/*.lem
+get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
 get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv_rmem
@@ -694,6 +694,7 @@ ifeq ($(filter PPCGEN,$(ISA_LIST)),)
   POWER_FILES += src_concurrency_model/isa_stubs/power/power_embed_types.lem
   POWER_FILES += src_concurrency_model/isa_stubs/power/power_embed.lem
   POWER_FILES += src_concurrency_model/isa_stubs/power/machineDefISAInfoPPCGen.lem
+  POWER_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/power/power_extras.lem)
   POWER_SEQUENTIAL_FILES += src_concurrency_model/isa_stubs/power/power_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/power/power_toFromInterp.lem
 else
@@ -701,16 +702,17 @@ else
   POWER_FILES += build_isa_models/power/power_embed_types.lem
   POWER_FILES += build_isa_models/power/power_embed.lem
   POWER_FILES += src_concurrency_model/machineDefISAInfoPPCGen.lem
+  POWER_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/power/power_extras.lem)
   POWER_SEQUENTIAL_FILES += build_isa_models/power/power_extras_embed_sequential.lem
   POWER_SEQUENTIAL_FILES += build_isa_models/power/power_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += build_isa_models/power/power_toFromInterp.lem
 endif
-POWER_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/power/power_extras.lem)
 
 ifeq ($(filter AArch64,$(ISA_LIST)),)
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_embed_types.lem
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_embed.lem
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/machineDefISAInfoAArch64.lem
+  AARCH64_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/aarch64/armV8_extras.lem)
   AARCH64_SEQUENTIAL_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_toFromInterp.lem
 else
@@ -718,16 +720,17 @@ else
   AARCH64_FILES += build_isa_models/aarch64/armV8_embed_types.lem
   AARCH64_FILES += build_isa_models/aarch64/armV8_embed.lem
   AARCH64_FILES += src_concurrency_model/machineDefISAInfoAArch64.lem
+  AARCH64_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/aarch64/armV8_extras.lem)
   AARCH64_SEQUENTIAL_FILES += build_isa_models/aarch64/armV8_extras_embed_sequential.lem
   AARCH64_SEQUENTIAL_FILES += build_isa_models/aarch64/armV8_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += build_isa_models/aarch64/armV8_toFromInterp.lem
 endif
-AARCH64_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/aarch64/armV8_extras.lem)
 
 ifeq ($(filter MIPS,$(ISA_LIST)),)
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mips_embed_types.lem
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mips_embed.lem
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/machineDefISAInfoMIPS.lem
+  MIPS_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/mips/mips_extras.lem)
   MIPS_SEQUENTIAL_FILES += src_concurrency_model/isa_stubs/mips/mips_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/mips/mips_toFromInterp.lem
 else
@@ -735,11 +738,11 @@ else
   MIPS_FILES += build_isa_models/mips/mips_embed_types.lem
   MIPS_FILES += build_isa_models/mips/mips_embed.lem
   MIPS_FILES += src_concurrency_model/machineDefISAInfoMIPS.lem
+  MIPS_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/mips/mips_extras.lem)
   MIPS_SEQUENTIAL_FILES += build_isa_models/mips/mips_extras_embed_sequential.lem
   MIPS_SEQUENTIAL_FILES += build_isa_models/mips/mips_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += build_isa_models/mips/mips_toFromInterp.lem
 endif
-MIPS_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/mips/mips_extras.lem)
 
 ifeq ($(filter RISCV,$(ISA_LIST)),)
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscv_types.lem
@@ -760,12 +763,12 @@ else
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
 #  ISA_TOFROM_INTERP_FILES += build_isa_models/riscv/riscv_toFromInterp.lem
 endif
-# RISCV_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/riscv/riscv_extras.le)
 
 ifeq ($(filter X86,$(ISA_LIST)),)
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86_embed_types.lem
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86_embed.lem
   X86_FILES += src_concurrency_model/isa_stubs/x86/machineDefISAInfoX86.lem
+  X86_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/x86/x86_extras.lem)
   X86_SEQUENTIAL_FILES += src_concurrency_model/isa_stubs/x86/x86_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/x86/x86_toFromInterp.lem
 else
@@ -773,11 +776,11 @@ else
   X86_FILES += build_isa_models/x86/x86_embed_types.lem
   X86_FILES += build_isa_models/x86/x86_embed.lem
   X86_FILES += src_concurrency_model/machineDefISAInfoX86.lem
+  X86_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/x86/x86_extras.lem)
   X86_SEQUENTIAL_FILES += build_isa_models/x86/x86_extras_embed_sequential.lem
   X86_SEQUENTIAL_FILES += build_isa_models/x86/x86_embed_sequential.lem
   ISA_TOFROM_INTERP_FILES += build_isa_models/x86/x86_toFromInterp.lem
 endif
-X86_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/x86/x86_extras.lem)
 
 MACHINEFILES-PRE=\
   src_concurrency_model/machineDefDebug.lem\

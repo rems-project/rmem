@@ -1,0 +1,7 @@
+let mips_read_memory_functions = []
+let mips_read_memory_tagged_functions = []
+let mips_memory_writes = []
+let mips_memory_eas = []
+let mips_memory_vals = []
+let mips_memory_vals_tagged = []
+let mips_barrier_functions = []

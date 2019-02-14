@@ -1,0 +1,6 @@
+let aArch64_read_memory_functions = []
+let aArch64_memory_writes = []
+let aArch64_memory_eas = []
+let aArch64_memory_vals = []
+let aArch64_excl_res = Nothing
+let aArch64_barrier_functions = []
