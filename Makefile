@@ -479,7 +479,7 @@ fetch_sail:    BRANCH = master
 fetch_sail2:   BRANCH = sail2
 fetch_lem fetch_linksem fetch_ott fetch_sail fetch_sail2: fetch_%:
 	if [ -d "$($*dir)" ]; then\
-	  cd "$($*dir)" && git pull;\
+	  cd "$($*dir)" && { git pull || true; };\
 	else\
 	  mkdir -p "$($*dir)" &&\
 	  git clone $(if $(BRANCH),-b $(BRANCH)) $($*git) "$($*dir)";\
@@ -503,7 +503,7 @@ riscvdir=../sail-riscv
 
 fetch_isa_model_riscv: fetch_isa_model_%:
 	if [ -d "$($*dir)" ]; then\
-	  cd "$($*dir)" && git pull;\
+	  cd "$($*dir)" && { git pull || true; };\
 	else\
 	  mkdir -p "$($*dir)" &&\
 	  git clone $($*git) "$($*dir)";\
