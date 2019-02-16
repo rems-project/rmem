@@ -65,15 +65,10 @@ type breakpoint_reason =
   | NoReason
   | StateReason of ConcModel.system_state_and_transitions
   | TransReason of ConcModel.trans * ConcModel.system_state_and_transitions
-  | SharedReason of ConcModel.trans * ConcModel.system_state_and_transitions * MachineDefTypes.footprint
 
 type breakpoint_predicate =
   | StateBreakpoint of (ConcModel.system_state_and_transitions -> breakpoint_reason)
   | TransitionBreakpoint of (ConcModel.system_state_and_transitions -> ConcModel.trans -> breakpoint_reason)
-  | SharedBreakpoint of (MachineDefTypes.footprint list ->
-                         ConcModel.system_state_and_transitions ->
-                         ConcModel.trans ->
-                         breakpoint_reason)
 
 type breakpoint_id =
   | Numbered of int
@@ -121,13 +116,6 @@ type search_state =
     observed_branch_targets: MachineDefTypes.branch_targets_map;
     observed_shared_memory:  MachineDefTypes.footprint Pset.set;
 
-    (* REMOVE: *)
-    (*** shared memory approximation ***)
-    read_locations:      (int (* tid *) , (MachineDefTypes.footprint list)) Pmap.map;
-    written_locations:   (int (* tid *) , (MachineDefTypes.footprint list)) Pmap.map;
-    shared_locations:    MachineDefTypes.footprint list;
-    shared_program_locations: Sail_impl_base.address Pset.set;
-
     (*** statistics ***)
 
     started_timestamp:      int; (* the UNIX timestamp we started the search *)
@@ -162,147 +150,12 @@ type search_state =
     ppmode:        Globals.ppmode;
 }
 
-let coalesce_sorted_footprints (list: MachineDefTypes.footprint list) =
-  (* list must be sorted by increasing start address and then increasing size *)
-  let rec coalesce list acc =
-    let int_of a = Nat_big_num.to_int (Sail_impl_base.integer_of_address a) in
-    match list with
-    | []  -> acc
-    | [x] -> x :: acc
-    | (x :: y :: l) -> let ((a1, s1), (a2, s2)) = (x, y) in
-                      if a1 = a2 then
-                        (* x and y start at the same address,
-                           take the larger size *)
-                        coalesce ((a1, max s1 s2) :: l) acc
-                      else if (int_of a2) <= (int_of a1) + s1 then
-                        if (int_of a2) + s2 <= (int_of a1) + s1 then
-                          (* x fully contains y, drop y *)
-                          coalesce (x :: l) acc
-                        else
-                          (* x and y overlap, merge them *)
-                          coalesce ((a1, (int_of a2) + s2 - (int_of a1)) :: l) acc
-                      else
-                        (* x and y are separate, move on *)
-                        coalesce (y :: l) (x :: acc)
-  in
-  coalesce list []
-
-(* TODO: make better, probably using a sweep line approach or something *)
-let find_overlaps
-      (read_locations :    (int, MachineDefTypes.footprint list) Pmap.map)
-      (written_locations : (int, MachineDefTypes.footprint list) Pmap.map) =
-  (* let decorate (tid, locations) = List.map (fun loc -> (tid, loc)) locations in *)
-  (* let undecorate locations = List.map (fun (tid, loc) -> loc) locations in *)
-  (* let decorated_locations = List.concat (List.map decorate (Pmap.bindings_list written_locations)) in *)
-  (* let compare_decorated (_, x) (_, y) = MachineDefTypes.footprintCompare x y in *)
-  (* let sorted_decorated = List.sort compare_decorated decorated_locations in *)
-  (* simple test-all-pairs approach for now *)
-  let int_of a = Nat_big_num.to_int (Sail_impl_base.integer_of_address a) in
-  let addr_of i = Sail_impl_base.address_of_integer (Nat_big_num.of_int i) in
-  let overlap (a1', s1) (a2', s2) : MachineDefTypes.footprint list =
-    let a1 = int_of a1' in
-    let a2 = int_of a2' in
-    if a1 >= a2 && a1 + s1 <= a2 + s2 then
-      (* 2 fully contains 1 *)
-      [(addr_of a1, s1)]
-    else if a2 >= a1 && a2 + s2 <= a1 + s1 then
-      (* 1 fully contains 2 *)
-      [(addr_of a2, s2)]
-    else if a2 < a1 + s1 && a2 + s2 > a1 + s1 then
-      (* 2 starts inside 1 but ends outside *)
-      [(addr_of a2, (a1 + s1) - a2)]
-    else if a1 < a2 + s2 && a1 + s1 > a2 + s2 then
-      (* 1 starts inside 2 but ends outside *)
-      [(addr_of a1, (a2 + s2) - a1)]
-    else
-      (* -> a2 >= a1 + s1 || a1 >= a2 + s2, no overlap *)
-      []
-  in
-  let one_thread (tid, locations) =
-    let others = List.concat (List.map snd (Pmap.bindings_list (Pmap.remove tid written_locations))) in
-    let test_one loc = List.concat (List.map (overlap loc) others) in
-    List.concat (List.map test_one locations)
-  in
-  coalesce_sorted_footprints
-    (List.sort
-       MachineDefTypes.footprintCompare
-       (List.concat (List.map one_thread (Pmap.bindings_list written_locations)))
-     @ (List.concat (List.map one_thread (Pmap.bindings_list read_locations))))
 
 let all_instructions_of_state state =
   let thread_set = Pmap.range compare state.thread_states in
   let all_instructions =
     Pset.map compare (MachineDefThreadSubsystemUtils.ts_instructions state.t_model) thread_set in
   (Pset.fold Pset.union all_instructions (Pset.empty compare))
-
-let get_shared_program_locations system_state new_shared_locations =
-  (* TODO: unnecessarily quadratic? cache some of this / reason about what must have already been recorded? *)
-  let instructions = all_instructions_of_state system_state in
-  let new_shared_instructions = Pset.filter
-                                  (fun ii ->
-                                    MachineDefFragments.non_empty_intersection_set
-                                      (Pset.from_list compare new_shared_locations)
-                                      (MachineDefThreadSubsystem.footprints_of_instruction_instance ii))
-                                  instructions
-  in
-  Pset.map compare (fun ii -> ii.program_loc) new_shared_instructions
-
-let record_read_location tid footprint state =
-  if state.options.record_shared_locations then
-    let current_list =
-      (try Pmap.find tid state.read_locations
-       with Not_found -> []) in
-    let new_list = coalesce_sorted_footprints
-                     (List.sort_uniq
-                        MachineDefTypes.footprintCompare
-                        (footprint @ current_list)) in
-    let new_read_locations = Pmap.add tid new_list state.read_locations in
-    let new_shared_locations = find_overlaps new_read_locations state.written_locations in
-    let new_program_locations =
-      match List.hd state.search_nodes with
-      | root_node ->
-          get_shared_program_locations
-              root_node.system_state.sst_state
-              new_shared_locations
-          |> Pset.union state.shared_program_locations
-      | exception Failure _ -> state.shared_program_locations
-    in
-    { state with
-      read_locations = new_read_locations;
-      shared_locations = new_shared_locations;
-      shared_program_locations = new_program_locations;
-    }
-  else
-    state
-
-
-let record_write_location tid footprint state =
-  if state.options.record_shared_locations then
-    let current_list =
-      (try Pmap.find tid state.written_locations
-       with Not_found -> []) in
-    let new_list = coalesce_sorted_footprints
-                     (List.sort_uniq
-                        MachineDefTypes.footprintCompare
-                        (footprint @ current_list)) in
-    let new_written_locations = Pmap.add tid new_list state.written_locations in
-    let new_shared_locations = find_overlaps state.read_locations new_written_locations in
-    let new_program_locations =
-      match List.hd state.search_nodes with
-      | root_node ->
-        get_shared_program_locations
-             root_node.system_state.sst_state
-             new_shared_locations
-        |> Pset.union state.shared_program_locations
-      | exception Failure _ -> state.shared_program_locations
-    in
-    { state with
-      written_locations = new_written_locations;
-      shared_locations = new_shared_locations;
-      shared_program_locations = new_program_locations;
-    }
-  else
-    state
 
 
 (* retrun a trace leading to the head of search_state.search_nodes;
@@ -563,39 +416,14 @@ let record_final_state search_state search_node : search_state =
     | None ->
         {search_state with observed_deadlocks = Some (choices', 1)}
 
-let is_eager options shared_locations shared_program_locations sst = fun transition ->
-  let inherently_eager = MachineDefTransitionUtils.is_eager_transition
-    sst.sst_state.model
-    options.eager_mode
-    transition
-  in
-  let touches_shared_location = (List.exists (fun fp -> MachineDefTransitionUtils.trans_reads_footprint fp sst transition
-                                                        || MachineDefTransitionUtils.trans_writes_footprint fp sst transition)
-                                             shared_locations)
-  in
-  let (tid, iid) = MachineDefTypes.principal_ioid_of_trans transition in
-  let is_shared_program_location =
-    match Pmap.lookup tid sst.sst_state.thread_states with
-    | None -> false
-    | Some ts ->
-       Lem.is_some 
-         (MachineDefThreadSubsystemUtils.ts_find_instruction sst.sst_state.t_model
-            (fun _ i -> i.instance_ioid = (tid,iid) && 
-                          not (Pset.mem i.program_loc shared_program_locations))
-            ts)
-  in
-  inherently_eager || (options.eager_up_to_shared && MachineDefTransitionUtils.is_rw_transition transition
-                       && not touches_shared_location && not is_shared_program_location)
-
-let is_eager_in_search search_state = fun transition ->
+let is_eager search_state transition =
   match search_state.search_nodes with
   | [] -> assert false
   | node :: _ ->
-     is_eager search_state.options
-              search_state.shared_locations
-              search_state.shared_program_locations
-              node.system_state
-              transition
+      MachineDefTransitionUtils.is_eager_transition
+        node.system_state.sst_state.model
+        search_state.options.eager_mode
+        transition
 
 let add_search_node system_state search_state : search_state =
   let filtered_transitions =
@@ -670,7 +498,7 @@ let take_transition search_state sst (i, transition) eager : take_transition_res
 
      (* Invariant: if we're taking a non-eager transition, we've taken all eager transitions already *)
      if not eager && (List.exists
-                        (fun (_, t) -> is_eager_in_search search_state t)
+                        (fun (_, t) -> is_eager search_state t)
                         search_node.unexplored_transitions) then
        failwith "trying to take a non-eager transition, but eager transitions still exist";
 
@@ -683,10 +511,6 @@ let take_transition search_state sst (i, transition) eager : take_transition_res
           | StateBreakpoint _ -> (bp, NoReason)
           | TransitionBreakpoint f ->
               (bp, f search_node.system_state transition)
-          | SharedBreakpoint f ->
-              (bp, (f search_state.shared_locations
-                      search_node.system_state
-                      transition))
         )
         search_state.breakpoints
       |> List.filter (fun (_, r) -> r <> NoReason)
@@ -695,7 +519,7 @@ let take_transition search_state sst (i, transition) eager : take_transition_res
      begin match reasons with
      | (bp, reason) :: _ -> TransBreakpoint (search_state, i, transition, bp, reason)
      | [] ->
-       (* No breakpoints want to fire. Take the transition. *)
+       (* No breakpoint wants to fire. Take the transition. *)
        begin match ConcModel.sst_after_transition search_state.options sst transition with
        | TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
@@ -711,13 +535,14 @@ let take_transition search_state sst (i, transition) eager : take_transition_res
                  it's been taken by the eager tail of the nonexistent previous node.
                  TODO FIXME: we probably want to record them somehow for completeness. *)
               | { search_nodes = [] } as search_state' ->
-                 search_state'
+                  add_search_node sst' search_state'
               | { search_nodes = search_node' :: search_nodes' } as search_state' -> begin
                   { search_state' with search_nodes =
                                          { search_node' with
                                            open_transition = i :: search_node'.open_transition }
                                          :: search_nodes';
                   }
+                  |> add_search_node sst'
               end
             else
               (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
@@ -727,23 +552,8 @@ let take_transition search_state sst (i, transition) eager : take_transition_res
                                  unexplored_transitions = List.remove_assoc i search_node.unexplored_transitions;
                                } :: search_nodes;
               }
+              |> add_search_node sst'
           in
-          let search_state' = add_search_node sst' search_state' in
-
-          (* Update shared memory approximation *)
-          let maybe_thread_id = MachineDefTypes.thread_id_of_thread_transition transition in
-          let maybe_read_footprint = MachineDefTransitionUtils.read_footprint_of_trans transition in
-          let write_footprints = MachineDefTransitionUtils.write_footprints_of_trans transition in
-          let search_state' =
-            (match (maybe_thread_id, maybe_read_footprint) with
-             | (Some tid, Some footprint) -> record_read_location tid [footprint] search_state'
-             | _ -> search_state') in
-          let search_state' =
-            (match (maybe_thread_id, write_footprints) with
-             | (Some tid, _ :: _) -> record_write_location tid write_footprints search_state'
-             | _ -> search_state') in
-
-          (* Return new state *)
           NextState search_state'
        end
      end
@@ -819,8 +629,7 @@ let rec search search_state : search_outcome =
                 let (_, (pred, _)) = bp in
                 match pred with
                 | StateBreakpoint f -> (bp, f search_node.system_state)
-                | TransitionBreakpoint _ -> (bp, NoReason)
-                | SharedBreakpoint _ -> (bp, NoReason))
+                | TransitionBreakpoint _ -> (bp, NoReason))
               search_state.breakpoints
           in
 
@@ -912,7 +721,7 @@ let rec search search_state : search_outcome =
     | search_node :: _ ->
         if search_node.open_transition = [] then
           begin match List.find
-              (fun (_, t) -> is_eager_in_search search_state t)
+              (fun (_, t) -> is_eager search_state t)
               search_node.unexplored_transitions
           with
           | transition ->
@@ -936,12 +745,12 @@ let rec search search_state : search_outcome =
         let m = search_state.ppmode in
         if search_node.open_transition <> [] then begin
             let leftovers = List.filter
-                              (fun (_, t) -> is_eager_in_search search_state t)
+                              (fun (_, t) -> is_eager search_state t)
                               search_node.unexplored_transitions
             in
             if leftovers <> [] then begin
                 Screen.show_message m "there was a leftover eager transition after all should have been taken!\n[\n%s\n]"
-                                    (Pp.pp_list m (fun (i, t) -> Printf.sprintf "[%d] %s (eager: %b)\n" i (Pp.pp_trans m t) (is_eager_in_search search_state t)) search_node.unexplored_transitions);
+                                    (Pp.pp_list m (fun (i, t) -> Printf.sprintf "[%d] %s (eager: %b)\n" i (Pp.pp_trans m t) (is_eager search_state t)) search_node.unexplored_transitions);
                 assert false
               end
           end;
@@ -1175,10 +984,6 @@ let search_from_state
         one, will be hash-pruned immediately. *)
         hash_prune =
           if options.pseudorandom then false else options.hash_prune;
-
-        (* eager_up_to_shared must imply record_shared_locations to work *)
-        record_shared_locations =
-          options.record_shared_locations || options.eager_up_to_shared;
     }
   in
 
@@ -1193,13 +998,7 @@ let search_from_state
       observed_exceptions       = ExceptionMap.empty;
 
       observed_branch_targets = system_state.sst_state.model.t.branch_targets;
-      observed_shared_memory  = system_state.sst_state.model.shared_memory;
-
-      (* REMOVE: *)
-      read_locations      = Pmap.empty compare;
-      written_locations   = Pmap.empty compare;
-      shared_locations    = [];
-      shared_program_locations = Pset.empty compare;
+      observed_shared_memory  = options.eager_mode.em_shared_memory;
 
       (* statistics *)
       started_timestamp      = started_timestamp;

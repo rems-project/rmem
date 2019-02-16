@@ -535,8 +535,10 @@ let promising_storage =
 (*  Auxiliaries ***************************************************************)
 
 let in_shared_memory params fp =
-  Set.null params.shared_memory || 
-  (exists (fp' IN params.shared_memory). sub_footprint fp fp')
+  match params.shared_memory with
+  | Just sm -> exists (fp' IN sm). sub_footprint fp fp'
+  | Nothing -> true
+  end
 
 let is_RISC params =
   match params.t.thread_isa_info.ism with

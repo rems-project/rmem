@@ -32,8 +32,6 @@
 (* let candidates = ref None *)
 
 
-let use_new_run = ref true;
-
 (** output options **************************************************)
 
 type verbosity_level =
@@ -252,30 +250,31 @@ let add_bt_and_sm_to_model_params symbol_table =
   let sm =
     begin match !shared_memory with
     | Some shared_memory ->
-        List.map
-          (function
-            | Shared_memory_parser_base.Absolute (addr, size) ->
-                (Sail_impl_base.address_of_integer addr, size)
-            | Shared_memory_parser_base.Symbol (symb, None) ->
-                begin try List.assoc symb labels_map with
-                | Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
-                end
-            | Shared_memory_parser_base.Symbol (symb, Some (offset, size)) ->
-                begin match List.assoc symb labels_map with
-                | (addr, _) ->
-                    let addr =
-                      Sail_impl_base.integer_of_address addr
-                      |> Nat_big_num.add offset
-                      |> Sail_impl_base.address_of_integer
-                    in
-                    (addr, size)
-                | exception Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
-                end
-          )
-          shared_memory
-        |> Pset.from_list MachineDefTypes.footprintCompare
-
-    | None -> Pset.empty MachineDefTypes.footprintCompare
+        let sm =
+          List.map
+            (function
+              | Shared_memory_parser_base.Absolute (addr, size) ->
+                  (Sail_impl_base.address_of_integer addr, size)
+              | Shared_memory_parser_base.Symbol (symb, None) ->
+                  begin try List.assoc symb labels_map with
+                  | Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
+                  end
+              | Shared_memory_parser_base.Symbol (symb, Some (offset, size)) ->
+                  begin match List.assoc symb labels_map with
+                  | (addr, _) ->
+                      let addr =
+                        Sail_impl_base.integer_of_address addr
+                        |> Nat_big_num.add offset
+                        |> Sail_impl_base.address_of_integer
+                      in
+                      (addr, size)
+                  | exception Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
+                  end
+            )
+            shared_memory
+        in
+        Some (Pset.from_list MachineDefTypes.footprintCompare sm)
+    | None -> None
     end
   in
 

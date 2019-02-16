@@ -19,7 +19,6 @@
 open RunOptions
 open Globals
 open MachineDefTypes
-open Interact
 open ConstrGen
 open Screen_base
 

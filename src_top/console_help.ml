@@ -82,8 +82,6 @@ search exhaustive | search random <N>
                                    hash_prune, eager, eager_fetch,
                                    and forbid_tree_speculation.
 
-set check_inf_loop <bool>  Enable or disable terminating a search if an
-                             infinite loop is detected (Not guaranteed)
 set hash_prune <bool>     Enable or disable using hashing of states to
                             avoid visiting a state's subtree more than
                             once in a search
@@ -127,7 +125,6 @@ break <string>:<N>    Insert a breakpoint when the given source line is fetched
                         optionally plus or minus an offset
 [a|r]watch shared     Insert a watchpoint that triggers on all locations which
                         have been recorded as 'shared'
-                        (see also 'set record_writes')
 
   For all watchpoint commands, the type of watchpoint inserted
   is determined by the prefix of the command:
@@ -142,8 +139,6 @@ Global options
 -------------------------------------------------------------------------------
 set suppress_internal <bool>  Enable or disable whether Sail micro-steps
                                 (exposed as 'Internal' transitions) are suppressed
-set record_writes <bool>  Enable or disable written-to memory locations being
-                            recorded for the shared-memory approximation
 set follow_list <N>[,<N>,...] Set the list of upcoming transitions.
                                 (Note, comma separated.)
 
@@ -166,16 +161,15 @@ set eager_finish <bool>               Instruction finish transitions
 set eager_fp_recalc <bool>            PLDI11 footprint recalculation transitions
 set eager_thread_start <bool>         Thread start transitions
 
-set eager <bool>          Shortcut to enable/disable all of the above at once,
-                            except that 'set eager on' does not enable
-                            eager_fetch_multi (as that can cause infinite loops)
-
-set eager_up_to_shared <bool>         EXPERIMENTAL. Eagerly take even effectful memory
+set eager_local_mem <bool>            EXPERIMENTAL. Eagerly take even effectful memory
                                         transitions of instructions not in the
                                         shared-memory approximation. May not do what
                                         you expect if enabled at the start of an execution!
-                                        Requires record_writes on.
 
+set eager <bool>          Shortcut to enable/disable all of the above at once,
+                            except that 'set eager on' does not enable
+                            eager_fetch_multi (as that can cause infinite loops)
+                            and eager_local_mem.
 
 Interface options
 --------------------------------------------------------------------------------
@@ -232,7 +226,7 @@ set graph_backend (dot|tikz)  Set the backend used for generating graphs
 
 Miscellaneous commands
 -------------------------------------------------------------------------------
-quit | q | exit | x  Quit ppcmem
+quit | q | exit | x  Quit rmem
 help | h | ?         Show this help message
 typeset              Write LaTeX of the current state to ui_snapshot.tex
 graph                Write a graphviz graph of state and transitions to out.dot

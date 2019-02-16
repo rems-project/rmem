@@ -30,8 +30,6 @@
 (* val optoax : bool ref *)
 (* val axtoop : bool ref *)
 
-val use_new_run: bool ref
-
 (** output options **************************************************)
 
 type verbosity_level =

@@ -35,8 +35,6 @@ let fatal_error msg =
 else that might change verbosity *)
 let quiet = ref false;;
 
-let check_inf_loop : bool option ref = ref None
-
 let run_options : RunOptions.t ref =
   ref {RunOptions.default_options with RunOptions.interactive = Screen.interactive}
 
@@ -113,14 +111,6 @@ let opts = [
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.interactive = b}),
     Printf.sprintf "<bool> interactive or batch mode (%b)" (!run_options).RunOptions.interactive);
 
-("-new_run",
-    Arg.Unit (fun () -> Globals.use_new_run := true),
-    (Printf.sprintf " use new_run.ml instead of run.ml (default)"));
-
-("-old_run",
-    Arg.Unit (fun () -> Globals.use_new_run := false),
-    (Printf.sprintf " use run.ml instead of new_run.ml"));
-
 (** interactive mode options ****************************************)
 
 ("-follow",
@@ -152,11 +142,7 @@ let opts = [
 ("-sequential",
     Arg.Unit (fun () -> run_options := {!run_options with RunOptions.sequential = true};
                         Globals.pp_colours := true),
-    (Printf.sprintf " run in sequential mode, restricting to transition 0 at each step (%b)" !run_options.RunOptions.sequential));
-("-new_sequential",
-    Arg.Unit (fun () -> run_options := {!run_options with RunOptions.new_sequential = true};
-                        Globals.pp_colours := true),
-    (Printf.sprintf " run with state monad (%b)" !run_options.RunOptions.new_sequential));
+    (Printf.sprintf " run with state monad (%b)" !run_options.RunOptions.sequential));
 ("-breakpoint_actual",
     Arg.Unit (fun () -> Globals.interactive_auto := true;
                         Globals.breakpoint_actual := true;
@@ -179,15 +165,9 @@ let opts = [
 ("-eager",
     Arg.Bool (fun b -> run_options :=
         {!run_options with RunOptions.eager_mode =
-          if b then RunOptions.eager_mode_all_on
-          else RunOptions.eager_mode_all_off}),
-    (Printf.sprintf "<bool> eagerly take transitions that don't affect observable behaviour (%b)" (!run_options.RunOptions.eager_mode = RunOptions.eager_mode_all_on)));
-("-eager_fetch_internal",
- Arg.Bool (fun b -> run_options :=
-        {!run_options with RunOptions.eager_mode =
-          if b then RunOptions.eager_mode_all_on
-          else RunOptions.eager_mode_all_off}),
- "<bool> DEPRECATED synonym for -eager");
+          if b then RunOptions.eager_mode_all_on (!run_options).eager_mode
+          else RunOptions.eager_mode_all_off (!run_options).eager_mode}),
+    (Printf.sprintf "<bool> eagerly take transitions that don't affect observable behaviour (false)"));
 ("-hash_prune",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.hash_prune = b}),
     (Printf.sprintf "<bool> for batch mode, prune search tree using a hashmap of already seen states (%b)" !run_options.RunOptions.hash_prune));
@@ -215,11 +195,6 @@ let opts = [
     Arg.Bool (fun b -> Globals.suppress_non_symbol_memory := b),
     (Printf.sprintf "<bool> suppress non-symbol memory for ELF input files (%b)" !Globals.suppress_non_symbol_memory));
 
-("-check_inf_loop",
-    Arg.Bool (fun b -> check_inf_loop := Some b),
-    (* default: true when '-interactive true', except when '-random true' *)
-    "<bool> in non-interactive (batch) mode terminate if an infinite loop is detected in the test");
-
 ("-max_trace_length",
     Arg.String (fun s ->
       if s="none"  then
@@ -230,7 +205,7 @@ let opts = [
           | Failure _ -> raise (Failure "-max_trace_length must be an integer or the string none")
         in
         run_options := {!run_options with RunOptions.max_trace_length = Some n}),
-    (Printf.sprintf "<n> fail if a trace is longer than n, \"none\" for no limit (%s)"
+    (Printf.sprintf "<n> fail if a trace longer than n is found, \"none\" for no limit (%s)"
         (match !run_options.RunOptions.max_trace_length with
          | None -> "none"
          | Some n -> string_of_int n)));
@@ -606,16 +581,6 @@ let main = fun () ->
   if our_runopts.Globals.statematchmode && not our_runopts.Globals.safemode then
     fatal_error "cannot combine '-quick' and -onlystate";
   *)
-
-  begin match !check_inf_loop with
-  | Some b -> run_options := {!run_options with RunOptions.check_inf_loop = b}
-  | None   ->
-      run_options :=
-        { !run_options with
-          RunOptions.check_inf_loop = !run_options.RunOptions.hash_prune
-                                      && not (!run_options.RunOptions.interactive)
-        }
-  end;
 
   if !quiet then Globals.verbosity := Globals.Quiet;
 

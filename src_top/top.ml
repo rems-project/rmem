@@ -62,6 +62,18 @@ module Run_test (Test_file: Test_file.S) = struct
         run_options
     in
 
+    let run_options =
+      match !Globals.model_params.shared_memory with
+      | Some sm ->
+        { run_options with
+          eager_mode =
+            { run_options.eager_mode with
+              em_shared_memory = sm;
+            };
+        }
+      | None -> run_options
+    in
+
     let module ISAModel = (val (Isa_model.make test_info.Test.ism)) in
     if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] && run_options.RunOptions.interpreter then
       print_endline ("Warning: the interpreter ISA defs are missing");
@@ -114,20 +126,14 @@ module Run_test (Test_file: Test_file.S) = struct
     (* for ELF run: *)
     Globals.snapshot_data := (logfile_name test_info.Test.name, []);
 
-    (* do stuff for each of those initial states *)
-    if !Globals.use_new_run then
-      let module Interact = New_interact.Make (ConcModel) in
-
-      if run_options.RunOptions.interactive then
-        (* interactive mode *)
-        Interact.run_interactive run_options ppmode test_info initial_state_records
-      else
-        (* non-interactive mode (exhaustive/random) *)
-        Interact.run_exhaustive_search run_options ppmode test_info initial_state_records
-
+    let module Interact = New_interact.Make (ConcModel) in
+    if run_options.RunOptions.interactive then
+      (* interactive mode *)
+      Interact.run_interactive run_options ppmode test_info initial_state_records
     else
-      let module Runner = Run.Make (ConcModel) in
-      Runner.calc_finals run_options ppmode test_info initial_state_records
+      (* non-interactive mode (exhaustive/random) *)
+      Interact.run_exhaustive_search run_options ppmode test_info initial_state_records
+
 end
 
 let run_sequential (run_options: RunOptions.t) (name: string) : unit =
@@ -208,7 +214,7 @@ let from_file
   | Types.Litmus_file ->
      Run_litmus.run run_options name None None
   | Types.Binary_file ->
-     if run_options.RunOptions.new_sequential
+     if run_options.RunOptions.sequential
      then run_sequential run_options name
      else Run_elf.run run_options name None None
   end

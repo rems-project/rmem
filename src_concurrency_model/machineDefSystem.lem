@@ -84,7 +84,7 @@ let default_model_params =
 
   <|  ss             = default_ss;
       t              = default_t;
-      shared_memory  = {};
+      shared_memory  = Nothing;
   |>
 
 type initial_state_record =
@@ -939,11 +939,12 @@ let shared_memory_of_state
       state.thread_states
     $> Map.toSet
   in
-  {fp | forall ((tid, fps) IN tid_footprints) (fp IN fps)
-      | exists ((tid', fps') IN tid_footprints).
-          tid <> tid' &&
-          exists (fp' IN fps').
-            non_empty_intersection fp fp'}
+  {wfp  | forall ((tid, (_, wfps)) IN tid_footprints) (wfp IN wfps)
+        | exists ((tid', (rfps', wfps')) IN tid_footprints).
+            tid <> tid' &&
+            exists (fp' IN (rfps' union wfps')).
+              non_empty_intersection wfp fp'}
+
 
 let union_and_diff_shared_memory
     (fps_lhs: set footprint)

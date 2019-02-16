@@ -1303,21 +1303,27 @@ let ts_branch_targets tmodel state  =
   ) Map.empty
 
 
-val ts_memory_footprints : forall 'ts. threadSubsystem 'ts -> 'ts -> set footprint
+(* returns '(rfps, wfps)' where rfps is the set of read footprints and
+wfps is the set of write footprints *)
+val ts_memory_footprints : forall 'ts. threadSubsystem 'ts -> 'ts -> (set footprint) * (set footprint)
 let ts_memory_footprints tmodel state =
-  let (old_instructions,instruction_tree) = tmodel.ts_instruction_tree state in
-  tree_of_old_and_new_instructions_helper instruction_tree old_instructions
-  $> instruction_tree_fold_root
-    (fun acc _ i _ ->
-      match (i.subreads.sr_addr, i.subwrites.sw_addr) with
-      | (Nothing, Nothing) -> {}
-      | (Nothing, Just w)  -> {w}
-      | (Just r,  Nothing) -> {r}
-      | (Just r,  Just w)  -> {r; w}
-      end)
-    {}
-    []
-  $> Set.bigunion
+  let (old_instructions, instruction_tree) = tmodel.ts_instruction_tree state in
+  let accs =
+    tree_of_old_and_new_instructions_helper instruction_tree old_instructions
+    $> instruction_tree_fold_root
+      (fun (racc, wacc) _ i _ ->
+          ( match i.subreads.sr_addr with
+            | Nothing -> racc
+            | Just r  -> racc union {r}
+            end,
+            match i.subwrites.sw_addr with
+            | Nothing -> wacc
+            | Just w  -> wacc union {w}
+            end))
+      ({}, {})
+      []
+  in
+  (Set.map fst accs $> Set.bigunion, Set.map snd accs $> Set.bigunion)
 
 
 

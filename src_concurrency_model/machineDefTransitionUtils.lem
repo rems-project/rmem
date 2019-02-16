@@ -351,7 +351,7 @@ let is_thread_start_transition = function
   | _ -> false
   end
 
-let is_local_mem_transition params t =
+let is_local_mem_transition (shared_memory: set footprint) t =
   (* match memory_access_footprints t with *)
   
   (* TODO: For now making loads to non-shared memory not eager:
@@ -360,7 +360,7 @@ let is_local_mem_transition params t =
   | []  -> false
   | fps ->
       Set.fromList fps
-      $> non_empty_intersection_set params.shared_memory
+      $> non_empty_intersection_set shared_memory
       $> not
   end
 
@@ -387,7 +387,7 @@ let is_eager_transition params
   || (eager_mode.eager_finish              && is_finish_transition t)
   || (eager_mode.eager_fp_recalc           && is_footprint_recalculation_transition t)
   || (eager_mode.eager_thread_start        && is_thread_start_transition t)
-  || (eager_mode.eager_local_mem           && is_local_mem_transition params t)
+  || (eager_mode.eager_local_mem           && is_local_mem_transition eager_mode.em_shared_memory t)
 
 
 let maybe_snapshot_of_transition = function

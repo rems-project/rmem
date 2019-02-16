@@ -1824,7 +1824,9 @@ type model_params =
   <| ss:             ss_params;
      t:              thread_params;
 
-     shared_memory:  set footprint;
+     (* shared_memory: this is an over approximation of the shared memory
+     locations. Used by Promising. *)
+     shared_memory:  maybe (set footprint)
   |>
 
 (** whole system state *)
@@ -2623,6 +2625,7 @@ type eager_mode =
     eager_thread_start:        bool;
 
     eager_local_mem:           bool;
+    em_shared_memory:          set footprint;
   |>
 
 (* two auxiliary functions for dealing with maps in Isabelle *)

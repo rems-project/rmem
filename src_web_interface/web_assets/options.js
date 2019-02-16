@@ -406,10 +406,9 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
         make_toggler("Execution",         "eager_finish",                          "Eager finish",              "Are instruction finishes considered eagerly takeable?");
         make_toggler("Execution",         "eager_fp_recalc",                       "Eager footprint recalc",    "Are footprint calculations considered eagerly takeable?");
         make_toggler("Execution",         "eager_thread_start",                    "Eager thread start",        "Are thread starts considered eagerly takeable?");
+        make_toggler("Execution",         "eager_local_mem",                       "Eager local memory",        "Are memory access to local memory transitions considered eagerly takeable?");
 
       make_separator("Execution",         "execution_advanced",                    "Advanced execution options");
-        make_toggler("Execution",         "record_writes",                         "Record shared-memory approximation",      "Keep a record of shared write locations");
-        make_toggler("Execution",         "eager_up_to_shared",                    "Eager-up-to-shared (EXPERIMENTAL)", "Take memory reads/writes eagerly if not in the shared-memory approximation (requires recording it)");
         make_toggler("Execution",         "priority_reduction",                    "Priority reduction",        "Take priority transitions preferentially (currently: exclusives and multi-successor fetches)");
 
  make_custom_toggler("Interface",         "pp_style",                              "Show instruction metadata", "Show or hide instruction bookkeeping/metadata in state printing, e.g. register read/writes", ["full", "compact"]);
@@ -473,7 +472,6 @@ make_virtual_toggler("Interface",         "scroll_on_output",                   
      });
       make_separator("Search",            "search_header",                         "Search options");
         make_toggler("Search",            "hash_prune",                            "Hash prune",                "Avoid visiting subtrees more than once by hashing states");
-        make_toggler("Search",            "check_inf_loop",                        "Check for infinite loops",  "Check for infinite loops by hashing states (not guaranteed)");
         make_toggler("Search",            "prune_restarts",                        "Prune restarts",            "Prune traces with instruction restarts");
         make_toggler("Search",            "prune_discards",                        "Prune discards",            "Prune traces with instruction discards (requires forbid_tree_speculation)", "css: { disabled: tree_speculation() !== 'forbid' }", "requires forbid_tree_speculation");
      make_int_option("Search",            "time_limit",                            "Time limit",                "Time limit on searches", undefined, undefined, "seconds");
