@@ -45,11 +45,24 @@ Most dependencies can be installed automatically as part of the rmem build proce
 
 ## Building and running rmem with command-line interface
 
-1. Make sure OCaml, ocamlbuild, ocamlfind, and opam are installed.
-2. Run `make fetch_external_deps` to install the opam packages rmem depends on.
-3. Run `make MODE=opt`. This will download and build Lem, Sail (in versions 1 and 2), ott, and Linksem, fetch the Sail ISA models, and build a native rmem OCaml binary. Alternatively run `make MODE=debug` for an OCaml bytecode version. To build rmem for only a specific ISA, for instance AArch64, run `make rmem MODE=opt ISA=AArch64`. For additional information and build options see `make help`.
-4. Finally run `rmem --help` for information on how to run rmem and the available
-options.
+1. Make sure the GMP library, Z3, OCaml, ocamlbuild, ocamlfind, opam,
+   and menhir are installed.
+
+2. Run `ulimit -s unlimited; make fetch_external_deps` to install the
+   opam packages rmem depends on. (The `ulimit` part is to work around
+   the problem of the OCaml compiler running out of memory when
+   processing the ISA semantics.)
+
+3. Run `make MODE=opt`. This will download and build Lem, Sail (in
+   versions 1 and 2), ott, and Linksem, fetch the Sail ISA models, and
+   build a native rmem OCaml binary. Alternatively run `make
+   MODE=debug` for an OCaml bytecode version. To build rmem for only a
+   specific ISA, for instance AArch64, run `make rmem MODE=opt
+   ISA=AArch64`. For additional information and build options see
+   `make help`.
+
+4. Finally run `rmem --help` for information on how to run rmem and
+   the available options.
 
 
 
