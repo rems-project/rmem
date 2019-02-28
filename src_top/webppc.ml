@@ -96,7 +96,6 @@ let default_options : unit -> RunOptions.t = fun () ->
   Globals.elf_threads := 1;
   Globals.use_dwarf := true;
   Globals.dwarf_show_all_variable_locations := true;
-  Globals.use_new_run := true;
   Globals.run_dot := Some Globals.RD_step;
   Globals.pp_suppress_newpage := false;
   Globals.pp_buffer_messages := true;
