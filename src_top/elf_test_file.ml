@@ -337,7 +337,10 @@ let arch_of_test (test: test) : MachineDefTypes.isa_info =
                             MachineDefISAInfoAArch64.aarch64hand_ism
   | 8   (* EM_MIPS *)    -> MachineDefISAInfoMIPS.mips_ism
   | 243 (* EM_RISCV *)   -> MachineDefISAInfoRISCV.riscv_ism
-  | _ -> failwith "unsupported architecture"
+  | _ ->
+      Printf.eprintf "Unsupported architecture\n";
+      exit 1
+
   end
 
 let symbols_for_stacks threads =
@@ -600,7 +603,9 @@ let initial_state_aux
          initial_stack_and_reg_data_of_riscv_elf_file elf_test.symbol_map memory elf_threads_list in
        (startaddr, initial_stack_data, initial_register_abi_data)
 
-    | _ -> failwith (Printf.sprintf "ppcmem can't handle the e_machine value %s, only EM_PPC64, EM_AARCH64 and EM_RISCV are supported." (Nat_big_num.to_string elf_test.e_machine))
+    | e_machine ->
+        Printf.eprintf "Rmem can't handle the e_machine value %d, only EM_PPC64, EM_AARCH64 and EM_RISCV are supported.\n" e_machine;
+        exit 1
   in
 
   (* pull the object symbols from the symbol table *)

@@ -106,6 +106,8 @@ let trans_reads_footprint
   $> Maybe.map (non_empty_intersection footprint)
   $> fromMaybe false
 
+(* NOTE: write_footprints_of_trans is (also) used to determine if the
+transition can be taken eagerly when eager_local_mem is enabled *)
 let write_footprints_of_trans (transition: trans 'ts 'ss) : list MachineDefTypes.footprint =
   match transition with
   | SS_trans _ -> []

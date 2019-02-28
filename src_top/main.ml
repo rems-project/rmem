@@ -72,11 +72,11 @@ let opts = [
  Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with MachineDefTypes.t = { (!Globals.model_params).MachineDefTypes.t with MachineDefTypes.thread_loop_unroll_limit = Some i }}),
  ("<integer> automatically unroll loops to this depth (default: off)"));
 ("-topauto",
-    Arg.Bool (fun b -> Globals.topauto := b),
+    Arg.Bool (fun b -> Globals.topauto := b; Globals.flowing_topologies := []),
     (Printf.sprintf "<bool> for Flowing model: iterate over all possible topologies (%b)" !Globals.topauto));
 ("-top",
     Arg.String (fun s -> match Model_aux.parse_topologies s with
-                         | Some t -> Globals.flowing_topologies := t
+                         | Some t -> Globals.flowing_topologies := t; Globals.topauto := false
                          | None -> raise (Failure "topology parse error")),
     "<topology-list> for Flowing model: specify topologies, e.g. \"[0,[1,2]];[0,1,2]\"");
 
@@ -99,11 +99,21 @@ let opts = [
     (Printf.sprintf "<cond> change the final condition to \"cond\""));
 
 ("-branch_targets",
-    Arg.String (fun filename -> Globals.branch_targets_parse_from_file filename),
+    Arg.String (fun filename ->
+        try Globals.branch_targets := Some (Model_aux.branch_targets_parse_from_file filename) with
+        | Model_aux.BranchTargetsParsingError msg ->
+            Printf.eprintf "Error, cannot parse the -branch_targets file: %s" msg;
+            exit 1
+    ),
     (Printf.sprintf "<file> set the initial branch targets for branch-register instructions (overrides the litmus file key \"Branch-targets\")"));
 
 ("-branch_targets_str",
-    Arg.String (fun s -> Globals.branch_targets_parse_from_string s),
+    Arg.String (fun s ->
+        try Globals.branch_targets := Some (Model_aux.branch_targets_parse_from_string s) with
+        | Model_aux.BranchTargetsParsingError msg ->
+            Printf.eprintf "Error, cannot parse the -branch_targets_str argument: %s" msg;
+            exit 1
+    ),
     (Printf.sprintf "<string> same as -branch_targets, but read the targets from the string"));
 
 (** run modes *******************************************************)
@@ -114,12 +124,18 @@ let opts = [
 (** interactive mode options ****************************************)
 
 ("-follow",
-    Arg.String Globals.set_follow,
-    "<int-list> list of transition candidates to follow, semicolon-separated");
+    Arg.String (fun s ->
+      if (String.length (String.trim s)) > 0 then
+        Globals.ui_commands := Some (match !Globals.ui_commands with None -> "set follow_list \"" ^ s ^ "\""| Some s0 -> s0 ^ ";" ^ "set follow_list \"" ^ s ^ "\"")
+    ),
+    "<int-list> short hand for \"-cmds 'set follow_list \"<int-list>\"'\"");
 
 ("-cmds",
-    Arg.String (fun s -> if (String.length (String.trim s)) > 0 then Globals.ui_commands := Some (match !Globals.ui_commands with None -> s | Some s0 -> s0^";"^s)),
-    "<cmd-list> list of UI commands to execute, semicolon-separated");
+    Arg.String (fun s ->
+      if (String.length (String.trim s)) > 0 then
+        Globals.ui_commands := Some (match !Globals.ui_commands with None -> s | Some s0 -> s0 ^ ";" ^ s)
+    ),
+    "<cmd-list> list of UI commands to execute, semicolon-separated (repeatable)");
 
 ("-random",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.pseudorandom = b};
@@ -143,11 +159,6 @@ let opts = [
     Arg.Unit (fun () -> run_options := {!run_options with RunOptions.sequential = true};
                         Globals.pp_colours := true),
     (Printf.sprintf " run with state monad (%b)" !run_options.RunOptions.sequential));
-("-breakpoint_actual",
-    Arg.Unit (fun () -> Globals.interactive_auto := true;
-                        Globals.breakpoint_actual := true;
-                        Globals.pp_colours := true),
-    " for RIT, run automatically until the fetch of the actual test instruction and then enter interactive mode");
 ("-auto_internal",
     Arg.Bool (fun b -> Globals.auto_internal := b),
     (Printf.sprintf "<bool> for interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
@@ -221,11 +232,21 @@ let opts = [
 
 
 ("-shared_memory",
-    Arg.String (fun filename -> Globals.shared_memory_parse_from_file filename),
-    (Printf.sprintf "<file> sets the initial shared memory footprint for the -eager_local_mem option (overrides the litmus file key \"Branch-targets\")"));
+    Arg.String (fun filename ->
+      try Globals.shared_memory := Some (Model_aux.shared_memory_parse_from_file filename) with
+      | Model_aux.SharedMemoryParsingError msg ->
+          Printf.eprintf "Error, cannot parse the -shared_memory file: %s" msg;
+          exit 1
+    ),
+    (Printf.sprintf "<file> sets the initial shared memory footprint for the -eager_local_mem option (overrides the litmus file key \"Shared-memory\")"));
 
 ("-shared_memory_str",
-    Arg.String (fun s -> Globals.shared_memory_parse_from_string s),
+    Arg.String (fun s ->
+      try Globals.shared_memory := Some (Model_aux.shared_memory_parse_from_string s) with
+      | Model_aux.SharedMemoryParsingError msg ->
+          Printf.eprintf "Error, cannot parse the -shared_memory_str argument: %s" msg;
+          exit 1
+    ),
     (Printf.sprintf "<string> same as -shared_memory, but read the shared memory footprint from the string"));
 
 (** verbosity and output ********************************************)
@@ -375,47 +396,16 @@ let opts = [
 ("-follow_to",
     Arg.Int (fun n -> fatal_error "-follow_to was deprecated"),
     "");
-    (* OLD:
-    Arg.Int (fun n -> Globals.follow := (let rec f n = if n=0 then [] else Globals.Int 0::f (n-1) in f n)),
-    "<int> number of transition candidates to follow");
-    *)
-
+("-breakpoint_actual",
+    Arg.Int (fun n -> fatal_error "-breakpoint_actual was deprecated"),
+    "");
 (*
+
 ("-test_syscall",
     Arg.Unit (fun () -> ignore (Syscalls.load_footprints_from_file "src_syscall_libs/syscall-introspect-tools/submodules/libfootprints-ocaml/spec.idl")),
     " test syscall machinery");
 *)
 
-
-(** OLD OPTIONS: *****************************************************
-("-truncate_thread_pp",
-    Arg.Bool (fun b -> Globals.truncate_thread_pp := b),
-    "<bool> truncate pp of long threads");
-("-safe",
-    Arg.Unit (fun () -> Globals.set_safemode true),
-    " explore all paths, exhaustively (default)");
-("-quick",
-    Arg.Unit (fun () -> Globals.set_safemode false),
-    " quick exploration of possibilities (experimental: enumerates all conceivable rfmaps, doing a search for each, but pruning branches that violate that rfmap) (opposite of -safe)");
-("-O",
-    Arg.Unit (fun () -> Globals.set_fast true),
-    " enable (experimental) optmisations aiming at speed");
-("-onlystate",
-    Arg.Unit (fun () -> Globals.set_statematchmode true),
-    " check only whether the final state mentioned explicitly in the test is observable (experimental)");
-("-allstates",
-    Arg.Unit (fun () -> Globals.set_statematchmode false),
-    " explore all reachable states (default)");
-("-candidates",
-    Arg.String (fun s -> Globals.candidates := Some s),
-    "<name> save candidates in file <name> and exit") ;
-("-optoax",
-    Arg.Bool (fun b -> Globals.optoax := b),
-    "<bool> check all operational traces in axiomatic model");
-("-axtoop",
-    Arg.Bool (fun b -> Globals.axtoop := b),
-    "<bool> check all axiomatic candidates for operational trace behaviour");
-*)
 ];;
 
 
@@ -553,45 +543,13 @@ let main = fun () ->
   if not Screen.interactive && !run_options.RunOptions.interactive then
     fatal_error "the tool was built without interactive support, '-interactive true' is not allowed";
 
-  (* FIXME: (SF) The interpreter PP is not complete and might cause different
-  state hash to compare as equal *)
-  if !run_options.RunOptions.hash_prune &&
-    not (!run_options.RunOptions.eager_mode.MachineDefTypes.eager_pseudocode_internal ||
-           !Globals.model_params.MachineDefTypes.ss.MachineDefTypes.ss_model =
-             MachineDefTypes.Promising_storage_model)
-  then
-    fatal_error "'-hash_prune true' is not safe without '-eager true'";
-
-  (* FIXME: (SF) should this be forbidden? *)
-  if !run_options.RunOptions.hash_prune && !Globals.breakpoint_actual then
-    fatal_error "'-breakpoint_actual' mode does not allow '-hash_prune true'";
-
-  if !run_options.RunOptions.interactive && !run_options.RunOptions.prune_restarts then
-    fatal_error "'-prune_restarts true' requires '-interactive false'";
-
-  if !run_options.RunOptions.interactive && !run_options.RunOptions.prune_discards then
-    fatal_error "'-prune_discards true' requires '-interactive false'";
-
-  if !run_options.RunOptions.prune_discards &&
-      !Globals.model_params.MachineDefTypes.t.MachineDefTypes.thread_allow_tree_speculation
-  then
-    fatal_error "'-prune_discards true' requires '-model forbid_tree_speculation'";
-
-  (* OLD OPTIONS:
-  if our_runopts.Globals.statematchmode && not our_runopts.Globals.safemode then
-    fatal_error "cannot combine '-quick' and -onlystate";
-  *)
-
   if !quiet then Globals.verbosity := Globals.Quiet;
 
-  let is_flowing = (!Globals.model_params.MachineDefTypes.ss.MachineDefTypes.ss_model = MachineDefTypes.Flowing_storage_model) in
-
-  if is_flowing then begin
-    if !Globals.flowing_topologies = [] && not (!Globals.topauto) then
-      fatal_error "'-model flowing' requires a topology";
-    if !Globals.flowing_topologies <> [] && !Globals.topauto then
-      fatal_error "cannot have both '-top ...' and '-topauto true'"
-  end;
+  if !Globals.model_params.MachineDefTypes.ss.MachineDefTypes.ss_model = MachineDefTypes.Flowing_storage_model
+    && !Globals.flowing_topologies = []
+    && not !Globals.topauto
+  then
+      fatal_error "'-model flowing' requires a topology ('-topauto true' or '-top <topology-list>')";
 
   let files =
     List.map
@@ -612,7 +570,6 @@ let main = fun () ->
 
   begin try Top.from_files !run_options files with
   | Misc.Fatal msg           -> fatal_error msg
-  | Globals.Interactive_quit -> exit 0
   end
 ;;
 

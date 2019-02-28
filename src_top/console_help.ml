@@ -15,8 +15,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let help_message = "\
-===============================================================================
+let help_message = {help_string|===============================================================================
 RMEM console help
 ===============================================================================
 
@@ -46,7 +45,7 @@ stepi <N1> <N2> | si <N1> <N2>   'Step instruction', specifically, search for
                                    and take the shortest path of transitions
                                    to a state in which instruction <N2> of
                                    thread <N1> is finished
-follow | f                       Repeatedly take transitions from the
+follow | fo                      Repeatedly take transitions from the
                                    follow-list until either the follow-list is
                                    empty, or it specifies a non-existent
                                    transition number
@@ -110,6 +109,11 @@ set time_limit (<N>|none)        Set the time limit on searches in seconds
 
   In the 'set foo_limit ...' commands, 'none' means no limit (the default.)
 
+set branch-targets "<bt-map>"  EXPERIMENTAL. Sets the initial approximation of
+                                 branch targets for branch-register
+                                 instructions (will be extended by the search
+                                 until a fixed-point is reached)
+
 Breakpoint commands
 -------------------------------------------------------------------------------
 break <N>             Insert a breakpoint when the given address is fetched
@@ -137,16 +141,17 @@ delete [break] <N>    Delete the breakpoint with the given number
 
 Global options
 -------------------------------------------------------------------------------
-set suppress_internal <bool>  Enable or disable whether Sail micro-steps
-                                (exposed as 'Internal' transitions) are suppressed
-set follow_list <N>[,<N>,...] Set the list of upcoming transitions.
-                                (Note, comma separated.)
+set suppress_internal <bool>     Enable or disable whether Sail micro-steps
+                                  (exposed as 'Internal' transitions) are suppressed
+
+set follow_list "<N>[,<N>,...]"  Set the list of upcoming transitions.
+                                   (Note, comma separated.)
 
 Eager options
 -------------------------------------------------------------------------------
-When both searching and exploring interactively, these options control which
-transitions are considered 'uninteresting' and eagerly taken, which should not
-affect the set of observable behaviours because these are all (believed to be...)
+When exploring interactively, these options control which transitions are
+considered 'uninteresting' and eagerly taken, which should not affect the set
+of observable behaviours because these are all (believed to be...)
 confluent with each other.
 
 set eager_fetch_single <bool>         Fetch transitions with a single successor
@@ -161,16 +166,24 @@ set eager_finish <bool>               Instruction finish transitions
 set eager_fp_recalc <bool>            PLDI11 footprint recalculation transitions
 set eager_thread_start <bool>         Thread start transitions
 
-set eager_local_mem <bool>            EXPERIMENTAL. Eagerly take even effectful memory
-                                        transitions of instructions not in the
-                                        shared-memory approximation. May not do what
-                                        you expect if enabled at the start of an execution!
-
 set eager <bool>          Shortcut to enable/disable all of the above at once,
                             except that 'set eager on' does not enable
                             eager_fetch_multi (as that can cause infinite loops)
                             and eager_local_mem.
 
+
+set eager_local_mem <bool>        EXPERIMENTAL. Affects searching only.
+                                    Eagerly take thread-local memory access
+                                    transitions using an approximation of
+                                    the shared memory footprint. The
+                                    approximation is refined at the end of
+                                    the search, and another search is
+                                    started, until a fixed-point is reached.
+set shared-memory "<footprints>"  EXPERIMENTAL. Sets the initial
+                                    approximation of the shared memory
+                                    footprint for eager_local_mem (will be
+                                    extended by the search until a
+                                    fixed-point is reached)
 Interface options
 --------------------------------------------------------------------------------
 set pp_style (full|compact|screenshot)  Set the printing style
@@ -232,6 +245,6 @@ typeset              Write LaTeX of the current state to ui_snapshot.tex
 graph                Write a graphviz graph of state and transitions to out.dot
 print | p            Print the current state
 history | his        Print the history of previously entered commands
-
+options | o          Print the current configuration of options
 ===============================================================================
-"
+|help_string}

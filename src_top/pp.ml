@@ -873,6 +873,22 @@ Ascii/Latex/HTML form *)
 (* (\* | DotFig -> "\\\\#" *\) *)
 
 
+let pp_branch_targets ppmode branch_targets : string =
+  List.map (fun (tid, tbts) ->
+    List.map (fun (addr, addrs) ->
+      List.map (fun a -> Printf.sprintf "%s" (pp_address ppmode None a)) addrs
+      |> String.concat ", "
+      |> Printf.sprintf "%d:%s -> {%s};" tid (pp_address ppmode None addr)
+    ) tbts
+    |> String.concat " "
+  ) branch_targets
+  |> String.concat " "
+
+let pp_shared_memory ppmode shared_memory : string =
+  Pset.elements shared_memory
+  |> List.map (fun fp -> Printf.sprintf "%s;" (pp_footprint ppmode None fp))
+  |> String.concat " "
+
 (** ******************************************** *)
 (** pp of events - reads, writes, barriers, etc. *)
 (** ******************************************** *)
@@ -1870,7 +1886,8 @@ let pp_store_exclusive_map_uncoloured m (write, prev_write) =
 let enlink m n s =
   let active_str =
     match m.Globals.pp_default_cmd with
-    | Some (Interact_parser_base.Transitions [i]) when i = n -> " default"
+    | Some (Interact_parser_base.Transition (Interact_parser_base.WithEager i)) when i = n -> " default"
+    | Some (Interact_parser_base.Transition (Interact_parser_base.WithBoundedEager (i, _))) when i = n -> " default"
     | _ -> ""
   in
   match m.Globals.pp_kind with
@@ -1881,7 +1898,8 @@ let pp_cand m (n,t) =
   match m.Globals.pp_kind with
   | Html -> sprintf "  %s"  (enlink m n (colour_tran_id m ((sprintf "%-2d" n) ^ pp_trans m t)))
   | _ -> let s = (match m.Globals.pp_default_cmd with
-                  | Some (Interact_parser_base.Transitions [i]) when i = n -> "***"
+                  | Some (Interact_parser_base.Transition (Interact_parser_base.WithEager i)) when i = n -> "***"
+                  | Some (Interact_parser_base.Transition (Interact_parser_base.WithBoundedEager (i, _))) when i = n -> "***"
                   | _ -> "   ")
          in
          sprintf "%s %s    %s %s" s (colour_tran_id m (sprintf "%-2d" n)) (colour_tran_id m (pp_trans m t)) s
@@ -3117,9 +3135,6 @@ let pp_sequential_state m fake_ioid isa_info state =
 
 
 let pp_ui_gen_eiid_table m (s: ('ts,'ss) MachineDefTypes.system_state) = { m with pp_pretty_eiid_table = pretty_eiids s }
-
-let pp_trace m trace : string =
-  "[" ^ pp_list m (fun ints -> "[" ^ pp_list m (fun i -> sprintf "%d" i) ints ^ "]") trace ^ "]"
 
 
 module type GraphBackend = sig

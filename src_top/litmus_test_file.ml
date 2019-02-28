@@ -162,7 +162,9 @@ let test_info (test: Test.test) (name: string) : Test.info =
     | `MIPS          -> MachineDefTypes.MIPS_ism
     | `RISCV         -> MachineDefTypes.RISCV_ism
     | `X86           -> MachineDefTypes.X86_ism
-    | _ -> failwith "unsupported architecture"
+    | _ ->
+        Printf.eprintf "Unsupported architecture\n";
+        exit 1
     end
   in
 
@@ -365,7 +367,8 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
         Parser.parse in_chan test_splitted
 
     | (AARCH64_ism _, PLDI11_storage_model, PLDI11_thread_model) ->
-        failwith "PLDI11 does not support AArch64 yet"
+        Printf.eprintf "The pldi11 model does not support the AArch64 architecture\n";
+        exit 1
 
     | (PPCGEN_ism, POP_storage_model, POP_thread_model _)
     | (PPCGEN_ism, Flat_storage_model, POP_thread_model _)
@@ -375,9 +378,11 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
         Parser.parse in_chan test_splitted
 
     | (PPCGEN_ism, Flowing_storage_model, POP_thread_model _) ->
-        failwith "Flowing does not support PPCGEN"
+        Printf.eprintf "The flowing model does not support the PPC architecture\n";
+        exit 1
     | (PPCGEN_ism, NOP_storage_model, POP_thread_model _) ->
-        failwith "NOP does not support PPCGEN"
+        Printf.eprintf "The nop model does not support the PPC architecture\n";
+        exit 1
 
     | (MIPS_ism, POP_storage_model, POP_thread_model _)
     | (MIPS_ism, Flowing_storage_model, POP_thread_model _)
@@ -387,7 +392,8 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
         let module Parser = Make_litmus_parser(MIPSHGen)(MIPSHGenTransSail)(MIPSHGenLexParse) in
         Parser.parse in_chan test_splitted
     | (MIPS_ism, PLDI11_storage_model, PLDI11_thread_model) ->
-        failwith "PLDI11 does not support MIPS yet"
+        Printf.eprintf "The pldi11 model does not support the MIPS architecture\n";
+        exit 1
 
     | (RISCV_ism, POP_storage_model, POP_thread_model _)
     | (RISCV_ism, Flowing_storage_model, POP_thread_model _)
@@ -411,13 +417,17 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
             Globals.x86syntax := Some X86_intel;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
             Parser.parse in_chan test_splitted
-        | _ -> failwith "anknown x86 Syntax (expected 'gas' or 'intel')"
+        | _ ->
+            Printf.eprintf "Unknown x86 Syntax (expected 'gas' or 'intel')\n";
+            exit 1
         | exception Not_found -> (* intel by default *)
             Globals.x86syntax := Some X86_intel;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
             Parser.parse in_chan test_splitted
         end
-    | _ -> failwith "unsupported model configuration"
+    | _ ->
+        Printf.eprintf "Unsupported model and architecture configuration\n";
+        exit 1
     end
   in
 
@@ -425,13 +435,23 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
 
   if !Globals.branch_targets = None then begin
     match List.assoc "Branch-targets" info.Test.info with
-    | bts -> Globals.branch_targets_parse_from_string bts
+    | branch_targets ->
+        begin try Globals.branch_targets := Some (Model_aux.branch_targets_parse_from_string branch_targets) with
+        | Model_aux.BranchTargetsParsingError msg ->
+            Printf.eprintf "%s\n" msg;
+            exit 1
+        end
     | exception Not_found -> ()
   end;
 
   if !Globals.shared_memory = None then begin
     match List.assoc "Shared-memory" info.Test.info with
-    | bts -> Globals.shared_memory_parse_from_string bts
+    | shared_memory ->
+        begin try Globals.shared_memory := Some (Model_aux.shared_memory_parse_from_string shared_memory) with
+        | Model_aux.SharedMemoryParsingError msg ->
+            Printf.eprintf "%s" msg;
+            exit 1
+        end
     | exception Not_found -> ()
   end;
 

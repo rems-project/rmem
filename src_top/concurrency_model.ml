@@ -119,24 +119,6 @@ module type S = sig
     system_state ->
     system_state_and_transitions
 
-  val enumerate_transitions :
-    RunOptions.t ->
-    system_state ->
-    (storage_subsystem_state MachineDefTypes.ss_trans list) option ->
-    (MachineDefTypes.thread_id, thread_subsystem_state MachineDefTypes.thread_trans list) Pmap.map ->
-    (MachineDefTypes.thread_id, ((thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans * bool) list) Pmap.map ->
-    ((thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans list) *
-      (storage_subsystem_state MachineDefTypes.ss_trans list) *
-        ((MachineDefTypes.thread_id, thread_subsystem_state MachineDefTypes.thread_trans list) Pmap.map) *
-          ((MachineDefTypes.thread_id, 
-            ((thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans * bool) list) Pmap.map)
-
-  val state_after_transition :
-    Globals.ppmode ->
-    system_state ->
-    (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans ->
-    (system_state * bool * MachineDefTypes.thread_id list * bool * bool * bool) MachineDefTypes.transition_outcome
-
   val sst_after_transition :
     RunOptions.t ->
     system_state_and_transitions ->
@@ -254,43 +236,6 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : S = struct
 
     | (Failure s) as e ->
         Printf.eprintf "Failure while enumerating transitions:\n";
-        Printf.eprintf "%s\n\n" s;
-        raise e (* changing this line to anything else will destroy the backtrace *)
-    end
-
-
-  let enumerate_transitions run_options state cached_ss_trans cached_thread_trans =
-    begin try
-      Sys.dict_sys.MachineDefTypes.s_enumerate_transitions_of_system
-        (ISAModel.is_option run_options)
-        state
-        cached_ss_trans
-        cached_thread_trans
-    with
-    | Debug.Thread_failure (tid, ioid, s, bt) ->
-        let (ppmode', ui_state) = make_ui_system_state (Globals.get_ppmode ()) None state [] in
-        Printf.eprintf "Failure in the thread subsystem while enumerating the transitions of:\n";
-        Printf.eprintf "%s\n" (Pp.pp_ui_instruction ppmode' ui_state tid ioid);
-        Printf.eprintf "%s\n\n" s;
-        Printf.eprintf "%s\n" bt;
-        exit 1
-
-    | (Failure s) as e ->
-        Printf.eprintf "Failure while enumerating transitions:\n";
-        Printf.eprintf "%s\n\n" s;
-        raise e (* changing this line to anything else will destroy the backtrace *)
-    end
-
-  let state_after_transition ppmode state trans =
-    begin try
-      MachineDefSystem.system_state_after_transition state trans
-    with
-    | (Failure s) as e ->
-        let (ppmode', ui_state) = make_ui_system_state ppmode None state [] in
-        Printf.eprintf "\n*** system state before taking the transition (see failure below) ***\n\n";
-        Printf.eprintf "%s\n" (Pp.pp_ui_system_state ppmode' ui_state);
-        Printf.eprintf "Failure while taking transition (from the state above):\n";
-        Printf.eprintf "  %s\n\n" (Pp.pp_trans ppmode trans);
         Printf.eprintf "%s\n\n" s;
         raise e (* changing this line to anything else will destroy the backtrace *)
     end

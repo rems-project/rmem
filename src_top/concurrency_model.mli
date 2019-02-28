@@ -40,23 +40,6 @@ module type S = sig
     system_state ->
     system_state_and_transitions
 
-  val enumerate_transitions :
-    RunOptions.t ->
-    system_state ->
-    (storage_subsystem_state MachineDefTypes.ss_trans list) option ->
-    (MachineDefTypes.thread_id, thread_subsystem_state MachineDefTypes.thread_trans list) Pmap.map ->
-    (MachineDefTypes.thread_id, ((thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans * bool) list) Pmap.map ->
-    ((thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans list) *
-        (storage_subsystem_state MachineDefTypes.ss_trans list) *
-        ((MachineDefTypes.thread_id, thread_subsystem_state MachineDefTypes.thread_trans list) Pmap.map) * 
-          (MachineDefTypes.thread_id, ((thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans * bool) list) Pmap.map
-
-  val state_after_transition :
-    Globals.ppmode ->
-    system_state ->
-    (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans ->
-    (system_state * bool * MachineDefTypes.thread_id list * bool * bool * bool) MachineDefTypes.transition_outcome
-
   val sst_after_transition :
     RunOptions.t ->
     system_state_and_transitions ->

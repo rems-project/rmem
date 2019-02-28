@@ -132,7 +132,7 @@ module Run_test (Test_file: Test_file.S) = struct
       Interact.run_interactive run_options ppmode test_info initial_state_records
     else
       (* non-interactive mode (exhaustive/random) *)
-      Interact.run_exhaustive_search run_options ppmode test_info initial_state_records
+      Interact.run_search run_options ppmode test_info initial_state_records
 
 end
 

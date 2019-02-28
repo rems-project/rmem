@@ -1045,3 +1045,151 @@ let parse_and_update_model an_option params =
   if succ then params'
   else Warn.user_error "Unknown model %s" an_option
 
+
+(********************************************************************)
+
+exception BranchTargetsParsingError of string
+
+let branch_targets_parse lexbuf : Branch_targets_parser_base.ast list =
+  let print_position lexbuf : string =
+    let pos = lexbuf.Lexing.lex_curr_p in
+    Printf.sprintf "%s:%d:%d" pos.Lexing.pos_fname
+        pos.Lexing.pos_lnum (pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1)
+  in
+  try Branch_targets_parser.lines Branch_targets_lexer.read lexbuf with
+  | Branch_targets_lexer.SyntaxError msg ->
+      let msg = Printf.sprintf "%s: %s" (print_position lexbuf) msg in
+      raise (BranchTargetsParsingError msg)
+  | Parsing.Parse_error ->
+      let msg = Printf.sprintf "%s: syntax error" (print_position lexbuf) in
+      raise (BranchTargetsParsingError msg)
+
+let branch_targets_parse_from_file (filename: string) : Branch_targets_parser_base.ast list =
+  Utils.safe_open_in filename @@ fun chan ->
+  let lexbuf = Lexing.from_channel chan in
+  lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = filename };
+  branch_targets_parse lexbuf
+
+let branch_targets_parse_from_string (str: string) : Branch_targets_parser_base.ast list =
+  let lexbuf = Lexing.from_string str in
+  (*lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };*)
+  branch_targets_parse lexbuf
+
+let set_branch_targets
+    (symbol_table:   ((Sail_impl_base.address * int) * string) list)
+    (branch_targets: Branch_targets_parser_base.ast list)
+    (model:          model_params)
+    : model_params
+  =
+  let labels_map =
+    let (fps, names) = List.split symbol_table in
+    List.combine names fps
+  in
+
+  let address_of_location = function
+    | Branch_targets_parser_base.Absolute n ->
+        Sail_impl_base.address_of_integer n
+    | Branch_targets_parser_base.Label_and_offset (label, offset) ->
+        begin match List.assoc label labels_map with
+        | (addr, _) ->
+            Sail_impl_base.integer_of_address addr
+            |> Nat_big_num.add offset
+            |> Sail_impl_base.address_of_integer
+        | exception Not_found -> failwith @@ "the location label \"" ^ label ^ "\" does not exist"
+        end
+  in
+
+  let branch_targets =
+    List.map
+      (fun (bt: Branch_targets_parser_base.ast) ->
+        (bt.Branch_targets_parser_base.thread,
+          address_of_location bt.Branch_targets_parser_base.branch_loc,
+          List.map address_of_location bt.Branch_targets_parser_base.branch_targets
+        )
+      )
+      branch_targets
+    |> List.sort (fun (t1, addr1, _) (t2, addr2, _) ->
+          match compare t1 t2 with
+          | 0 -> Sail_impl_base.addressCompare addr1 addr2
+          | c -> c)
+    |> List.fold_left (fun acc (tid, addr, addrs) ->
+      match acc with
+      | (tid', (addr', addrs') :: tbts) :: acc
+          when tid' = tid && Sail_impl_base.addressEqual addr' addr
+          -> (tid, (addr, addrs @ addrs') :: tbts) :: acc
+      | (tid', tbts) :: acc when tid' = tid ->
+          (tid, (addr, addrs) :: tbts) :: acc
+      | _ -> (tid, (addr, addrs) :: []) :: acc
+    ) []
+    |> MachineDefSystem.branch_targets_from_list
+  in
+
+  {model with t = {model.t with branch_targets  = branch_targets}}
+
+
+
+exception SharedMemoryParsingError of string
+
+let shared_memory_parse lexbuf : Shared_memory_parser_base.footprint list =
+  let print_position lexbuf : string =
+    let pos = lexbuf.Lexing.lex_curr_p in
+    Printf.sprintf "%s:%d:%d" pos.Lexing.pos_fname
+        pos.Lexing.pos_lnum (pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1)
+  in
+  try Shared_memory_parser.footprints Shared_memory_lexer.read lexbuf with
+  | Shared_memory_lexer.SyntaxError msg ->
+      let msg = Printf.sprintf "%s: %s\n" (print_position lexbuf) msg in
+      raise (SharedMemoryParsingError msg)
+  | Parsing.Parse_error ->
+      let msg = Printf.sprintf "%s: syntax error\n" (print_position lexbuf) in
+      raise (SharedMemoryParsingError msg)
+
+let shared_memory_parse_from_file (filename: string) : Shared_memory_parser_base.footprint list =
+  Utils.safe_open_in filename @@ fun chan ->
+  let lexbuf = Lexing.from_channel chan in
+  lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = filename };
+  shared_memory_parse lexbuf
+
+let shared_memory_parse_from_string (str: string) : Shared_memory_parser_base.footprint list =
+  let lexbuf = Lexing.from_string str in
+  (*lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };*)
+  shared_memory_parse lexbuf
+
+
+let set_shared_memory
+    (symbol_table:  ((Sail_impl_base.address * int) * string) list)
+    (shared_memory: Shared_memory_parser_base.footprint list)
+    (model:         model_params)
+    : model_params
+  =
+  let labels_map =
+    let (fps, names) = List.split symbol_table in
+    List.combine names fps
+  in
+
+  let shared_memory =
+    List.map
+      (function
+        | Shared_memory_parser_base.Absolute (addr, size) ->
+            (Sail_impl_base.address_of_integer addr, size)
+        | Shared_memory_parser_base.Symbol (symb, None) ->
+            begin try List.assoc symb labels_map with
+            | Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
+            end
+        | Shared_memory_parser_base.Symbol (symb, Some (offset, size)) ->
+            begin match List.assoc symb labels_map with
+            | (addr, _) ->
+                let addr =
+                  Sail_impl_base.integer_of_address addr
+                  |> Nat_big_num.add offset
+                  |> Sail_impl_base.address_of_integer
+                in
+                (addr, size)
+            | exception Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
+            end
+      )
+      shared_memory
+    |> Pset.from_list MachineDefTypes.footprintCompare
+  in
+
+  {model with shared_memory = Some shared_memory}

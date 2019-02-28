@@ -73,29 +73,19 @@ val aarch64gen: bool ref
 val final_cond: string option ref (* 'Some s': change the final condition to 's' *)
 
 val branch_targets: Branch_targets_parser_base.ast list option ref
-val branch_targets_parse_from_file: string -> unit
-val branch_targets_parse_from_string: string -> unit
-
 val shared_memory: Shared_memory_parser_base.footprint list option ref
-val shared_memory_parse_from_file: string -> unit
-val shared_memory_parse_from_string: string -> unit
-
 val add_bt_and_sm_to_model_params: ((Sail_impl_base.address * int) * string) list -> unit
 
 (** UI options ******************************************************)
 
-exception Interactive_quit
-
 val auto_follow:       bool ref
 val interactive_auto:  bool ref
-val breakpoint_actual: bool ref
 val auto_internal:     bool ref
 val dumb_terminal:     bool ref
 
 val random_seed: int option ref   (* per ppcmem invocation seed: None for fresh, or Some n for seed n *)
 
 val follow:     Interact_parser_base.ast list ref
-val set_follow: string -> unit
 
 val ui_commands: (string option) ref
 

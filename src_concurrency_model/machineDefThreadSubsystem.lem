@@ -3682,6 +3682,95 @@ let enumerate_finish_load_part_of_rmw
   in
   return (T_only (make_label state iic T_finish_load_of_rmw state'))
 
+(* handle_thread_start is a hack. It handles the fake instruction that
+signals a fork in rmem. We expect the Sail code for this instruction
+to do nothing. Here we generate register read transitions as needed,
+and then do the fork and write the result register at the same time.
+Maybe it would be nicer to have Sail do the register reads and writes,
+but then we will need to add a fork outcome/effect to Sail and I'm not
+up to it right now. Also, it is not clear we want such effect in Sail
+as "fork" is not a real thing. *)
+let handle_thread_start
+    (params: thread_params)
+    (i_sem:  instruction_semantics)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    (is:     outcome_S)
+    : list (thread_trans thread_state)
+  =
+  let c = fun _ -> is in
+  let start_info = params.thread_isa_info.thread_start_info in
+  let i = iic.iic_instance in
+
+  if forall ((r, _, _) MEM i.reg_reads). r <> start_info.tsi_addr then
+    handle_read_reg_outcome params i_sem state iic start_info.tsi_addr c
+  else if
+    match start_info.tsi_toc with
+    | Nothing -> false
+    | Just tsi_toc ->
+        forall ((r, _, _) MEM i.reg_reads). r <> tsi_toc
+    end
+  then
+    let tsi_toc = ensure_just start_info.tsi_toc "fail" in
+    handle_read_reg_outcome params i_sem state iic tsi_toc c
+  else if
+    match start_info.tsi_extra with
+    | Nothing -> false
+    | Just tsi_extra ->
+        forall ((r, _, _) MEM i.reg_reads). r <> tsi_extra
+    end
+  then
+    let tsi_extra = ensure_just start_info.tsi_extra "fail" in
+    handle_read_reg_outcome params i_sem state iic tsi_extra c
+  else
+    guard
+      match params.thread_model with
+      | PLDI11_thread_model    -> pldi11_commit_cand params state iic
+      | POP_thread_model _     -> pop_finish_cand params state iic
+      | TSO_thread_model       -> true
+      | Promising_thread_model -> fail
+      | Relaxed_thread_model   -> true
+      end >>
+
+    guard (forall (iprev MEM iic.active_prefix). if is_pop_strong_memory_barrier iprev then iprev.finished else true) >>
+
+    let addr_v =
+      List.find (fun (r, _, _) -> r = start_info.tsi_addr) i.reg_reads
+    in
+    let (_, _, addr_v) = ensure_just addr_v "fail" in
+    let toc_v =
+      match start_info.tsi_toc with
+      | Nothing -> Nothing
+      | Just tsi_toc ->
+          let v = List.find (fun (r, _, _) -> r = tsi_toc) i.reg_reads in
+          let (_, _, v) = ensure_just v "fail" in
+          Just v
+      end
+    in
+
+    let thread_continuation = fun new_tid ->
+      let new_tid_rv =
+        match new_tid with
+        | Just new_tid -> integerFromNat new_tid
+        | Nothing      -> ~1 (* i.e. -1 *)
+        end
+        $> register_value_for_reg_of_integer start_info.tsi_return
+      in
+      let i' =
+        <| i with
+            reg_writes = (start_info.tsi_return, (current_reg_write_dependencies i, new_tid_rv))
+              :: i.reg_writes;
+            finished = true;
+        |>
+      in
+      <| state with instruction_tree = apply_tree_context iic.context (i',iic.subtree) |>
+      $> make_old_instructions params
+      $> make_thread_cont_res {} {}
+    in
+
+    [T_thread_start (make_label state iic (addr_v, toc_v) thread_continuation)]
+
+
 let enumerate_transitions_of_instruction
     (params: thread_params)
     (i_sem:  instruction_semantics)
@@ -3713,7 +3802,11 @@ let enumerate_transitions_of_instruction
     | Write_reg descr o    -> handle_write_reg_outcome    params i_sem s iic descr o
     | Internal descr o     -> handle_internal_outcome     params i_sem s iic descr o
     | Footprint o          -> handle_footprint_outcome    params i_sem s iic is o
-    | Done ()              -> handle_done_outcome         params i_sem s iic
+    | Done ()              ->
+        if params.thread_isa_info.is_thread_start_instruction iic.iic_instance.instruction then
+                              handle_thread_start         params i_sem s iic is
+        else
+                              handle_done_outcome         params i_sem s iic
 
     | Escape (Just msg)    -> handle_sail_termination     params s iic $ "Escape: " ^ msg
     | Escape Nothing       -> handle_sail_termination     params s iic $ "Escape"

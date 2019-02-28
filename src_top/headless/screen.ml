@@ -54,7 +54,7 @@ include (Screen_base.Make (TextPrinters))
 
 let clear_warnings : unit -> unit = fun () -> ()
 
-let quit = fun () -> ()
+let quit = fun () -> (exit 0 |> ignore)
 
 
 let display_dot ppmode legend_opt s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =

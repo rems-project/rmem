@@ -349,7 +349,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
 
   let is_option run_options =
     if run_options.RunOptions.interpreter then
-      let eager = (run_options.RunOptions.eager_mode.eager_pseudocode_internal || run_options.RunOptions.suppress_internal) in
+      let eager = run_options.RunOptions.suppress_internal in
       MachineDefTypes.Interp eager
     else MachineDefTypes.Shallow_embedding
 end

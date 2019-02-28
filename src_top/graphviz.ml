@@ -344,7 +344,9 @@ let trans_rows m ?colspan trans =
       match m.pp_default_cmd with
       (* it would be nice to make the highlighted transitions bold
          but graphviz has a bug which makes them overflow the table *)
-      | Some (Interact_parser_base.Transitions [i]) when i = n ->
+      | Some (Interact_parser_base.Transition (Interact_parser_base.WithEager i)) when i = n ->
+         ("<B>", "</B>", "blue", Some "yellow", None)
+      | Some (Interact_parser_base.Transition (Interact_parser_base.WithBoundedEager (i, _))) when i = n ->
          ("<B>", "</B>", "blue", Some "yellow", None)
       | _ ->
          (   "",     "", "blue", None,          None)

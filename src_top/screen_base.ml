@@ -131,7 +131,7 @@ module type S = sig
   val show_debug : Globals.ppmode -> ('a, unit, string, unit) format4 -> 'a
   val final_message : Globals.ppmode -> bool -> string -> unit
   val draw_system_state : Globals.ppmode ->
-                          int list ->
+                          Interact_parser_base.ast list ->
                           Interact_parser_base.ast list ->
                           ('ts,'ss) MachineDefTypes.system_state ->
                           ('ts,'ss) MachineDefTypes.ui_system_state ->
@@ -194,28 +194,17 @@ module Make (Pr : Printers) : S = struct
     fun s -> r := s :: !r
 
   let choice_summary_str ppmode choices_so_far follow_suffix numbered_cands disabled_trans force_verbose =
-    let take_rev n l =
-      let rec _take_rev n l acc = begin
-          if n <= 0 then
-            acc
-          else
-            match l with
-            | [] -> acc
-            | x::xs -> _take_rev (n - 1) xs (x::acc)
-        end
-      in _take_rev n l []
-    in
     let choice_summary_lines = ref ([] : string list) in
     let buffer_line = make_bufferer choice_summary_lines in
 
     let n_choices = List.length choices_so_far in
       let limited_choices = (match ppmode.Globals.pp_choice_history_limit with
-                             | Some n -> take_rev n choices_so_far
-                             | None -> List.rev choices_so_far
+                             | Some n -> Lem_list.take n choices_so_far
+                             | None -> choices_so_far
                             ) in
       let choice_str = Printf.sprintf "%s%s"
                                       (if (List.length limited_choices) < n_choices then "..." else "")
-                                      (String.concat "," (List.map string_of_int limited_choices))
+                                      (Interact_parser_base.history_to_string limited_choices)
       in
 
       let choices_str = Printf.sprintf "Choices so far (%n): \"%s\"" n_choices choice_str in
@@ -223,7 +212,7 @@ module Make (Pr : Printers) : S = struct
     let follow_str = match follow_suffix with
       | _ :: _ ->
          Printf.sprintf " remaining follow-spec: [%s]"
-                        (String.concat "," (List.map Interact_parser_base.pp follow_suffix))
+            (List.rev follow_suffix |> Interact_parser_base.history_to_string)
       | [] -> ""
     in
 
@@ -261,8 +250,8 @@ module Make (Pr : Printers) : S = struct
 
   let draw_system_state
         (ppmode:         Globals.ppmode)
-        (choices_so_far: int list)
-        (follow_suffix:     Interact_parser_base.ast list)
+        (choices_so_far: Interact_parser_base.ast list)
+        (follow_suffix:  Interact_parser_base.ast list)
         (_state:         ('ts,'ss) MachineDefTypes.system_state)
         (ui_state:       ('ts,'ss) MachineDefTypes.ui_system_state)
         (_candidate_ex:  MachineDefCandidateExecution.cex_candidate option)

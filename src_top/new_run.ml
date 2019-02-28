@@ -61,28 +61,28 @@ type sst_predicate = ConcModel.system_state_and_transitions -> bool
 type trans_predicate = ConcModel.trans -> bool
 type state_and_trans_predicate = ConcModel.system_state -> ConcModel.trans -> bool
 
-type breakpoint_reason =
-  | NoReason
-  | StateReason of ConcModel.system_state_and_transitions
-  | TransReason of ConcModel.trans * ConcModel.system_state_and_transitions
-
 type breakpoint_predicate =
-  | StateBreakpoint of (ConcModel.system_state_and_transitions -> breakpoint_reason)
-  | TransitionBreakpoint of (ConcModel.system_state_and_transitions -> ConcModel.trans -> breakpoint_reason)
+  | StateBreakpoint of (ConcModel.system_state_and_transitions -> bool)
+  | TransitionBreakpoint of (ConcModel.system_state_and_transitions -> ConcModel.trans -> bool)
+  | SharedBreakpoint of (MachineDefTypes.footprint Pset.set ->
+                         ConcModel.system_state_and_transitions ->
+                         ConcModel.trans ->
+                         bool)
 
 type breakpoint_id =
   | Numbered of int
   | Named of int * string
 
-type breakpoint = (breakpoint_id * (breakpoint_predicate * string))
+type breakpoint = (breakpoint_id * breakpoint_predicate * string)
 
 type search_node =
   { system_state: ConcModel.system_state_and_transitions;
 
     (* [] - not explored yet
        tn :: ... :: [t1] - t1 is transition that used to be in unexplored_transitions
-                           (actually the index of the transition in system_state.sst_system_transitions);
-                           the other transitions are eager transitions that followed *)
+                           (actually the index of the transition in system_state.sst_system_transitions).
+                           The other transitions are eager transitions that followed.
+                           For the initial node, t1 might also be eager. *)
     open_transition: int list;
 
     (* filtered transitions that we still need to explore;
@@ -210,21 +210,6 @@ let print_status_message search_state : unit =
   end;
   ()
 
-let sprint_branch_targets ppmode branch_targets : string =
-  List.map (fun (tid, tbts) ->
-    List.map (fun (addr, addrs) ->
-      List.map (fun a -> Printf.sprintf "%s" (Pp.pp_address ppmode None a)) addrs
-      |> String.concat ", "
-      |> Printf.sprintf "%d:%s -> {%s};" tid (Pp.pp_address ppmode None addr)
-    ) tbts
-    |> String.concat " "
-  ) branch_targets
-  |> String.concat " "
-
-let sprint_shared_memory ppmode shared_memory : string =
-  Pset.elements shared_memory
-  |> List.map (fun fp -> Printf.sprintf "%s;" (Pp.pp_footprint ppmode None fp))
-  |> String.concat " "
 
 let print_last_state title search_state : unit =
   let ppmode = search_state.ppmode in
@@ -280,7 +265,7 @@ let update_observed_branch_targets_and_shared_memory search_state search_node : 
     if diff <> [] && Globals.is_verbosity_at_least Globals.ThrottledInformation then
       Screen.show_message search_state.ppmode "%s found new branch-register target(s): %s"
         (sprint_time ())
-        (sprint_branch_targets search_state.ppmode diff);
+        (Pp.pp_branch_targets search_state.ppmode diff);
     union
   in
 
@@ -294,7 +279,7 @@ let update_observed_branch_targets_and_shared_memory search_state search_node : 
       if not (Pset.is_empty diff) && Globals.is_verbosity_at_least Globals.ThrottledInformation then
         Screen.show_message search_state.ppmode "%s found new shared memory footprint(s): %s"
           (sprint_time ())
-          (sprint_shared_memory search_state.ppmode diff);
+          (Pp.pp_shared_memory search_state.ppmode diff);
       union
     else search_state.observed_shared_memory
   in
@@ -376,7 +361,9 @@ let record_final_state search_state search_node : search_state =
 
   let search_state = update_observed_branch_targets_and_shared_memory search_state search_node in
 
-  if ConcModel.is_final_state search_node.system_state.sst_state then
+  if search_node.system_state.sst_system_transitions = [] &&
+    ConcModel.is_final_state search_node.system_state.sst_state
+  then
     let final_state = reduced_final_state search_state.test_info.Test.show_regs search_state.test_info.Test.show_mem search_node.system_state.sst_state in
 
     let (choices, count) =
@@ -465,99 +452,77 @@ let pop search_state : search_state =
      {search_state with search_nodes = search_nodes'}
   end
 
-type take_transition_result =
-  | NextState of search_state
-  | TransBreakpoint of search_state * int * ConcModel.trans * breakpoint * breakpoint_reason
-
-let take_transition search_state sst (i, transition) eager : take_transition_result =
+let take_transition search_state sst (i, transition) eager : search_state =
   let m = search_state.ppmode in
-  begin match search_state.search_nodes with
+  match search_state.search_nodes with
   | [] -> assert false
   | search_node :: search_nodes ->
-     if Globals.is_verbosity_at_least Globals.Debug then begin
-         Screen.show_message m "Taking %s transition: [%d] %s\nof: (%d) [\n%s\n] (open_transition = [%s])"
-                             (if eager then "eager" else "### NON-EAGER ###")
-                             i
-                             (Pp.pp_trans m transition)
-                             (List.length search_node.unexplored_transitions)
-                             (Pp.pp_list m
-                                         (fun (i, t) -> "[" ^ string_of_int i ^ "] " ^ Pp.pp_trans m t ^ "\n")
-                                         search_node.unexplored_transitions)
-                             (Pp.pp_list m string_of_int search_node.open_transition)
-       end;
+      if Globals.is_verbosity_at_least Globals.Debug then
+        Screen.show_message m "Taking %s transition: [%d] %s\nof: (%d) [\n%s\n] (open_transition = [%s])"
+          (if eager then "eager" else "### NON-EAGER ###")
+          i
+          (Pp.pp_trans m transition)
+          (List.length search_node.unexplored_transitions)
+          (Pp.pp_list m
+            (fun (i, t) -> "[" ^ string_of_int i ^ "] " ^ Pp.pp_trans m t ^ "\n")
+                search_node.unexplored_transitions)
+          (Pp.pp_list m string_of_int search_node.open_transition);
 
-     (* Invariant: either
-        - we're at the initial state, or
-        - the previous state has at least one open transition *)
-     if not (search_nodes = [] || (List.hd search_nodes).open_transition <> []) then
-       failwith "not at initial state and open_transition of previous state is empty";
+      (* Invariant: either
+          - we're at the initial state, or
+          - the previous state has at least one open transition *)
+      if search_nodes <> [] && (List.hd search_nodes).open_transition = [] then
+        failwith "not at initial state and open_transition of previous state is empty";
 
-     (* Invariant: if we're taking a non-eager transition, this is a fresh search node *)
-     if not eager && not (search_node.open_transition = []) then
-       failwith "trying to take a non-eager transition of a non-fresh node (open_transition <> [])";
+      (* Invariant: if we're taking a non-eager transition, this is a fresh search node *)
+      if not eager && not (search_node.open_transition = []) then
+        failwith "trying to take a non-eager transition of a non-fresh node (open_transition <> [])";
 
-     (* Invariant: if we're taking a non-eager transition, we've taken all eager transitions already *)
-     if not eager && (List.exists
-                        (fun (_, t) -> is_eager search_state t)
-                        search_node.unexplored_transitions) then
-       failwith "trying to take a non-eager transition, but eager transitions still exist";
+      (* Invariant: if we're taking a non-eager transition, we've taken all eager transitions already *)
+      if not eager &&
+          List.exists
+            (fun (_, t) -> is_eager search_state t)
+            search_node.unexplored_transitions
+      then
+        failwith "trying to take a non-eager transition, but eager transitions still exist";
 
-
-     (* Ask all breakpoints whether they want to fire *)
-     let reasons =
-      List.map (fun bp ->
-          let (_, (pred, _)) = bp in
-          match pred with
-          | StateBreakpoint _ -> (bp, NoReason)
-          | TransitionBreakpoint f ->
-              (bp, f search_node.system_state transition)
-        )
-        search_state.breakpoints
-      |> List.filter (fun (_, r) -> r <> NoReason)
-     in
-
-     begin match reasons with
-     | (bp, reason) :: _ -> TransBreakpoint (search_state, i, transition, bp, reason)
-     | [] ->
-       (* No breakpoint wants to fire. Take the transition. *)
-       begin match ConcModel.sst_after_transition search_state.options sst transition with
-       | TO_unhandled_exception (tid, ioid, e) ->
+      begin match ConcModel.sst_after_transition search_state.options sst transition with
+      | TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
-          NextState (record_exception search_state (tid, ioid, e))
-       | TO_system_state sst' ->
-          let search_state' =
-            if eager then
-              (* If the transition was eager, pop and re-push the head node,
-                 prepending it to the previous node's open_transition *)
-              match (pop search_state) with
-              (* Special case: if search_nodes = [] then we're at the initial state
-                 and shouldn't record the eager transition, since we pretend
-                 it's been taken by the eager tail of the nonexistent previous node.
-                 TODO FIXME: we probably want to record them somehow for completeness. *)
-              | { search_nodes = [] } as search_state' ->
-                  add_search_node sst' search_state'
-              | { search_nodes = search_node' :: search_nodes' } as search_state' -> begin
-                  { search_state' with search_nodes =
-                                         { search_node' with
-                                           open_transition = i :: search_node'.open_transition }
-                                         :: search_nodes';
-                  }
-                  |> add_search_node sst'
-              end
-            else
-              (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
+          record_exception search_state (tid, ioid, e)
+      | TO_system_state sst' when eager ->
+          (* If the transition was eager, pop and re-push the head node,
+          prepending it to the previous node's open_transition *)
+          begin match (pop search_state) with
+          | { search_nodes = [] } ->
+              (* Special case: the first transition from the initial state is eager *)
+              let search_node = List.hd search_state.search_nodes in
+              assert (search_node.open_transition = []);
               { search_state with
-                search_nodes = { search_node with
-                                 open_transition = [i];
-                                 unexplored_transitions = List.remove_assoc i search_node.unexplored_transitions;
-                               } :: search_nodes;
+                search_nodes = [{search_node with open_transition = [i]; unexplored_transitions = [];}];
               }
               |> add_search_node sst'
-          in
-          NextState search_state'
-       end
-     end
-  end
+          | { search_nodes = search_node' :: search_nodes' } as search_state' ->
+              { search_state' with
+                search_nodes =
+                  { search_node' with
+                    open_transition = i :: search_node'.open_transition;
+                  } :: search_nodes';
+              }
+              |> add_search_node sst'
+          end
+      | TO_system_state sst' (* when not eager *) ->
+          (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
+          assert (search_node.open_transition = []);
+          { search_state with
+            search_nodes =
+              { search_node with
+                open_transition = [i];
+                unexplored_transitions = List.remove_assoc i search_node.unexplored_transitions;
+              } :: search_nodes;
+          }
+          |> add_search_node sst'
+      end
 
 let rec some_if_any (f : 'a -> 'b option) : 'a list -> 'b option = function
   | []     -> None
@@ -568,7 +533,7 @@ let interrupt = ref false;;
 
 type search_outcome =
   | Complete    of search_state
-  | Breakpoint  of search_state * breakpoint * breakpoint_reason (* which breakpoint was hit and why *)
+  | Breakpoints of search_state * (breakpoint list) (* which breakpoints were hit *)
   | Interrupted of search_state * string (* explanation of why interrupted *)
   | OcamlExn    of search_state * string
 
@@ -619,23 +584,30 @@ let rec search search_state : search_outcome =
     | None -> cont search_state
   in
 
-  let check_state_breakpoints cont = fun search_state ->
+  let check_breakpoints cont = fun search_state ->
     begin match search_state.search_nodes with
     | [] -> assert false
     | search_node :: _ ->
         if search_node.open_transition = [] then
-          let reasons =
-            List.map (fun bp ->
-                let (_, (pred, _)) = bp in
-                match pred with
-                | StateBreakpoint f -> (bp, f search_node.system_state)
-                | TransitionBreakpoint _ -> (bp, NoReason))
+          let breakpoints =
+            List.filter (function
+              | (_, StateBreakpoint pred, _) ->
+                  pred search_node.system_state
+              | (_, TransitionBreakpoint pred, _) ->
+                  List.exists
+                    (fun (_, t) -> pred search_node.system_state t)
+                    search_node.unexplored_transitions
+              | (_, SharedBreakpoint pred, _) ->
+                  List.exists
+                    (fun (_, t) -> pred search_state.observed_shared_memory search_node.system_state t)
+                    search_node.unexplored_transitions
+              )
               search_state.breakpoints
           in
-
-          match List.find (function (_, NoReason) -> false | _ -> true) reasons with
-          | (bp, reason) -> Terminate_search (Breakpoint (search_state, bp, reason))
-          | exception Not_found -> cont search_state
+          if breakpoints <> [] then
+            Terminate_search (Breakpoints (search_state, breakpoints))
+          else
+            cont search_state
         else
           cont search_state
     end
@@ -716,25 +688,20 @@ let rec search search_state : search_outcome =
   in
 
   let take_eager_transition cont = fun search_state ->
-    begin match search_state.search_nodes with
+    match search_state.search_nodes with
     | [] -> assert false
     | search_node :: _ ->
         if search_node.open_transition = [] then
-          begin match List.find
+          match List.find
               (fun (_, t) -> is_eager search_state t)
               search_node.unexplored_transitions
           with
           | transition ->
-              begin match take_transition search_state search_node.system_state transition true with
-              | NextState next_state -> Continue_search next_state
-              | TransBreakpoint (break_state, i, transition, bp, reason) ->
-                  Terminate_search (Breakpoint (search_state, bp, reason))
-              end
+              take_transition search_state search_node.system_state transition true
+              |> continue_search
           | exception Not_found -> cont search_state
-          end
         else
           cont search_state
-    end
   in
 
   (*
@@ -905,10 +872,8 @@ let rec search search_state : search_outcome =
               }
             in
 
-            match take_transition search_state' search_node'.system_state transition false with
-            | NextState next_state -> Continue_search next_state
-            | TransBreakpoint (break_state, i, transition, bp, reason) ->
-                Terminate_search (Breakpoint (search_state, bp, reason))
+            take_transition search_state' search_node'.system_state transition false
+            |> continue_search
         end
     end
   in
@@ -917,7 +882,7 @@ let rec search search_state : search_outcome =
     begin match search_state.search_nodes with
     | [] -> Terminate_search (Complete search_state) (* no more nodes to explore *)
     | search_node :: _ ->
-        if search_node.open_transition = [] && search_node.system_state.sst_system_transitions = [] then
+        if search_node.open_transition = [] && search_node.unexplored_transitions = [] then
           Continue_search (record_final_state search_state search_node |> pop)
         else
           cont search_state
@@ -933,8 +898,9 @@ let rec search search_state : search_outcome =
 
       begin match
         ( check_limits
-          @@ check_state_breakpoints
+          @@ check_breakpoints
           @@ check_targets
+          @@ check_final
           @@ check_bound
           @@ prune_restarts
           @@ prune_discards
@@ -944,7 +910,6 @@ let rec search search_state : search_outcome =
           @@ hash_prune
           @@ loop_limit
           @@ priority_reduction
-          @@ check_final
           @@ take_next_transition
           (* if all else fails, pop and continue *)
           @@ (fun search_state -> Continue_search (pop search_state))
@@ -959,11 +924,36 @@ let rec search search_state : search_outcome =
       end
   end
 
+let init_search_state = ref None
+
+let print_transitions trace : unit =
+  let rec do_trace trace eager search_state =
+    match trace with
+    | [] -> ()
+    | [] :: trace -> do_trace trace false search_state
+    | (t :: ts) :: trace ->
+        let node = List.hd search_state.search_nodes in
+        let transition = List.nth node.system_state.sst_system_transitions t in
+        take_transition search_state node.system_state (t, transition) eager
+        |> do_trace (ts :: trace) true
+  in
+
+  let trace =
+    List.rev trace
+    |> List.map List.rev
+  in
+
+  match !init_search_state with
+  | None -> assert false
+  | Some s -> do_trace trace true s
+
 (* This exception is just to break out of the for loop below *)
 exception RandomResult of search_outcome
 
+exception BadSearchOptions of string
+
 let search_from_state
-    ?(ppmode=Globals.get_ppmode ())
+    (ppmode:         Globals.ppmode)
     (options:        RunOptions.t)
     (test_info:      Test.info) (* TODO: probably should be abstracted,
                                 used only in reduced_final_state *)
@@ -976,6 +966,19 @@ let search_from_state
     : search_outcome
   =
   let started_timestamp = Sys.time () |> int_of_float in
+
+  (* FIXME: (SF) The interpreter PP is not complete and might cause different
+  state hash to compare as equal *)
+  if options.hash_prune &&
+    not (options.eager_mode.eager_pseudocode_internal ||
+          system_state.sst_state.model.ss.ss_model = Promising_storage_model)
+  then
+    raise (BadSearchOptions "hash_prune is not safe without eager_pseudocode_internal");
+
+  if options.prune_discards &&
+      system_state.sst_state.model.t.thread_allow_tree_speculation
+  then
+    raise (BadSearchOptions "prune_discards requires forbid_tree_speculation");
 
   let options =
     { options with
@@ -1049,14 +1052,153 @@ let search_from_state
     else []
   in
 
+  let print_diffs search_state bt_union bt_diff sm_union sm_diff : unit =
+    if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
+      if not (Pmap.is_empty bt_union) then begin
+        Screen.show_message search_state.ppmode
+          "Branch-register targets that were observed:\n%s"
+          (MachineDefSystem.branch_targets_to_list bt_union |> Pp.pp_branch_targets search_state.ppmode);
+
+        if bt_diff <> [] then
+          Screen.show_message search_state.ppmode
+            "(from which the following are new: %s)"
+            (Pp.pp_branch_targets search_state.ppmode bt_diff);
+      end;
+
+      if options.eager_mode.eager_local_mem then begin
+        if Pset.is_empty sm_union then
+          Screen.show_message search_state.ppmode "No shared memory footprints were observed!"
+        else begin
+          Screen.show_message search_state.ppmode
+            "Shared memory footprints that were observed:\n%s"
+            (Pp.pp_shared_memory search_state.ppmode sm_union);
+
+          if not (Pset.is_empty sm_diff) then
+            Screen.show_message search_state.ppmode
+              "(from which the following are new: %s)"
+              (Pp.pp_shared_memory search_state.ppmode sm_diff);
+        end
+      end;
+    end;
+  in
+
+  let rec search_fixed_point n initial_search_state : search_outcome =
+    match search initial_search_state with
+    | (Complete search_state') as result ->
+        let (bt_union, bt_diff) =
+          MachineDefSystem.union_and_diff_branch_targets
+            search_state'.observed_branch_targets
+            initial_search_state.observed_branch_targets
+            (*sst.sst_state.model.t.branch_targets*)
+        in
+
+        let (sm_union, sm_diff) =
+          MachineDefSystem.union_and_diff_shared_memory
+            search_state'.observed_shared_memory
+            initial_search_state.observed_shared_memory
+            (*options.eager_mode.em_shared_memory*)
+        in
+
+        if bt_diff = [] && (not options.eager_mode.eager_local_mem || Pset.is_empty sm_diff) then
+          (* search terminated after exploring all reachable states *)
+          let () = init_search_state := Some initial_search_state in
+          result
+        else begin
+          if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
+            Screen.show_message ppmode
+              "%s Finished exhaustive search %d (did not reach a fixed point)."
+              (sprint_time ())
+              n;
+            print_diffs search_state' bt_union bt_diff sm_union sm_diff;
+            if options.allow_partial then print_partial_results search_state';
+          end;
+
+          let options' =
+            { initial_search_state.options with
+              eager_mode =
+                { initial_search_state.options.eager_mode with
+                  em_shared_memory = sm_union
+                };
+            }
+          in
+
+          let system_state' =
+            ConcModel.sst_of_state
+              options'
+              { system_state.sst_state with
+                model =
+                  { system_state.sst_state.model with
+                    t = {system_state.sst_state.model.t with branch_targets = bt_union};
+                  };
+              }
+          in
+
+          { initial_search_state with
+            search_nodes            = [];
+            observed_branch_targets = bt_union;
+            observed_shared_memory  = sm_union;
+            options                 = options';
+          }
+          |> add_search_node system_state'
+          |> search_fixed_point (n + 1)
+        end
+    | result -> result
+  in
+
   let search_random initial_search_state : search_outcome =
     let search_state = ref initial_search_state in
     try
       (* we use for-loop because js_of_ocaml does not handle tail call so well *)
       for _ = 0 to options.pseudorandom_traces - 1 do
         match search !search_state with
-        | (Complete search_state') as result ->
-            search_state := {search_state' with search_nodes = initial_search_state.search_nodes}
+        | Complete search_state' ->
+            let (bt_union, bt_diff) =
+              MachineDefSystem.union_and_diff_branch_targets
+                search_state'.observed_branch_targets
+                (!search_state).observed_branch_targets
+            in
+
+            let (sm_union, sm_diff) =
+              MachineDefSystem.union_and_diff_shared_memory
+                search_state'.observed_shared_memory
+                (!search_state).observed_shared_memory
+            in
+
+            if bt_diff = [] && (not options.eager_mode.eager_local_mem || Pset.is_empty sm_diff) then
+              search_state := {search_state' with search_nodes = initial_search_state.search_nodes}
+            else begin
+              if Globals.is_verbosity_at_least Globals.ThrottledInformation then
+                print_diffs search_state' bt_union bt_diff sm_union sm_diff;
+
+              let options' =
+                { (!search_state).options with
+                  eager_mode =
+                    { (!search_state).options.eager_mode with
+                      em_shared_memory = sm_union
+                    };
+                }
+              in
+
+              let system_state' =
+                ConcModel.sst_of_state
+                  options'
+                  { system_state.sst_state with
+                    model =
+                      { system_state.sst_state.model with
+                        t = {system_state.sst_state.model.t with branch_targets = bt_union};
+                      };
+                  }
+              in
+
+              search_state :=
+                { search_state' with
+                  search_nodes            = [];
+                  observed_branch_targets = bt_union;
+                  observed_shared_memory  = sm_union;
+                  options                 = options';
+                }
+                |> add_search_node system_state'
+            end
 
         (* This is just to break out of the loop; caught a few lines below *)
         | result -> raise (RandomResult result)
@@ -1068,7 +1210,7 @@ let search_from_state
 
   let search_results =
     if options.pseudorandom then search_random initial_search_state
-    else search initial_search_state
+    else search_fixed_point 1 initial_search_state
   in
 
   (* restore interrupts *)

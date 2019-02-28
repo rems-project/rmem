@@ -32,7 +32,7 @@ module Base = Interact_parser_base
 %token PLUS
 %token MINUS
 
-%token SILENCE
+%token <string> DOUBLE_QUOTED_STRING
 
 %token QUIT
 %token HELP
@@ -49,7 +49,7 @@ module Base = Interact_parser_base
 %token GRAPH
 %token PRINT
 %token HISTORY
-%token DEBUG
+%token <string> DEBUG
 
 %token SEARCH
 %token <string> RANDOM
@@ -71,6 +71,9 @@ module Base = Interact_parser_base
 %token FOCUS
 %token THREAD
 %token INSTRUCTION
+%token FOLLOWLIST
+%token BRANCH_TARGETS
+%token SHARED_MEMORY
 
 %token <string> ON
 %token <string> OFF
@@ -79,11 +82,9 @@ module Base = Interact_parser_base
 %token INFO
 %token DELETE
 
-
 %token <int> NUM
 %token <Nat_big_num.num> BIG_NUM
-%type <int option> int_or_none
-
+%token <int * int> NUMENUM
 %token <string> IDENT
 
 %type <Interact_parser_base.ast list> commands
@@ -101,12 +102,11 @@ rev_commands:
   ;
 
 command:
-  |             { Base.Nothing       }
-  | SILENCE     { Base.Silence       }
+  |             { Base.Default       }
   | QUIT        { Base.Quit          }
   | help        { $1                 }
   | OPTIONS     { Base.ShowOptions   }
-  | transitions { Base.Transitions $1 }
+  | transition  { Base.Transition $1 }
   | step        { $1                 }
   | stepi       { $1                 }
   | peeki       { $1                 }
@@ -129,9 +129,9 @@ command:
   | focus       { $1                 }
   ;
 
-transitions:
-  | NUM COMMA transitions { $1 :: $3 }
-  | NUM                   { [$1] }
+transition:
+  | NUM      { Base.WithEager $1 }
+  | NUMENUM  { Base.WithBoundedEager (fst $1, snd $1) }
   ;
 
 help:
@@ -181,7 +181,6 @@ watchpoint:
   | WATCH_READ   SHARED            { Base.SharedWatchpoint Base.Read     }
   | WATCH_WRITE  SHARED            { Base.SharedWatchpoint Base.Write    }
   | WATCH_EITHER SHARED            { Base.SharedWatchpoint Base.Either   }
-  | BREAK        SHARED            { Base.SharedWatchpoint Base.Write    }
   ;
 
 search:
@@ -191,6 +190,9 @@ search:
 
 set:
   | SET set_key set_value { Base.SetOption ($2, $3) }
+  | SET FOLLOWLIST DOUBLE_QUOTED_STRING { Base.SetFollowList $3 }
+  | SET BRANCH_TARGETS DOUBLE_QUOTED_STRING { Base.SetBranchTargets $3 }
+  | SET SHARED_MEMORY DOUBLE_QUOTED_STRING { Base.SetSharedMemory $3 }
   ;
 
 set_key:
@@ -204,8 +206,8 @@ set_value:
   | ON    { $1 }
   | OFF   { $1 }
   | NONE  { $1 }
+  | DEBUG { $1 }
   | NUM   { string_of_int $1 }
-  | set_value COMMA set_value { $1 ^ "," ^ $3 }
   ;
 
 focus:
@@ -216,14 +218,20 @@ focus:
   | FOCUS INSTRUCTION OFF           { Base.FocusInstruction           None  }
   ;
 
+/* These rules are good, but are unused at the moment
+%type <int option> int_or_none
 int_or_none:
   | NONE { None }
   | NUM { Some $1 }
+  ;
 
+%type <bool> on_off
 on_off:
   | ON  { true  }
   | OFF { false }
+  you might also want to add NUM here for '0' and '1'
   ;
+*/
 
 big_num:
   | NUM     { Nat_big_num.of_int $1 }

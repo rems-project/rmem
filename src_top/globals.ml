@@ -142,162 +142,29 @@ let final_cond = ref None
 
 let branch_targets = ref None
 
-let branch_targets_parse lexbuf : unit =
-  let print_position lexbuf : string =
-    let pos = lexbuf.Lexing.lex_curr_p in
-    Printf.sprintf "%s:%d:%d" pos.Lexing.pos_fname
-        pos.Lexing.pos_lnum (pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1)
-  in
-
-  branch_targets :=
-    try Some (Branch_targets_parser.lines Branch_targets_lexer.read lexbuf) with
-    | Branch_targets_lexer.SyntaxError msg ->
-        Printf.eprintf "%s: %s\n" (print_position lexbuf) msg;
-        exit 1
-    | Parsing.Parse_error ->
-        Printf.eprintf "%s: syntax error\n" (print_position lexbuf);
-        exit 1
-
-let branch_targets_parse_from_file (filename: string) : unit =
-  Utils.safe_open_in filename @@ fun chan ->
-  let lexbuf = Lexing.from_channel chan in
-  lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = filename };
-  branch_targets_parse lexbuf
-
-let branch_targets_parse_from_string (str: string) : unit =
-  let lexbuf = Lexing.from_string str in
-  (*lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };*)
-  branch_targets_parse lexbuf
-
-
 let shared_memory = ref None
 
-let shared_memory_parse lexbuf : unit =
-  let print_position lexbuf : string =
-    let pos = lexbuf.Lexing.lex_curr_p in
-    Printf.sprintf "%s:%d:%d" pos.Lexing.pos_fname
-        pos.Lexing.pos_lnum (pos.Lexing.pos_cnum - pos.Lexing.pos_bol + 1)
-  in
-
-  shared_memory :=
-    try Some (Shared_memory_parser.footprints Shared_memory_lexer.read lexbuf) with
-    | Shared_memory_lexer.SyntaxError msg ->
-        Printf.eprintf "%s: %s\n" (print_position lexbuf) msg;
-        exit 1
-    | Parsing.Parse_error ->
-        Printf.eprintf "%s: syntax error\n" (print_position lexbuf);
-        exit 1
-
-let shared_memory_parse_from_file (filename: string) : unit =
-  Utils.safe_open_in filename @@ fun chan ->
-  let lexbuf = Lexing.from_channel chan in
-  lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = filename };
-  shared_memory_parse lexbuf
-
-let shared_memory_parse_from_string (str: string) : unit =
-  let lexbuf = Lexing.from_string str in
-  (*lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };*)
-  shared_memory_parse lexbuf
-
 let add_bt_and_sm_to_model_params symbol_table =
-  let labels_map =
-    let (fps, names) = List.split symbol_table in
-    List.combine names fps
-  in
-
-  let bt =
-    let address_of_location = function
-      | Branch_targets_parser_base.Absolute n ->
-          Sail_impl_base.address_of_integer n
-      | Branch_targets_parser_base.Label_and_offset (label, offset) ->
-          begin match List.assoc label labels_map with
-          | (addr, _) ->
-              Sail_impl_base.integer_of_address addr
-              |> Nat_big_num.add offset
-              |> Sail_impl_base.address_of_integer
-          | exception Not_found -> failwith @@ "the location label \"" ^ label ^ "\" does not exist"
-          end
-    in
-
-    begin match !branch_targets with
-    | Some bts ->
-        List.map
-          (fun (bt: Branch_targets_parser_base.ast) ->
-            (bt.Branch_targets_parser_base.thread,
-              address_of_location bt.Branch_targets_parser_base.branch_loc,
-              List.map address_of_location bt.Branch_targets_parser_base.branch_targets
-            )
-          )
-          bts
-        |> List.sort (fun (t1, addr1, _) (t2, addr2, _) ->
-              match compare t1 t2 with
-              | 0 -> Sail_impl_base.addressCompare addr1 addr2
-              | c -> c)
-        |> List.fold_left (fun acc (tid, addr, addrs) ->
-          match acc with
-          | (tid', (addr', addrs') :: tbts) :: acc
-              when tid' = tid && Sail_impl_base.addressEqual addr' addr
-              -> (tid, (addr, addrs @ addrs') :: tbts) :: acc
-          | (tid', tbts) :: acc when tid' = tid ->
-              (tid, (addr, addrs) :: tbts) :: acc
-          | _ -> (tid, (addr, addrs) :: []) :: acc
-        ) []
-
-    | None -> []
-    end |> MachineDefSystem.branch_targets_from_list
-  in
-
-  let sm =
-    begin match !shared_memory with
-    | Some shared_memory ->
-        let sm =
-          List.map
-            (function
-              | Shared_memory_parser_base.Absolute (addr, size) ->
-                  (Sail_impl_base.address_of_integer addr, size)
-              | Shared_memory_parser_base.Symbol (symb, None) ->
-                  begin try List.assoc symb labels_map with
-                  | Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
-                  end
-              | Shared_memory_parser_base.Symbol (symb, Some (offset, size)) ->
-                  begin match List.assoc symb labels_map with
-                  | (addr, _) ->
-                      let addr =
-                        Sail_impl_base.integer_of_address addr
-                        |> Nat_big_num.add offset
-                        |> Sail_impl_base.address_of_integer
-                      in
-                      (addr, size)
-                  | exception Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
-                  end
-            )
-            shared_memory
-        in
-        Some (Pset.from_list MachineDefTypes.footprintCompare sm)
-    | None -> None
-    end
-  in
-
-  model_params :=
-    MachineDefTypes.{ !model_params with
-      t = {!model_params.t with branch_targets  = bt};
-      shared_memory = sm;
-    }
+  begin match !branch_targets with
+  | Some branch_targets ->
+      model_params := Model_aux.set_branch_targets symbol_table branch_targets !model_params
+  | None -> ()
+  end;
+  begin match !shared_memory with
+  | Some shared_memory ->
+      model_params := Model_aux.set_shared_memory symbol_table shared_memory !model_params
+  | None -> ()
+  end
 
 (** UI options ******************************************************)
-
-exception Interactive_quit
 
 let auto_follow       = ref false
 let random_seed       = ref (None : int option)
 let interactive_auto  = ref false
-let breakpoint_actual = ref false
 let auto_internal     = ref false
 let dumb_terminal     = ref false
 
 let follow = ref ([] : Interact_parser_base.ast list)
-let set_follow str : unit =
-  follow := List.map (fun s -> Interact_parser_base.Transitions [int_of_string s]) (Str.split (Str.regexp ";") str)
 
 let ui_commands = ref None
 
@@ -378,7 +245,7 @@ let ppg_shared                 = ref false
 let ppg_regs                   = ref false
 let ppg_reg_rf                 = ref false
 let ppg_trans                  = ref true
-let pp_announce_options        = ref true
+let pp_announce_options        = ref false
 let pp_sail                    = ref true
 
 let set_pp_kind (k: string) =

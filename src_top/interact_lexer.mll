@@ -57,11 +57,14 @@ rule read =
   | '+'      { PLUS  }
   | '-'      { MINUS }
 
+  | '"' ([^'"']* as str) '"' { DOUBLE_QUOTED_STRING str }
+
   | num as n  { try NUM (int_of_string n) with
                 | Failure _ -> BIG_NUM (Misc.big_num_of_string n)
               }
 
-  | "silence"              { SILENCE }
+  | (num as n1) 'e' (num as n2)
+              { NUMENUM (int_of_string n1, int_of_string n2) }
 
   | "x"  | "exit"
   | "q"  | "quit"          { QUIT }
@@ -69,13 +72,13 @@ rule read =
   | "?"
   | "h"  | "help"          { HELP }
 
-  | "options"              { OPTIONS }
+  | "o" | "options"        { OPTIONS }
 
   | "s"  | "step"          { STEP }
   | "b"  | "back"          { BACK }
   | "u"  | "undo"          { UNDO }
 
-  | "f"  | "follow"        { FOLLOW }
+  | "fo"  | "follow"       { FOLLOW }
   | "a"  | "auto"          { AUTO }
 
   | "search"               { SEARCH }
@@ -88,7 +91,7 @@ rule read =
   | "p"   | "print"        { PRINT }
   | "his" | "history"      { HISTORY }
 
-  | "debug"                { DEBUG }
+  | "debug"                { DEBUG (Lexing.lexeme lexbuf) }
 
   | "break" | "breakpoint" { BREAK }
   | "fetch"                { FETCH }
@@ -110,11 +113,16 @@ rule read =
   | "thread"               { THREAD }
   | "instruction"
   | "inst" | "ioid"        { INSTRUCTION }
+  | "follow_list"          { FOLLOWLIST }
+  | "branch-targets"
+  | "Branch-targets"       { BRANCH_TARGETS }
+  | "shared-memory"
+  | "Shared-memory"        { SHARED_MEMORY }
 
                                 (* Slight hack to pass strings through to 'set ...' *)
-  | "on" | "true" | "1"
+  | "on" | "true"
   | "t" | "yes" | "y"      { ON (Lexing.lexeme lexbuf) }
-  | "off" | "false" | "0"
+  | "off" | "false"
   | "f" | "no" | "n"       { OFF (Lexing.lexeme lexbuf) }
 
   | "none"                 { NONE  (Lexing.lexeme lexbuf) }

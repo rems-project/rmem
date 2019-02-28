@@ -29,15 +29,18 @@ type ast_watchpoint_type =
   | Write
   | Either
 
+type transition_choice =
+  | WithEager of int
+  (* 'WithBoundedEager (t,e)' t is the transition, e is the number of eager steps after *)
+  | WithBoundedEager of int * int
+
 type ast =
-  | Nothing
-  | Silence
   | Quit
   | Help of string option
   | ShowOptions
   | Debug of string
   | Default
-  | Transitions of int list
+  | Transition of transition_choice
   | Step of int option
   | StepInstruction of int option * int option
   | PeekInstruction of int * int
@@ -55,6 +58,9 @@ type ast =
   | SharedWatchpoint of ast_watchpoint_type
   | BreakpointLine of string * int
   | SetOption of string * string
+  | SetFollowList of string
+  | SetBranchTargets of string
+  | SetSharedMemory of string
   | FocusThread of int option
   | FocusInstruction of MachineDefTypes.ioid option
   | Search of ast_search
@@ -84,16 +90,18 @@ let pp_breakpoint_target : ast_breakpoint_target -> string = function
      else (* offset < 0 *)
        Printf.sprintf "%s%d" name offset
 
+let pp_transition_choice : transition_choice -> string = function
+  | WithEager t             -> string_of_int t
+  | WithBoundedEager (t, e) -> Printf.sprintf "%de%d" t e
+
 let pp : ast -> string = function
-  | Nothing           -> " "
-  | Silence           -> "silence"
   | Quit              -> "quit"
   | Help None         -> "help"
   | Help (Some s)     -> Printf.sprintf "help %s" s
   | ShowOptions       -> "options"
   | Debug s           -> "debug " ^ s
   | Default           -> ""
-  | Transitions is     -> (String.concat "," (List.map string_of_int is))
+  | Transition t      -> (pp_transition_choice t)
   | Step i            -> Printf.sprintf "step %s" (pp_int_option i)
   | StepInstruction (maybe_tid, maybe_iid) -> begin
       match (maybe_tid, maybe_iid) with
@@ -133,6 +141,9 @@ let pp : ast -> string = function
      Printf.sprintf "%swatch shared" prefix
   | BreakpointLine (filename, line) -> Printf.sprintf "break %s:%d" filename line
   | SetOption (key, value) -> Printf.sprintf "set %s %s" key value
+  | SetFollowList str -> Printf.sprintf "set follow_list \"%s\"" str
+  | SetBranchTargets str -> Printf.sprintf "set branch-targets \"%s\"" str
+  | SetSharedMemory str -> Printf.sprintf "set shared-memory \"%s\"" str
   | FocusThread maybe_thread -> (match maybe_thread with
                                  | None -> "focus thread off"
                                  | Some thread -> (Printf.sprintf "focus thread %d" thread))
@@ -146,4 +157,4 @@ let pp : ast -> string = function
 let history_to_string history : string =
   List.rev history
   |> List.map pp
-  |> String.concat ","
+  |> String.concat ";"

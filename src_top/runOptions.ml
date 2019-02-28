@@ -27,7 +27,7 @@ type t =
     priority_reduction:      bool;
     prune_restarts:          bool;
     prune_discards:          bool;
-    prune_late_writes:        bool; (* promising only *)
+    prune_late_writes:       bool; (* promising only *)
     pseudorandom:            bool;
     pseudorandom_traces:     int;
 
@@ -138,7 +138,7 @@ let default_options =
         eager_local_mem           = false;
         em_shared_memory          = Pset.empty MachineDefTypes.footprintCompare;
       });
-    hash_prune              = false;
+    hash_prune              = true;
     sequential              = false;
     suppress_internal       = false;
     allow_partial           = false;

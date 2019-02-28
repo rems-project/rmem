@@ -1280,7 +1280,10 @@ val ts_find_instruction : forall 'ts. threadSubsystem 'ts ->
 
 let ts_find_instruction tmodel p ts =
   let (old_instructions,instruction_tree) = tmodel.ts_instruction_tree ts in
-  match instruction_tree_find (fun prefix i _ -> p prefix i) old_instructions instruction_tree with
+  match
+    tree_of_old_and_new_instructions_helper instruction_tree old_instructions
+    $> instruction_tree_find (fun prefix i _ -> p prefix i) []
+  with
   | Just (prfx,i,_) -> Just (prfx,i)
   | _ -> Nothing
   end
