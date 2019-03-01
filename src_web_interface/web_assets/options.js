@@ -406,7 +406,6 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
         make_toggler("Execution",         "eager_finish",                          "Eager finish",              "Are instruction finishes considered eagerly takeable?");
         make_toggler("Execution",         "eager_fp_recalc",                       "Eager footprint recalc",    "Are footprint calculations considered eagerly takeable?");
         make_toggler("Execution",         "eager_thread_start",                    "Eager thread start",        "Are thread starts considered eagerly takeable?");
-        make_toggler("Execution",         "eager_local_mem",                       "Eager local memory",        "Are memory access to local memory transitions considered eagerly takeable?");
 
       make_separator("Execution",         "execution_advanced",                    "Advanced execution options");
         make_toggler("Execution",         "priority_reduction",                    "Priority reduction",        "Take priority transitions preferentially (currently: exclusives and multi-successor fetches)");
@@ -482,6 +481,7 @@ make_virtual_toggler("Interface",         "scroll_on_output",                   
      make_int_option("Search",            "trace_limit",                           "Trace limit",               "Trace limit on searches");
         make_toggler("Search",            "partial_order_reduction",               "Partial order reduction",   "Restrict searches according to the partial order reduction");
         make_toggler("Search",            "compare_analyses",                      "Compare analyses",          "Compare the handwritten and exhaustive analyses");
+        make_toggler("Search",            "eager_local_mem",                       "Eager local memory",        "Are memory access to local memory transitions considered eagerly takeable during search?");
 
 
        make_dropdown("Interface",         "verbosity",                             "Verbosity",                 "How much detail to print", {
