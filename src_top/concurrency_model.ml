@@ -196,9 +196,12 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : S = struct
                 with
                 | Some (address, ev0) ->
                     let ev = Pp.wrap_ev ev0 in
-                    let alspc = Dwarf.analysed_locations_at_pc ev ds address in
-                    (*"analysed_location_data_at_pc:\n"
-                    ^*) Dwarf.pp_analysed_location_data_at_pc ds.Dwarf.ds_dwarf alspc
+                    begin match Dwarf.analysed_locations_at_pc ev ds address with
+                    | alspc ->
+                        (*"analysed_location_data_at_pc:\n"
+                        ^*) Dwarf.pp_analysed_location_data_at_pc ds.Dwarf.ds_dwarf alspc
+                    | exception _ -> "<failure: analysed_locations_at_pc>"
+                    end
                 | None -> "<failure: get_dwarf_evaluation_context>"
                 end
             | None -> "<no dwarf_static info available>");
