@@ -118,7 +118,9 @@ let lookup_dwarf_symbol m ioid (a:Sail_impl_base.address) : string option =
               end
           (* FIXME: Dwarf.analysed_locations_at_pc fails sometimes, e.g., when running
           the AArch64 ELF thread_start_test it fails for the first instruction of
-          start_thread with the message "evaluate_cfa: no fde encloding pc" s*)
+          start_thread with the message "evaluate_cfa: no fde encloding pc".
+          This happens because gcc generates .eh_frame instead of .debug_frame.
+          Use the gcc flag -fno-dwarf2-cfi-asm to produce .debug_frame *)
           | exception _ -> None
           end
       | None -> None (*"<failure: get_dwarf_evaluation_context>"*)
