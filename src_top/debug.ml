@@ -167,7 +167,7 @@ let print_log () =
 	 
 (* let print_time s = if !debug then let t = Unix.gettimeofday () in Printf.printf "#%.17fs  %s\n" (t -. !start_time) s; flush stdout; start_time :=t *)
 let print_string s = if !debug then Printf.printf "%s" s; flush stdout
-let print_string2 s = (*if !debug then*) Printf.printf "%s" s; flush stdout
+let print_string2 s = if !debug then Printf.printf "%s" s; flush stdout
 let print_integer i = if !debug then Printf.printf "%s" (Nat_big_num.to_string i); flush stdout
 											       
 let start_time2 = ref (Unix.gettimeofday ()) 
