@@ -2555,18 +2555,9 @@ let handle_done_outcome
     thread_start params state iic
   else
     let state' = fun () -> finish_action params state iic in
-    let mrs : maybe register_snapshot =
-      if ( params.thread_isa_info.is_test_begin_instruction i.instruction
-          || params.thread_isa_info.is_test_end_instruction i.instruction )
-      then
-        Just (find_register_snapshot state.register_data state.initial_register_state
-                (iic.active_prefix ++ iic.old_prefix))
-      else
-        Nothing
-    in
     let addr = iic.iic_instance.program_loc in
     let instr = iic.iic_instance.instruction in
-    [T_only (make_label state iic (T_finish (addr,instr) mrs Nothing) state')]
+    [T_only (make_label state iic (T_finish addr instr) state')]
 
 
 let handle_sail_termination
@@ -3854,7 +3845,6 @@ let enumerate_fetch_transitions_of_instruction params
 
   let i = iic.iic_instance in
   guard (is_restricted --> i.finished) >>
-  guard (not (params.thread_isa_info.is_test_end_instruction i.instruction)) >>
   guard (params.thread_model = TSO_thread_model --> i.finished) >>
 
   guard (i.micro_op_state <> MOS_pending_exception ET_loop_limit_reached) >>

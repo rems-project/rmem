@@ -924,7 +924,7 @@ val make_plain_transition :
   list (thread_trans pts)
 let make_plain_transition (s,ii) =
   let c () = make_tc s in
-  let tl = T_finish (ii.program_loc,ii.instruction) Nothing Nothing in
+  let tl = T_finish ii.program_loc ii.instruction in
   return (T_only (make_label' (tid s) ii.instance_ioid tl c))
     
 type iie_state 'v = pts' 'v * instruction_instance * 'v * outcome_S

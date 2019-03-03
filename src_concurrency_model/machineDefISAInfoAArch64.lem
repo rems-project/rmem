@@ -38,16 +38,6 @@ let aarch64_is_thread_start_instruction = function
   | _ -> false
   end
 
-let aarch64_is_test_begin_instruction = function
-  | AArch64_instr (ArmV8_embed_types.ImplementationDefinedTestBeginEnd Sail_values.B0) -> true
-  | _ -> false
-  end
-
-let aarch64_is_test_end_instruction = function
-  | AArch64_instr (ArmV8_embed_types.ImplementationDefinedTestBeginEnd Sail_values.B1) -> true
-  | _ -> false
-  end
-
 let aarch64_register_data_info : registerdata =
   let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
     (name, (D_decreasing, bit_count, bit_count - 1, fields))
@@ -510,8 +500,6 @@ let aarch64hand_ism : isa_info =
 
       is_system_call_instruction  = aarch64_is_system_call_instruction;
       is_thread_start_instruction = aarch64_is_thread_start_instruction;
-      is_test_begin_instruction   = aarch64_is_test_begin_instruction;
-      is_test_end_instruction     = aarch64_is_test_end_instruction;
 
       thread_start_info           = aarch64_thread_start_info;
 

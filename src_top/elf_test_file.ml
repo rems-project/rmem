@@ -532,14 +532,7 @@ let read_data (name: string) (data: data) (isa_callback: (MachineDefTypes.instru
 let read_file (name: string) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
   read name (Sail_interface.populate_and_obtain_global_symbol_init_info name) isa_callback
 
-
-let initial_state_aux
-    (elf_test: test)
-    (isa_defs: (module Isa_model.ISADefs))
-(*    : (MachineDefTypes.system_state *
-         MachineDefSystemSequential.initial_system_state_sequential) *)
-  =
-  Debug.print_string "elf initial_state\n";
+let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model : MachineDefSystem.initial_state_record =
   let elf_threads_list = mk_elf_threads_list elf_test.elf_threads in
 
   let (program_memory  : (Nat_big_num.num, word8) Pmap.map),
@@ -691,10 +684,6 @@ let initial_state_aux
 
   (* List.iter (fun (name,address,bytes) -> Debug.print_string "%s %s %s\n" name (pp_address (address_of_big_int address)) (debug_pp_byte_list bytes)) fake_symbols_for_chunked_data_memory; *)
 
-  Debug.print_string "elf initial_writes\n";
-
-
-
   let compare_symbol_table_entry
         (name, (address:Nat_big_num.num), (size:int), (bytes: word8 list))
         (name', (address':Nat_big_num.num), (size':int), (bytes': word8 list)) =
@@ -727,52 +716,20 @@ let initial_state_aux
     initial_writes
   in
 
-  let initial_memory_state_sequential =
-    (* construct initial writes *)
-    let rec mk_initial_memory symbol_table =
-      match symbol_table with
-      | [] -> []
-      | (name, (address:Nat_big_num.num), (size:int), (bytes: word8 list))::symbol_table' ->
-
-          (*Debug.print_string " construct initial write: (%s, %i) %s\n" (Nat_big_num.to_string address) size name;*)
-          let v = List.map Sail_impl_base.memory_byte_of_int bytes in
-          let fp = (address, List.length bytes) in
-          let bytes =
-            List.map
-              (fun ((a,_),bytes) ->
-                match bytes with
-                | [byte] -> (a,byte)
-                | _ -> failwith "mk_initial_memory: should only be a single byte")
-              (MachineDefSystem.split_into_bytes (fp,v)) in
-          bytes @ mk_initial_memory symbol_table'
-    in
-    let symbol_table_sorted = List.sort compare_symbol_table_entry
-                                        (symbol_table @ fake_symbols_for_chunked_data_memory) in
-    List.fold_left (fun m (k,v) -> Pmap.add k v m)
-                   (Pmap.empty Nat_big_num.compare)
-                   (mk_initial_memory symbol_table_sorted)
+  let pmap_map_map_map
+      (fkey: 'key1 -> 'key2)
+      (fval: 'a1 -> 'a2)
+      (m1:   ('key1, 'a1) Pmap.map)
+      (m2:   ('key2, 'a2) Pmap.map)
+      : ('key2,'a2) Pmap.map
+    =
+    Pmap.fold
+      (fun k1 v1 m2 -> Pmap.add (fkey k1) (fval v1) m2)
+      m1
+      m2
   in
 
-
-
-  let pmap_map_map_map
-      (fkey:'key1->'key2)
-      (fval:'a1->'a2)
-      (m1: ('key1,'a1) Pmap.map)
-      (m2: ('key2,'a2) Pmap.map)
-      : ('key2,'a2) Pmap.map =
-    Pmap.fold
-      (fun k1 -> fun v1 -> fun m2 ->
-        Pmap.add (fkey k1) (fval v1) m2)
-      m1
-      m2 in
-
-  Debug.print_string "elf program_memory'\n";
-
-
-  let program_memory'
-      : (Sail_impl_base.address, Sail_impl_base.byte) Pmap.map
-      =
+  let program_memory : (Sail_impl_base.address, Sail_impl_base.byte) Pmap.map =
     pmap_map_map_map
       Sail_impl_base.address_of_integer
       Sail_impl_base.byte_of_int
@@ -782,7 +739,7 @@ let initial_state_aux
 
   let module ISADefs = (val isa_defs) in
 
-  let initial_register_state=
+  let initial_register_state =
     fun tid ->
       let initial_register_abi_data_tid = initial_register_abi_data tid in
       fun rbn ->
@@ -794,48 +751,19 @@ let initial_state_aux
         end
   in
 
-  let initial_register_state_sequential =
-    let fixed_pseudo_registers =
-      (arch_of_test elf_test).MachineDefTypes.fixed_pseudo_registers in
-    let initial_register_abi_data = initial_register_abi_data 0 (* tid *) in
-    List.fold_left
-      (fun regstate (rbn,(direction,length,start,_)) ->
-        let rv =
-          try snd (List.find (fun (r,_) -> Sail_impl_base.register_base_name r = rbn)
-                          fixed_pseudo_registers) with
-          | Not_found ->
-             try List.assoc rbn initial_register_abi_data with
-             | Not_found ->
-                Sail_impl_base.register_value_zeros direction length start in
-        Pmap.add rbn (Sail_values.internal_reg_value rv) regstate
-      ) (Pmap.empty String.compare) ISADefs.reg_data in
-
-
-  (* construct initial system state *)
-  (Globals.get_endianness (),
-   ISADefs.reg_data,
-   initial_register_abi_data,
-   initial_register_state,
-   program_memory',
-   Sail_impl_base.address_of_integer initial_LR_sentinel,
-   initial_writes,
-   Sail_impl_base.address_of_integer startaddr,
-   elf_test.elf_threads,
-   initial_memory_state_sequential,
-   initial_register_state_sequential)
-
-
-let initial_state_record elf_test isa_defs model : MachineDefSystem.initial_state_record =
-  let (endianness, reg_data', reg_data, initial_register_state, program_memory,
-      initial_LR_sentinel, initial_writes, start_address,threads, _, _)
-    = initial_state_aux elf_test isa_defs
+  let program_memory =
+    MachineDefSystem.elf_program_memory
+      program_memory
+      (Globals.get_endianness ())
   in
 
+  let initial_LR_sentinel = Sail_impl_base.address_of_integer initial_LR_sentinel in
+
   (* list of tids 0,1,... *)
-  let tids = Lem_list.genlist (fun n -> n) threads in
+  let tids = Lem_list.genlist (fun n -> n) elf_test.elf_threads in
 
   let first_instruction = function
-    | 0 -> Some start_address
+    | 0 -> Some (Sail_impl_base.address_of_integer startaddr)
     | _ -> None
   in
 
@@ -880,10 +808,10 @@ let initial_state_record elf_test isa_defs model : MachineDefSystem.initial_stat
 
   let open MachineDefSystem in
   { isr_params            = model';
-    isr_program           = MachineDefSystem.elf_program_memory program_memory endianness;
+    isr_program           = program_memory;
     isr_return_addr       = List.map (fun tid -> (tid, initial_LR_sentinel)) tids;
     isr_thread_ids        = tids;
-    isr_register_data     = reg_data;
+    isr_register_data     = initial_register_abi_data;
     isr_register_values   = initial_register_state;
     isr_first_instruction = first_instruction;
     isr_memory            = initial_writes;

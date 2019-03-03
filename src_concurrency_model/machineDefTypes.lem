@@ -53,7 +53,6 @@ type eiid = fresh_id ioid      (* event IDs are unique within instructions *)
 type size = nat (* the number of bytes in a footprint *)
 
 type footprint = address * size
-type footprint_i = integer * size
 
 type integer_footprint = integer*integer
 
@@ -94,12 +93,6 @@ let fixed_reg (data: registerdata) value (name: reg_base_name) =
 let fixed_reg_field (data: registerdata) value (name: reg_base_name) (field_name: string) =
   let reg = Maybe_extra.fromJust (reg_field_from_data data name field_name) in
   (reg, register_value_for_reg_of_integer reg value)
-
-
-type register_snapshot = list (reg_base_name * maybe register_value)
-
-type memory_snapshot = list (footprint * memory_value)
-type memory_snapshot_i = list (footprint_i * memory_value)
 
 
 
@@ -1754,8 +1747,6 @@ type isa_info =
   <|  ism : instruction_semantics_mode;
       is_system_call_instruction  : instruction_ast -> maybe integer;
       is_thread_start_instruction : instruction_ast -> bool;
-      is_test_begin_instruction   : instruction_ast -> bool;
-      is_test_end_instruction     : instruction_ast -> bool;
 
       thread_start_info : thread_start_info;
 
@@ -1775,8 +1766,6 @@ let isa_info_stub =
   <|  ism                         = PPCGEN_ism;
       is_system_call_instruction  = fun _ -> failwith "stub";
       is_thread_start_instruction = fun _ -> failwith "stub";
-      is_test_begin_instruction   = fun _ -> failwith "stub";
-      is_test_end_instruction     = fun _ -> failwith "stub";
       thread_start_info           = thread_start_info_stub;
       register_data_info          = [];
       fixed_pseudo_registers      = [];
@@ -2015,7 +2004,7 @@ type thread_only_trans =
   | T_mem_forward_write   of read_request * list (write * slices)
   | T_mem_write_footprint of list write
   | T_mem_potential_write of list write
-  | T_finish              of (address * instruction_ast) * maybe register_snapshot * maybe memory_snapshot
+  | T_finish              of address * instruction_ast
   | T_finish_load_of_rmw
   | T_exception           of exception_type
   | T_commit_store   (* at this point the store is guaranteed to happen *)
@@ -2046,7 +2035,7 @@ let show_thread_only_label = function
   | T_mem_forward_write _ _ -> "T_mem_forward_write"
   | T_mem_write_footprint _ -> "T_mem_write_footprint"
   | T_mem_potential_write _ -> "T_mem_potential_write"
-  | T_finish _ _ _ -> "T_finish"
+  | T_finish _ _ -> "T_finish"
   | T_finish_load_of_rmw -> "T_finish_load_of_rmw"
   | T_exception _ -> "T_exception"
   | T_commit_store -> "T_commit_store"

@@ -270,7 +270,7 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (T_mem_potential_write _, _) -> 1
     | (_, T_mem_potential_write _) -> -1
 
-    | (T_finish ((addr,_),_,_), T_finish ((addr',_),_,_))
+    | (T_finish (addr,_), T_finish (addr',_))
         -> Sail_impl_base.addressCompare addr addr'
     | (T_finish _, _) -> 1
     | (_, T_finish _) -> -1

@@ -51,7 +51,7 @@ let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe MachineDefTypes.
       | T_mem_forward_write r _ -> Just r.r_addr
       | T_mem_write_footprint _ -> Nothing
       | T_mem_potential_write _ -> Nothing
-      | T_finish _ _ _          -> Nothing
+      | T_finish _ _            -> Nothing
       | T_finish_load_of_rmw    -> Nothing
       | T_exception _           -> Nothing
       | T_commit_store          -> Nothing
@@ -125,7 +125,7 @@ let write_footprints_of_trans (transition: trans 'ts 'ss) : list MachineDefTypes
       | T_mem_forward_write _ _  -> []
       | T_mem_write_footprint ws -> [w.w_addr | forall (w MEM ws) | true]
       | T_mem_potential_write ws -> [w.w_addr | forall (w MEM ws) | true]
-      | T_finish _ _ _           -> []
+      | T_finish _ _             -> []
       | T_finish_load_of_rmw     -> []
       | T_exception _            -> []
       | T_commit_store           -> []
@@ -294,7 +294,7 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
           | T_footprint_outcome     -> false
           | T_register_read _ _ _   -> false
           | T_register_write _ _    -> false
-          | T_finish _ _ _          -> false
+          | T_finish _ _            -> false
 
           | T_exception _           -> false
           | T_successful_store_excl -> false
@@ -333,7 +333,7 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
 let is_finish_transition : (trans 'ts 'ss -> bool) = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
-      | T_finish _ _ _ -> true
+      | T_finish _ _   -> true
       | _ -> false
       end
   | _ -> false
@@ -392,18 +392,6 @@ let is_eager_transition params
   || (eager_mode.eager_local_mem           && is_local_mem_transition eager_mode.em_shared_memory t)
 
 
-let maybe_snapshot_of_transition = function
-  | T_trans (T_only tl) ->
-      match tl.tl_label with
-      | T_finish _ (Just rs) (Just m) ->
-          Just (tl.tl_cont.tc_ioid, rs, m)
-      | _ -> Nothing
-      end
-  | _ -> Nothing
-  end
-
-
-
 (** predicates for filtering ****************************************)
 
 let is_internal : trans 'ts 'ss -> bool = function
@@ -422,7 +410,7 @@ let is_internal : trans 'ts 'ss -> bool = function
       | T_mem_forward_write _ _ -> false
       | T_mem_write_footprint _ -> false
       | T_mem_potential_write _ -> false
-      | T_finish _ _ _          -> false
+      | T_finish _ _            -> false
       | T_finish_load_of_rmw    -> false
       | T_exception _           -> false
       | T_commit_store          -> false

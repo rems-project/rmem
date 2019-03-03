@@ -181,9 +181,6 @@ let elf_program_memory (mem: map address byte) (endianness: end_flag) instructio
 
 (** memory snapshot *************************************************)
 
-(* take snapshot of memory by synthesising a read for each of the initial write addresses and
-   asking the storage subsystem for all possible write values of each of those reads *)
-
 let thread_memory_value_of_footprints s fps thread =
   let tid = s.t_model.ts_tid thread in
   List.map (fun addr -> (addr,s.s_model.ss_thread_memory_value_of_footprint s.model.ss
@@ -195,60 +192,6 @@ let memory_value_of_footprints (s: system_state 'ts 'ss) (fps: list footprint) :
   let () = Assert_extra.ensure (Set.size (Map.range thread_values) = 1) "non unique memory value" in
   (* return the value *)
   Set_extra.choose (Map.range thread_values)
-
-let rec split_into_bytes (mv : (integer*nat)*memory_value) : memory_snapshot_i
-  = match mv with
-  | ((addr,0),[]) -> []
-  | ((addr,0),_)  -> failwith "split_into_bytes: non-empty byte list"
-  | ((addr,_),[]) -> failwith "split_into_byte: should have size zero"
-  | ((addr,sz),b::bytes) -> ((addr,1),[b]) :: split_into_bytes ((addr+1,sz-1),bytes)
-  end
-
-let rec rechunk (memsnap : memory_snapshot_i) : memory_snapshot = match memsnap with
-  | ((a1,s1),mv1) :: ((a2,s2),mv2) :: ((a3,s3),mv3) :: ((a4,s4),mv4) ::
-      ((a5,s5),mv5) :: ((a6,s6),mv6) :: ((a7,s7),mv7) :: ((a8,s8),mv8) :: memsnap' ->
-     let () = ensure (s1=1 && s2=1 && s3=1 && s4=1 && 
-                      s5=1 && s6=1 && s7=1 && s8=1)
-                     "rechunk: memory values not byte-sized" in
-     let () = ensure (a1+1=a2 && a2+1=a3 && a3+1=a4 && a4+1=a5 && 
-                      a5+1=a6 && a6+1=a7 && a7+1=a8)
-                     "rechunk: non-consecutive bytes" in
-     ((address_of_integer a1,8),mv1++mv2++mv3++mv4++mv5++mv6++mv7++mv8) :: rechunk memsnap'
-  | [] -> []
-  | _ -> failwith "memsnap's length not divisible by 8"
-  end
-
-let normalise_memory_snapshot (memsnap : memory_snapshot) =
-  [((integer_of_address a, sz), v) | forall (((a, sz), v) MEM memsnap) | true]
-  $> Sorting.sortByOrd (fun ((start1,_),_) ((start2,_),_) -> compare start1 start2)
-  $> List.concatMap split_into_bytes
-  $> rechunk
-
-let memory_snapshot_filter ism (a : integer) (* integer address *) =
-  match ism with
-  | PPCGEN_ism -> a <= 536870912 (* 2^29, not 8796093022208 *)
-  | AARCH64_ism _ ->
-     (* litmus: 0x1000 <= i <= 0x10ff *)
-     (4096 <= a && a <= 4351) ||
-       (* sequential: 0x412000 <= i <= 0x4120e8 *)
-       (4268032 <= a && a <= 4268263) (* used to be 4268264 but changed it to 4268263 so the number of bytes is divisible by eight *)
-  | MIPS_ism -> failwith "memory_snapshot_filter"
-  | RISCV_ism -> failwith "memory_snapshot_filter"
-  | X86_ism -> failwith "memory_snapshot_filter"
-  end
-
-let take_memory_snapshot
-    (s:   system_state 'ts 'ss)
-    (tid: thread_id)
-    : list (footprint * memory_value)
-  =
-  let filter ((a, _): footprint) : bool =
-    memory_snapshot_filter s.model.t.thread_isa_info.ism (integer_of_address a)
-  in
-  let fps = [w.w_addr | forall (w MEM s.initial_writes) | filter w.w_addr] in
-  Map_extra.find tid s.thread_states
-  $> thread_memory_value_of_footprints s fps
-  $> normalise_memory_snapshot
 
 (** main transition enumeration *************************************)
 
@@ -307,15 +250,8 @@ let start_thread
 let thread_trans_to_trans (s_model : machineStorageSubsystem 'ts 'ss) 
       (s:  system_state 'ts 'ss) : thread_trans 'ts -> list (trans 'ts 'ss) = 
   function
-  (* for the T_only  transitions, just lift them (except that we take a memory snapshot if there is a register snapshot) *)
-  | T_only tl ->
-      match tl.tl_label with
-      | T_finish maybeinstr (Just regsnap) Nothing ->
-        let memsnap = take_memory_snapshot s tl.tl_cont.tc_tid in
-        <| tl with tl_label = T_finish maybeinstr (Just regsnap) (Just memsnap) |>
-      | _ -> tl
-      end
-      $> (fun tl' -> [(T_trans (T_only tl'))])
+  (* for the T_only  transitions, just lift them *)
+  | T_only tl -> [(T_trans (T_only tl))]
 
   | T_sync label () ->
       (* handle some special cases in the system level *)

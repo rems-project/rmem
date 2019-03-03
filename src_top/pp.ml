@@ -1559,17 +1559,9 @@ let pp_t_only_label ?(graph=false) m tl =
       let info = colour_memory_action m (pp_writes_uncoloured m ws) in
       ("instantiate memory write values of store instruction", Some info)
 
-  | T_finish ((addr,instr), mrs, mms) ->
-      let info =
-        match (mrs, mms) with
-        | (None,    None)    -> None
-        | (Some rs, None)    -> Some "[register_snapshot]" (* "\n" ^ pp_register_snapshot m rs *)
-        | (Some rs, Some ms) -> Some "[register_snapshot, memory_snapshot]"
-        | (None,    Some ms) -> Some "[memory_snapshot]" (* "\n" ^ pp_memory_snapshot m ms *)
-      in
-      
+  | T_finish (addr, instr) ->
       let instr_pped = pp_instruction m.pp_symbol_table instr addr in
-      ("finish instruction: " ^ instr_pped, info)
+      ("finish instruction: " ^ instr_pped, None)
 
   | T_finish_load_of_rmw ->
       ("finish the load part of RMW instruction", None)

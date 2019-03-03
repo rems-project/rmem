@@ -55,12 +55,6 @@ let ppcgen_is_system_call_instruction = function
 let ppcgen_is_thread_start_instruction (instruction : instruction_ast) =
   ppcgen_is_system_call_instruction instruction = Just 60
 
-let ppcgen_is_test_begin_instruction (instruction : instruction_ast) =
-  ppcgen_is_system_call_instruction instruction = Just 62
-
-let ppcgen_is_test_end_instruction (instruction : instruction_ast) =
-  ppcgen_is_system_call_instruction instruction = Just 63
-
 let ppcgen_register_data_info : registerdata = [
     (* pseudo registers *)
     ("mode64bit",     (D_increasing, 1, 0, []));
@@ -321,8 +315,6 @@ let ppcgen_ism : isa_info =
   <|  ism = PPCGEN_ism;
       is_system_call_instruction = ppcgen_is_system_call_instruction;
       is_thread_start_instruction = ppcgen_is_thread_start_instruction;
-      is_test_begin_instruction = ppcgen_is_test_begin_instruction;
-      is_test_end_instruction = ppcgen_is_test_end_instruction;
 
       thread_start_info = ppcgen_thread_start_info;
       register_data_info = ppcgen_register_data_info;
