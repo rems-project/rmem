@@ -888,19 +888,3 @@ let initial_state_record elf_test isa_defs model : MachineDefSystem.initial_stat
     isr_first_instruction = first_instruction;
     isr_memory            = initial_writes;
   }
-
-
-let initial_state_sequential isa_info elf_test isa_defs ism interp_context =
-  let (endianness,initial_register_abi_data,reg_data,_,program_memory,initial_LR_sentinel,_,
-       start_address,threads,initial_memory_state,initial_register_state) =
-    initial_state_aux elf_test isa_defs in
-  let initial_tag_state = Pmap.empty Nat_big_num.compare in
-  MachineDefSystemSequential.elf_prog_initial_system_setup_sequential
-    isa_info
-    endianness
-    initial_register_state
-    initial_memory_state
-    initial_tag_state
-    initial_LR_sentinel
-    start_address
-    program_memory

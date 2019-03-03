@@ -20,7 +20,6 @@ type t =
   { interactive:             bool;
     eager_mode:              MachineDefTypes.eager_mode;
     hash_prune:              bool;
-    sequential:              bool;
     suppress_internal:       bool;
     allow_partial:           bool;
     partial_order_reduction: bool;
@@ -57,7 +56,6 @@ type t =
 let interactive_lens = { Lens.get = (fun o -> o.interactive); Lens.set = (fun v o -> { o with interactive = v }) }
 let eager_mode_lens = { Lens.get = (fun o -> o.eager_mode); Lens.set = (fun v o -> { o with eager_mode = v }) }
 let hash_prune_lens = { Lens.get = (fun o -> o.hash_prune); Lens.set = (fun v o -> { o with hash_prune = v }) }
-let sequential_lens = { Lens.get = (fun o -> o.sequential); Lens.set = (fun v o -> { o with sequential = v }) }
 let suppress_internal_lens = { Lens.get = (fun o -> o.suppress_internal); Lens.set = (fun v o -> { o with suppress_internal = v }) }
 let allow_partial_lens = { Lens.get = (fun o -> o.allow_partial); Lens.set = (fun v o -> { o with allow_partial = v }) }
 let partial_order_reduction_lens = { Lens.get = (fun o -> o.partial_order_reduction); Lens.set = (fun v o -> { o with partial_order_reduction = v }) }
@@ -139,7 +137,6 @@ let default_options =
         em_shared_memory          = Pset.empty MachineDefTypes.footprintCompare;
       });
     hash_prune              = true;
-    sequential              = false;
     suppress_internal       = false;
     allow_partial           = false;
     partial_order_reduction = false;

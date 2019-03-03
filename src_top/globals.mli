@@ -242,9 +242,3 @@ val topology_3: string ref
 val topology_4: string ref
 
 val get_topologies : int -> MachineDefTypes.flowing_topology list
-
-(** snapshot data ***************************************************)
-
-val snapshot_data : (string (*log filename*) * (MachineDefTypes.ioid * MachineDefTypes.register_snapshot * MachineDefTypes.memory_snapshot) list) ref
-
-exception Test_proper_termination

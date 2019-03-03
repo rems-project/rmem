@@ -3101,41 +3101,6 @@ let pp_ui_instruction m s tid ioid =
   | None -> pp_pretty_ioid ioid ^ " (pp could not find the instruction-instance)"
 
 
-let pp_sequential_regsnap m fake_ioid regsnap =
-  (String.concat "\n")
-    ((List.map
-        (fun (reg_base_name,rv) ->
-          reg_base_name ^ ":\t" ^
-            match rv with
-            | Some rv -> pp_register_value m fake_ioid rv
-            | None -> "missing")
-        regsnap))
-
-let pp_sequential_memsnap m fake_ioid memsnap =
-  (String.concat "\n")
-    ((List.map
-        (fun ((a,_),memory_byte) ->
-          pp_address m (Some fake_ioid) a ^ ":\t" ^
-            pp_memory_value m fake_ioid memory_byte))
-    memsnap)
-
-let pp_sequential_write_ea m fake_ioid = function
-  | Some (write_kind,integer_address,size) ->
-     let address = address_of_integer integer_address in
-     pp_write_kind m write_kind ^
-       " " ^ pp_address m (Some fake_ioid) address ^ "   " ^ Nat_big_num.to_string size
-  | None -> "none"
-
-let pp_sequential_state m fake_ioid isa_info state =
-  "## Register state ## \n" ^
-  let regsnap = MachineDefSystemSequential.register_snapshot_of_state isa_info state in
-  pp_sequential_regsnap m fake_ioid regsnap ^ "\n" ^
-  "## Memory state ## \n" ^
-  let memsnap = MachineDefSystemSequential.memory_snapshot_of_state isa_info state in
-  pp_sequential_memsnap m fake_ioid memsnap ^ "\n" ^
-  "Write address, size:  \t" ^ pp_sequential_write_ea m fake_ioid state.State.write_ea ^ "\n\n\n"
-
-
 let pp_ui_gen_eiid_table m (s: ('ts,'ss) MachineDefTypes.system_state) = { m with pp_pretty_eiid_table = pretty_eiids s }
 
 

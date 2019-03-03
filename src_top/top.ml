@@ -123,9 +123,6 @@ module Run_test (Test_file: Test_file.S) = struct
           }
     in
 
-    (* for ELF run: *)
-    Globals.snapshot_data := (logfile_name test_info.Test.name, []);
-
     let module Interact = New_interact.Make (ConcModel) in
     if run_options.RunOptions.interactive then
       (* interactive mode *)
@@ -135,53 +132,6 @@ module Run_test (Test_file: Test_file.S) = struct
       Interact.run_search run_options ppmode test_info initial_state_records
 
 end
-
-let run_sequential (run_options: RunOptions.t) (name: string) : unit =
-  (* read the file/data *)
-  let (test_info, test) = Elf_test_file.read_file name None in
-
-  let module ISAModel = (val (Isa_model.make test_info.Test.ism)) in
-
-  (* check if the ISA model was compiled (if you get this failure run
-  make again with the proper ISA=...) *)
-  if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] then
-    print_endline ("Warning: the interpreter ISA defs are missing");
-
-  let interp_context =
-    let defs = ISAModel.ISADefs.isa_defs_thunk () in
-    let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
-      ISAModel.ISADefs.isa_memory_access in
-    let externs = ISAModel.ISADefs.isa_externs in
-    Interp_inter_imp.build_context
-      !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs in
-  let ism = test_info.Test.ism in
-
-  let initial_state =
-    Elf_test_file.initial_state_sequential
-      (!Globals.model_params.t.thread_isa_info)
-      test
-      (module ISAModel.ISADefs)
-      ism
-      interp_context in
-
-  (* map-to-list to pp addresses properly *)
-  let ppmode =
-    { (Globals.get_ppmode ()) with
-        Globals.pp_symbol_table = test_info.Test.symbol_table;
-        Globals.pp_dwarf_static = test_info.Test.dwarf_static;
-        (* Globals.pp_instruction = Pp.pp_instruction_of_ism !Globals.model_params.t.thread_isa_info.ism *)
-    }
-  in
-
-  (* for ELF run: *)
-  Globals.snapshot_data := (logfile_name test_info.Test.name, []);
-
-  (* do stuff for each of those initial states *)
-  Run_sequential.calc_final ppmode (!Globals.model_params.t.thread_isa_info)
-                            test_info.Test.name initial_state
-
-
-
 
 module Run_litmus = Run_test(Litmus_test_file)
 module Run_elf    = Run_test(Elf_test_file)
@@ -214,9 +164,7 @@ let from_file
   | Types.Litmus_file ->
      Run_litmus.run run_options name None None
   | Types.Binary_file ->
-     if run_options.RunOptions.sequential
-     then run_sequential run_options name
-     else Run_elf.run run_options name None None
+     Run_elf.run run_options name None None
   end
 
 let from_files

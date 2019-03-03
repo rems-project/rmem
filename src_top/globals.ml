@@ -448,10 +448,3 @@ let get_topologies thread_count =
       | None -> raise (Failure "top")
       end
   end
-
-
-(** snapshot data ***************************************************)
-
-let snapshot_data : (string * (MachineDefTypes.ioid * MachineDefTypes.register_snapshot * MachineDefTypes.memory_snapshot) list) ref = ref ("",[])
-
-exception Test_proper_termination

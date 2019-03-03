@@ -155,10 +155,7 @@ let opts = [
           (try (int_of_string s)
           with Failure _ -> raise (Failure "-random_seed must be an integer or the string fresh"))),
     (Printf.sprintf "random seed, either <n> or \"fresh\" (%s)" (match !Globals.random_seed with None -> "fresh" | Some n -> string_of_int n)));
-("-sequential",
-    Arg.Unit (fun () -> run_options := {!run_options with RunOptions.sequential = true};
-                        Globals.pp_colours := true),
-    (Printf.sprintf " run with state monad (%b)" !run_options.RunOptions.sequential));
+
 ("-auto_internal",
     Arg.Bool (fun b -> Globals.auto_internal := b),
     (Printf.sprintf "<bool> for interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
@@ -398,6 +395,9 @@ let opts = [
     "");
 ("-breakpoint_actual",
     Arg.Int (fun n -> fatal_error "-breakpoint_actual was deprecated"),
+    "");
+("-sequential",
+    Arg.Unit (fun () -> fatal_error "-sequential was deprecated"),
     "");
 (*
 
