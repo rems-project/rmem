@@ -1510,8 +1510,7 @@ let rec do_cmd
       do_step i interact_state
 
   | Interact_parser_base.Step (Some i) (* when i <= 0 *) ->
-      Screen.show_warning ppmode "can't step a non-positive number (use back)";
-      interact_state
+      raise (DoCmdError (interact_state, "can't step a non-positive number (use back)"))
 
   | Interact_parser_base.Undo ->
       do_back 1 interact_state
@@ -1523,8 +1522,7 @@ let rec do_cmd
       do_back i interact_state
 
   | Interact_parser_base.Back (Some i) (* when i <= 0 *) ->
-      Screen.show_warning ppmode "can't step back a non-positive number (use step)";
-      interact_state
+      raise (DoCmdError (interact_state, "can't step back a non-positive number (use step)"))
 
   | Interact_parser_base.Follow ->
       if interact_state.follow_suffix = [] then
@@ -1536,8 +1534,8 @@ let rec do_cmd
 
   | Interact_parser_base.Auto ->
       if interact_state.default_cmd = None then begin
-          Screen.show_warning interact_state.ppmode
-            "warning: there were no enabled transitions to auto-take";
+          Screen.show_warning ppmode
+            "warning: there are no enabled transitions to auto-take";
           interact_state
       end else
         let rec do_auto interact_state =
@@ -1550,8 +1548,7 @@ let rec do_cmd
         do_auto interact_state
 
   | Interact_parser_base.Search (Interact_parser_base.Random i) when i < 1 ->
-      Screen.show_warning ppmode "the number of traces must be greater than 0";
-      interact_state
+      raise (DoCmdError (interact_state, "the number of traces must be greater than 0"))
 
   | Interact_parser_base.Search mode ->
       do_search mode interact_state [] [] [] []
@@ -1571,7 +1568,7 @@ let rec do_cmd
   | Interact_parser_base.History ->
       Interact_parser_base.history_to_string interact_state.cmd_history
       |> Screen.escape
-      |> Screen.show_message interact_state.ppmode "\"%s\"";
+      |> Screen.show_message ppmode "\"%s\"";
       interact_state
 
   | Interact_parser_base.FetchAll ->
@@ -1608,8 +1605,7 @@ let rec do_cmd
             (Model_aux.set_branch_targets interact_state.test_info.symbol_table branch_targets)
             interact_state
       | exception (Model_aux.BranchTargetsParsingError msg) ->
-          Screen.show_warning interact_state.ppmode "bad branch targets: %s" msg;
-          interact_state
+          raise (DoCmdError (interact_state, "bad branch targets: " ^ msg))
       end
 
   | Interact_parser_base.SetSharedMemory str ->
@@ -1635,8 +1631,7 @@ let rec do_cmd
               };
           }
       | exception (Model_aux.SharedMemoryParsingError msg) ->
-          Screen.show_warning interact_state.ppmode "bad shared memory: %s" msg;
-          interact_state
+          raise (DoCmdError (interact_state, "bad shared memory: " ^ msg))
       end
 
   | Interact_parser_base.SetOption (key, value) ->
