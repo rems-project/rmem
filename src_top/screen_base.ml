@@ -141,6 +141,7 @@ module type S = sig
                           unit
   val flush_buffer : Globals.ppmode -> unit
   val unmarshal_defs : string -> Interp_interface.specification
+  val unmarshal_interp2_defs : string -> (Type_check.tannot Ast.defs * Type_check.Env.t)
 end
 
 exception Isa_defs_unmarshal_error of string * string
@@ -307,6 +308,18 @@ module Make (Pr : Printers) : S = struct
     let str = read_filename (isa_name ^ ".defs") in
     try
       ((Marshal.from_string (B64.decode str) 0) : Interp_interface.specification)
+    with Failure s -> bail s
+       | Sys_error s -> bail s
+       | Not_found -> bail "invalid base64"
+
+  let unmarshal_interp2_defs isa_name =
+    let bail s =
+      raise (Isa_defs_unmarshal_error (isa_name, s))
+    in
+    let str = read_filename (isa_name ^ ".defs") in
+    try
+      let (defs, env) = ((Marshal.from_string (B64.decode str) 0) : (Type_check.tannot Ast.defs * Type_check.Env.t)) in
+      (defs, Type_check.Env.set_prover (Some (Type_check.prove __POS__)) env)
     with Failure s -> bail s
        | Sys_error s -> bail s
        | Not_found -> bail "invalid base64"

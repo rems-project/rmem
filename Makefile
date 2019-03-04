@@ -532,11 +532,18 @@ CLEANFILES += linksem_version.ml
 get_sail:
 	rm -rf build_sail_interp
 	mkdir -p build_sail_interp
-	cp -a $(saildir)/src/lem_interp/*.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/instruction_extractor.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/interp.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/interp_ast.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/interp_lib.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/interp_interface.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/interp_inter_imp.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/interp_utilities.lem build_sail_interp
+	cp -a $(saildir)/src/lem_interp/sail_impl_base.lem build_sail_interp
 	cp -a $(saildir)/src/lem_interp/printing_functions.ml* build_sail_interp
 	cp -a $(saildir)/src/lem_interp/pretty_interp.ml* build_sail_interp
-	mkdir -p build_sail_interp/pprint/src
-	cp -a $(saildir)/src/pprint/src/*.ml* build_sail_interp/pprint/src
+#	mkdir -p build_sail_interp/pprint/src
+#	cp -a $(saildir)/src/pprint/src/*.ml* build_sail_interp/pprint/src
 	rm -rf build_sail_shallow_embedding
 	mkdir -p build_sail_shallow_embedding
 	cp -a $(saildir)/src/gen_lib/*.lem  build_sail_shallow_embedding
@@ -552,8 +559,8 @@ get_sail2:
 	mkdir -p build_sail2_shallow_embedding
 	cp -a $(sail2dir)/src/gen_lib/*.lem  build_sail2_shallow_embedding
 	cp -a $(sail2dir)/src/lem_interp/*.lem build_sail2_shallow_embedding
-	cp -a $(sail2dir)/src/sail_lib.ml build_sail2_shallow_embedding
-	cp -a $(sail2dir)/src/util.ml build_sail2_shallow_embedding
+#	cp -a $(sail2dir)/src/sail_lib.ml build_sail2_shallow_embedding
+#	cp -a $(sail2dir)/src/util.ml build_sail2_shallow_embedding
 	$(call git_version,$(sail2dir)) > sail2_version.ml
 .PHONY: get_sail2
 get_all_deps: get_sail2
@@ -640,6 +647,7 @@ get_isa_model_riscv: ISADIR=$(riscvdir)
 get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
 get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/lem-for-rmem/*.lem
 get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/*.lem
+get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/generated_definitions/tofrominterp-for-rmem/riscv_toFromInterp2.ml
 get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:

@@ -28,25 +28,25 @@ let cpu_hz = 1000000000;;
 let insns_per_tick = 100;;
 
 let bits_of_int i =
-  get_slice_int (Big_int.of_int 64, Big_int.of_int i, Big_int.zero)
+  get_slice_int (Nat_big_num.of_int 64, Nat_big_num.of_int i, Nat_big_num.zero)
 
 let bits_of_int64 i =
-  get_slice_int (Big_int.of_int 64, Big_int.of_int64 i, Big_int.zero)
+  get_slice_int (Nat_big_num.of_int 64, Nat_big_num.of_int64 i, Nat_big_num.zero)
 
 
-let rom_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Big_int.of_int64 rom_base)
-let rom_size () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict Big_int.zero   (* !rom_size_ref *)
+let rom_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Nat_big_num.of_int64 rom_base)
+let rom_size () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict Nat_big_num.zero   (* !rom_size_ref *)
 
-let dram_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Big_int.of_int64 dram_base)
-let dram_size () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Big_int.of_int64 dram_size)
+let dram_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Nat_big_num.of_int64 dram_base)
+let dram_size () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Nat_big_num.of_int64 dram_size)
 
 let htif_tohost () =
-  Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Big_int.of_int 0x100) (*  bits_of_int 0*) (* (Big_int.to_int64 (Elf.elf_tohost ())) *)
+  Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Nat_big_num.of_int 0x100) (*  bits_of_int 0*) (* (Nat_big_num.to_int64 (Elf.elf_tohost ())) *)
 
-let clint_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict  (Big_int.of_int64 clint_base)
-let clint_size () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Big_int.of_int64 clint_size)
+let clint_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict  (Nat_big_num.of_int64 clint_base)
+let clint_size () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Nat_big_num.of_int64 clint_size)
 
-let insns_per_tick () = Big_int.of_int insns_per_tick
+let insns_per_tick () = Nat_big_num.of_int insns_per_tick
 
 let term_write _ = failwith "term_write stub"
 

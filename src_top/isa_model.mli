@@ -48,6 +48,7 @@ module type ISADefs = sig
   val reg_data : MachineDefTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
+  val interp2_isa_defs_thunk : ?no_memo:bool -> unit -> (Type_check.tannot Ast.defs * Type_check.Env.t)
   val isa_memory_access : (Interp_interface.memory_reads *
                         Interp_interface.memory_read_taggeds *
                         Interp_interface.memory_writes *

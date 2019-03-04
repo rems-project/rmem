@@ -13,3 +13,4 @@ PKG uint zarith
 PKG lambda-term zed lwt react
 PKG js_of_ocaml js_of_ocaml.ppx
 PKG base64
+PKG sail

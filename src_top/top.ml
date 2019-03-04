@@ -52,16 +52,6 @@ module Run_test (Test_file: Test_file.S) = struct
       end
     in
 
-    (** FIXME: currently, RISC-V works only with shallow-embedding, hence
-    we force 'interpreter = false' in run_options, even if the user explicitly
-    did '-shallow_embedding false' *)
-    let run_options =
-      if test_info.Test.ism = RISCV_ism then
-        {run_options with interpreter = false}
-      else
-        run_options
-    in
-
     let run_options =
       match !Globals.model_params.shared_memory with
       | Some sm ->

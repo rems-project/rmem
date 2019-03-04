@@ -17,7 +17,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let marshal_isa (defs : Interp_interface.specification) filename =
+let marshal_isa defs filename =
   let f = open_out_bin filename in
   Marshal.to_string defs [Marshal.No_sharing; Marshal.Compat_32]
   |> B64.encode
@@ -29,7 +29,7 @@ let opts = [
   ("-AArch64",    Arg.String (marshal_isa ArmV8.defs),    "<filename>");
 (*   ("-AArch64Gen", Arg.String (marshal_isa ArmV8Gen.defs), "<filename>"); *)
   ("-MIPS64",     Arg.String (marshal_isa Mips.defs),     "<filename>");
-  ("-RISCV",      Arg.String (marshal_isa (Interp_ast.Defs []) (* Riscv.defs *)),    "<filename>");
+  ("-RISCV",      Arg.String (marshal_isa (Ast.Defs [], Type_check.Env.set_prover None Type_check.initial_env)),    "<filename>");
   ("-X86",        Arg.String (marshal_isa X86.defs),      "<filename>");
 ]
 

@@ -86,6 +86,7 @@ module type ISADefs = sig
   val reg_data : MachineDefTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
+  val interp2_isa_defs_thunk : ?no_memo:bool -> unit -> (Type_check.tannot Ast.defs * Type_check.Env.t)
   val isa_memory_access : (Interp_interface.memory_reads *
                         Interp_interface.memory_read_taggeds *
                         Interp_interface.memory_writes *
@@ -97,10 +98,14 @@ module type ISADefs = sig
   val isa_externs : Interp_interface.external_functions
 end
 
+let empty_isa_defs = memo_unit (fun () -> Interp_ast.Defs [])
+let empty_interp2_isa_defs = memo_unit (fun () -> (Ast.Defs [], Type_check.initial_env))
+
 module PPCGenISADefs : ISADefs = struct
   let name = "PPC"
   let reg_data = MachineDefISAInfoPPCGen.ppcgen_ism.register_data_info
   let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "PPCGen")
+  let interp2_isa_defs_thunk = empty_interp2_isa_defs
   let isa_memory_access = (Power_extras.power_read_memory_functions,
                             [],
                             [],
@@ -116,6 +121,7 @@ module AArch64ISADefs : ISADefs = struct
     let name = "AArch64"
     let reg_data = MachineDefISAInfoAArch64.aarch64hand_ism.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64")
+    let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = (ArmV8_extras.aArch64_read_memory_functions,
                               [],
                               ArmV8_extras.aArch64_memory_writes,
@@ -131,6 +137,7 @@ module AArch64GenISADefs : ISADefs = struct
     let name = "AArch64Gen"
     let reg_data = MachineDefISAInfoAArch64.aarch64gen_ism.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64Gen")
+    let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = ([], (*ArmV8Gen_extras.aArch64_read_memory_functions*)
                               [],
                               [], (*ArmV8Gen_extras.aArch64_memory_writes*)
@@ -146,6 +153,7 @@ module MIPS64ISADefs : ISADefs = struct
     let name = "MIPS"
     let reg_data = MachineDefISAInfoMIPS.mips_ism.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "MIPS64")
+    let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = (Mips_extras.mips_read_memory_functions,
                               [],
                               Mips_extras.mips_memory_writes,
@@ -160,7 +168,8 @@ end
 module RISCVISADefs : ISADefs = struct
     let name = "RISCV"
     let reg_data = MachineDefISAInfoRISCV.riscv_ism.register_data_info
-    let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "RISCV")
+    let isa_defs_thunk = empty_isa_defs
+    let interp2_isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_interp2_defs "RISCV")
     (* let isa_memory_access = (Riscv_extras.riscv_read_memory_functions,
      *                           [],
      *                           Riscv_extras.riscv_memory_writes,
@@ -177,6 +186,7 @@ module X86ISADefs : ISADefs = struct
     let name = "X86"
     let reg_data = MachineDefISAInfoX86.x86_ism.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "X86")
+    let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = (X86_extras.x86_read_memory_functions,
                               [],
                               X86_extras.x86_memory_writes,
@@ -217,7 +227,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
         ism
         context endianness
     =
-
+    
     let instruction_to_interp_instruction = function
       | PPCGEN_instr instr -> Power_toFromInterp.astToInterpValue instr
       | AArch64_instr instr -> ArmV8_toFromInterp.astToInterpValue0 instr
@@ -226,36 +236,38 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       | X86_instr instr -> X86_toFromInterp.astToInterpValue3 instr
       | Fetch_error -> failwith "fetch error"
     in
-
+    
     let interp_instruction_to_instruction instr = match ism with
-       | MachineDefTypes.PPCGEN_ism -> PPCGEN_instr (Power_toFromInterp.astFromInterpValue instr)
+      | MachineDefTypes.PPCGEN_ism -> PPCGEN_instr (Power_toFromInterp.astFromInterpValue instr)
        | MachineDefTypes.AARCH64_ism AArch64HandSail -> AArch64_instr (ArmV8_toFromInterp.astFromInterpValue0 instr)
        | MachineDefTypes.AARCH64_ism AArch64GenSail -> failwith "not implemented yet"
        | MachineDefTypes.MIPS_ism -> MIPS_instr (Mips_toFromInterp.astFromInterpValue1 instr)
        | MachineDefTypes.RISCV_ism -> failwith "not implemented yet"
        | MachineDefTypes.X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue3 instr)
     in
-
-
+    
+    
+    
     let decode_error_to_decode_error opcode = function
       | Interp_interface.Unsupported_instruction_error instr ->
-        MachineDefTypes.Unsupported_instruction_error0
+         MachineDefTypes.Unsupported_instruction_error0
           (opcode,interp_instruction_to_instruction instr)
       | Interp_interface.Not_an_instruction_error opcode ->
-        MachineDefTypes.Not_an_instruction_error0 opcode
+         MachineDefTypes.Not_an_instruction_error0 opcode
       | Interp_interface.Internal_error string ->
-        MachineDefTypes.Internal_decode_error string
+         MachineDefTypes.Internal_decode_error string
     in
-
+    
     let interp__initial_outcome_s_of_instruction eager instruction : MachineDefTypes.outcome_S =
       let instruction = instruction_to_interp_instruction instruction in
       let interp_mode eager = Interp_inter_imp.make_mode eager false !Globals.debug_sail_interp in
       Interp_inter_imp.initial_outcome_s_of_instruction
         Printing_functions.pp_instruction_state context (interp_mode eager) instruction in
-
+    
+    
     let interp__instruction_analysis outcome_s instruction analysis_function
-                                    reg_info nia_reg environment =
-
+          reg_info nia_reg environment =
+      
       let nias_function = MachineDefThreadSubsystemUtils.interp_nias_of_instruction instruction in
       let instruction = instruction_to_interp_instruction instruction in
       let interp_exhaustive = match outcome_s with
@@ -269,34 +281,77 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
         | MachineDefTypes.RISCV_ism -> "RISCV_ism"
         | MachineDefTypes.X86_ism -> "X86_ism"
       in
-
+      
       if compare_analyses then
         Interp_inter_imp.interp_compare_analyses
           print_endline
           (MachineDefThreadSubsystemUtils.non_pseudo_registers (!Globals.model_params.t))
           context endianness interp_exhaustive instruction nia_reg nias_function ism_s environment
           analysis_function reg_info
-
+      
       else
         Interp_inter_imp.interp_instruction_analysis context interp_exhaustive instruction
-                                                     nia_reg nias_function ism_s environment in
-
-    let interp__decode_to_instruction address opcode =
-      begin match Interp_inter_imp.decode_to_instruction context None opcode with
+          nia_reg nias_function ism_s environment in
+    
+    
+    let interp__decode_to_instruction (address : Sail_impl_base.address) (opcode : Sail_impl_base.opcode) =
+      match Interp_inter_imp.decode_to_instruction context None opcode with
       | Interp_interface.IDE_instr instruction ->
-        let instruction = interp_instruction_to_instruction instruction in
-        MachineDefTypes.FDO_success (address,Some opcode,instruction)
+         let instruction = interp_instruction_to_instruction instruction in
+         MachineDefTypes.FDO_success (address,Some opcode,instruction)
       | Interp_interface.IDE_decode_error de ->
-        MachineDefTypes.FDO_decode_error (decode_error_to_decode_error opcode de)
-      end in
-
+         MachineDefTypes.FDO_decode_error (decode_error_to_decode_error opcode de)
+    in
+    
     (fun eager ->
       { MachineDefTypes.initial_outcome_s_of_instruction0 = interp__initial_outcome_s_of_instruction eager;
         MachineDefTypes.instruction_analysis0 = interp__instruction_analysis;
         MachineDefTypes.decode_to_instruction0 = interp__decode_to_instruction;
       }
     )
+    
+  let initialise_interp2_semantics compare_analyses ism state endianness =
 
+    let instruction_to_interp2_instruction = function
+      | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue instr
+      | Fetch_error -> failwith "fetch error"
+      | _ -> failwith "not implemented yet"
+    in
+    
+    let interp2_instruction_to_instruction instr = match ism with
+      | MachineDefTypes.RISCV_ism -> RISCV_instr (Riscv_toFromInterp2.astFromInterpValue instr)
+      | _ -> failwith "not implemented yet"
+    in
+    
+    let interp2__initial_outcome_s_of_instruction eager instruction : MachineDefTypes.outcome_S =
+      failwith "not yet implemented"
+    in
+    
+    let interp2__instruction_analysis outcome_s instruction analysis_function reg_info nia_reg environment =
+      failwith "not yet implemented"
+    in
+
+    let opcode_to_lits (Sail_impl_base.Opcode bytes) =
+      let bit_to_lit = function
+        | Sail_impl_base.Bitc_zero -> Ast.L_zero
+        | Sail_impl_base.Bitc_one -> Ast.L_one
+      in
+      List.flatten (List.rev_map (fun (Sail_impl_base.Byte byte) -> List.rev_map bit_to_lit byte) bytes)
+    in
+    
+    let interp2__decode_to_instruction (address : Sail_impl_base.address) (opcode : Sail_impl_base.opcode) =
+      match Interpreter.decode_instruction state (opcode_to_lits opcode) with
+      | Interpreter.Value_success v -> MachineDefTypes.FDO_success (address, Some opcode, interp2_instruction_to_instruction v)
+      | Interpreter.Value_error exn -> MachineDefTypes.FDO_decode_error (MachineDefTypes.Internal_decode_error (Printexc.to_string exn))
+    in
+    
+    (fun eager ->
+      { MachineDefTypes.initial_outcome_s_of_instruction0 = interp2__initial_outcome_s_of_instruction eager;
+        MachineDefTypes.instruction_analysis0 = interp2__instruction_analysis;
+        MachineDefTypes.decode_to_instruction0 = interp2__decode_to_instruction;
+      }
+    )
+      
   let instruction_semantics ism run_options : MachineDefTypes.instruction_semantics_p =
     let endianness = Globals.get_endianness () in
 
@@ -304,49 +359,60 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       MachineDefInstructionSemantics.initialise_shallow_embedding_semantics endianness ism
     in
 
-    begin match ISADefs.isa_defs_thunk () with
-    | Interp_ast.Defs [] ->
-        begin function
-        | MachineDefTypes.Interp eager -> failwith "Empty ISA defs"
-        | MachineDefTypes.Shallow_embedding -> shallow_semantics
-        end
-
-    | _ ->
-        let interp_context =
-          let defs = ISADefs.isa_defs_thunk () in
-          let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
-            ISADefs.isa_memory_access in
-          let externs = ISADefs.isa_externs in
-
-          Interp_inter_imp.build_context
-            !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs
-        in
-
-(*
-        let (instruction_to_interp_instruction :
-                MachineDefTypes.instruction_ast -> Interp_interface.instruction) =
-          cmb TransSail.herdtools_ast_to_interp_instruction
-              TransSail.shallow_ast_to_herdtools_ast
-        in
-        let (interp_instruction_to_instruction :
-                Interp_interface.instruction -> MachineDefTypes.instruction_ast) =
-          cmb TransSail.herdtools_ast_to_shallow_ast
-              TransSail.interp_instruction_to_herdtools_ast
-        in
- *)
-
-        let interp_semantics =
-          initialise_interp_semantics
-                run_options.RunOptions.compare_analyses
-                ism
-                interp_context endianness
-        in
-        begin function
-        | MachineDefTypes.Interp eager -> interp_semantics eager
-        | MachineDefTypes.Shallow_embedding -> shallow_semantics
-        end
+    begin match ism with
+    | RISCV_ism ->
+       begin match ISADefs.interp2_isa_defs_thunk () with
+       | Ast.Defs [], _ ->
+          begin function
+            | MachineDefTypes.Interp eager -> failwith "Empty new-interpreter ISA defs"
+            | MachineDefTypes.Shallow_embedding -> shallow_semantics
+          end
+       | defs, env ->
+          let interp_state =
+            Interpreter.initial_state defs env Value.primops
+          in
+          let interp_semantics = initialise_interp2_semantics
+                                   run_options.RunOptions.compare_analyses
+                                   ism interp_state endianness
+          in
+          begin function
+            | MachineDefTypes.Interp eager -> interp_semantics eager
+            | MachineDefTypes.Shallow_embedding -> shallow_semantics
+          end 
+       end
+    | _ -> 
+       begin match ISADefs.isa_defs_thunk () with
+       | Interp_ast.Defs [] ->
+          begin function
+            | MachineDefTypes.Interp eager -> failwith "Empty ISA defs"
+            | MachineDefTypes.Shallow_embedding -> shallow_semantics
+          end
+         
+       | _ ->
+          let interp_context =
+            let defs = ISADefs.isa_defs_thunk () in
+            let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
+              ISADefs.isa_memory_access in
+            let externs = ISADefs.isa_externs in
+            
+            Interp_inter_imp.build_context
+              !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs
+          in
+         
+          
+          let interp_semantics =
+            initialise_interp_semantics
+              run_options.RunOptions.compare_analyses
+              ism
+              interp_context endianness
+          in
+          begin function
+            | MachineDefTypes.Interp eager -> interp_semantics eager
+            | MachineDefTypes.Shallow_embedding -> shallow_semantics
+          end
+       end
     end
-
+    
   let is_option run_options =
     if run_options.RunOptions.interpreter then
       let eager = run_options.RunOptions.suppress_internal in
