@@ -21,6 +21,63 @@ open Interact_parser
 
 exception SyntaxError of string
 
+type state = LS_Token | LS_Set_args
+let state = ref LS_Token
+
+let create_hashtable keywords =
+  let size = List.fold_left (fun c (keys, _) -> c + List.length keys) 0 keywords in
+  let tbl = Hashtbl.create size in
+  List.iter (fun (keys, tok) -> (List.iter (fun key -> Hashtbl.add tbl key tok) keys)) keywords;
+  tbl
+
+let keywords =
+  create_hashtable [
+    (["x"; "exit"; "q"; "quit"], QUIT);
+    (["?"; "h"; "help"],         HELP);
+    (["o"; "options"],           OPTIONS);
+
+    (["s"; "step"], STEP);
+    (["b"; "back"], BACK);
+    (["u"; "undo"], UNDO);
+
+    (["fo"; "follow"], FOLLOW);
+    (["a"; "auto"],    AUTO);
+
+    (["search"],            SEARCH);
+    (["ran"; "random"],     RANDOM);
+    (["exh"; "exhaustive"], EXHAUSTIVE);
+
+    (["typeset"], TYPESET);
+    (["graph"],   GRAPH);
+
+    (["p"; "print"],     PRINT);
+    (["his"; "history"], HISTORY);
+
+    (["debug"], DEBUG);
+
+    (["break"; "breakpoint"], BREAK);
+    (["fetch"],               FETCH);
+    (["symbol"; "sym"],       SYMBOL);
+    (["line"],                LINE);
+    (["rwatch"],              WATCH_READ);
+    (["watch"],               WATCH_WRITE);
+    (["awatch"],              WATCH_EITHER);
+    (["shared"],              SHARED);
+
+    (["on";  "true";  "t"; "yes"; "y"], ON);
+    (["off"; "false"; "f"; "no";  "n"], OFF);
+
+    (["si"; "stepi"], STEPI);
+    (["peeki"],       PEEKI);
+
+    (["focus"], FOCUS);
+    (["thread"], THREAD);
+    (["instruction"; "inst"; "ioid"], INSTRUCTION);
+
+    (["info"], INFO);
+    (["delete"], DELETE);
+  ]
+
 let next_line lexbuf =
   let pos = lexbuf.lex_curr_p in
   lexbuf.lex_curr_p <-
@@ -41,10 +98,10 @@ let name  = (alpha | '_') (alpha | digit | '_' | '/' | '.' | '-')*
 let white = [' ' '\t']+
 let newline = '\r' | '\n' | "\r\n"
 
-rule read =
+rule token =
   parse
-  | white    { read lexbuf }
-  | newline  { next_line lexbuf; read lexbuf }
+  | white    { token lexbuf }
+  | newline  { next_line lexbuf; token lexbuf }
 
   | '{'      { LEFT_BRACE }
   | '}'      { RIGHT_BRACE }
@@ -57,8 +114,6 @@ rule read =
   | '+'      { PLUS  }
   | '-'      { MINUS }
 
-  | '"' ([^'"']* as str) '"' { DOUBLE_QUOTED_STRING str }
-
   | num as n  { try NUM (int_of_string n) with
                 | Failure _ -> BIG_NUM (Misc.big_num_of_string n)
               }
@@ -66,71 +121,47 @@ rule read =
   | (num as n1) 'e' (num as n2)
               { NUMENUM (int_of_string n1, int_of_string n2) }
 
-  | "x"  | "exit"
-  | "q"  | "quit"          { QUIT }
+  | "set" { state := LS_Set_args; SET }
 
-  | "?"
-  | "h"  | "help"          { HELP }
-
-  | "o" | "options"        { OPTIONS }
-
-  | "s"  | "step"          { STEP }
-  | "b"  | "back"          { BACK }
-  | "u"  | "undo"          { UNDO }
-
-  | "fo"  | "follow"       { FOLLOW }
-  | "a"  | "auto"          { AUTO }
-
-  | "search"               { SEARCH }
-  | "ran"  | "random"      { RANDOM (Lexing.lexeme lexbuf) }
-  | "exh"  | "exhaustive"  { EXHAUSTIVE }
-
-  | "typeset"              { TYPESET }
-  | "graph"                { GRAPH }
-
-  | "p"   | "print"        { PRINT }
-  | "his" | "history"      { HISTORY }
-
-  | "debug"                { DEBUG (Lexing.lexeme lexbuf) }
-
-  | "break" | "breakpoint" { BREAK }
-  | "fetch"                { FETCH }
-  | "symbol" | "sym"       { SYMBOL }
-  | "line"                 { LINE }
-  | "rwatch"               { WATCH_READ }
-  | "watch"                { WATCH_WRITE }
-  | "awatch"               { WATCH_EITHER }
-  | "shared"               { SHARED }
-
-  | "name"                 { NAME }
-
-  | "si" | "stepi"         { STEPI }
-  | "peeki"                { PEEKI }
-
-  | "set"                  { SET }
-
-  | "focus"                { FOCUS }
-  | "thread"               { THREAD }
-  | "instruction"
-  | "inst" | "ioid"        { INSTRUCTION }
-  | "follow_list"          { FOLLOWLIST }
-  | "branch-targets"
-  | "Branch-targets"       { BRANCH_TARGETS }
-  | "shared-memory"
-  | "Shared-memory"        { SHARED_MEMORY }
-
-                                (* Slight hack to pass strings through to 'set ...' *)
-  | "on" | "true"
-  | "t" | "yes" | "y"      { ON (Lexing.lexeme lexbuf) }
-  | "off" | "false"
-  | "f" | "no" | "n"       { OFF (Lexing.lexeme lexbuf) }
-
-  | "none"                 { NONE  (Lexing.lexeme lexbuf) }
-
-  | "info"                 { INFO }
-  | "delete"               { DELETE }
-
-  | name as s              { IDENT s }
+  | name as s {
+      try Hashtbl.find keywords s with
+      | Not_found -> IDENT s
+    }
 
   | _        { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof      { EOF }
+
+and read_set_args =
+  parse
+  | white     { read_set_args lexbuf }
+  | newline   { next_line lexbuf; read_set_args lexbuf }
+
+  | ';'       { state := LS_Token; SEMICOLON }
+
+  | '"'       { SETARG (read_string (Buffer.create 50) lexbuf) }
+
+  | (alpha | digit | '_' | '/' | '.' | '-')+ as s
+              { SETARG s }
+
+  | _         { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
+  | eof       { state := LS_Token; EOF }
+
+and read_string buf =
+  parse
+  | '"'           { Scanf.unescaped (Buffer.contents buf) }
+  | '\\' _        { Buffer.add_string buf (Lexing.lexeme lexbuf); read_string buf lexbuf }
+  | [^ '"' '\\']+ { Buffer.add_string buf (Lexing.lexeme lexbuf); read_string buf lexbuf }
+  | _             { raise (SyntaxError ("Illegal string character: " ^ Lexing.lexeme lexbuf)) }
+  | eof           { raise (SyntaxError ("String is not terminated")) }
+
+{
+  let internal_lexer = fun lb ->
+    match !state with
+    | LS_Token    -> token lb
+    | LS_Set_args -> read_set_args lb
+
+  let get_lexer = fun () ->
+    state := LS_Token;
+    internal_lexer
+}
+

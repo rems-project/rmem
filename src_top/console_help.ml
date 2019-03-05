@@ -32,7 +32,7 @@ Notation
 <string[n]>    represents an arbitrary string containing no spaces
 <bool[n]>      represents a boolean. Accepted values:
                  true = 'true', 'on', '1', 't', 'yes', 'y'
-                 false = 'false', 'off', '0', 'f', 'yes', 'y'
+                 false = 'false', 'off', '0', 'f', 'no', 'n'
 
 Stepping commands
 -------------------------------------------------------------------------------
@@ -144,8 +144,7 @@ Global options
 set suppress_internal <bool>     Enable or disable whether Sail micro-steps
                                   (exposed as 'Internal' transitions) are suppressed
 
-set follow_list "<N>[,<N>,...]"  Set the list of upcoming transitions.
-                                   (Note, comma separated.)
+set follow_list "<N>[;<N>...]"  Set the list of upcoming transitions.
 
 Eager options
 -------------------------------------------------------------------------------

@@ -39,7 +39,7 @@ let parse (str: string) : parser_outcome =
   let lexbuf = Lexing.from_string str in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = "$" };
 
-  try ParserASTs (Interact_parser.commands Interact_lexer.read lexbuf) with
+  try ParserASTs (Interact_parser.commands (Interact_lexer.get_lexer ()) lexbuf) with
   | Interact_lexer.SyntaxError msg ->
       ParserError (Printf.sprintf "%s: %s\n" (print_position lexbuf) msg)
   | Parsing.Parse_error ->
@@ -790,9 +790,8 @@ let print_observed_finals interact_state observed_finals : Screen_base.output_tr
             otStrVerbose Globals.Normal "%-6d%s>" count (if check_prop state then "*" else ":");
             OTString (Test.C.pp_state symtab state);
             OTVerbose (Globals.Normal, OTConcat [
-              OTString " via \"";
+              OTString " via ";
               OTFollowList ui_choices;
-              OTString "\"";
             ]);
           ])
         )
@@ -808,9 +807,8 @@ let print_observed_deadlocks interact_state observed_deadlocks : Screen_base.out
         match ui_choices_of_search_trace interact_state deadlock_choices with
         | choices ->
             OTConcat [
-              OTString " via \"";
+              OTString " via ";
               OTFollowList (Interact_parser_base.history_to_string choices);
-              OTString "\"";
             ]
         | exception (TraceRecon s) ->
             otString "(could not reconstruct trace (%s))" s
@@ -841,9 +839,8 @@ let print_observed_exceptions interact_state observed_exceptions : Screen_base.o
           otLine @@ OTConcat [otString "%-6d:>" count;
                               otString "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception interact_state.ppmode ioid exception_type);
                               OTConcat [
-                                  OTString " via \"";
+                                  OTString " via ";
                                   OTFollowList ui_choices;
-                                  OTString "\""
                                 ]
                              ]
         )
@@ -1383,6 +1380,256 @@ let rec do_peek_instruction (thread_n : int) (inst_n : int)  interact_state : in
       let new_filters = [MachineDefTypes.is_transition_of_ioid ioid] in
       do_search Interact_parser_base.Exhaustive interact_state [] [] new_targets new_filters
 
+exception InvalidKey
+exception InvalidValue
+
+let do_set key value interact_state =
+  let value_parser values = fun s ->
+    try List.assoc s values with
+    | Not_found -> raise InvalidValue
+  in
+
+  let parse_bool s =
+    value_parser [
+      ("on", true);  ("true", true);  ("t",true);  ("yes",true);  ("y",true);  ("1",true);
+      ("off",false); ("false",false); ("f",false); ("no", false); ("n",false); ("0",false);
+    ] s
+  in
+
+  let parse_int s =
+    try int_of_string s with
+    | Failure _ -> raise InvalidValue
+  in
+
+  let parse_int_option s =
+    if s = "none" then None
+    else try Some (int_of_string s) with Failure _ -> raise InvalidValue
+  in
+
+  let open Lens.Infix in
+  let open Globals in
+  let open RunOptions in
+
+  match key with
+  | s when Utils.string_startswith "eager_" s ->
+      let lens =
+        match Utils.string_drop (String.length "eager_") s with
+        | "fetch_single"        -> eager_fetch_single_lens
+        | "fetch_multi"         -> eager_fetch_multi_lens
+        | "pseudocode_internal" -> eager_pseudocode_internal_lens
+        | "constant_reg_read"   -> eager_constant_reg_read_lens
+        | "reg_rw"              -> eager_reg_rw_lens
+        | "memory_aux"          -> eager_memory_aux_lens
+        | "finish"              -> eager_finish_lens
+        | "fp_recalc"           -> eager_fp_recalc_lens
+        | "thread_start"        -> eager_thread_start_lens
+        | "local_mem"           -> eager_local_mem_lens
+        | _                     -> raise InvalidKey
+      in
+      interact_state
+      |> (run_options_lens |-- eager_mode_lens |-- lens) ^= (parse_bool value)
+      |> check_eager NoConstraints
+      |> snd
+
+  | "eager" ->
+      let eager_mode =
+        if parse_bool value then
+          RunOptions.eager_mode_all_on interact_state.options.eager_mode
+        else
+          RunOptions.eager_mode_all_off interact_state.options.eager_mode
+      in
+      interact_state
+      |> (run_options_lens |-- eager_mode_lens) ^= eager_mode
+      |> check_eager NoConstraints
+      |> snd
+
+  | "suppress_internal" ->
+      interact_state
+      |> (run_options_lens |-- suppress_internal_lens) ^= (parse_bool value)
+
+  | "random" ->
+      interact_state
+      |> (run_options_lens |-- pseudorandom_lens) ^= (parse_bool value)
+      |> update_default_cmd
+
+  | "storage_first" ->
+      interact_state
+      |> (run_options_lens |-- storage_first_lens) ^= (parse_bool value)
+      |> update_default_cmd
+
+  | "always_print"                   -> ((run_options_lens |-- always_print_lens)                      ^= (parse_bool value))       interact_state
+  | "compare_analyses"               -> ((run_options_lens |-- compare_analyses_lens)                  ^= (parse_bool value))       interact_state
+  | "hash_prune"                     -> ((run_options_lens |-- hash_prune_lens)                        ^= (parse_bool value))       interact_state
+  | "partial_order_reduction"        -> ((run_options_lens |-- partial_order_reduction_lens)           ^= (parse_bool value))       interact_state
+  | "allow_partial"                  -> ((run_options_lens |-- allow_partial_lens)                     ^= (parse_bool value))       interact_state
+  | "priority_reduction"             -> ((run_options_lens |-- priority_reduction_lens)                ^= (parse_bool value))       interact_state
+  | "prune_restarts"                 -> ((run_options_lens |-- prune_restarts_lens)                    ^= (parse_bool value))       interact_state
+  | "prune_discards"                 -> ((run_options_lens |-- prune_discards_lens)                    ^= (parse_bool value))       interact_state
+  | "transition_limit"               -> ((run_options_lens |-- transition_limit_lens)                  ^= (parse_int_option value)) interact_state
+  | "trace_limit"                    -> ((run_options_lens |-- trace_limit_lens)                       ^= (parse_int_option value)) interact_state
+  | "time_limit"                     -> ((run_options_lens |-- time_limit_lens)                        ^= (parse_int_option value)) interact_state
+
+  | "suppress_newpage"               -> ((ppmode_lens      |-- pp_suppress_newpage_lens)               ^= (parse_bool value))       interact_state
+  | "buffer_messages"                -> ((ppmode_lens      |-- pp_buffer_messages_lens)                ^= (parse_bool value))       interact_state
+  | "announce_options"               -> ((ppmode_lens      |-- pp_announce_options_lens)               ^= (parse_bool value))       interact_state
+  | "ppg_shared"                     -> ((ppmode_lens      |-- ppg_shared_lens)                        ^= (parse_bool value))       interact_state
+  | "ppg_rf"                         -> ((ppmode_lens      |-- ppg_rf_lens)                            ^= (parse_bool value))       interact_state
+  | "ppg_fr"                         -> ((ppmode_lens      |-- ppg_fr_lens)                            ^= (parse_bool value))       interact_state
+  | "ppg_co"                         -> ((ppmode_lens      |-- ppg_co_lens)                            ^= (parse_bool value))       interact_state
+  | "ppg_addr"                       -> ((ppmode_lens      |-- ppg_addr_lens)                          ^= (parse_bool value))       interact_state
+  | "ppg_data"                       -> ((ppmode_lens      |-- ppg_data_lens)                          ^= (parse_bool value))       interact_state
+  | "ppg_ctrl"                       -> ((ppmode_lens      |-- ppg_ctrl_lens)                          ^= (parse_bool value))       interact_state
+  | "ppg_regs"                       -> ((ppmode_lens      |-- ppg_regs_lens)                          ^= (parse_bool value))       interact_state
+  | "ppg_reg_rf"                     -> ((ppmode_lens      |-- ppg_reg_rf_lens)                        ^= (parse_bool value))       interact_state
+  | "ppg_trans"                      -> ((ppmode_lens      |-- ppg_trans_lens)                         ^= (parse_bool value))       interact_state
+  | "prefer_symbolic_values"         -> ((ppmode_lens      |-- pp_prefer_symbolic_values_lens)         ^= (parse_bool value))       interact_state
+  | "hide_pseudoregister_reads"      -> ((ppmode_lens      |-- pp_hide_pseudoregister_reads_lens)      ^= (parse_bool value))       interact_state
+  | "max_finished"                   -> ((ppmode_lens      |-- pp_max_finished_lens)                   ^= (parse_int_option value)) interact_state
+  | "choice_history_limit"           -> ((ppmode_lens      |-- pp_choice_history_limit_lens)           ^= (parse_int_option value)) interact_state
+  | "condense_finished_instructions" -> ((ppmode_lens      |-- pp_condense_finished_instructions_lens) ^= (parse_bool value))       interact_state
+  | "pp_sail"                        -> ((ppmode_lens      |-- pp_sail_lens)                           ^= (parse_bool value))       interact_state
+  | "pp_style" ->
+      let value =
+        value_parser [
+          ("full",       Ppstyle_full);
+          ("compact",    Ppstyle_compact);
+          ("screenshot", Ppstyle_screenshot);
+        ] value
+      in
+      ((ppmode_lens |-- pp_style_lens) ^= value) interact_state
+
+  | "verbosity" ->
+    Globals.verbosity := value_parser [
+      ("quiet",   Quiet);
+      ("normal",  Normal);
+      ("verbose", ThrottledInformation);
+      ("very",    UnthrottledInformation);
+      ("debug",   Debug);
+    ] value;
+    interact_state
+
+  | "pp_hex" ->
+    Globals.print_hex := parse_bool value;
+    interact_state
+
+  | "dwarf_show_all_variable_locations" ->
+    Globals.dwarf_show_all_variable_locations := parse_bool value;
+    interact_state
+
+  | "graph_backend" ->
+    value_parser [("dot", ()); ("tikz", ())] value; (* this is just to check that 'value' is a valid value *)
+    Globals.set_graph_backend value;
+    interact_state
+
+  | "dumb_terminal" ->
+    Globals.dumb_terminal := parse_bool value;
+    interact_state
+
+  | "random_seed" ->
+    Random.init (parse_int value);
+    interact_state
+
+  | "loop_limit" ->
+    change_model
+      (fun model ->
+        { model with
+          MachineDefTypes.t =
+            { model.MachineDefTypes.t with
+              MachineDefTypes.thread_loop_unroll_limit =
+                parse_int_option value;
+            };
+        }
+      )
+      interact_state
+
+  (* always_graph and dot_final_ok are mutually exclusive
+    because always_graph would overwrite the final graph  *)
+
+  | "always_graph" ->
+    begin
+      if parse_bool value then
+        Globals.run_dot := Some RD_step
+      else
+        Globals.run_dot := None;
+      interact_state
+    end
+
+  | "dot_final_ok" ->
+    begin
+      if parse_bool value then
+        Globals.run_dot := Some RD_final_ok
+      else
+        Globals.run_dot := None;
+      interact_state
+    end
+
+  | "dot_final_not_ok" ->
+    begin
+      if parse_bool value then
+        Globals.run_dot := Some RD_final_not_ok
+      else
+        Globals.run_dot := None;
+      interact_state
+    end
+
+  | "pp_colours" -> begin
+      let b = parse_bool value in
+      Printing_functions.set_color_enabled b; (* propagate to sail interpreter pp *)
+      ((ppmode_lens |-- pp_colours_lens) ^= b) interact_state
+    end
+
+  | "follow_list" ->
+      if value = "" then
+        update_default_cmd {interact_state with follow_suffix = []}
+      else
+        begin match parse value with
+        | ParserError msg ->
+            Screen.show_warning interact_state.ppmode "bad follow list: %s" msg;
+            raise InvalidValue
+        | ParserASTs asts ->
+            update_default_cmd {interact_state with follow_suffix = asts}
+        end
+
+  | "branch-targets" | "Branch-targets" ->
+      begin match Model_aux.branch_targets_parse_from_string value with
+      | branch_targets ->
+          change_model
+            (Model_aux.set_branch_targets interact_state.test_info.symbol_table branch_targets)
+            interact_state
+      | exception (Model_aux.BranchTargetsParsingError msg) ->
+          Screen.show_warning interact_state.ppmode "bad branch targets: %s" msg;
+          raise InvalidValue
+      end
+
+  | "shared-memory" | "Shared-memory" ->
+      begin match Model_aux.shared_memory_parse_from_string value with
+      | shared_memory ->
+          let interact_state =
+            change_model
+              (Model_aux.set_shared_memory interact_state.test_info.symbol_table shared_memory)
+              interact_state
+          in
+          let shared_memory =
+            match (List.hd interact_state.interact_nodes).system_state.sst_state.model.shared_memory with
+            | Some shared_memory -> shared_memory
+            | None -> assert false
+          in
+          { interact_state with
+            options =
+              { interact_state.options with
+                eager_mode =
+                  { interact_state.options.eager_mode with
+                    em_shared_memory = shared_memory;
+                  };
+              };
+          }
+      | exception (Model_aux.SharedMemoryParsingError msg) ->
+          Screen.show_warning interact_state.ppmode "bad shared memory: %s" msg;
+          raise InvalidValue
+      end
+
+  | _ -> raise InvalidKey
+
 
 exception DoCmdError of interact_state * string
 
@@ -1568,7 +1815,7 @@ let rec do_cmd
   | Interact_parser_base.History ->
       Interact_parser_base.history_to_string interact_state.cmd_history
       |> Screen.escape
-      |> Screen.show_message ppmode "\"%s\"";
+      |> Screen.show_message ppmode "%s";
       interact_state
 
   | Interact_parser_base.FetchAll ->
@@ -1586,260 +1833,18 @@ let rec do_cmd
   | Interact_parser_base.BreakpointLine (filename, line) ->
       do_add_breakpoint_line filename line interact_state
 
-  | Interact_parser_base.SetFollowList str ->
-      if str = "" then
-        update_default_cmd {interact_state with follow_suffix = []}
-      else
-        begin match parse str with
-        | ParserError s ->
-            let msg = Printf.sprintf "bad follow list: %s" s in
-            raise (DoCmdError (interact_state, msg))
-        | ParserASTs asts ->
-            update_default_cmd {interact_state with follow_suffix = asts}
-        end
-
-  | Interact_parser_base.SetBranchTargets str ->
-      begin match Model_aux.branch_targets_parse_from_string str with
-      | branch_targets ->
-          change_model
-            (Model_aux.set_branch_targets interact_state.test_info.symbol_table branch_targets)
-            interact_state
-      | exception (Model_aux.BranchTargetsParsingError msg) ->
-          raise (DoCmdError (interact_state, "bad branch targets: " ^ msg))
-      end
-
-  | Interact_parser_base.SetSharedMemory str ->
-      begin match Model_aux.shared_memory_parse_from_string str with
-      | shared_memory ->
-          let interact_state =
-            change_model
-              (Model_aux.set_shared_memory interact_state.test_info.symbol_table shared_memory)
-              interact_state
-          in
-          let shared_memory =
-            match (List.hd interact_state.interact_nodes).system_state.sst_state.model.shared_memory with
-            | Some shared_memory -> shared_memory
-            | None -> assert false
-          in
-          { interact_state with
-            options =
-              { interact_state.options with
-                eager_mode =
-                  { interact_state.options.eager_mode with
-                    em_shared_memory = shared_memory;
-                  };
-              };
-          }
-      | exception (Model_aux.SharedMemoryParsingError msg) ->
-          raise (DoCmdError (interact_state, "bad shared memory: " ^ msg))
-      end
-
   | Interact_parser_base.SetOption (key, value) ->
-      (** TODO: this whole case is a mess, the parser should handle most of this *)
-
-      let invalid_option_value valids =
-        let msg =
-          Printf.sprintf "invalid value '%s' for option '%s' (valid values: %s)"
-            (Screen.escape value)
-            (Screen.escape key)
-            (Screen.escape valids)
-        in
-        raise (DoCmdError (interact_state, msg))
-      in
-      let open Lens.Infix in
-      let open RunOptions in
-      let open Globals in
-      let squote s = "'" ^ s ^ "'" in
-      let squote_list l = String.concat ", " (List.map squote l) in
-      let parse_bool s =
-        let trues = ["on"; "true"; "1"; "t"; "yes"; "y"] in
-        let falses = ["off"; "false"; "0"; "f"; "no"; "n"] in
-        if List.mem s trues then true
-        else if List.mem s falses then false
-        else
-          invalid_option_value (squote_list (trues @ falses))
-      in
-      let enum_parser values = fun s ->
-        try List.assoc (String.lowercase s) values with
-        | Not_found -> invalid_option_value (squote_list (List.map fst values))
-      in
-      let parse_verbosity = enum_parser [
-                               ("quiet", Quiet);
-                               ("normal", Normal);
-                               ("verbose", ThrottledInformation);
-                               ("very", UnthrottledInformation);
-                               ("debug", Debug);
-                             ] in
-      let parse_ppstyle = enum_parser [
-                              ("full", Ppstyle_full);
-                              ("compact", Ppstyle_compact);
-                              ("screenshot", Ppstyle_screenshot);
-                            ] in
-      let validated valids = fun s ->
-        if (List.mem (String.lowercase s) valids) then s else invalid_option_value (squote_list valids)
-      in
-      let parse_int s =
-        try int_of_string s with
-        | Failure _ -> invalid_option_value "<N>"
-      in
-      let parse_int_option s =
-        if (String.lowercase s) = "none" then None
-        else begin try Some (int_of_string s) with
-        | Failure _ -> invalid_option_value "<N>|none"
-        end
-      in
-      begin match key with
-      | s when Utils.string_startswith "eager_" s -> begin
-          let lens =
-            match Utils.string_drop (String.length "eager_") s with
-            | "fetch_single"        -> eager_fetch_single_lens
-            | "fetch_multi"         -> eager_fetch_multi_lens
-            | "pseudocode_internal" -> eager_pseudocode_internal_lens
-            | "constant_reg_read"   -> eager_constant_reg_read_lens
-            | "reg_rw"              -> eager_reg_rw_lens
-            | "memory_aux"          -> eager_memory_aux_lens
-            | "finish"              -> eager_finish_lens
-            | "fp_recalc"           -> eager_fp_recalc_lens
-            | "thread_start"        -> eager_thread_start_lens
-            | "local_mem"           -> eager_local_mem_lens
-            | _                     -> raise (DoCmdError (interact_state, Printf.sprintf "unknown set option '%s' (try 'help' command)" (Screen.escape key)))
+      begin try do_set key value interact_state with
+      | InvalidKey ->
+          let msg = Printf.sprintf "unknown set option '%s' (try 'help' command)" key in
+          raise (DoCmdError (interact_state, msg))
+      | InvalidValue ->
+          let msg =
+            Printf.sprintf "'%s' is not a valid value for '%s'"
+              (Interact_parser_base.pp_string value)
+              key
           in
-          interact_state
-          |> (run_options_lens |-- eager_mode_lens |-- lens) ^= (parse_bool value)
-          |> check_eager NoConstraints
-          |> snd
-        end
-
-      | "eager" ->
-          let eager_mode =
-            if parse_bool value then
-              RunOptions.eager_mode_all_on interact_state.options.eager_mode
-            else
-              RunOptions.eager_mode_all_off interact_state.options.eager_mode
-          in
-          interact_state
-          |> (run_options_lens |-- eager_mode_lens) ^= eager_mode
-          |> check_eager NoConstraints
-          |> snd
-
-      | "suppress_internal" ->
-          interact_state
-          |> (run_options_lens |-- suppress_internal_lens) ^= (parse_bool value)
-
-      | "random" ->
-          interact_state
-          |> (run_options_lens |-- pseudorandom_lens) ^= (parse_bool value)
-          |> update_default_cmd
-
-      | "storage_first" ->
-          interact_state
-          |> (run_options_lens |-- storage_first_lens) ^= (parse_bool value)
-          |> update_default_cmd
-
-      | "always_print"                   -> ((run_options_lens |-- always_print_lens)                      ^= (parse_bool value))       interact_state
-      | "compare_analyses"               -> ((run_options_lens |-- compare_analyses_lens)                  ^= (parse_bool value))       interact_state
-      | "hash_prune"                     -> ((run_options_lens |-- hash_prune_lens)                        ^= (parse_bool value))       interact_state
-      | "partial_order_reduction"        -> ((run_options_lens |-- partial_order_reduction_lens)           ^= (parse_bool value))       interact_state
-      | "allow_partial"                  -> ((run_options_lens |-- allow_partial_lens)                     ^= (parse_bool value))       interact_state
-      | "priority_reduction"             -> ((run_options_lens |-- priority_reduction_lens)                ^= (parse_bool value))       interact_state
-      | "prune_restarts"                 -> ((run_options_lens |-- prune_restarts_lens)                    ^= (parse_bool value))       interact_state
-
-      | "prune_discards"                 -> ((run_options_lens |-- prune_discards_lens)                    ^= (parse_bool value))       interact_state
-
-      | "transition_limit"               -> ((run_options_lens |-- transition_limit_lens)                  ^= (parse_int_option value)) interact_state
-      | "trace_limit"                    -> ((run_options_lens |-- trace_limit_lens)                       ^= (parse_int_option value)) interact_state
-      | "time_limit"                     -> ((run_options_lens |-- time_limit_lens)                        ^= (parse_int_option value)) interact_state
-
-      | "suppress_newpage"               -> ((ppmode_lens      |-- pp_suppress_newpage_lens)               ^= (parse_bool value))       interact_state
-      | "buffer_messages"                -> ((ppmode_lens      |-- pp_buffer_messages_lens)                ^= (parse_bool value))       interact_state
-      | "announce_options"               -> ((ppmode_lens      |-- pp_announce_options_lens)               ^= (parse_bool value))       interact_state
-      | "ppg_shared"                     -> ((ppmode_lens      |-- ppg_shared_lens)                        ^= (parse_bool value))       interact_state
-      | "ppg_rf"                         -> ((ppmode_lens      |-- ppg_rf_lens)                            ^= (parse_bool value))       interact_state
-      | "ppg_fr"                         -> ((ppmode_lens      |-- ppg_fr_lens)                            ^= (parse_bool value))       interact_state
-      | "ppg_co"                         -> ((ppmode_lens      |-- ppg_co_lens)                            ^= (parse_bool value))       interact_state
-      | "ppg_addr"                       -> ((ppmode_lens      |-- ppg_addr_lens)                          ^= (parse_bool value))       interact_state
-      | "ppg_data"                       -> ((ppmode_lens      |-- ppg_data_lens)                          ^= (parse_bool value))       interact_state
-      | "ppg_ctrl"                       -> ((ppmode_lens      |-- ppg_ctrl_lens)                          ^= (parse_bool value))       interact_state
-      | "ppg_regs"                       -> ((ppmode_lens      |-- ppg_regs_lens)                          ^= (parse_bool value))       interact_state
-      | "ppg_reg_rf"                     -> ((ppmode_lens      |-- ppg_reg_rf_lens)                        ^= (parse_bool value))       interact_state
-      | "ppg_trans"                      -> ((ppmode_lens      |-- ppg_trans_lens)                         ^= (parse_bool value))       interact_state
-      | "prefer_symbolic_values"         -> ((ppmode_lens      |-- pp_prefer_symbolic_values_lens)         ^= (parse_bool value))       interact_state
-      | "hide_pseudoregister_reads"      -> ((ppmode_lens      |-- pp_hide_pseudoregister_reads_lens)      ^= (parse_bool value))       interact_state
-      | "max_finished"                   -> ((ppmode_lens      |-- pp_max_finished_lens)                   ^= (parse_int_option value)) interact_state
-      | "pp_style"                       -> ((ppmode_lens      |-- pp_style_lens)                          ^= (parse_ppstyle value))    interact_state
-      | "choice_history_limit"           -> ((ppmode_lens      |-- pp_choice_history_limit_lens)           ^= (parse_int_option value)) interact_state
-      | "condense_finished_instructions" -> ((ppmode_lens      |-- pp_condense_finished_instructions_lens) ^= (parse_bool value))       interact_state
-      | "pp_sail"                        -> ((ppmode_lens      |-- pp_sail_lens)                           ^= (parse_bool value))       interact_state
-
-      | "verbosity" ->
-        Globals.verbosity := parse_verbosity value;
-        interact_state
-      | "pp_hex" ->
-        Globals.print_hex := parse_bool value;
-        interact_state
-      | "dwarf_show_all_variable_locations" ->
-        Globals.dwarf_show_all_variable_locations := parse_bool value;
-        interact_state
-      | "graph_backend" ->
-        Globals.set_graph_backend (validated ["dot"; "tikz"] value);
-        interact_state
-      | "random_seed" ->
-        Random.init (parse_int value);
-        interact_state
-      | "dumb_terminal" ->
-        Globals.dumb_terminal := parse_bool value;
-        interact_state
-
-      | "loop_limit" ->
-        change_model
-          (fun model ->
-            { model with
-              MachineDefTypes.t =
-                { model.MachineDefTypes.t with
-                  MachineDefTypes.thread_loop_unroll_limit =
-                    parse_int_option value;
-                };
-            }
-          )
-          interact_state
-
-      (* always_graph and dot_final_ok are mutually exclusive
-        because always_graph would overwrite the final graph  *)
-
-      | "always_graph" ->
-        begin
-          if parse_bool value then
-            Globals.run_dot := Some RD_step
-          else
-            Globals.run_dot := None;
-          interact_state
-        end
-
-      | "dot_final_ok" ->
-        begin
-          if parse_bool value then
-            Globals.run_dot := Some RD_final_ok
-          else
-            Globals.run_dot := None;
-          interact_state
-        end
-
-      | "dot_final_not_ok" ->
-        begin
-          if parse_bool value then
-            Globals.run_dot := Some RD_final_not_ok
-          else
-            Globals.run_dot := None;
-          interact_state
-        end
-
-      | "pp_colours" -> begin
-          let b = parse_bool value in
-          Printing_functions.set_color_enabled b; (* propagate to sail interpreter pp *)
-          ((ppmode_lens |-- pp_colours_lens) ^= b) interact_state
-        end
-
-      | _ -> raise (DoCmdError (interact_state, Printf.sprintf "unknown set option '%s' (try 'help' command)" (Screen.escape key)))
+          raise (DoCmdError (interact_state, msg))
       end
 
   | Interact_parser_base.FocusThread maybe_thread ->

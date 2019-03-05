@@ -32,8 +32,6 @@ module Base = Interact_parser_base
 %token PLUS
 %token MINUS
 
-%token <string> DOUBLE_QUOTED_STRING
-
 %token QUIT
 %token HELP
 %token OPTIONS
@@ -49,10 +47,10 @@ module Base = Interact_parser_base
 %token GRAPH
 %token PRINT
 %token HISTORY
-%token <string> DEBUG
+%token DEBUG
 
 %token SEARCH
-%token <string> RANDOM
+%token RANDOM
 %token EXHAUSTIVE
 
 %token BREAK
@@ -64,20 +62,15 @@ module Base = Interact_parser_base
 %token WATCH_EITHER
 %token SHARED
 
-%token NAME
-
 %token SET
+%token <string> SETARG
 
 %token FOCUS
 %token THREAD
 %token INSTRUCTION
-%token FOLLOWLIST
-%token BRANCH_TARGETS
-%token SHARED_MEMORY
 
-%token <string> ON
-%token <string> OFF
-%token <string> NONE
+%token ON
+%token OFF
 
 %token INFO
 %token DELETE
@@ -189,25 +182,7 @@ search:
   ;
 
 set:
-  | SET set_key set_value { Base.SetOption ($2, $3) }
-  | SET FOLLOWLIST DOUBLE_QUOTED_STRING { Base.SetFollowList $3 }
-  | SET BRANCH_TARGETS DOUBLE_QUOTED_STRING { Base.SetBranchTargets $3 }
-  | SET SHARED_MEMORY DOUBLE_QUOTED_STRING { Base.SetSharedMemory $3 }
-  ;
-
-set_key:
-  | IDENT { $1 }
-  | RANDOM { $1 }
-  ;
-
-/* Slight hack to pass strings through to 'set ...' */
-set_value:
-  | IDENT { $1 }
-  | ON    { $1 }
-  | OFF   { $1 }
-  | NONE  { $1 }
-  | DEBUG { $1 }
-  | NUM   { string_of_int $1 }
+  | SET SETARG SETARG { Base.SetOption ($2, $3) }
   ;
 
 focus:
@@ -217,21 +192,6 @@ focus:
   | FOCUS INSTRUCTION NUM COLON NUM { Base.FocusInstruction (Some ($3, $5)) }
   | FOCUS INSTRUCTION OFF           { Base.FocusInstruction           None  }
   ;
-
-/* These rules are good, but are unused at the moment
-%type <int option> int_or_none
-int_or_none:
-  | NONE { None }
-  | NUM { Some $1 }
-  ;
-
-%type <bool> on_off
-on_off:
-  | ON  { true  }
-  | OFF { false }
-  you might also want to add NUM here for '0' and '1'
-  ;
-*/
 
 big_num:
   | NUM     { Nat_big_num.of_int $1 }

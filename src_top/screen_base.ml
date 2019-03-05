@@ -77,7 +77,7 @@ let rec string_of_output_tree tree : string =
       if Globals.is_verbosity_at_least verb then string_of_output_tree tree
       else ""
   | OTConcat trees -> String.concat "" (List.map string_of_output_tree trees)
-  | OTFollowList s -> s
+  | OTFollowList s -> Printf.sprintf "%S" s
   end
 
 let rec html_of_output_tree tree : string =
@@ -93,7 +93,7 @@ let rec html_of_output_tree tree : string =
       if Globals.is_verbosity_at_least verb then html_of_output_tree tree
       else ""
   | OTConcat trees -> String.concat "" (List.map html_of_output_tree trees)
-  | OTFollowList s -> "<span class=\"follow_list\">" ^ s ^ "</span>"
+  | OTFollowList s -> Printf.sprintf "<span class=\"follow_list\">%S</span>" s
   end
 
 let rec latex_of_output_tree tree : string =
@@ -109,7 +109,7 @@ let rec latex_of_output_tree tree : string =
       if Globals.is_verbosity_at_least verb then latex_of_output_tree tree
       else ""
   | OTConcat trees -> String.concat "" (List.map latex_of_output_tree trees)
-  | OTFollowList s -> s
+  | OTFollowList s -> Printf.sprintf "%S" s
   end
 
 module type Printers = sig
@@ -207,7 +207,7 @@ module Make (Pr : Printers) : S = struct
                                       (Interact_parser_base.history_to_string limited_choices)
       in
 
-      let choices_str = Printf.sprintf "Choices so far (%n): \"%s\"" n_choices choice_str in
+      let choices_str = Printf.sprintf "Choices so far (%n): %S" n_choices choice_str in
 
     let follow_str = match follow_suffix with
       | _ :: _ ->
