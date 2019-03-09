@@ -437,6 +437,7 @@ let is_memory_load_instruction (i: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 (* see is_viable_memory_store_instruction for cases where it's important
@@ -450,6 +451,7 @@ let is_memory_store_instruction (i: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 (* A failed store-conditional/exclusive is not considered a memory access after it is finished *)
@@ -467,6 +469,7 @@ let is_memory_rmw (i: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_viable_memory_access (i: instruction_instance) : bool =
@@ -482,6 +485,7 @@ let is_branch_instruction (i: instruction_instance) : bool =
   | IK_branch      -> true
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_cond_branch_instruction (i: instruction_instance) : bool =
@@ -499,6 +503,7 @@ let is_barrier (i: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_sync (i: instruction_instance) : bool =
@@ -541,6 +546,7 @@ let is_AArch64_load_acquire (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _  -> false
   end
 
 let is_AArch64_load_exclusive (i: instruction_instance) : bool =
@@ -552,6 +558,7 @@ let is_AArch64_load_exclusive (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _  -> false
   end
 
 
@@ -564,6 +571,7 @@ let is_PPC_load_reserve (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _  -> false
   end
 
 let is_RISCV_load_reserved (i: instruction_instance) : bool =
@@ -575,6 +583,7 @@ let is_RISCV_load_reserved (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_atomic_load (i: instruction_instance) : bool =
@@ -586,6 +595,7 @@ let is_atomic_load (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_load_acquire (i: instruction_instance) : bool =
@@ -597,6 +607,7 @@ let is_RISCV_load_acquire (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_load_strong_acquire (i: instruction_instance) : bool =
@@ -608,6 +619,7 @@ let is_RISCV_load_strong_acquire (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_load_release (i: instruction_instance) : bool =
@@ -619,6 +631,7 @@ let is_RISCV_load_release (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_AArch64_store_release (i: instruction_instance) : bool =
@@ -630,6 +643,7 @@ let is_AArch64_store_release (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_store_release (i: instruction_instance) : bool =
@@ -641,6 +655,7 @@ let is_RISCV_store_release (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_store_strong_release (i: instruction_instance) : bool =
@@ -652,6 +667,7 @@ let is_RISCV_store_strong_release (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_store_acquire (i: instruction_instance) : bool =
@@ -663,6 +679,7 @@ let is_RISCV_store_acquire (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_AArch64_store_exclusive (i: instruction_instance) : bool =
@@ -674,6 +691,7 @@ let is_AArch64_store_exclusive (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 
@@ -686,6 +704,7 @@ let is_PPC_store_conditional (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_store_conditional (i: instruction_instance) : bool =
@@ -697,6 +716,7 @@ let is_RISCV_store_conditional (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_atomic_store (i: instruction_instance) : bool =
@@ -708,6 +728,7 @@ let is_atomic_store (i: instruction_instance) : bool =
   | IK_branch         -> false
   | IK_trans _        -> false
   | IK_simple         -> false
+  | IK_cache_op _     -> false
   end
 
 let is_RISCV_AMO (i: instruction_instance) : bool =
@@ -724,6 +745,7 @@ let is_tstart (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_tcommit (i: instruction_instance) : bool =
@@ -737,6 +759,7 @@ let is_tcommit (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> true
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_tabort (i: instruction_instance) : bool =
@@ -750,6 +773,7 @@ let is_tabort (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> true
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_RISCV_fence_pr  (i: instruction_instance) : bool =
@@ -790,6 +814,7 @@ let is_RISCV_fence_pr  (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_RISCV_fence_pw  (i: instruction_instance) : bool =
@@ -830,6 +855,7 @@ let is_RISCV_fence_pw  (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_RISCV_fence_sr  (i: instruction_instance) : bool =
@@ -870,6 +896,7 @@ let is_RISCV_fence_sr  (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_RISCV_fence_sw  (i: instruction_instance) : bool =
@@ -910,6 +937,7 @@ let is_RISCV_fence_sw  (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_RISCV_fence_tso (i: instruction_instance) : bool =
@@ -951,6 +979,7 @@ let is_RISCV_fence_tso (i: instruction_instance) : bool =
   | IK_trans Transaction_commit -> false
   | IK_trans Transaction_abort  -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 (** The is_pop_... functions are abstractions for handling barriers
 uniformly when possible *)
@@ -990,6 +1019,7 @@ let is_pop_memory_barrier (instruction: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_pop_strong_memory_barrier (instruction: instruction_instance) : bool =
@@ -1027,6 +1057,7 @@ let is_pop_strong_memory_barrier (instruction: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
@@ -1064,6 +1095,7 @@ let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_AArch64_st_barrier (instruction: instruction_instance) : bool =
@@ -1101,6 +1133,7 @@ let is_AArch64_st_barrier (instruction: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end
 
 let is_pop_instruction_barrier (instruction: instruction_instance) : bool =
@@ -1138,4 +1171,5 @@ let is_pop_instruction_barrier (instruction: instruction_instance) : bool =
   | IK_branch      -> false
   | IK_trans _     -> false
   | IK_simple      -> false
+  | IK_cache_op _  -> false
   end

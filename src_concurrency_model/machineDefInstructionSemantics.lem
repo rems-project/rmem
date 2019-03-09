@@ -139,6 +139,21 @@ let riscv_tk_to_sail1 tk =
   | Sail2_instr_kinds.Transaction_abort  -> Sail_impl_base.Transaction_abort
   end
 
+let riscv_ck_to_sail1 ck =
+  match ck with
+  | Sail2_instr_kinds.Cache_op_D_IVAC    -> Sail_impl_base.Cache_op_D_IVAC
+  | Sail2_instr_kinds.Cache_op_D_ISW     -> Sail_impl_base.Cache_op_D_ISW
+  | Sail2_instr_kinds.Cache_op_D_CSW     -> Sail_impl_base.Cache_op_D_CSW
+  | Sail2_instr_kinds.Cache_op_D_CISW    -> Sail_impl_base.Cache_op_D_CISW
+  | Sail2_instr_kinds.Cache_op_D_ZVA     -> Sail_impl_base.Cache_op_D_ZVA
+  | Sail2_instr_kinds.Cache_op_D_CVAC    -> Sail_impl_base.Cache_op_D_CVAC
+  | Sail2_instr_kinds.Cache_op_D_CVAU    -> Sail_impl_base.Cache_op_D_CVAU
+  | Sail2_instr_kinds.Cache_op_D_CIVAC   -> Sail_impl_base.Cache_op_D_CIVAC
+  | Sail2_instr_kinds.Cache_op_I_IALLUIS -> Sail_impl_base.Cache_op_I_IALLUIS
+  | Sail2_instr_kinds.Cache_op_I_IALLU   -> Sail_impl_base.Cache_op_I_IALLU
+  | Sail2_instr_kinds.Cache_op_I_IVAU    -> Sail_impl_base.Cache_op_I_IVAU
+  end
+
 let riscv_ik_to_sail1 ik =
   match ik with
   | Sail2_instr_kinds.IK_barrier bk       -> Sail_impl_base.IK_barrier (riscv_bk_to_sail1 bk)
@@ -148,6 +163,7 @@ let riscv_ik_to_sail1 ik =
   | Sail2_instr_kinds.IK_branch ()        -> Sail_impl_base.IK_branch
   | Sail2_instr_kinds.IK_trans tk         -> Sail_impl_base.IK_trans (riscv_tk_to_sail1 tk)
   | Sail2_instr_kinds.IK_simple ()        -> Sail_impl_base.IK_simple
+  | Sail2_instr_kinds.IK_cache_op ck      -> Sail_impl_base.IK_cache_op (riscv_ck_to_sail1 ck)
   end
 
 let bool_from_bitl b =

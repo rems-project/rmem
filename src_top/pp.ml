@@ -1020,6 +1020,19 @@ let pp_trans_kind _m = function
   | Transaction_commit -> "commit transaction"
   | Transaction_abort  -> "abort transaction"
 
+let pp_cache_kind m = function
+  | Cache_op_D_IVAC    -> "data-cache IVAC"
+  | Cache_op_D_ISW     -> "data-cache ISW"
+  | Cache_op_D_CSW     -> "data-cache CSW"
+  |  Cache_op_D_CISW   -> "data-cache CISW"
+  | Cache_op_D_ZVA     -> "data-cache ZVA"
+  | Cache_op_D_CVAC    -> "data-cache CVAC"
+  | Cache_op_D_CVAU    -> "data-cache CVAU"
+  | Cache_op_D_CIVAC   -> "data-cache CIVAC"
+  | Cache_op_I_IALLUIS -> "instruction-cache IALLUIS"
+  | Cache_op_I_IALLU   -> "instruction-cache IALLU"
+  | Cache_op_I_IVAU    -> "instruction-cache IVAU"
+
 let pp_instruction_kind m ik = match ik with
   | IK_barrier bk   -> pp_barrier_kind m bk
   | IK_mem_read rk  -> pp_read_kind m rk
@@ -1028,6 +1041,7 @@ let pp_instruction_kind m ik = match ik with
   | IK_branch       -> "branch"
   | IK_trans tk     -> pp_trans_kind m tk
   | IK_simple       -> "simple"
+  | IK_cache_op ck  -> pp_cache_kind m ck
 
 let pp_nia ioid m nia =
   match nia with

@@ -808,6 +808,7 @@ let starting_inst_instance_aux
       | IK_branch      -> Nothing
       | IK_trans _     -> Nothing
       | IK_simple      -> Nothing
+      | IK_cache_op _  -> Nothing
       end;
 
     committed_barriers =   [];

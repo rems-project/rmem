@@ -319,8 +319,9 @@ let make_tikz_graph
 
     | IK_branch
     | IK_trans _ (* TODO: TM *)
-    | IK_simple ->
-        (prev_instructions, labels, None, None)
+    | IK_simple
+    | IK_cache_op _(* TODO: DC/IC *)
+        -> (prev_instructions, labels, None, None)
     end
   in
 
