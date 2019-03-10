@@ -106,7 +106,8 @@ module Run_test (Test_file: Test_file.S) = struct
     if !Globals.verbosity <> Globals.Normal
       && not !Globals.dont_tool then
     begin
-      Screen.show_message (Globals.get_ppmode ()) "#Endianness: %s" (Globals.pp_endianness ());
+      Screen_base.otStrLine "#Endianness: %s" (Globals.pp_endianness ())
+      |> Screen.show_message (Globals.get_ppmode ());
     end;
 
     (* map-to-list to pp addresses properly *)

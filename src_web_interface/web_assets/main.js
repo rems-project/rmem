@@ -28,8 +28,8 @@ function show_prompt (str) {
     });
 }
 
-function println (s) {
-    STATE.console_lines.push(s);
+function print (s) {
+    STATE.console_lines(STATE.console_lines() + s);
     $(document).ready(function() {
         if (scroll_anyway || $("#scroll_on_output-toggle").prop("checked")) {
             scroll_anyway = false;
@@ -43,15 +43,12 @@ function println (s) {
 }
 
 function update_transition_history (history, available) {
-    STATE.trace_lines.removeAll();
-    history.split("\n").forEach(function(x) {
-        STATE.trace_lines.push(x);
-    });
+    STATE.trace_lines(history);
     STATE.trace_available_transitions(available);
 }
 
 function clear_screen () {
-    STATE.console_lines.removeAll();
+    STATE.console_lines("");
 }
 
 function quit () {
@@ -148,10 +145,10 @@ $(document).ready(function () {
     $(window).on("hashchange", hash_changed);
 
     window.onerror = function (e) {
-        var error_str = '<span class="error">Fatal error: Caught exception ' + e.toString() + "</span>";
+        var error_str = '<span class="error">Fatal error: Caught exception ' + e.toString() + "</span><br>";
         // scroll into view even if scroll-on-output is off
         scroll_anyway = true;
-        println(error_str);
+        print(error_str);
     }
 });
 

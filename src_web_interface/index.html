@@ -390,10 +390,7 @@
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <!-- note the comments to remove extraneous whitespace because this is formatted 'pre' -->
-            <div class="system_state_lines" data-bind="foreach: console_lines"><!--
-                --><p data-bind="html: $data"></p><!--
-            --></div>
+            <div class="system_state_lines" data-bind="html: console_lines"></div>
         </div>
         <div class="interact_prompt_line">
             <div class="interact_prompt" data-bind="html: prompt" style="display: inline-block"></div>
@@ -421,10 +418,7 @@
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <!-- note the comments to remove extraneous whitespace because this is formatted 'pre' -->
-            <div class="system_state_lines" data-bind="foreach: trace_lines"><!--
-                --><p data-bind="html: $data"></p><!--
-            --></div>
+            <div class="system_state_lines" data-bind="html: trace_lines"></div>
         </div>
         <div class="trace_prompt_lines" data-bind="html: trace_available_transitions">
         </div>

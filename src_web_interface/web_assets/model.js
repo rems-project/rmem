@@ -24,8 +24,8 @@ function StateModel () {
     this.version = ko.observable("");
     this.build_date = ko.observable("");
     this.prompt = ko.observable("");
-    this.console_lines = ko.observableArray();
-    this.trace_lines = ko.observableArray();
+    this.console_lines = ko.observable("");
+    this.trace_lines = ko.observable("");
     this.trace_available_transitions = ko.observable("");
     this.graph_html = ko.observable("");
     this.graph_position_engine = ko.observable("dot");

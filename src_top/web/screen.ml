@@ -17,10 +17,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let of_output_tree = Screen_base.html_of_output_tree;;
-
-let final_state_color = "blue"
-
 let getElementById x =
   let document = Dom_html.window##.document in
   Js.Opt.get (document##(getElementById (Js.string x)))
@@ -35,11 +31,6 @@ let replace_text js_str p r =
   js_str##(replace x y)
 ;;
 
-let escape_newline js_str = replace_text js_str "\\n" "<br/>";;
-
-let clear_warnings : unit -> unit = fun () ->
-  Js.Unsafe.fun_call (Js.Unsafe.js_expr "clear_warnings") [||]
-
 let input_cont : (string -> unit) ref = ref (fun _ -> ());;
 let history : Interact_parser_base.ast list ref = ref []
 
@@ -47,36 +38,19 @@ let async_input new_history (cont: string -> unit) : unit =
   history := new_history;
   input_cont := (fun str -> input_cont := (fun _ -> ()); cont str)
 
-let replacements = [
-    ('&', "&amp;");
-    ('<', "&lt;");
-    ('>', "&gt;");
-    ('"', "&quot;");
-    ('\'', "&#x27;");
-    ('/', "&#x2f;");
-  ]
-
-let replace_char c r s =
-  let rec do_replace s =
-    try
-      let i = String.index s c in
-      String.sub s 0 i :: r :: do_replace (String.sub s (i + 1) (String.length s - i - 1))
-    with Not_found -> [s]
-  in
-  String.concat "" (do_replace s)
-
 
 module WebPrinters : Screen_base.Printers = struct
-  let println s = Js.Unsafe.fun_call (Js.Unsafe.js_expr "println")
+  let print s = Js.Unsafe.fun_call (Js.Unsafe.js_expr "print")
                                      [|Js.Unsafe.inject (Js.string s)|]
   let clear_screen () = Js.Unsafe.fun_call (Js.Unsafe.js_expr "clear_screen") [||]
-  let escape s = List.fold_left (fun s (c, r) -> replace_char c r s) s replacements
   let update_transition_history history available = Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_transition_history")
                                                                        [|Js.Unsafe.inject (Js.string history);
                                                                          Js.Unsafe.inject (Js.string available)|]
                                                     |> ignore
   let read_filename basename = Js.to_bytestring (Js.Unsafe.fun_call (Js.Unsafe.js_expr "read_filename")
                                                                 [|Js.Unsafe.inject (Js.string basename)|])
+
+  let of_output_tree = Screen_base.html_of_output_tree
 end
 
 include (Screen_base.Make (WebPrinters))

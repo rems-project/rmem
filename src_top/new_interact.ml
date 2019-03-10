@@ -41,9 +41,9 @@ let parse (str: string) : parser_outcome =
 
   try ParserASTs (Interact_parser.commands (Interact_lexer.get_lexer ()) lexbuf) with
   | Interact_lexer.SyntaxError msg ->
-      ParserError (Printf.sprintf "%s: %s\n" (print_position lexbuf) msg)
+      ParserError (Printf.sprintf "%s: %s" (print_position lexbuf) msg)
   | Parsing.Parse_error ->
-      ParserError (Printf.sprintf "%s: syntax error\n" (print_position lexbuf))
+      ParserError (Printf.sprintf "%s: syntax error" (print_position lexbuf))
 
 (********************************************************************)
 
@@ -218,8 +218,9 @@ let default_cmd interact_state : Interact_parser_base.ast option =
       -> cmd
   | Interact_parser_base.Step (Some i) :: _ when i >= 1 -> cmd
   | Interact_parser_base.Follow :: _ ->
-      Screen.show_warning interact_state.ppmode "Cannot follow the '%s' command"
-        (Interact_parser_base.pp Interact_parser_base.Follow);
+      Interact_parser_base.pp Interact_parser_base.Follow
+      |> otStrLine "Cannot follow the '%s' command"
+      |> Screen.show_warning interact_state.ppmode;
       None
   | ast :: _ -> Some ast
 
@@ -325,7 +326,7 @@ let announce_options interact_state : unit =
     otStrLine "  loop_limit = %s"
       (pp_maybe_int "" (!Globals.model_params).t.thread_loop_unroll_limit);
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
   OTConcat [
     otStrLine "Eager mode:";
@@ -348,14 +349,14 @@ let announce_options interact_state : unit =
     otStrLine "  fp_recalc = %b"
       interact_state.options.eager_mode.eager_fp_recalc;
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
   OTConcat [
     otStrLine "Shared-memory (approximation for eager_local_mem):";
-    otStrLine "  %s"
-      (Pp.pp_shared_memory interact_state.ppmode interact_state.options.eager_mode.em_shared_memory);
+    otLine @@ otEncoded @@
+      Pp.pp_shared_memory interact_state.ppmode interact_state.options.eager_mode.em_shared_memory;
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
   OTConcat [
     otStrLine "Stepping options:";
@@ -366,7 +367,7 @@ let announce_options interact_state : unit =
     otStrLine "  focused-instruction = %s"
       (pp_maybe_ioid "" interact_state.options.focused_ioid);
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
 
   OTConcat [
@@ -400,7 +401,7 @@ let announce_options interact_state : unit =
     otStrLine "  pp_sail = %b" ppmode.Globals.pp_sail;
     otStrLine "  dumb_terminal = %b" !Globals.dumb_terminal;
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
   OTConcat [
     otStrLine "Graph options:";
@@ -422,7 +423,7 @@ let announce_options interact_state : unit =
     otStrLine "  graph_backend = %s"
       (Globals.pp_graph_backend !Globals.graph_backend);
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
 
   OTConcat [
@@ -440,51 +441,128 @@ let announce_options interact_state : unit =
     otStrLine "  time-limit = %s"
       (pp_maybe_int "s" interact_state.options.time_limit);
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
   OTConcat [
     otStrLine "Branch-targets:";
-    otStrLine "  %s"
-      ((List.hd interact_state.interact_nodes).system_state.sst_state.model.t.branch_targets
+    otLine @@ otEncoded @@ begin
+      (List.hd interact_state.interact_nodes).system_state.sst_state.model.t.branch_targets
       |> MachineDefSystem.branch_targets_to_list
-      |> Pp.pp_branch_targets interact_state.ppmode)
+      |> Pp.pp_branch_targets interact_state.ppmode
+      end
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
   OTConcat [
     otStrLine "Model options:";
     otStrLine "  %s"
       (Model_aux.pp_model (List.hd interact_state.interact_nodes).system_state.sst_state.model);
   ]
-  |> Screen.of_output_tree |> Screen.show_message ppmode "%s";
+  |> Screen.show_message ppmode;
 
-  Screen.show_message ppmode "Version: %s" Versions.Rmem.describe
+  otStrLine "Version: %s" Versions.Rmem.describe
+  |> Screen.show_message ppmode
+
+
+let choice_summary
+    ppmode
+    choices_so_far
+    follow_suffix
+    numbered_cands
+    disabled_trans
+    force_verbose
+    : output_tree
+  =
+  let n_choices = List.length choices_so_far in
+  let limited_choices =
+    match ppmode.Globals.pp_choice_history_limit with
+    | Some n -> Lem_list.take n choices_so_far
+    | None -> choices_so_far
+  in
+
+  OTConcat [
+    otLine @@ OTConcat [
+      otString "Choices so far (%n): " n_choices;
+      otIfTrue ((List.length limited_choices) < n_choices) @@
+        OTString "...";
+      OTString (Interact_parser_base.history_to_string limited_choices);
+      otIfTrue (follow_suffix <> []) @@ begin
+        List.rev follow_suffix
+        |> Interact_parser_base.history_to_string
+        |> otString " remaining follow-spec: [%s]"
+        end;
+    ];
+
+    begin if numbered_cands = [] then
+      otStrLine "No enabled transitions"
+    else if ppmode.Globals.pp_style = Globals.Ppstyle_compact && not force_verbose then
+      otStrLine "%d enabled transitions" (List.length numbered_cands)
+    else
+      OTConcat [
+        otLine @@ otStrEmph "Enabled transitions:";
+        otConcat @@ List.map
+          (fun cand -> otLine @@ otEncoded @@ Pp.pp_cand ppmode cand)
+          numbered_cands;
+      ]
+    end;
+
+    begin if disabled_trans = [] then
+      otStrLine "No disabled transitions"
+    else if ppmode.Globals.pp_style = Globals.Ppstyle_compact && not force_verbose then
+      otStrLine "%d disabled transitions" (List.length disabled_trans)
+    else
+      OTConcat [
+        otLine @@ otStrEmph "Disabled transitions:";
+        otConcat @@ List.map
+          (fun t -> otLine @@ otEncoded @@ Pp.pp_trans ppmode t)
+          disabled_trans;
+      ]
+    end;
+  ]
+
 
 let print_last_state interact_state : unit =
   let ppmode = interact_state.ppmode in
   begin match interact_state.interact_nodes with
-  | [] -> Screen.show_message interact_state.ppmode "no state"
+  | [] ->
+      otStrLine "no state"
+      |> Screen.show_message interact_state.ppmode
 
   | node :: ns ->
       let ts = sorted_filtered_transitions node in
-      let (ppmode', ui_state) =
+      let (ppmode, ui_state) =
         match ns with
         | [] ->
             ConcModel.make_ui_system_state ppmode None node.system_state.sst_state ts
         | node' :: _ ->
             ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state ts
       in
-      let ppmode'' = { ppmode' with Globals.pp_default_cmd = interact_state.default_cmd } in
-      let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in
-      Screen.draw_system_state
-        ppmode''
-        (choices_so_far interact_state)
-        interact_state.follow_suffix
-        node.system_state.sst_state
-        ui_state
-        (Some cand_ex)
-        ts
-        (filtered_out_transitions node)
+      let ppmode = {ppmode with Globals.pp_default_cmd = interact_state.default_cmd} in
+
+      (*let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in*)
+
+      let trace = OTEncoded (Pp.pp_transition_history ppmode ui_state) in
+
+      let choice_summary : bool -> output_tree =
+        choice_summary
+          ppmode
+          (choices_so_far interact_state)
+          interact_state.follow_suffix
+          ts
+          (filtered_out_transitions node)
+      in
+
+      let state = OTConcat [
+          otIfTrue ppmode.Globals.pp_suppress_newpage @@
+            OTConcat [OTLine OTEmpty; OTHorLine];
+          OTEncoded (Pp.pp_ui_system_state ppmode ui_state);
+          choice_summary false;
+          otIfTrue (ppmode.Globals.pp_style <> Globals.Ppstyle_compact) @@
+            OTConcat [OTLine OTEmpty; OTHorLine];
+        ]
+      in
+
+      Screen.show_system_state ppmode trace (choice_summary true) state
   end;
   if ppmode.Globals.pp_announce_options then
     (* TODO: is this really useful here? *)
@@ -567,7 +645,8 @@ let try_single_transition (eager: bool) (n: int) interact_state : interact_state
                   transition
           with
           | TO_unhandled_exception (tid, ioid, e) ->
-              Screen.show_message interact_state.ppmode "the transition leads to exception";
+              otStrLine "the transition leads to exception"
+              |> Screen.show_message interact_state.ppmode;
               (* TODO: pp the exception *)
               None
           | TO_system_state system_state' ->
@@ -626,7 +705,10 @@ and check_eager
       | Some (n, i, t) ->
           let take_transition eager_constraints =
             if Globals.is_verbosity_at_least Globals.Debug then
-              Screen.show_message interact_state.ppmode "+ check_eager taking [%d] %s" i (Pp.pp_trans interact_state.ppmode t);
+              otStrLine "+ check_eager taking [%d] %s"
+                  i
+                  (Pp.pp_trans interact_state.ppmode t)
+              |> Screen.show_message interact_state.ppmode;
             do_transition true i eager_constraints interact_state
           in
           begin match eager_constraints with
@@ -682,10 +764,12 @@ let rec do_back count interact_state : interact_state =
   if count <= 0 then interact_state else
   match interact_state.interact_nodes with
   | [] ->
-      Screen.show_warning interact_state.ppmode "no state";
+      otStrLine "no state"
+      |> Screen.show_warning interact_state.ppmode;
       interact_state
   | n :: [] ->
-      Screen.show_warning interact_state.ppmode "can't go back from the initial state";
+      otStrLine "can't go back from the initial state"
+      |> Screen.show_warning interact_state.ppmode;
       interact_state
   | n :: n' :: ns ->
       let follow_suffix =
@@ -727,7 +811,8 @@ let follow_search_trace
       begin match List.nth node.filtered_transitions i with
       | (Some i', t) ->
           if print_transitions then
-            Screen.show_message interact_state.ppmode "taking [%d] %s" i' (Pp.pp_trans interact_state.ppmode t);
+            otStrLine "taking [%d] %s" i' (Pp.pp_trans interact_state.ppmode t)
+            |> Screen.show_message interact_state.ppmode;
 
           begin match do_transition false i' (Sequence flat_trace) interact_state with
           | (NoConstraints, _) -> assert false
@@ -791,7 +876,7 @@ let print_observed_finals interact_state observed_finals : Screen_base.output_tr
             OTString (Test.C.pp_state symtab state);
             OTVerbose (Globals.Normal, OTConcat [
               OTString " via ";
-              OTFollowList ui_choices;
+              otStrClass OTCFollowList "%S" ui_choices;
             ]);
           ])
         )
@@ -808,7 +893,7 @@ let print_observed_deadlocks interact_state observed_deadlocks : Screen_base.out
         | choices ->
             OTConcat [
               OTString " via ";
-              OTFollowList (Interact_parser_base.history_to_string choices);
+              otStrClass OTCFollowList "%S" (Interact_parser_base.history_to_string choices);
             ]
         | exception (TraceRecon s) ->
             otString "(could not reconstruct trace (%s))" s
@@ -840,7 +925,7 @@ let print_observed_exceptions interact_state observed_exceptions : Screen_base.o
                               otString "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception interact_state.ppmode ioid exception_type);
                               OTConcat [
                                   OTString " via ";
-                                  OTFollowList ui_choices;
+                                  otStrClass OTCFollowList "%S" ui_choices;
                                 ]
                              ]
         )
@@ -870,11 +955,13 @@ let set_follow_list_from_search_trace
   =
   match ui_choices_of_search_trace interact_state search_trace with
   | choices ->
-      Screen.show_message interact_state.ppmode "Follow-list was set";
+      otStrLine "Follow-list was set"
+      |> Screen.show_message interact_state.ppmode;
       {interact_state with follow_suffix = List.rev choices}
       |> update_default_cmd
   | exception (TraceRecon s) ->
-      Screen.show_warning interact_state.ppmode "could not reconstruct trace (%s)" s;
+      otStrLine "could not reconstruct trace (%s)" s
+      |> Screen.show_warning interact_state.ppmode;
       interact_state
 
 let set_follow_list_from_observations observed_finals interact_state : interact_state =
@@ -1005,54 +1092,62 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
       (* search terminated after exploring all reachable states *)
       let interact_state = update_bt_and_sm search_state' interact_state in
 
-      Screen_base.OTConcat
-        [ print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
-          print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
-          print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
-        ]
-      |> Screen.of_output_tree |> Screen.final_message interact_state.ppmode false;
+      Screen_base.otClass OTCFinal @@ Screen_base.OTConcat [
+        print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
+        print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
+        print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
+      ]
+      |> Screen.show_message interact_state.ppmode;
 
       set_follow_list_from_observations search_state'.Runner.observed_filterred_finals interact_state
 
   | Runner.Breakpoints (search_state', bps) ->
       List.iter
         (fun bp ->
-          Screen.show_message interact_state.ppmode "Breakpoint hit: %s"
-            (pp_breakpoint interact_state.ppmode bp))
+          otStrLine "Breakpoint hit: %s"
+              (pp_breakpoint interact_state.ppmode bp)
+          |> Screen.show_message interact_state.ppmode
+        )
         bps;
 
       let interact_state = update_bt_and_sm search_state' interact_state in
       let search_trace = Runner.choices_so_far search_state' in
       begin try follow_search_trace true search_trace interact_state with
       | TraceRecon s ->
-          Screen.show_warning interact_state.ppmode "Problem reconstructing trace: %s" (Screen.escape s);
+          otStrLine "Problem reconstructing trace: %s" s
+          |> Screen.show_warning interact_state.ppmode;
           interact_state
       end
 
   | Runner.Interrupted (search_state', reason) ->
-      Screen.show_message interact_state.ppmode "Interrupted: %s" reason;
+      otStrLine "Interrupted: %s" reason
+      |> Screen.show_message interact_state.ppmode;
       update_bt_and_sm search_state' interact_state
       |> set_follow_list_from_search_trace (Runner.choices_so_far search_state')
 
   | Runner.OcamlExn (search_state', msg) ->
-      Screen.show_warning interact_state.ppmode "%s" msg;
-      Screen.show_warning interact_state.ppmode "%s" ("***********************\n" ^
-                                                      "*** PARTIAL RESULTS ***\n" ^
-                                                      "***********************");
-      Screen_base.OTConcat
-        [ print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
-          print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
-          print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
-        ]
-      |> Screen.of_output_tree |> Screen.final_message interact_state.ppmode false;
-      Screen.show_warning interact_state.ppmode "*** Error ***\n";
+      Screen_base.otClass OTCFinal @@ Screen_base.OTConcat [
+        otClass OTCWarning @@ OTConcat [
+          otStrLine "%s" msg;
+          OTLine OTEmpty;
+          otStrLine "***********************";
+          otStrLine "*** PARTIAL RESULTS ***";
+          otStrLine "***********************";
+        ];
+        print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
+        print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
+        print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
+        otLine @@ otClass OTCWarning @@ otStrLine "*** Error ***";
+      ]
+      |> Screen.show_message interact_state.ppmode;
+
       (* I'm not sure if it is safe to continue from this point.
       Maybe we should 'exit 1' here? *)
       interact_state
       |> set_follow_list_from_search_trace (Runner.choices_so_far search_state')
 
   | exception (Runner.BadSearchOptions msg) ->
-      Screen.show_warning interact_state.ppmode "%s" msg;
+      Screen.show_warning interact_state.ppmode (otStrLine "%s" msg);
       interact_state
 
 
@@ -1120,7 +1215,8 @@ let do_add_breakpoint_fetch target state : interact_state =
               (Nat_big_num.add addr (Nat_big_num.of_int offset))
               size
       | exception Not_found ->
-          Screen.show_warning state.ppmode "no such symbol";
+          otStrLine "no such symbol"
+          |> Screen.show_warning state.ppmode;
           state
       end
 
@@ -1166,7 +1262,8 @@ let do_add_watchpoint typ target state : interact_state =
             (Nat_big_num.add addr (Nat_big_num.of_int offset))
             (Nat_big_num.to_int size)
       | exception Not_found ->
-          Screen.show_warning state.ppmode "no such symbol";
+          otStrLine "no such symbol"
+          |> Screen.show_warning state.ppmode;
           state
       end
 
@@ -1213,9 +1310,11 @@ let make_graph interact_state =
           (ConcModel.make_cex_candidate node.system_state.sst_state)
           (sorted_filtered_transitions node);
         (* TODO: make filename configurable and more DRY *)
-        Screen.show_message interact_state.ppmode "wrote %s" "out.dot"
+        otStrLine "wrote out.dot"
+        |> Screen.show_message interact_state.ppmode
   | exception Failure _ ->
-      Screen.show_warning interact_state.ppmode "could not generate graph from no state"
+      otStrLine "could not generate graph from no state"
+      |> Screen.show_warning interact_state.ppmode
 
 let typeset interact_state filename =
   match interact_state.interact_nodes with
@@ -1234,10 +1333,12 @@ let typeset interact_state filename =
       let fd = open_out filename in
       Printf.fprintf fd "%s\n" (Pp.pp_ui_system_state ppmode' ui_state);
       close_out fd;
-      Screen.show_message interact_state.ppmode "wrote %s" (Screen.escape filename)
+      otStrLine "wrote %s" filename
+      |> Screen.show_message interact_state.ppmode
 
   | [] ->
-      Screen.show_warning interact_state.ppmode "could not typeset from no state"
+      otStrLine "could not typeset from no state"
+      |> Screen.show_warning interact_state.ppmode
 
 
 let do_add_breakpoint_line filename line interact_state : interact_state =
@@ -1262,9 +1363,9 @@ let do_add_breakpoint_line filename line interact_state : interact_state =
      add_breakpoint (Runner.TransitionBreakpoint pred) desc interact_state
 
   | None ->
-     Screen.show_warning interact_state.ppmode
-       "No DWARF static information available, cannot break on line numbers.";
-     interact_state
+      otStrLine "No DWARF static information available, cannot break on line numbers."
+      |> Screen.show_warning interact_state.ppmode;
+      interact_state
 
 let compare_breakpoints (id1, _, _) (id2, _, _) =
   let n1 = match id1 with Runner.Numbered n | Runner.Named (n, _) -> n in
@@ -1273,10 +1374,16 @@ let compare_breakpoints (id1, _, _) (id2, _, _) =
 
 let do_info_breakpoints interact_state : interact_state =
   begin match interact_state.breakpoints with
-  | [] -> Screen.show_warning interact_state.ppmode "No breakpoints defined."
+  | [] ->
+      otStrLine "No breakpoints defined."
+      |> Screen.show_warning interact_state.ppmode
   | bps ->
-      List.iter (fun bp -> Screen.show_message interact_state.ppmode "%s" (pp_breakpoint interact_state.ppmode bp))
-          (List.sort compare_breakpoints bps)
+      List.iter
+        (fun bp ->
+            otStrLine "%s" (pp_breakpoint interact_state.ppmode bp)
+            |> Screen.show_message interact_state.ppmode
+        )
+        (List.sort compare_breakpoints bps)
   end;
   interact_state
 
@@ -1290,7 +1397,8 @@ let do_delete_breakpoint n interact_state : interact_state =
         breakpoints = List.filter (fun (id', _, _) -> id' <> id) interact_state.breakpoints
       }
   | exception Not_found ->
-      Screen.show_warning interact_state.ppmode "no such breakpoint %d" n;
+      otStrLine "no such breakpoint %d" n
+      |> Screen.show_warning interact_state.ppmode;
       interact_state
 
 
@@ -1311,7 +1419,8 @@ let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int op
     in
     let new_filters = [MachineDefTypes.is_transition_of_ioid ioid] in
     let (tid, iid) = ioid in
-    Screen.show_message m "stepping instruction (%d:%d)" tid iid;
+    otStrLine "stepping instruction (%d:%d)" tid iid
+    |> Screen.show_message m;
     do_search Interact_parser_base.Exhaustive interact_state new_breakpoints [] [] new_filters
   in
 
@@ -1332,7 +1441,8 @@ let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int op
       begin match List.hd sorted_transitions with
       | ioid -> step ioid
       | exception (Failure _) ->
-          Screen.show_warning m "no available instructions to step";
+          otStrLine "no available instructions to step"
+          |> Screen.show_warning m;
           interact_state
       end
     | (Some tid, None) ->
@@ -1350,7 +1460,8 @@ let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int op
       begin match List.hd sorted_thread_transitions with
       | ioid -> step ioid
       | exception (Failure _) ->
-          Screen.show_warning m "thread %d has no available instructions to step" tid;
+          otStrLine "thread %d has no available instructions to step" tid
+          |> Screen.show_warning m;
           interact_state
       end
   | (Some tid, Some iid) ->
@@ -1365,14 +1476,15 @@ let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int op
       then
         step (tid, iid)
       else begin
-        Screen.show_warning m "no such instruction (%d:%d) to step" tid iid;
+        otStrLine "no such instruction (%d:%d) to step" tid iid
+        |> Screen.show_warning m;
         interact_state
       end
 
 
 let rec do_peek_instruction (thread_n : int) (inst_n : int)  interact_state : interact_state =
   match interact_state.interact_nodes with
-  | [] -> Screen.show_warning interact_state.ppmode "no initial state"; interact_state
+  | [] -> assert false
   | interact_node :: _ ->
       (* TODO FIXME: should we know about the internal structure of an ioid? *)
       let ioid = (thread_n, inst_n) in
@@ -1584,7 +1696,8 @@ let do_set key value interact_state =
       else
         begin match parse value with
         | ParserError msg ->
-            Screen.show_warning interact_state.ppmode "bad follow list: %s" msg;
+            otStrLine "bad follow list: %s" msg
+            |> Screen.show_warning interact_state.ppmode;
             raise InvalidValue
         | ParserASTs asts ->
             update_default_cmd {interact_state with follow_suffix = asts}
@@ -1597,7 +1710,8 @@ let do_set key value interact_state =
             (Model_aux.set_branch_targets interact_state.test_info.symbol_table branch_targets)
             interact_state
       | exception (Model_aux.BranchTargetsParsingError msg) ->
-          Screen.show_warning interact_state.ppmode "bad branch targets: %s" msg;
+          otStrLine "bad branch targets: %s" msg
+          |> Screen.show_warning interact_state.ppmode;
           raise InvalidValue
       end
 
@@ -1624,7 +1738,8 @@ let do_set key value interact_state =
               };
           }
       | exception (Model_aux.SharedMemoryParsingError msg) ->
-          Screen.show_warning interact_state.ppmode "bad shared memory: %s" msg;
+          otStrLine "bad shared memory: %s" msg
+          |> Screen.show_warning interact_state.ppmode;
           raise InvalidValue
       end
 
@@ -1669,12 +1784,14 @@ let rec do_cmd
       assert false
 
   | Interact_parser_base.Help None ->
-      Screen.show_message ppmode "%s" (Screen.escape Console_help.help_message);
+      otStrLine "%s" Console_help.help_message
+      |> Screen.show_message ppmode;
       interact_state
 
   | Interact_parser_base.Help (Some cmd) ->
       (* TODO: show help message for cmd *)
-      Screen.show_message ppmode "TODO: show help for %s\nIn the meantime try just 'help'" cmd;
+      otStrLine "TODO: show help for %s (in the meantime try just 'help')" cmd
+      |> Screen.show_message ppmode;
       interact_state
 
   | Interact_parser_base.ShowOptions ->
@@ -1685,25 +1802,37 @@ let rec do_cmd
      begin match s with
      | "transition_history" ->
         begin match interact_state.interact_nodes with
-        | [] -> Screen.show_message ppmode "(no interact_nodes)"
+        | [] ->
+            otStrLine "(no interact_nodes)"
+            |> Screen.show_message ppmode
         | nodes ->
            let n_places = List.length nodes |> float |> log10 |> truncate in
            List.iteri
-             (fun i n -> Screen.show_message ppmode "%*d: [%s]" n_places i
-                           (String.concat ", " (List.map string_of_int n.open_transition)))
-             nodes
+            (fun i n ->
+                otStrLine "%*d: [%s]"
+                    n_places i
+                    (String.concat ", " (List.map string_of_int n.open_transition))
+                |> Screen.show_message ppmode
+            )
+            nodes
         end
      | "follow_list" ->
         begin match interact_state.follow_suffix with
-        | [] -> Screen.show_message ppmode "(no follow list)"
+        | [] -> Screen.show_message ppmode (otStrLine "(no follow list)")
         | fl ->
            let n_places = List.length fl |> float |> log10 |> truncate in
            List.iteri
-             (fun i ast -> Screen.show_message ppmode "%*d: %s" n_places i
-                             (Interact_parser_base.pp ast))
-             fl
+              (fun i ast ->
+                  otStrLine "%*d: %s"
+                      n_places i
+                      (Interact_parser_base.pp ast)
+                  |> Screen.show_message ppmode
+              )
+              fl
         end
-     | _ -> Screen.show_warning ppmode "unknown debug command '%s'" s
+     | _ ->
+        otStrLine "unknown debug command '%s'" s
+        |> Screen.show_warning ppmode;
      end;
      interact_state
 
@@ -1727,7 +1856,8 @@ let rec do_cmd
           {interact_state with follow_suffix = follow_suffix}
           |> update_default_cmd
       | _ ->
-          Screen.show_warning ppmode "Transition does not match the follow-list, removing the rest of the transitions from the follow-list";
+          otStrLine "Transition does not match the follow-list, removing the rest of the transitions from the follow-list"
+          |> Screen.show_warning ppmode;
           {interact_state with follow_suffix = []}
           |> update_default_cmd
       end
@@ -1747,7 +1877,8 @@ let rec do_cmd
         if i <= 0 then interact_state else
         begin match interact_state.default_cmd with
         | None   ->
-            Screen.show_warning ppmode "can't step any more";
+            otStrLine "can't step any more"
+            |> Screen.show_warning ppmode;
             interact_state
         | Some ast ->
             do_cmd false ast interact_state
@@ -1773,7 +1904,8 @@ let rec do_cmd
 
   | Interact_parser_base.Follow ->
       if interact_state.follow_suffix = [] then
-        Screen.show_warning ppmode "the follow-list is empty";
+        otStrLine "the follow-list is empty"
+        |> Screen.show_warning ppmode;
       List.fold_left
         (fun interact_state ast -> do_cmd false ast interact_state)
         interact_state
@@ -1781,8 +1913,8 @@ let rec do_cmd
 
   | Interact_parser_base.Auto ->
       if interact_state.default_cmd = None then begin
-          Screen.show_warning ppmode
-            "warning: there are no enabled transitions to auto-take";
+          otStrLine "there are no enabled transitions to auto-take"
+          |> Screen.show_warning ppmode;
           interact_state
       end else
         let rec do_auto interact_state =
@@ -1814,8 +1946,8 @@ let rec do_cmd
 
   | Interact_parser_base.History ->
       Interact_parser_base.history_to_string interact_state.cmd_history
-      |> Screen.escape
-      |> Screen.show_message ppmode "%s";
+      |> otStrLine "%s"
+      |> Screen.show_message ppmode;
       interact_state
 
   | Interact_parser_base.FetchAll ->
@@ -1934,7 +2066,8 @@ let rec main_loop interact_state : unit =
 and parse_and_loop interact_state = fun cmd ->
     match parse cmd with
     | ParserError s ->
-        Screen.show_warning interact_state.ppmode "%s" s;
+        otStrLine "%s" s
+        |> Screen.show_warning interact_state.ppmode;
         main_loop interact_state
     | ParserASTs input_asts ->
         begin try
@@ -1944,7 +2077,8 @@ and parse_and_loop interact_state = fun cmd ->
             input_asts
         with
         | DoCmdError (interact_state, msg)->
-            Screen.show_warning interact_state.ppmode "%s" msg;
+            otStrLine "%s" msg
+            |> Screen.show_warning interact_state.ppmode;
             interact_state
         end
         |> main_loop
@@ -1986,7 +2120,8 @@ let run_interactive
     | []      -> failwith "no initial state"
     | s :: [] -> s
     | s :: _  ->
-        Screen.show_warning ppmode "given multiple initial states, using only the first one";
+        otStrLine "given multiple initial states, using only the first one"
+        |> Screen.show_warning ppmode;
         s
     end
     |> ConcModel.initial_system_state test_info.Test.ism options
@@ -2057,10 +2192,10 @@ let print_search_results interact_state search_state runtime : unit =
     in
     if holds then (true, otStrLine "Ok")
     else if ConstrGen.is_existential interact_state.test_info.Test.constr then
-      (false, OTConcat [otVerbose Globals.ThrottledInformation @@ otWarning @@ otString "%s: Existential constraint not satisfied!" interact_state.test_info.Test.name;
+      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ otStrClass OTCWarning "%s: Existential constraint not satisfied!" interact_state.test_info.Test.name;
                 otStrLine "No (allowed not found)"])
     else (* universal failed *)
-      (false, OTConcat [otVerbose Globals.ThrottledInformation @@ otWarning @@ otString "%s: Universal constraint invalidated!" interact_state.test_info.Test.name;
+      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ otStrClass OTCWarning "%s: Universal constraint invalidated!" interact_state.test_info.Test.name;
                 otStrLine "No (forbidden found)"])
   in
 
@@ -2123,16 +2258,16 @@ let print_search_results interact_state search_state runtime : unit =
 
   let runtime_output = otStrLine "Runtime: %f sec" runtime in
 
-  OTConcat
-    [ test_name_output;
-      print_observations interact_state search_state;
-      constraint_output;
-      condition_output;
-      test_info_output;
-      observation_output;
-      runtime_output;
-    ]
-  |> Screen.of_output_tree |> Screen.final_message interact_state.ppmode false
+  Screen_base.otClass OTCFinal @@ OTConcat [
+    test_name_output;
+    print_observations interact_state search_state;
+    constraint_output;
+    condition_output;
+    test_info_output;
+    observation_output;
+    runtime_output;
+  ]
+  |> Screen.show_message interact_state.ppmode
 
 
 let run_search
@@ -2195,9 +2330,13 @@ let run_search
   let run_search_from interact_state : unit =
     let print_results partial = fun search_state ->
       if partial then
-        Screen.show_warning ppmode "%s" ( "***********************\n" ^
-                                          "*** PARTIAL RESULTS ***\n" ^
-                                          "***********************");
+        OTConcat [
+          OTLine OTEmpty;
+          otStrLine "***********************";
+          otStrLine "*** PARTIAL RESULTS ***";
+          otStrLine "***********************";
+        ]
+        |> Screen.show_warning ppmode;
       print_search_results
         (update_bt_and_sm search_state interact_state)
         search_state
@@ -2231,17 +2370,21 @@ let run_search
     | Runner.Breakpoints _ (* search_nodes = [] *) -> assert false
 
     | Runner.Interrupted (search_state, reason) ->
-        Screen.show_warning ppmode "Interrupted: %s" reason;
+        otStrLine "Interrupted: %s" reason
+        |> Screen.show_warning ppmode;
         print_results true search_state
 
     | Runner.OcamlExn (search_state, msg) ->
-        Screen.show_warning ppmode "%s" msg;
+        otStrLine "%s" msg
+        |> Screen.show_warning ppmode;
         print_results true search_state;
-        Screen.show_warning ppmode "*** Error ***\n";
+        otStrLine "*** Error ***"
+        |> Screen.show_warning ppmode;
         exit 1
 
     | exception (Runner.BadSearchOptions msg) ->
-        Screen.show_warning ppmode "%s" msg;
+        otStrLine "%s" msg
+        |> Screen.show_warning ppmode;
         exit 1
   in
 

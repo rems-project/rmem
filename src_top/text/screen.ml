@@ -17,10 +17,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let of_output_tree = Screen_base.string_of_output_tree;;
-
-let final_state_color = "green"
-
 let run = Lwt_main.run
 
 let term = run (let open Lwt in
@@ -34,19 +30,20 @@ let term = run (let open Lwt in
 let run_and_flush f = run (Lwt.bind f (fun () -> LTerm.flush term))
 
 module TextPrinters : Screen_base.Printers = struct
-  (* let print s = run_and_flush (LTerm.fprint term s) *)
-  let println s =
+  let print s =
     if !Globals.dumb_terminal then
-      Printf.printf "%s\n%!" s
+      Printf.printf "%s%!" s
     else
-      run_and_flush (LTerm.fprintl term s)
+      run_and_flush (LTerm.fprint term s)
+
   let clear_screen () =
     if not !Globals.dumb_terminal then
       let open Lwt in
       run (LTerm.clear_screen term >>= fun () ->
            LTerm.goto term { LTerm_geom.row = 0; LTerm_geom.col = 0; })
-  let escape s = s
+
   let update_transition_history history available = ()
+
   let read_filename basename =
     let bail s =
       raise (Screen_base.Isa_defs_unmarshal_error (basename, s))
@@ -68,21 +65,20 @@ module TextPrinters : Screen_base.Printers = struct
          | End_of_file -> bail "End_of_file"
          | Invalid_argument s -> bail ("Invalid_argument " ^ s)
     in
-    (try
-       close_in f
-     with Sys_error s -> bail s);
+    (try close_in f with Sys_error s -> bail s);
     str
+
+  let of_output_tree = Screen_base.string_of_output_tree
 end
 
 include (Screen_base.Make (TextPrinters))
-
-let clear_warnings : unit -> unit = fun () -> ()
 
 let quit = fun () -> (exit 0 |> ignore)
 
 
 let display_dot ppmode legend_opt s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
-  show_warning ppmode "dot rendering not implemented on terminal yet"
+  Screen_base.OTString "dot rendering not implemented on terminal yet"
+  |> show_warning ppmode
 
 (* Adapted from Lambda-Term examples repl.ml *)
 
@@ -99,6 +95,7 @@ end
 let history = LTerm_history.create []
 
 let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
+  flush_buffer ppmode;
   if !Globals.dumb_terminal then begin
       Printf.printf "%s: %!" prompt_str;
       let str =
@@ -109,7 +106,6 @@ let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
     end
   else
     let open Lwt in
-    flush_buffer ppmode;
     run (Lwt.catch (fun () ->
              let rl = new read_line term (LTerm_history.contents history) prompt_str in
              rl#run >|= fun command -> Some (command))

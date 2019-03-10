@@ -377,16 +377,18 @@ let colour_changed3 m (cs:string changed3) =
   | C3_gone s ->
       if m.Globals.pp_colours then
         match m.Globals.pp_kind with
-        | Ascii | Hash -> col_dark_gray s
-        | Html -> "<span class='changed_gone'>"^ s ^"</span>"
+        | Hash  -> s
+        | Ascii -> col_dark_gray s
+        | Html  -> "<span class='changed_gone'>"^ s ^"</span>"
         | Latex -> "\\mydarkgray{" ^ s ^"}"
       else s
   | C3_unchanged s -> s
   | C3_new s ->
       if m.Globals.pp_colours then
         match m.Globals.pp_kind with
-        | Ascii | Hash -> col_red s
-        | Html -> "<span class='changed_new'>"^ s ^"</span>"
+        | Hash  -> s
+        | Ascii -> col_red s
+        | Html  -> "<span class='changed_new'>"^ s ^"</span>"
         | Latex -> "\\myred{" ^ s ^"}"
       else s
 
@@ -522,33 +524,28 @@ let pp_changed3_list_bis m (pp_f:Globals.ppmode->'a->string) (xs:'a changed3 lis
 let colour_tran_id m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_green s
-    | Html -> "<span class='tran_id'>"^ s ^"</span>"
+    | Hash  -> s
+    | Ascii -> col_green s
+    | Html  -> "<span class='tran_id'>"^ s ^"</span>"
     | Latex -> "\\mygreen{" ^ s ^"}"
   else s
 
 let colour_memory_action m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_cyan s
-    | Html -> "<span class='memory_action'>"^ s ^"</span>"
+    | Hash  -> s
+    | Ascii -> col_cyan s
+    | Html  -> "<span class='memory_action'>"^ s ^"</span>"
     | Latex -> "\\mycyan{" ^ s ^"}"
   else s
 
 let colour_bold m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_bold s
-    | Html -> "<b>"^ s ^"</b>"
+    | Hash  -> s
+    | Ascii -> col_bold s
+    | Html  -> "<b>"^ s ^"</b>"
     | Latex -> "\\mybold{" ^ s ^"}"
-  else s
-
-let colour_warning m s =
-  if m.Globals.pp_colours then
-    match m.Globals.pp_kind with
-    | Ascii | Hash -> col_yellow s
-    | Html -> "<span class='warning'>" ^ s ^ "</span>"
-    | Latex -> "\\myyellow{" ^ s ^ "}"
   else s
 
 let colour_finished_instruction m s = colour_bold m s
@@ -556,25 +553,10 @@ let colour_finished_instruction m s = colour_bold m s
 let colour_unfinished_instruction m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_bold (col_yellow s)
-    | Html -> "<span class='warning'>" ^ s ^ "</span>"
+    | Hash  -> s
+    | Ascii -> col_bold (col_yellow s)
+    | Html  -> "<span class='warning'>" ^ s ^ "</span>"
     | Latex -> "\\myyellow{" ^ s ^ "}"
-  else s
-
-
-let colour_info m s =
-  if m.Globals.pp_colours then
-    match m.Globals.pp_kind with
-    | Ascii | Hash -> col_cyan s
-    | Html -> "<span class='info'>" ^ s ^ "</span>"
-    | Latex -> "\\mycyan{" ^ s ^ "}"
-  else s
-
-let colour_final m s =
-  if m.Globals.pp_colours then
-    match m.Globals.pp_kind with
-    | Ascii | Hash | Latex -> s
-    | Html -> "<span class='final'>" ^ s ^ "</span>"
   else s
 
 let colour_sail m s =
@@ -590,7 +572,8 @@ let colour_sail m s =
 *)
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash ->
+    | Hash  -> s
+    | Ascii ->
         (*let r = Str.regexp_string "\x1b[m" in
         let s = (try
           let pos = Str.search_backward r s (String.length s -1) in
@@ -600,7 +583,7 @@ let colour_sail m s =
         | Not_found -> s) in
         pp_string s ^ "\n" ^ *)
         col_cyan s
-    | Html -> "<span class='sail'>"^ s ^"</span>"
+    | Html  -> "<span class='sail'>"^ s ^"</span>"
     | Latex -> "\\myblue{" ^ s ^"}"
   else s
 
@@ -2459,8 +2442,9 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
        (match pp_dwarf_source_file_lines m ds true i.ui_program_loc with
         | Some s ->
            (match m.Globals.pp_kind with
-            | Ascii | Hash -> indent ^ col_yellow s ^ "\n"
-            | Html -> "<span class='dwarf_source_lines'>" ^ indent ^ s ^ "</span><br/>"
+            | Hash  -> s
+            | Ascii -> indent ^ col_yellow s ^ "\n"
+            | Html  -> "<span class='dwarf_source_lines'>" ^ indent ^ s ^ "</span><br/>"
             | Latex -> "\\myyellow{" ^ indent ^ s ^ "}\n"
            )
            | None ->

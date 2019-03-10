@@ -14,15 +14,14 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let of_output_tree = Screen_base.string_of_output_tree;;
-
-let final_state_color = "green"
-
 module TextPrinters : Screen_base.Printers = struct
-  let println s = Printf.printf "%s\n" s
-  let clear_screen = fun () -> ()
-  let escape s = s
-  let update_transition_history _ _ = ()
+  let print s = Printf.printf "%s%!" s
+
+  (* cursor to top left and clear *)
+  let clear_screen () = Printf.printf "\027[;H\027[J"
+
+  let update_transition_history history available = ()
+
   let read_filename basename =
     let bail s =
       raise (Screen_base.Isa_defs_unmarshal_error (basename, s))
@@ -44,22 +43,28 @@ module TextPrinters : Screen_base.Printers = struct
          | End_of_file -> bail "End_of_file"
          | Invalid_argument s -> bail ("Invalid_argument " ^ s)
     in
-    (try
-       close_in f
-     with Sys_error s -> bail s);
+    (try close_in f with Sys_error s -> bail s);
     str
+
+  let of_output_tree = Screen_base.string_of_output_tree
 end
 
 include (Screen_base.Make (TextPrinters))
-
-let clear_warnings : unit -> unit = fun () -> ()
 
 let quit = fun () -> (exit 0 |> ignore)
 
 
 let display_dot ppmode legend_opt s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
-  show_warning ppmode "dot rendering not implemented on terminal yet"
+  Screen_base.OTString "dot rendering not implemented on terminal yet"
+  |> show_warning ppmode
 
-let prompt ppmode maybe_options prompt_str _hist cont = ()
+let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
+  flush_buffer ppmode;
+  Printf.printf "%s: %!" prompt_str;
+  let str =
+    try read_line () with
+    | End_of_file -> (Printf.printf "quit\n%!"; "quit")
+  in
+  cont str
 
-let interactive = false
+let interactive = true

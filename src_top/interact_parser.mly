@@ -31,6 +31,7 @@ module Base = Interact_parser_base
 %token FORWARD_SLASH
 %token PLUS
 %token MINUS
+%token QUESTION
 
 %token QUIT
 %token HELP
@@ -128,7 +129,8 @@ transition:
   ;
 
 help:
-  | HELP { Base.Help None }
+  | HELP     { Base.Help None }
+  | QUESTION { Base.Help None }
   ;
 
 info:

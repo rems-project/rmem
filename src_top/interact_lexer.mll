@@ -33,7 +33,7 @@ let create_hashtable keywords =
 let keywords =
   create_hashtable [
     (["x"; "exit"; "q"; "quit"], QUIT);
-    (["?"; "h"; "help"],         HELP);
+    (["h"; "help"],              HELP);
     (["o"; "options"],           OPTIONS);
 
     (["s"; "step"], STEP);
@@ -113,6 +113,7 @@ rule token =
   | '/'      { FORWARD_SLASH }
   | '+'      { PLUS  }
   | '-'      { MINUS }
+  | '?'      { QUESTION }
 
   | num as n  { try NUM (int_of_string n) with
                 | Failure _ -> BIG_NUM (Misc.big_num_of_string n)
