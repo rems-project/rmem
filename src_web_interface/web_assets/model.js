@@ -25,6 +25,7 @@ function StateModel () {
     this.build_date = ko.observable("");
     this.prompt = ko.observable("");
     this.console_lines = ko.observable("");
+    this.state_lines = ko.observable("");
     this.trace_lines = ko.observable("");
     this.trace_available_transitions = ko.observable("");
     this.graph_html = ko.observable("");
@@ -42,6 +43,7 @@ var STATE = new StateModel;
 
 var components = {
     "console": "Console",
+    "state": "State",
     "graph": "Graph",
     "sources": "Sources",
     "trace": "Trace",

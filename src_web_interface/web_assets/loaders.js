@@ -230,7 +230,7 @@ function load_litmus () {
         load_common("litmus", name);
         unset_elf();
         load_litmus_dialog.dialog("close");
-        webppc_lib.start_interactive(test);
+        webppc_lib.start_interactive_litmus(name, test);
     } else {
         error_dialog("Please enter a litmus test.");
     }
@@ -241,7 +241,7 @@ function load_elf () {
     if (name != null) {
         load_common("elf", name);
         load_elf_dialog.dialog("close");
-        webppc_lib.start_interactive("");
+        webppc_lib.start_interactive_elf();
     } else {
         $("#file_select").addClass("ui-state-error");
         error_dialog("Please select an ELF file.");

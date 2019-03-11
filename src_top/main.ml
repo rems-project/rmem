@@ -160,6 +160,14 @@ let opts = [
     Arg.Bool (fun b -> Globals.auto_internal := b),
     (Printf.sprintf "<bool> for interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
 
+("-state_output",
+    Arg.String Screen.set_state_output,
+    "<file> for interactive mode, print the current state to <file>");
+
+("-trace_output",
+    Arg.String Screen.set_trace_output,
+    "<file> for interactive mode, print the current trace to <file>");
+
 (** optimizations ***************************************************)
 ("-suppress_internal",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.suppress_internal = b}),

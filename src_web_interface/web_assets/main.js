@@ -31,20 +31,35 @@ function show_prompt (str) {
 function print (s) {
     STATE.console_lines(STATE.console_lines() + s);
     $(document).ready(function() {
-        if (scroll_anyway || $("#scroll_on_output-toggle").prop("checked")) {
-            scroll_anyway = false;
-            ko.tasks.schedule(function () {
-                $(".system_state_lines > :last-child").each(function () {
-                    this.scrollIntoView(false);
-                });
-            });
-        }
+      ko.tasks.schedule(function () {
+          $("#console > :last-child").each(function () {
+              this.scrollIntoView(false);
+          });
+      });
+    });
+}
+
+function update_system_state (state) {
+    STATE.state_lines(state);
+    $(document).ready(function() {
+      ko.tasks.schedule(function () {
+          $("#system_state > :last-child").each(function () {
+              this.scrollIntoView(false);
+          });
+      });
     });
 }
 
 function update_transition_history (history, available) {
     STATE.trace_lines(history);
     STATE.trace_available_transitions(available);
+    $(document).ready(function() {
+      ko.tasks.schedule(function () {
+          $("#trace > :last-child").each(function () {
+              this.scrollIntoView(false);
+          });
+      });
+    });
 }
 
 function clear_screen () {
@@ -86,10 +101,20 @@ function default_split () {
                         sizes: [50, 50],
                         contents: [
                             {
-                                pane: "console"
+                                pane: "state"
                             },
                             {
-                                pane: "help"
+                                vertical: {
+                                    sizes: [50, 50],
+                                    contents: [
+                                        {
+                                            pane: "console"
+                                        },
+                                        {
+                                            pane: "help"
+                                        }
+                                    ]
+                                },
                             }
                         ]
                     }

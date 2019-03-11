@@ -17,6 +17,9 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+let set_state_output str = ()
+let set_trace_output str = ()
+
 let getElementById x =
   let document = Dom_html.window##.document in
   Js.Opt.get (document##(getElementById (Js.string x)))
@@ -42,11 +45,18 @@ let async_input new_history (cont: string -> unit) : unit =
 module WebPrinters : Screen_base.Printers = struct
   let print s = Js.Unsafe.fun_call (Js.Unsafe.js_expr "print")
                                      [|Js.Unsafe.inject (Js.string s)|]
-  let clear_screen () = Js.Unsafe.fun_call (Js.Unsafe.js_expr "clear_screen") [||]
-  let update_transition_history history available = Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_transition_history")
-                                                                       [|Js.Unsafe.inject (Js.string history);
-                                                                         Js.Unsafe.inject (Js.string available)|]
-                                                    |> ignore
+
+  let update_transition_history trace choice_summary =
+    Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_transition_history") [|
+        Js.Unsafe.inject (Js.string (trace ()));
+        Js.Unsafe.inject (Js.string (choice_summary ()))
+    |] |> ignore
+
+  let update_system_state state =
+    Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_system_state") [|
+        Js.Unsafe.inject (Js.string (state ()))
+    |] |> ignore
+
   let read_filename basename = Js.to_bytestring (Js.Unsafe.fun_call (Js.Unsafe.js_expr "read_filename")
                                                                 [|Js.Unsafe.inject (Js.string basename)|])
 
@@ -167,7 +177,6 @@ let current_options (options : Screen_base.options_state) =
   end
 
 let prompt ppmode maybe_options prompt_str history cont =
-  flush_buffer ppmode;
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt")
                      [|Js.Unsafe.inject (Js.string prompt_str)|] |> ignore;
   begin match maybe_options with

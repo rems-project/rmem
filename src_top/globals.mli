@@ -151,7 +151,7 @@ val ppg_shared:                bool ref
 val ppg_regs:                  bool ref
 val ppg_reg_rf:                bool ref
 val ppg_trans:                 bool ref
-val pp_announce_options:       bool ref
+val pp_announce_options:       bool ref (* REMOVE: *)
 val pp_sail:                   bool ref
 
 val set_pp_kind : string -> unit

@@ -17,6 +17,24 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+type output_chan =
+  | NoOutput
+  | FileName of string
+  | OpenChan of out_channel
+
+let state_output : output_chan ref = ref NoOutput
+let trace_output : output_chan ref = ref NoOutput
+
+let set_state_output str =
+  state_output :=
+    if str = "" then NoOutput
+    else FileName str
+
+let set_trace_output str =
+  trace_output :=
+    if str = "" then NoOutput
+    else FileName str
+
 let run = Lwt_main.run
 
 let term = run (let open Lwt in
@@ -29,20 +47,17 @@ let term = run (let open Lwt in
 
 let run_and_flush f = run (Lwt.bind f (fun () -> LTerm.flush term))
 
+let clear_screen_to_chan chan =
+  output_string chan "\027[;H\027[J";
+  output_string chan "============================================================================\n"
+
+
 module TextPrinters : Screen_base.Printers = struct
   let print s =
     if !Globals.dumb_terminal then
       Printf.printf "%s%!" s
     else
       run_and_flush (LTerm.fprint term s)
-
-  let clear_screen () =
-    if not !Globals.dumb_terminal then
-      let open Lwt in
-      run (LTerm.clear_screen term >>= fun () ->
-           LTerm.goto term { LTerm_geom.row = 0; LTerm_geom.col = 0; })
-
-  let update_transition_history history available = ()
 
   let read_filename basename =
     let bail s =
@@ -69,6 +84,54 @@ module TextPrinters : Screen_base.Printers = struct
     str
 
   let of_output_tree = Screen_base.string_of_output_tree
+
+  let update_transition_history trace choice_summary =
+    let to_chan chan =
+      try
+        clear_screen_to_chan chan;
+        trace () |> output_string chan;
+        choice_summary () |> output_string chan;
+        flush chan
+      with
+      | Sys_error msg -> print (Printf.sprintf "Cannot write to 'trace_output': %s\n" msg)
+    in
+
+    match !trace_output with
+    | NoOutput -> ()
+    | FileName name ->
+        (* FIXME: use open_out_gen? *)
+        begin match open_out name with
+        | chan ->
+            trace_output := OpenChan chan;
+            to_chan chan
+        | exception Sys_error msg ->
+            print (Printf.sprintf "%s\n" msg)
+        end
+    | OpenChan chan -> to_chan chan
+
+
+  let update_system_state state =
+    let to_chan chan =
+      try
+        clear_screen_to_chan chan;
+        state () |> output_string chan;
+        flush chan
+      with
+      | Sys_error msg -> print (Printf.sprintf "Cannot write to 'state_output': %s\n" msg)
+    in
+
+    match !state_output with
+    | NoOutput -> ()
+    | FileName name ->
+        (* FIXME: use open_out_gen? *)
+        begin match open_out name with
+        | chan ->
+            state_output := OpenChan chan;
+            to_chan chan
+        | exception Sys_error msg ->
+            print (Printf.sprintf "%s\n" msg)
+        end
+    | OpenChan chan -> to_chan chan
 end
 
 include (Screen_base.Make (TextPrinters))
@@ -95,7 +158,6 @@ end
 let history = LTerm_history.create []
 
 let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
-  flush_buffer ppmode;
   if !Globals.dumb_terminal then begin
       Printf.printf "%s: %!" prompt_str;
       let str =

@@ -216,6 +216,9 @@ set dwarf_show_all_variable_locations <bool>  Enable or disable showing all DWAR
 set pp_sail <bool>         Enable or disable showing the Sail interpreter state
                              and code for instructions (if interpreter enabled)
 
+set state_output <file>   Print the current state, every time it changes, to <file>
+set trace_output <file>   Print the current trace, every time it changes, to <file>
+
 Graph options
 --------------------------------------------------------------------------------
 set always_graph  <bool>  Enable or disable generate a .dot or onscreen

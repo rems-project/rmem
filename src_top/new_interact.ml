@@ -470,7 +470,7 @@ let choice_summary
     follow_suffix
     numbered_cands
     disabled_trans
-    force_verbose
+    verbose
     : output_tree
   =
   let n_choices = List.length choices_so_far in
@@ -495,33 +495,33 @@ let choice_summary
 
     begin if numbered_cands = [] then
       otStrLine "No enabled transitions"
-    else if ppmode.Globals.pp_style = Globals.Ppstyle_compact && not force_verbose then
-      otStrLine "%d enabled transitions" (List.length numbered_cands)
-    else
+    else if verbose then
       OTConcat [
         otLine @@ otStrEmph "Enabled transitions:";
         otConcat @@ List.map
           (fun cand -> otLine @@ otEncoded @@ Pp.pp_cand ppmode cand)
           numbered_cands;
       ]
+    else
+      otStrLine "%d enabled transitions" (List.length numbered_cands)
     end;
 
     begin if disabled_trans = [] then
       otStrLine "No disabled transitions"
-    else if ppmode.Globals.pp_style = Globals.Ppstyle_compact && not force_verbose then
-      otStrLine "%d disabled transitions" (List.length disabled_trans)
-    else
+    else if verbose then
       OTConcat [
         otLine @@ otStrEmph "Disabled transitions:";
         otConcat @@ List.map
           (fun t -> otLine @@ otEncoded @@ Pp.pp_trans ppmode t)
           disabled_trans;
       ]
+    else
+      otStrLine "%d disabled transitions" (List.length disabled_trans)
     end;
   ]
 
 
-let print_last_state interact_state : unit =
+let show_last_state inline interact_state : unit =
   let ppmode = interact_state.ppmode in
   begin match interact_state.interact_nodes with
   | [] ->
@@ -541,34 +541,36 @@ let print_last_state interact_state : unit =
 
       (*let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in*)
 
-      let trace = OTEncoded (Pp.pp_transition_history ppmode ui_state) in
+      let trace = fun () ->
+        OTEncoded (Pp.pp_transition_history ppmode ui_state)
+      in
 
-      let choice_summary : bool -> output_tree =
+      let choice_summary verbose : output_tree =
         choice_summary
           ppmode
           (choices_so_far interact_state)
           interact_state.follow_suffix
           ts
           (filtered_out_transitions node)
+          verbose
       in
 
-      let state = OTConcat [
+      let state = fun () ->
+        OTConcat [
           otIfTrue ppmode.Globals.pp_suppress_newpage @@
             OTConcat [OTLine OTEmpty; OTHorLine];
           OTEncoded (Pp.pp_ui_system_state ppmode ui_state);
-          choice_summary false;
           otIfTrue (ppmode.Globals.pp_style <> Globals.Ppstyle_compact) @@
             OTConcat [OTLine OTEmpty; OTHorLine];
+          choice_summary (ppmode.Globals.pp_style <> Globals.Ppstyle_compact);
         ]
       in
 
-      Screen.show_system_state ppmode trace (choice_summary true) state
-  end;
-  if ppmode.Globals.pp_announce_options then
-    (* TODO: is this really useful here? *)
-    announce_options interact_state
-  else
-    ()
+      if inline then
+        Screen.show_message ppmode (state ())
+      else
+        Screen.show_system_state ppmode trace (fun () -> choice_summary true) state
+  end
 
 (* map each transition to a pair of (bool, trans) where the bool is
 true iff the transition is "interesting" *)
@@ -1743,6 +1745,14 @@ let do_set key value interact_state =
           raise InvalidValue
       end
 
+  | "state_output" ->
+      Screen.set_state_output value;
+      interact_state
+
+  | "trace_output" ->
+      Screen.set_trace_output value;
+      interact_state
+
   | _ -> raise InvalidKey
 
 
@@ -1941,7 +1951,7 @@ let rec do_cmd
       interact_state
 
   | Interact_parser_base.Print ->
-      print_last_state interact_state;
+      show_last_state true interact_state;
       interact_state
 
   | Interact_parser_base.History ->
@@ -2052,8 +2062,9 @@ let extract_options interact_state : Screen_base.options_state =
   }
 
 let rec main_loop interact_state : unit =
+  show_last_state false interact_state;
   if interact_state.options.always_print then
-    print_last_state interact_state;
+    show_last_state true interact_state;
 
   if !Globals.run_dot = Some Globals.RD_step then
      make_graph interact_state;
