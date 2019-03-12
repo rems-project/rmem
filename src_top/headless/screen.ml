@@ -126,8 +126,9 @@ let display_dot ppmode legend_opt s cex (nc: (int * ('ts,'ss) MachineDefTypes.tr
   Screen_base.OTString "dot rendering not implemented on terminal yet"
   |> show_warning ppmode
 
-let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
-  Printf.printf "%s: %!" prompt_str;
+let rec prompt ppmode maybe_options prompt_ot _hist (cont: string -> unit) =
+  Screen_base.string_of_output_tree ppmode prompt_ot
+  |> Printf.printf "%s: %!";
   let str =
     try read_line () with
     | End_of_file -> (Printf.printf "quit\n%!"; "quit")

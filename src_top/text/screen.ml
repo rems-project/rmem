@@ -157,7 +157,9 @@ end
 
 let history = LTerm_history.create []
 
-let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
+let rec prompt ppmode maybe_options prompt_ot _hist (cont: string -> unit) =
+  let prompt_str = Screen_base.string_of_output_tree ppmode prompt_ot in
+
   if !Globals.dumb_terminal then begin
       Printf.printf "%s: %!" prompt_str;
       let str =
@@ -179,6 +181,6 @@ let rec prompt ppmode maybe_options prompt_str _hist (cont: string -> unit) =
       | Some command ->
          LTerm_history.add history command;
          cont command
-      | None -> prompt ppmode maybe_options prompt_str _hist cont
+      | None -> prompt ppmode maybe_options prompt_ot _hist cont
 
 let interactive = true

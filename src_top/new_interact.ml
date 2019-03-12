@@ -304,7 +304,7 @@ let choices_so_far interact_state : Interact_parser_base.ast list =
   |> fst
   |> List.rev
 
-let announce_options interact_state : unit =
+let show_options interact_state : unit =
   let ppmode = interact_state.ppmode in
   let pp_maybe_int suffix maybe_int =
     match maybe_int with
@@ -380,12 +380,6 @@ let announce_options interact_state : unit =
       (pp_maybe_int "" ppmode.Globals.pp_choice_history_limit);
     otStrLine "  always_print = %b"
       interact_state.options.always_print;
-    otStrLine "  suppress_newpage = %b"
-      ppmode.Globals.pp_suppress_newpage;
-    otStrLine "  buffer_messages = %b"
-      ppmode.Globals.pp_buffer_messages;
-    otStrLine "  announce_options = %b"
-      ppmode.Globals.pp_announce_options;
     otStrLine "  prefer_symbolic_values = %b"
       ppmode.Globals.pp_prefer_symbolic_values;
     otStrLine "  pp_hide_pseudoregister_reads = %b"
@@ -557,7 +551,7 @@ let show_last_state inline interact_state : unit =
 
       let state = fun () ->
         OTConcat [
-          otIfTrue ppmode.Globals.pp_suppress_newpage @@
+          otIfTrue inline @@
             OTConcat [OTLine OTEmpty; OTHorLine];
           OTEncoded (Pp.pp_ui_system_state ppmode ui_state);
           otIfTrue (ppmode.Globals.pp_style <> Globals.Ppstyle_compact) @@
@@ -1583,9 +1577,6 @@ let do_set key value interact_state =
   | "trace_limit"                    -> ((run_options_lens |-- trace_limit_lens)                       ^= (parse_int_option value)) interact_state
   | "time_limit"                     -> ((run_options_lens |-- time_limit_lens)                        ^= (parse_int_option value)) interact_state
 
-  | "suppress_newpage"               -> ((ppmode_lens      |-- pp_suppress_newpage_lens)               ^= (parse_bool value))       interact_state
-  | "buffer_messages"                -> ((ppmode_lens      |-- pp_buffer_messages_lens)                ^= (parse_bool value))       interact_state
-  | "announce_options"               -> ((ppmode_lens      |-- pp_announce_options_lens)               ^= (parse_bool value))       interact_state
   | "ppg_shared"                     -> ((ppmode_lens      |-- ppg_shared_lens)                        ^= (parse_bool value))       interact_state
   | "ppg_rf"                         -> ((ppmode_lens      |-- ppg_rf_lens)                            ^= (parse_bool value))       interact_state
   | "ppg_fr"                         -> ((ppmode_lens      |-- ppg_fr_lens)                            ^= (parse_bool value))       interact_state
@@ -1805,7 +1796,7 @@ let rec do_cmd
       interact_state
 
   | Interact_parser_base.ShowOptions ->
-      announce_options interact_state;
+      show_options interact_state;
       interact_state
 
   | Interact_parser_base.Debug s ->
@@ -2014,38 +2005,46 @@ let rec do_cmd
       do_delete_breakpoint n interact_state
 
 
-let make_prompt interact_state : string =
+let make_prompt interact_state : output_tree =
   begin match interact_state.interact_nodes with
-  | [] -> ""
+  | [] -> OTEmpty
   | node :: _ ->
-      let str =
-        Printf.sprintf "Step %d (%d/%d finished, %d trns)"
+      let options =
+        [ otIfTrue interact_state.options.pseudorandom @@
+            OTString "random";
+          otIfTrue interact_state.options.storage_first @@
+            OTString "storage-first";
+          begin match interact_state.options.focused_thread with
+          | Some i -> otString "focused on thread %d" i
+          | None   -> OTEmpty
+          end;
+          begin match interact_state.options.focused_ioid with
+          | Some (tid, iid) -> otString "focused on ioid (%d:%d)" tid iid
+          | None            -> OTEmpty
+          end;
+        ]
+        |> List.filter (function OTEmpty -> false | _ -> true)
+        |> otConcatWith (OTString ", ")
+      in
+
+      OTConcat [
+        otString "Step %d (%d/%d finished, %d trns)"
           (List.length interact_state.interact_nodes)
           (MachineDefSystem.count_instruction_instances_finished node.system_state.sst_state)
           (MachineDefSystem.count_instruction_instances_constructed node.system_state.sst_state)
-          (List.fold_left (+) 0 (List.map (fun n -> List.length n.open_transition) interact_state.interact_nodes))
-      in
-      let option_strs = List.fold_right (@)
-        [
-          (if interact_state.options.pseudorandom then ["random"] else []);
-          (if interact_state.options.storage_first then ["storage-first"] else []);
-          (match interact_state.options.focused_thread with
-           | Some i -> [Printf.sprintf "focused on thread %d" i]
-           | None -> []);
-          (match interact_state.options.focused_ioid with
-           | Some (tid, iid) -> [Printf.sprintf "focused on ioid (%d:%d)" tid iid]
-           | None -> []);
-        ] []
-      in
-      let option_str =
-        (match option_strs with
-         | [] -> ""
-         | _  -> Printf.sprintf " (%s)" (String.concat ", " option_strs))
-      in
-      begin match interact_state.default_cmd with
-      | None   -> Printf.sprintf "%s%s" str option_str
-      | Some ast -> Printf.sprintf "%s Choose [%s]%s" str (Interact_parser_base.pp ast) option_str
-      end
+          (List.fold_left (+) 0 (List.map (fun n -> List.length n.open_transition) interact_state.interact_nodes));
+
+        begin match interact_state.default_cmd with
+        | None     -> OTEmpty
+        | Some ast -> otString " Choose [%s]" (Interact_parser_base.pp ast)
+        end;
+
+        otIfTrue (options <> OTEmpty) @@ OTConcat [
+          OTString " (";
+          options;
+          OTString ")";
+        ];
+      ]
   end
 
 let extract_options interact_state : Screen_base.options_state =

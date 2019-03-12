@@ -16,7 +16,6 @@
 /*===============================================================================*/
 
 var started = false;
-var scroll_anyway = false;
 
 function show_prompt (str) {
     $(".interact_prompt").css("display", "inline-block");
@@ -32,7 +31,7 @@ function print (s) {
     STATE.console_lines(STATE.console_lines() + s);
     $(document).ready(function() {
       ko.tasks.schedule(function () {
-          $("#console > :last-child").each(function () {
+          $(".console > .system_state > .system_state_lines > :last-child").each(function () {
               this.scrollIntoView(false);
           });
       });
@@ -42,11 +41,12 @@ function print (s) {
 function update_system_state (state) {
     STATE.state_lines(state);
     $(document).ready(function() {
-      ko.tasks.schedule(function () {
-          $("#system_state > :last-child").each(function () {
-              this.scrollIntoView(false);
-          });
-      });
+// Do we want the system-state window to scroll to the bottom?
+//       ko.tasks.schedule(function () {
+//           $(".state > .system_state > .system_state_lines > :last-child").each(function () {
+//               this.scrollIntoView(false);
+//           });
+//       });
     });
 }
 
@@ -55,7 +55,7 @@ function update_transition_history (history, available) {
     STATE.trace_available_transitions(available);
     $(document).ready(function() {
       ko.tasks.schedule(function () {
-          $("#trace > :last-child").each(function () {
+          $(".trace > .system_state > .system_state_lines > :last-child").each(function () {
               this.scrollIntoView(false);
           });
       });
@@ -172,7 +172,6 @@ $(document).ready(function () {
     window.onerror = function (e) {
         var error_str = '<span class="error">Fatal error: Caught exception ' + e.toString() + "</span><br>";
         // scroll into view even if scroll-on-output is off
-        scroll_anyway = true;
         print(error_str);
     }
 });

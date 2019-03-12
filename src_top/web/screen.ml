@@ -114,9 +114,6 @@ let current_options (options : Screen_base.options_state) =
     val always_graph_ = options.always_graph
     val dot_final_ok_ = options.dot_final_ok
     val dot_final_not_ok_ = options.dot_final_not_ok
-    val suppress_newpage_ = ppmode.pp_suppress_newpage
-    val buffer_messages_ = ppmode.pp_buffer_messages
-    val announce_options_ = ppmode.pp_announce_options
     val random_ = run_options.pseudorandom
     val storage_first_ = run_options.storage_first
     val priority_reduction_ = run_options.priority_reduction
@@ -176,9 +173,10 @@ let current_options (options : Screen_base.options_state) =
       | None -> Js.null
   end
 
-let prompt ppmode maybe_options prompt_str history cont =
-  Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt")
-                     [|Js.Unsafe.inject (Js.string prompt_str)|] |> ignore;
+let prompt ppmode maybe_options prompt_ot history cont =
+  Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt") [|
+    Js.Unsafe.inject (Js.string (Screen_base.html_of_output_tree ppmode prompt_ot))
+  |] |> ignore;
   begin match maybe_options with
   | Some options -> Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_options")
                                               [|Js.Unsafe.inject (current_options options)|] |> ignore

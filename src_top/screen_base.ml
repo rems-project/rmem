@@ -53,9 +53,16 @@ let otEmph tree = OTEmph tree
 let otColor color tree = OTColor (color, tree)
 let otCenter tree = OTCenter tree
 let otVerbose verb tree = OTVerbose (verb, tree)
-let otConcat tree = OTConcat tree
+let otConcat trees = OTConcat trees
 let otClass cls tree = OTClass (cls, tree)
 let otIfTrue b tree = if b then tree else OTEmpty
+
+let otConcatWith sep = function
+  | [] -> OTEmpty
+  | hd :: tl ->
+      List.fold_left (fun acc t -> t :: sep :: acc) [hd] tl
+      |> List.rev
+      |> otConcat
 
 let reset_color = "\x1b[0m"
 let string_of_color color =
