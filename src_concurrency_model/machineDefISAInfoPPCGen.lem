@@ -22,6 +22,7 @@ open import Assert_extra
 
 open import MachineDefUtils
 open import Sail_impl_base
+open import MachineDefISAInfo
 open import MachineDefEvents
 open import MachineDefInstructionSemantics
 
@@ -279,12 +280,14 @@ let ppcgen_is_load_multiple_instruction = function
    assume so *)
 let ppcgen_make_empty_write_events
     (tid:          thread_id)
-    (inst:         instruction_instance)
+    (inst: instruction_ast) 
+    (id_state: MachineDefFreshIds.id_state ioid) 
+    (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
     : (list write) * (MachineDefFreshIds.id_state ioid)
   =
-  let store_multiple = ppcgen_is_store_multiple_instruction inst.instruction in
+  let store_multiple = ppcgen_is_store_multiple_instruction inst in
   let addr' = integer_of_address addr in
   let write_size =
     if store_multiple && (size mod 4 = 0) && aligned addr' 4 then 4
@@ -292,16 +295,18 @@ let ppcgen_make_empty_write_events
     else if (size=16 && aligned addr' 8) then 8
     else 1
   in
-  make_empty_write_events' inst.instance_id_state tid inst.instance_ioid addr size write_size write_kind
+  make_empty_write_events' id_state tid ioid addr size write_size write_kind
 
 let ppcgen_make_read_request_events
     (tid:          thread_id)
-    (inst:         instruction_instance)
+    (inst: instruction_ast) 
+    (id_state: MachineDefFreshIds.id_state ioid) 
+    (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:   read_kind)
     : (list read_request) * (MachineDefFreshIds.id_state ioid)
   =
-  let load_multiple = ppcgen_is_load_multiple_instruction inst.instruction in
+  let load_multiple = ppcgen_is_load_multiple_instruction inst in
   let addr' = integer_of_address addr in
   let read_size =
     if load_multiple && (size mod 4 = 0) && aligned addr' 4 then 4
@@ -309,7 +314,7 @@ let ppcgen_make_read_request_events
     else if (size = 16 && aligned addr' 8) then 8
     else 1
   in
-  make_read_request_events' inst.instance_id_state tid inst.instance_ioid addr size read_size read_kind
+  make_read_request_events' id_state tid ioid addr size read_size read_kind
 
 let ppcgen_ism : isa_info =
   <|  ism = PPCGEN_ism;
