@@ -2997,10 +2997,9 @@ let transition_history_loc_max_width' = ref 0
 let pp_transition_history_trans m s j trans =
   let ioid = MachineDefTypes.principal_ioid_of_trans trans in
   let io = MachineDefUI.lookup_ui_instruction_in_system ioid s in
-(*  (pp_pretty_ioid_padded ioid)
+  (*  (pp_pretty_ioid_padded ioid)
   ^ " " ^ *)
-  (string_of_int j ^ " ")
-  ^
+  let res = string_of_int j ^ " " in
   let s1 =
     match io with
     | Some i ->
@@ -3021,11 +3020,17 @@ let pp_transition_history_trans m s j trans =
               )
           | _,_ -> "") in
         ppd_dwarf_source_file_lines
-   | None -> "" in
-(if String.length s1 > !transition_history_loc_max_width' then transition_history_loc_max_width' := String.length s1 else ());
-(pad (!transition_history_loc_max_width') s1)
-^ pp_trans m trans
-^ !linebreak
+   | None -> ""
+  in
+  (if String.length s1 > !transition_history_loc_max_width' then transition_history_loc_max_width' := String.length s1 else ());
+  let res =
+    res
+    ^ (pad (!transition_history_loc_max_width') s1)
+    ^ pp_trans m trans
+  in
+  match !Globals.pp_kind with
+  | Ascii | Latex | Hash -> res ^ !linebreak
+  | Html -> "<p>" ^ res ^ "</p>" (* this (instead of <br>) is needed to make JS scrollIntoView work *)
 
 let pp_transition_history m ?(filter = fun _ -> true) s =
   transition_history_loc_max_width := 0;

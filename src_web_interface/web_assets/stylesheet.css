@@ -295,7 +295,7 @@ span.dwarf_source_lines {
     word-wrap: break-word;
 }
 
-.system_state_lines p {
+.system_state_lines p, .trace_prompt_lines p {
     margin: 0;
     padding: 0;
 }

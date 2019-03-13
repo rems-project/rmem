@@ -141,8 +141,6 @@ val print_hex:                 bool ref
 val pp_colours:                bool ref
 val pp_kind:                   ppkind ref
 val pp_condense_finished_instructions: bool ref
-val pp_suppress_newpage:       bool ref
-val pp_buffer_messages:        bool ref
 val pp_style:                  ppstyle ref
 val pp_prefer_symbolic_values: bool ref
 val pp_hide_pseudoregister_reads: bool ref
@@ -151,7 +149,6 @@ val ppg_shared:                bool ref
 val ppg_regs:                  bool ref
 val ppg_reg_rf:                bool ref
 val ppg_trans:                 bool ref
-val pp_announce_options:       bool ref
 val pp_sail:                   bool ref
 
 val set_pp_kind : string -> unit
@@ -163,8 +160,6 @@ type ppmode =
     pp_colours:                        bool;
     pp_condense_finished_instructions: bool;
     pp_style:                          ppstyle;
-    pp_suppress_newpage:               bool;
-    pp_buffer_messages:                bool;
     pp_choice_history_limit:           int option;
     pp_symbol_table: ((Sail_impl_base.address * Sail_impl_base.size) * string) list;
     pp_dwarf_static:                   Dwarf.dwarf_static option;
@@ -185,7 +180,6 @@ type ppmode =
     ppg_trans:                         bool;
     pp_pretty_eiid_table:              (MachineDefEvents.eiid * string) list;
     pp_trans_prefix:                   bool;
-    pp_announce_options:               bool;
     pp_sail:                           bool;
     pp_default_cmd:                    Interact_parser_base.ast option;
 
@@ -199,8 +193,6 @@ val pp_kind_lens                            : (ppmode, ppkind)                  
 val pp_colours_lens                         : (ppmode, bool)                                                            Lens.t
 val pp_condense_finished_instructions_lens  : (ppmode, bool)                                                            Lens.t
 val pp_style_lens                           : (ppmode, ppstyle)                                                         Lens.t
-val pp_suppress_newpage_lens                : (ppmode, bool)                                                            Lens.t
-val pp_buffer_messages_lens                 : (ppmode, bool)                                                            Lens.t
 val pp_choice_history_limit_lens            : (ppmode, int option)                                                      Lens.t
 val pp_symbol_table_lens                    : (ppmode, ((Sail_impl_base.address * Sail_impl_base.size) * string) list) Lens.t
 val pp_dwarf_static_lens                    : (ppmode, Dwarf.dwarf_static option)                                       Lens.t
@@ -221,7 +213,6 @@ val ppg_reg_rf_lens                         : (ppmode, bool)                    
 val ppg_trans_lens                          : (ppmode, bool)                                                            Lens.t
 val pp_pretty_eiid_table_lens               : (ppmode, (MachineDefEvents.eiid * string) list)                            Lens.t
 val pp_trans_prefix_lens                    : (ppmode, bool)                                                            Lens.t
-val pp_announce_options_lens                : (ppmode, bool)                                                            Lens.t
 val pp_sail_lens                            : (ppmode, bool)                                                            Lens.t
 val pp_default_cmd_lens                     : (ppmode, Interact_parser_base.ast option)                                 Lens.t
 

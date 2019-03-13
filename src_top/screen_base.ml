@@ -53,9 +53,16 @@ let otEmph tree = OTEmph tree
 let otColor color tree = OTColor (color, tree)
 let otCenter tree = OTCenter tree
 let otVerbose verb tree = OTVerbose (verb, tree)
-let otConcat tree = OTConcat tree
+let otConcat trees = OTConcat trees
 let otClass cls tree = OTClass (cls, tree)
 let otIfTrue b tree = if b then tree else OTEmpty
+
+let otConcatWith sep = function
+  | [] -> OTEmpty
+  | hd :: tl ->
+      List.fold_left (fun acc t -> t :: sep :: acc) [hd] tl
+      |> List.rev
+      |> otConcat
 
 let reset_color = "\x1b[0m"
 let string_of_color color =
@@ -201,8 +208,10 @@ and latex_of_class_output_tree ppmode cls tree : string =
 
 module type Printers = sig
   val print : string -> unit (* prints the string to the screen (does not add a new line at the end) *)
-  val clear_screen : unit -> unit
-  val update_transition_history : string -> string -> unit
+
+  val update_transition_history : (unit -> string) -> (unit -> string) -> unit
+  val update_system_state : (unit -> string) -> unit
+
   val read_filename : string -> string
 
   val of_output_tree : Globals.ppmode -> output_tree -> string
@@ -211,18 +220,16 @@ end
 module type S = sig
   val printf : ('a, unit, string, unit) format4 -> 'a
 
-  (* These will normally write to the buffer *)
   val show_message : Globals.ppmode -> output_tree -> unit
   val show_warning : Globals.ppmode -> output_tree -> unit
   val show_debug :   Globals.ppmode -> output_tree -> unit
 
-  (* flush_buffer: actually print the messages above *)
-  val flush_buffer : Globals.ppmode -> unit
-
-  (* print the system state (does not go to the buffer) *)
-  val show_system_state : Globals.ppmode -> output_tree ->
-      output_tree -> output_tree -> unit
-
+  (* print the system state and trace (normally those will be in a different window) *)
+  val show_system_state : Globals.ppmode ->
+      (unit -> output_tree) -> (* trace *)
+      (unit -> output_tree) -> (* choice summary *)
+      (unit -> output_tree) -> (* state *)
+      unit
 
   val unmarshal_defs : string -> Interp_interface.specification
 end
@@ -232,49 +239,29 @@ exception Isa_defs_unmarshal_error of string * string
 module Make (Pr : Printers) : S = struct
   let printf fmt = Printf.ksprintf Pr.print fmt
 
-  let message_buffer = ref ([] : string list)
-
-  let queue_output ppmode output_tree =
+  let print ppmode output_tree =
     let s = Pr.of_output_tree ppmode output_tree in
-    if ppmode.Globals.pp_buffer_messages then
-      message_buffer := s :: !message_buffer
-    else
-      Pr.print s
-
-  let flush_buffer ppmode =
-    (if ppmode.Globals.pp_buffer_messages then begin
-         List.iter (fun s -> Pr.print s) (List.rev !message_buffer);
-         message_buffer := []
-       end
-     else
-       ())
+    Pr.print s
 
   let show_message ppmode output_tree =
     OTClass (OTCInfo, output_tree)
-    |> queue_output ppmode
+    |> print ppmode
 
   let show_warning ppmode output_tree =
     OTClass (OTCWarning, OTConcat [OTString "Warning: "; output_tree])
-    |> queue_output ppmode
+    |> print ppmode
 
   let show_debug ppmode output_tree =
     OTVerbose (Globals.Debug, output_tree)
-    |> queue_output ppmode
+    |> print ppmode
 
   let show_system_state ppmode trace choice_summary state =
-    begin match ppmode.Globals.pp_kind with
-    | Globals.Ascii | Globals.Html ->
-        (* flip this for interactive debug printing from model *)
-        if not (ppmode.Globals.pp_suppress_newpage || !Debug.debug) then
-          Pr.clear_screen ()
-    | _ -> ()
-    end;
-
     Pr.update_transition_history
-      (Pr.of_output_tree ppmode trace)
-      (Pr.of_output_tree ppmode choice_summary);
+      (fun () -> Pr.of_output_tree ppmode (trace ()))
+      (fun () -> Pr.of_output_tree ppmode (choice_summary ()));
 
-    Pr.print (Pr.of_output_tree ppmode state)
+    Pr.update_system_state
+      (fun () -> Pr.of_output_tree ppmode (state ()))
 
   let unmarshal_defs isa_name =
     let bail s =

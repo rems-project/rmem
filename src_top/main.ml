@@ -38,8 +38,6 @@ let quiet = ref false;;
 let run_options : RunOptions.t ref =
   ref {RunOptions.default_options with RunOptions.interactive = Screen.interactive}
 
-let pp_buffer_messages : bool option ref = ref None
-
 let should_list_isas = ref false
 
 let do_list_isas () =
@@ -288,22 +286,21 @@ let opts = [
     " record back trace (true); \"true\" is equivalent to \"OCAMLRUNPARAM=b\" and \"ocamlrun -b\"");
 
 (** UI options ******************************************************)
+("-state_output",
+    Arg.String Screen.set_state_output,
+    "<file> for interactive mode, print the current state to <file>");
+
+("-trace_output",
+    Arg.String Screen.set_trace_output,
+    "<file> for interactive mode, print the current trace to <file>");
+
 ("-colours",
     Arg.Bool (fun b -> Globals.pp_colours := b),
     (Printf.sprintf "<bool> colours in interactive terminal output (turned on by -interactive true) (%b)" !Globals.pp_colours));
 ("-dumb_terminal",
  Arg.Bool (fun b -> Globals.dumb_terminal := b),
  (Printf.sprintf "<bool> disable readline, cursor movement, etc for dumb terminal or testing (%b)" !Globals.dumb_terminal));
-("-suppress_newpage",
-    Arg.Bool (fun b -> Globals.pp_suppress_newpage := b),
-    (Printf.sprintf "<bool> suppress newpage in interactive mode (%b)" !Globals.pp_suppress_newpage));
-("-buffer_messages",
-    Arg.Bool (fun b -> pp_buffer_messages := Some b),
-    Printf.sprintf "<bool> buffer messages until next prompt in interactive mode (%b)"
-        begin match !pp_buffer_messages with
-        | None -> !Globals.pp_buffer_messages
-        | Some b -> b
-        end);
+
 ("-pp_style",
     Arg.String (fun s -> match s with
     | "full" -> Globals.pp_style := Globals.Ppstyle_full
@@ -428,18 +425,6 @@ let main = fun () ->
   begin try Arg.parse_argv Sys.argv (Arg.align opts) collect_file usage' with
   | Arg.Bad msg  -> help stderr msg; exit 1
   | Arg.Help msg -> help stdout msg; exit 0
-  end;
-
-  (* decide early whether to buffer printing so startup messages don't get accidentally swallowed *)
-  begin match !pp_buffer_messages with
-  | None -> Globals.pp_buffer_messages := !run_options.RunOptions.interactive
-  | Some false -> Globals.pp_buffer_messages := false
-  | Some true  ->
-      if !run_options.RunOptions.interactive then
-        Globals.pp_buffer_messages := true
-      else
-        (* this does not have to be an error *)
-        fatal_error "'-buffer_messages true' is not allowed with '-interactive false'"
   end;
 
   (* this ppmode is just for printing some messages, don't use it for anything else *)

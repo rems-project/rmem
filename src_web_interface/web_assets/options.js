@@ -418,11 +418,6 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
 
       make_separator("Interface",         "interface_advanced",                    "Advanced interface options");
 
-        make_toggler("Interface",         "always_print",                          "Print every step",          "Print the state before each prompt");
-make_virtual_toggler("Interface",         "scroll_on_output",                      "Scroll on output",          "Scroll to the bottom when new output is printed");
-        make_toggler("Interface",         "suppress_newpage",                      "Suppress newpage",          "Don't clear the screen before each prompt");
-        make_toggler("Interface",         "buffer_messages",                       "Buffer messages",           "Hold messages until the next prompt is displayed");
-        make_toggler("Interface",         "announce_options",                      "Announce options",          "Print the current options before each prompt");
         make_toggler("Interface",         "pp_colours",                            "Colour",                    "Print colours in output");
         make_toggler("Interface",         "pp_hex",                                "Hex",                       "Print hex instead of decimal in output");
         make_toggler("Interface",         "prefer_symbolic_values",                "Prefer symbolic values",    "Prefer printing symbolic values in states");
@@ -447,8 +442,6 @@ make_virtual_toggler("Interface",         "scroll_on_output",                   
      make_button_row("Search", "search_buttons_random", {
          "Random": function (e) {
              var n = $("#random_trials-button").text();
-             // scroll into view even if scroll-on-output is off
-             scroll_anyway = true;
              do_command("search random " + n);
              e.preventDefault();
              return false;
@@ -460,8 +453,6 @@ make_virtual_toggler("Interface",         "scroll_on_output",                   
                             + "unless your browser has tail call optimisation. Continue?",
                             function () {
                                 console.log("Exhaustive search started: " + new Date().toString());
-                                // scroll into view even if scroll-on-output is off
-                                scroll_anyway = true;
                                 do_command("search exhaustive");
                                 console.log("Exhaustive search finished: " + new Date().toString());
                             });
