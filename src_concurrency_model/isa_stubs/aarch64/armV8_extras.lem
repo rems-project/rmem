@@ -1,3 +1,5 @@
+open import Pervasives
+
 let aArch64_read_memory_functions = []
 let aArch64_memory_writes = []
 let aArch64_memory_eas = []

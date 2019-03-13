@@ -15,6 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefTypes
+open import MachineDefISAInfo
 
 let riscv_ism : isa_info = isa_info_stub
