@@ -18,8 +18,10 @@
 (*===============================================================================*)
 
 open RunOptions
-open MachineDefTypes
 open Screen_base
+
+open MachineDefParams
+open MachineDefTypes
 
 module Make (ConcModel: Concurrency_model.S) = struct
 
@@ -49,10 +51,10 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefTypes.exception_type
+  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefExceptions.exception_type
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
-    | (0, 0) -> MachineDefTypes.exception_type_compare e1 e2
+    | (0, 0) -> MachineDefExceptions.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c
     end
@@ -114,7 +116,7 @@ type search_state =
     (* unhandled ISA exception states *)
     observed_exceptions:       (trace * int) ExceptionMap.t;
 
-    observed_branch_targets: MachineDefTypes.branch_targets_map;
+    observed_branch_targets: MachineDefParams.branch_targets_map;
     observed_shared_memory:  Sail_impl_base.footprint Pset.set;
 
     (*** statistics ***)
@@ -153,7 +155,7 @@ type search_state =
 
 
 let all_instructions_of_state state =
-  let thread_set = Pmap.range compare state.thread_states in
+  let thread_set = Pmap.range compare state.MachineDefTypes.thread_states in
   let all_instructions =
     Pset.map compare (MachineDefThreadSubsystemUtils.ts_instructions state.t_model) thread_set in
   (Pset.fold Pset.union all_instructions (Pset.empty compare))
@@ -757,7 +759,7 @@ let rec search search_state : search_outcome =
     | search_node :: _ ->
         if search_node.open_transition = [] && 
              search_state.options.hash_prune 
-             && not (search_node.system_state.sst_state.MachineDefTypes.s_model.ss_stopped_promising
+             && not (search_node.system_state.sst_state.s_model.ss_stopped_promising
                      search_node.system_state.sst_state.storage_subsystem)
         then
           let hash =

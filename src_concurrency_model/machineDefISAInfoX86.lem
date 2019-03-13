@@ -23,9 +23,10 @@ open import Pervasives
 open import Assert_extra
 
 open import MachineDefUtils
-open import MachineDefTypes
 open import Sail_impl_base
 open import MachineDefEvents
+open import MachineDefISAInfo
+open import MachineDefInstructionSemantics
 import X86_embed_types
 
 let x86_is_system_call_instruction (_: instruction_ast) = Nothing

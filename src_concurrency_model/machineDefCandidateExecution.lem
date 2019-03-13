@@ -46,6 +46,9 @@ open import Pervasives_extra
 open import MachineDefTypes
 open import MachineDefFreshIds
 open import MachineDefEvents
+open import MachineDefParams
+open import MachineDefISAInfo
+open import MachineDefInstructionSemantics
 open import MachineDefFragments
 open import MachineDefFlowingStorageSubsystem
 open import MachineDefInstructionPredicates

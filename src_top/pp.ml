@@ -33,6 +33,10 @@ open Interp_interface
 open Sail_impl_base
 open MachineDefUtils
 open MachineDefEvents
+open MachineDefParams
+open MachineDefExceptions
+open MachineDefISAInfo
+open MachineDefInstructionSemantics
 open MachineDefFragments
 open MachineDefTypes
 (* open MachineDefInstructionSemantics *)
@@ -749,7 +753,7 @@ let pp_reg m r =
 
 let pp_instruction
       (symbol_table: ((Sail_impl_base.address * size) * string) list)
-      (inst: MachineDefTypes.instruction_ast)
+      (inst: instruction_ast)
       (program_loc: Sail_impl_base.address) =
   begin match inst with
   | Fetch_error -> "fetch error"
@@ -843,10 +847,10 @@ let pp_bool m b =
 
 
 let pp_decode_error m de addr = match de with
-  | MachineDefTypes.Unsupported_instruction_error0 (_opcode, (i:MachineDefTypes.instruction_ast)) ->
+  | Unsupported_instruction_error0 (_opcode, (i:instruction_ast)) ->
      sprintf "Unsupported instruction (%s)" (pp_instruction m.pp_symbol_table i addr)
-  | MachineDefTypes.Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
-  | MachineDefTypes.Internal_decode_error (s:string) -> "Internal error "^s
+  | Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
+  | Internal_decode_error (s:string) -> "Internal error "^s
 
 (* TODO: need to feed in a pp mode (part of m) into the
 interpreter code so that special characters can be printed in

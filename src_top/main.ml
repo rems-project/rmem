@@ -22,6 +22,10 @@
 (*                                                                                                  *)
 (*==================================================================================================*)
 
+open MachineDefParams;;
+open RunOptions;;
+
+
 (* FIXME: (SF) does this have any effect on performance? when needed
 OCAMLRUNPARAM=b can be used instead *)
 Printexc.record_backtrace true
@@ -67,7 +71,7 @@ let opts = [
         Printf.sprintf "<%s|%s|%s|...> model options (repeatable), see details below" m1 m2 m3
     | _ -> "<option> model options (repeatable), see details below");
 ("-loop_limit",
- Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with MachineDefTypes.t = { (!Globals.model_params).MachineDefTypes.t with MachineDefTypes.thread_loop_unroll_limit = Some i }}),
+ Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with t = { (!Globals.model_params).t with thread_loop_unroll_limit = Some i }}),
  ("<integer> automatically unroll loops to this depth (default: off)"));
 ("-topauto",
     Arg.Bool (fun b -> Globals.topauto := b; Globals.flowing_topologies := []),
@@ -220,10 +224,10 @@ let opts = [
     Arg.Bool (fun b ->
       let eager_mode =
         {!run_options.RunOptions.eager_mode with
-            MachineDefTypes.eager_local_mem = b}
+            eager_local_mem = b}
       in
       run_options := {!run_options with RunOptions.eager_mode = eager_mode}),
-    (Printf.sprintf "<bool> eagerly take thread-local memory access transitions (%b); exhaustive mode will run multiple times; at the end of each run we calculate the shared memory footprint and use it in the next run, to a fixed-point; the initial shared memory footprint can be set using the litmus file key \"Shared-memory=...\" and the -shared_memory option (empty otherwise)." !run_options.RunOptions.eager_mode.MachineDefTypes.eager_local_mem));
+    (Printf.sprintf "<bool> eagerly take thread-local memory access transitions (%b); exhaustive mode will run multiple times; at the end of each run we calculate the shared memory footprint and use it in the next run, to a fixed-point; the initial shared memory footprint can be set using the litmus file key \"Shared-memory=...\" and the -shared_memory option (empty otherwise)." !run_options.RunOptions.eager_mode.eager_local_mem));
 
 
 ("-shared_memory",
@@ -539,7 +543,7 @@ let main = fun () ->
 
   if !quiet then Globals.verbosity := Globals.Quiet;
 
-  if !Globals.model_params.MachineDefTypes.ss.MachineDefTypes.ss_model = MachineDefTypes.Flowing_storage_model
+  if !Globals.model_params.ss.ss_model = Flowing_storage_model
     && !Globals.flowing_topologies = []
     && not !Globals.topauto
   then

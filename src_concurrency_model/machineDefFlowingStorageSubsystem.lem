@@ -30,6 +30,7 @@ open import MachineDefEvents
 open import MachineDefFragments
 open import MachineDefUtils
 open import MachineDefUI
+open import MachineDefParams
 open MaybeMonad
 
 

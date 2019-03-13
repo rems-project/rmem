@@ -109,7 +109,7 @@ module type S = sig
     system_state -> bool
 
   val initial_system_state :
-    MachineDefTypes.instruction_semantics_mode ->
+    MachineDefInstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
     MachineDefSystem.initial_state_record ->
     system_state
@@ -129,7 +129,7 @@ module type S = sig
     system_state -> bool
 
   val branch_targets_of_state :
-    system_state -> MachineDefTypes.branch_targets_map
+    system_state -> MachineDefParams.branch_targets_map
 
   val shared_memory_of_state : system_state -> Sail_impl_base.footprint Pset.set
 
@@ -162,7 +162,7 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : S = struct
   type trans = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans
 
   let final_ss_state s = Sys.dict_ss.MachineDefTypes.ss_is_final_state
-                           s.MachineDefTypes.model.MachineDefTypes.ss
+                           s.MachineDefTypes.model.MachineDefParams.ss
                            s.MachineDefTypes.storage_subsystem
 
   let initial_system_state ism run_options initial_state_record =
@@ -271,14 +271,14 @@ let make (isaModel: (module Isa_model.S)) ts ss =
 
 
   let (module Sys : SYS) = match (ts,ss) with
-    | (MachineDefTypes.Promising_thread_model,_)  -> (module PromisingSYS)
-    | (_,MachineDefTypes.Promising_storage_model) -> (module PromisingSYS)
-    | (_,MachineDefTypes.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
-    | (_,MachineDefTypes.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
-    | (_,MachineDefTypes.Flat_storage_model)      -> (module MachineSYS(FlatSS))
-    | (_,MachineDefTypes.POP_storage_model)       -> (module MachineSYS(POPSS))
-    | (_,MachineDefTypes.NOP_storage_model)       -> (module MachineSYS(NOPSS))
-    | (_,MachineDefTypes.TSO_storage_model)       -> (module MachineSYS(TSOSS))
+    | (MachineDefParams.Promising_thread_model,_)  -> (module PromisingSYS)
+    | (_,MachineDefParams.Promising_storage_model) -> (module PromisingSYS)
+    | (_,MachineDefParams.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
+    | (_,MachineDefParams.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
+    | (_,MachineDefParams.Flat_storage_model)      -> (module MachineSYS(FlatSS))
+    | (_,MachineDefParams.POP_storage_model)       -> (module MachineSYS(POPSS))
+    | (_,MachineDefParams.NOP_storage_model)       -> (module MachineSYS(NOPSS))
+    | (_,MachineDefParams.TSO_storage_model)       -> (module MachineSYS(TSOSS))
   in
 
   (module (Make ((val isaModel)) (Sys)) : S)

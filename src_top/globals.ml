@@ -31,6 +31,8 @@
 (* let solver = ref "MMExplorer2" *)
 (* let candidates = ref None *)
 
+open MachineDefParams
+
 
 (** output options **************************************************)
 
@@ -108,7 +110,8 @@ has been set properly (i.e. set_model_ism was called) *)
 let get_endianness = fun () ->
   begin match !big_endian with
   | None ->
-      let open MachineDefTypes in
+      let open MachineDefInstructionSemantics in
+      let open MachineDefISAInfo in
       begin match !model_params.t.thread_isa_info.ism with
       | PPCGEN_ism    -> Sail_impl_base.E_big_endian
       | AARCH64_ism _ -> Sail_impl_base.E_little_endian
@@ -128,10 +131,9 @@ let pp_endianness = fun () ->
 
 let set_model_ism ism =
   model_params :=
+    let open MachineDefParams in
     {!model_params with
-        MachineDefTypes.t = {!model_params.MachineDefTypes.t with
-                                MachineDefTypes.thread_isa_info = ism;
-                            }
+        t = {!model_params.t with thread_isa_info = ism; }
     }
 
 let suppress_non_symbol_memory = ref false (* ELF *)
@@ -398,7 +400,7 @@ let ppmode_for_hashing : ppmode =
 
 let elf_threads = ref 1
 
-let flowing_topologies = ref ([]: MachineDefTypes.flowing_topology list)
+let flowing_topologies = ref ([]: MachineDefParams.flowing_topology list)
 
 let topauto = ref false
 

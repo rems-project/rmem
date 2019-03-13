@@ -28,6 +28,7 @@ open import MachineDefEvents
 open import MachineDefUtils
 open import MachineDefTypes
 open import MachineDefFragments
+open import MachineDefParams
 
 open import MachineDefDebug
 open import MachineDefUI

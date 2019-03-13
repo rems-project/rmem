@@ -25,6 +25,7 @@ open import MachineDefUtils
 open import MachineDefFragments
 open import MachineDefEvents
 open import MachineDefTypes
+open import MachineDefParams
 open import MachineDefFlowingStorageSubsystem
 open import MachineDefPOPStorageSubsystem
 open import MachineDefUI

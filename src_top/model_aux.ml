@@ -24,6 +24,7 @@
 (*=======================================================================================================*)
 
 open MachineDefEvents
+open MachineDefParams
 open MachineDefTypes
 
 (* return the return value of the first continuation in the list that

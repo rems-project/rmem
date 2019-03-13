@@ -35,6 +35,10 @@ open import MachineDefEvents
 open import MachineDefDebug
 open import MachineDefThreadSubsystemUtils
 open import MachineDefInstructionPredicates
+open import MachineDefInstructionSemantics
+open import MachineDefISAInfo
+open import MachineDefParams
+open import MachineDefExceptions
 open ListMonad
 
 (* SF: ???? *)
@@ -1577,7 +1581,7 @@ let pending_memory_read_request_action params
         iic.iic_instance.instance_id_state
         state.thread iic.iic_instance.instance_ioid addr size size read_kind
     else
-      params.thread_isa_info.make_read_request_events
+      make_read_request_events_ii params
         state.thread iic.iic_instance (addr, size) read_kind
   in
 
@@ -2213,7 +2217,7 @@ let handle_write_ea_outcome
       MachineDefEvents.make_empty_write_events'
         i.instance_id_state state.thread i.instance_ioid address size size write_kind
     else
-      params.thread_isa_info.make_empty_write_events state.thread i (address, size) write_kind
+      make_empty_write_events_ii params state.thread i (address, size) write_kind
   in
 
   let state' = fun () ->

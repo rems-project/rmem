@@ -504,7 +504,7 @@ let make_init_state (info: Test.info) (test: Test.test) : unit =
             | regs -> TidMap.add thread_id ((reg_base_name, v) :: regs) acc
             | exception Not_found -> TidMap.add thread_id [(reg_base_name, v)] acc
         )
-        (TidMap.empty: ((MachineDefTypes.reg_base_name * int64) list) TidMap.t)
+        (TidMap.empty: ((Sail_impl_base.reg_base_name * int64) list) TidMap.t)
         test.Test.init_reg_state
 
       |> TidMap.bindings

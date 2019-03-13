@@ -26,6 +26,8 @@ open import MachineDefUtils
 open import MachineDefFreshIds
 open import MachineDefTypes
 open import MachineDefEvents
+open import MachineDefISAInfo
+open import MachineDefParams
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
 open import MachineDefFragments

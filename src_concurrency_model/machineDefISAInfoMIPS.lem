@@ -21,9 +21,10 @@ open import Pervasives
 open import Assert_extra
 
 open import MachineDefUtils
-open import MachineDefTypes
 open import Sail_impl_base
 open import MachineDefEvents
+open import MachineDefInstructionSemantics
+open import MachineDefISAInfo
 import Mips_embed_types
 
 let mips_is_system_call_instruction (_: instruction_ast) = Nothing

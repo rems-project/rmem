@@ -18,6 +18,7 @@
 (*===============================================================================*)
 
 open Lexing
+open MachineDefParams
 open MachineDefTypes
 open RunOptions
 
@@ -1638,9 +1639,9 @@ let do_set key value interact_state =
     change_model
       (fun model ->
         { model with
-          MachineDefTypes.t =
-            { model.MachineDefTypes.t with
-              MachineDefTypes.thread_loop_unroll_limit =
+          t =
+            { model.t with
+              thread_loop_unroll_limit =
                 parse_int_option value;
             };
         }
@@ -1700,7 +1701,7 @@ let do_set key value interact_state =
       begin match Model_aux.branch_targets_parse_from_string value with
       | branch_targets ->
           change_model
-            (Model_aux.set_branch_targets interact_state.test_info.symbol_table branch_targets)
+            (Model_aux.set_branch_targets interact_state.test_info.Test.symbol_table branch_targets)
             interact_state
       | exception (Model_aux.BranchTargetsParsingError msg) ->
           otStrLine "bad branch targets: %s" msg
@@ -1713,7 +1714,7 @@ let do_set key value interact_state =
       | shared_memory ->
           let interact_state =
             change_model
-              (Model_aux.set_shared_memory interact_state.test_info.symbol_table shared_memory)
+              (Model_aux.set_shared_memory interact_state.test_info.Test.symbol_table shared_memory)
               interact_state
           in
           let shared_memory =

@@ -31,10 +31,14 @@ open import Pervasives_extra
    actions.  Unqualifed 'load'/'store'/'read'/'write' do not include
    any reserve/conditional or acquire/release variants *)
 
+open import Sail_impl_base
 open import MachineDefFreshIds
 open import MachineDefEvents
 open import MachineDefFragments
-open import Sail_impl_base
+open import MachineDefISAInfo
+open import MachineDefParams
+open import MachineDefInstructionSemantics
+open import MachineDefExceptions
 import Power_embed
 import ArmV8_embed
 import Mips_embed
@@ -45,41 +49,6 @@ import ArmV8_embed_types
 import Mips_embed_types
 import Riscv_types
 import X86_embed_types
-
-
-type reg_base_name = string
-
-(* the left nat is width and the right nat is initial index;
-the list is the register fields; if direction is D_increasing the left side of the
-slice is less or equal to the right, if direction is D_decreasing the right side of the
-slice is less or equal to the left *)
-type registerdata = list (reg_base_name * (direction * nat * nat * list (string * slice)))
-
-let reg_from_data (data: registerdata) (name: reg_base_name) : maybe reg_name =
-  Maybe.bind (List.lookup name data) $ fun (direction, width, start, _) ->
-  Just (Reg name start width direction)
-
-let reg_field_from_data (data: registerdata) (name: reg_base_name) (field_name: string) : maybe reg_name =
-  Maybe.bind (List.lookup name data) $ fun (direction, width, start, fields) ->
-  Maybe.bind (List.lookup field_name fields) $ fun slice ->
-  let norm (d: direction) (start: nat) (i, j) = (* see interp_inter_imp.lem extern_slice *)
-    match d with
-    | D_increasing -> (i, j)
-    | D_decreasing ->
-        let i' = start - i in
-        let j' = (i - j) + i' in
-        (i', j')
-    end
-  in
-  Just (Reg_field name start direction field_name (norm direction start slice))
-
-let fixed_reg (data: registerdata) value (name: reg_base_name) =
-  let reg = Maybe_extra.fromJust (reg_from_data data name) in
-  (reg, register_value_for_reg_of_integer reg value)
-
-let fixed_reg_field (data: registerdata) value (name: reg_base_name) (field_name: string) =
-  let reg = Maybe_extra.fromJust (reg_field_from_data data name field_name) in
-  (reg, register_value_for_reg_of_integer reg value)
 
 
 
@@ -203,58 +172,7 @@ let list_to_rel (xs : list 'a) : Relation.rel 'a 'a =
      may arise from any instructions
 *)
 
-type instruction_ast =
-  | PPCGEN_instr of Power_embed_types.ast
-  | AArch64_instr of ArmV8_embed_types.ast
-  | MIPS_instr of Mips_embed_types.ast
-  | RISCV_instr of Riscv_types.ast
-  | X86_instr of X86_embed_types.ast
-  | Fetch_error
 
-type decode_error_t =
-  | Unsupported_instruction_error of opcode * instruction_ast
-  | Not_an_instruction_error of opcode
-  | Internal_decode_error of string
-
-let decode_error_compare e1 e2 =
-  match (e1, e2) with
-  (* we assume 'opcode' deterministically defines 'instruction_ast' so we only
-  compare 'opcode', also it's hard to auto-gen compare for 'instruction_ast' *)
-  | (Unsupported_instruction_error a1 _, Unsupported_instruction_error a2 _)
-      -> compare a1 a2
-  | (Unsupported_instruction_error _ _, _) -> LT
-  | (_, Unsupported_instruction_error _ _) -> GT
-
-  | (Not_an_instruction_error o1, Not_an_instruction_error o2) -> compare o1 o2
-  | (Not_an_instruction_error _, _) -> LT
-  | (_, Not_an_instruction_error _) -> GT
-
-  | (Internal_decode_error s1, Internal_decode_error s2) -> compare s1 s2
-  end
-
-let decode_error_less e1 e2       = decode_error_compare e1 e2 =  LT
-let decode_error_less_eq e1 e2    = decode_error_compare e1 e2 <> GT
-let decode_error_greater e1 e2    = decode_error_compare e1 e2 =  GT
-let decode_error_greater_eq e1 e2 = decode_error_compare e1 e2 <> LT
-
-instance (Ord decode_error_t)
-  let compare = decode_error_compare
-  let (<)  = decode_error_less
-  let (<=) = decode_error_less_eq
-  let (>)  = decode_error_greater
-  let (>=) = decode_error_greater_eq
-end
-
-let {coq; ocaml} decode_error_equal e1 e2 = (decode_error_compare e1 e2) = EQ
-let inline {hol; isabelle} decode_error_equal = unsafe_structural_equality
-
-let {coq; ocaml} decode_error_inequal e1 e2 = not (decode_error_equal e1 e2)
-let inline {hol; isabelle} decode_error_inequal = unsafe_structural_inequality
-
-instance  (Eq decode_error_t)
-  let (=)  = decode_error_equal
-  let (<>) = decode_error_inequal
-end
 
 (*: \section{The Storage Subsystem Model} :*)
 
@@ -770,138 +688,6 @@ type promising_storage_state =
 *thread_state* continuations) because the rest of the thread has to be
 able to evolve while a read request is outstanding... *)
 
-type fetch_and_decode_exception =
-  | FDE_non_concrete_fetch_address_error
-  | FDE_illegal_fetch_address_error of address
-  | FDE_decode_error of decode_error_t * address
-
-let fetch_and_decode_exception_compare e1 e2 =
-  match (e1, e2) with
-  | (FDE_non_concrete_fetch_address_error, FDE_non_concrete_fetch_address_error) -> EQ
-  | (FDE_non_concrete_fetch_address_error, _) -> LT
-  | (_, FDE_non_concrete_fetch_address_error) -> GT
-
-  | (FDE_illegal_fetch_address_error address1,
-     FDE_illegal_fetch_address_error address2)
-      -> compare address1 address2
-  | (FDE_illegal_fetch_address_error _, _) -> LT
-  | (_, FDE_illegal_fetch_address_error _) -> GT
-
-  | (FDE_decode_error decode_error1 address1,
-     FDE_decode_error decode_error2 address2)
-      -> compare (decode_error1, address1) (decode_error2, address2)
-  (* | (FDE_decode_error _ _, _) -> LT *)
-  (* | (_, FDE_decode_error _ _) -> GT *)
-  end
-
-let fetch_and_decode_exception_less e1 e2       = fetch_and_decode_exception_compare e1 e2 =  LT
-let fetch_and_decode_exception_less_eq e1 e2    = fetch_and_decode_exception_compare e1 e2 <> GT
-let fetch_and_decode_exception_greater e1 e2    = fetch_and_decode_exception_compare e1 e2 =  GT
-let fetch_and_decode_exception_greater_eq e1 e2 = fetch_and_decode_exception_compare e1 e2 <> LT
-
-instance (Ord fetch_and_decode_exception)
-  let compare = fetch_and_decode_exception_compare
-  let (<)  = fetch_and_decode_exception_less
-  let (<=) = fetch_and_decode_exception_less_eq
-  let (>)  = fetch_and_decode_exception_greater
-  let (>=) = fetch_and_decode_exception_greater_eq
-end
-
-let {coq; ocaml} fetch_and_decode_exception_equal e1 e2 = (fetch_and_decode_exception_compare e1 e2) = EQ
-let inline {hol; isabelle} fetch_and_decode_exception_equal = unsafe_structural_equality
-
-let {coq; ocaml} fetch_and_decode_exception_inequal e1 e2 = not (fetch_and_decode_exception_equal e1 e2)
-let inline {hol; isabelle} fetch_and_decode_exception_inequal = unsafe_structural_inequality
-
- instance  (Eq fetch_and_decode_exception)
-  let (=)  = fetch_and_decode_exception_equal
-  let (<>) = fetch_and_decode_exception_inequal
- end
-
-
-type exception_type =
-  (* the read_request and the unmapped footprint *)
-  | ET_read_from_unmapped_memory of read_request * slices
-  | ET_write_to_unmapped_memory of list write
-  | ET_fetch_and_decode of fetch_and_decode_exception
-  | ET_loop_limit_reached (* this exception will be recorded in the
-                          instruction instance of the branch target *)
-  | ET_ISA_termination of string
-
-let exception_type_compare e1 e2 =
-  match (e1, e2) with
-  | (ET_read_from_unmapped_memory read_request1 slices1,
-     ET_read_from_unmapped_memory read_request2 slices2)
-      -> compare (read_request1, slices1) (read_request2, slices2)
-  | (ET_read_from_unmapped_memory _ _, _) -> LT
-  | (_, ET_read_from_unmapped_memory _ _) -> GT
-
-  | (ET_write_to_unmapped_memory ws1, ET_write_to_unmapped_memory ws2)
-      -> compare ws1 ws2
-  | (ET_write_to_unmapped_memory _, _) -> LT
-  | (_, ET_write_to_unmapped_memory _) -> GT
-
-  | (ET_fetch_and_decode f1, ET_fetch_and_decode f2) -> compare f1 f2
-  | (ET_fetch_and_decode _, _) -> LT
-  | (_, ET_fetch_and_decode _) -> GT
-
-  | (ET_loop_limit_reached, ET_loop_limit_reached) -> EQ
-  | (ET_loop_limit_reached, _) -> LT
-  | (_, ET_loop_limit_reached) -> GT
-
-  | (ET_ISA_termination s1, ET_ISA_termination s2) -> compare s1 s2
-  (* | (ET_ISA_termination _, _) -> LT
-  | (_, ET_ISA_termination _) -> GT *)
-  end
-
-let exception_type_less e1 e2       = exception_type_compare e1 e2 =  LT
-let exception_type_less_eq e1 e2    = exception_type_compare e1 e2 <> GT
-let exception_type_greater e1 e2    = exception_type_compare e1 e2 =  GT
-let exception_type_greater_eq e1 e2 = exception_type_compare e1 e2 <> LT
-
-instance (Ord exception_type)
-  let compare = exception_type_compare
-  let (<)  = exception_type_less
-  let (<=) = exception_type_less_eq
-  let (>)  = exception_type_greater
-  let (>=) = exception_type_greater_eq
-end
-
-let {coq; ocaml} exception_type_equal e1 e2 = (exception_type_compare e1 e2) = EQ
-let inline {hol; isabelle} exception_type_equal = unsafe_structural_equality
-let {coq; ocaml} exception_type_inequal e1 e2 = not (exception_type_equal e1 e2)
-let {hol; isabelle} exception_type_inequal = unsafe_structural_inequality
-
-instance  (Eq exception_type)
-  let (=)  = exception_type_equal
-  let (<>) = exception_type_inequal
-end
-
-let showFromExceptionType = function
-  | ET_read_from_unmapped_memory rr s -> "ET_read_from_unmapped_memory " ^ show rr ^ "[" ^ show s ^ "]"
-  | ET_write_to_unmapped_memory ws    -> "ET_write_to_unmapped_memory " ^ show ws
-  | ET_fetch_and_decode fde           -> "ET_fetch_and_decode [???]"
-  | ET_loop_limit_reached             -> "ET_loop_limit_reached"
-  | ET_ISA_termination msg            -> "ET_ISA_termination " ^ msg
-  end
-
-instance (Show exception_type)
-  let show = showFromExceptionType
-end
-
-(* this should become polymorphic in the instruction state. Otherwise, how can
-   we pull out theorem prover definitions without interpreter definitions as
-   well? *)
-
-type outcome_S = outcome_s unit
-(* An outcome_S corresponds to the instruction state. It contains:
-   - the next outcome
-   - maybe (a pp of the current interpreter state)
-   - maybe (a function that given an environment gives us the exhaustive events from this state)
-   This is so we can hide the interpreter state from machineDefTypes but still get the functionality
-   we need for the interpreter.
- *)
-
 
 type micro_op_state =
   | MOS_plain               of outcome_S
@@ -1191,13 +977,6 @@ type thread_state =
   |>
 
 
-type fetch_and_decode_outcome =
-  | FDO_success of address * (maybe opcode) * instruction_ast
-  | FDO_address_not_concrete
-  | FDO_illegal_fetch_address
-  | FDO_decode_error of decode_error_t
-
-
 (******************** Promising Thread Subsystem *******************)
 
 type addrNat = nat
@@ -1289,212 +1068,11 @@ let inline mV = function
   | Just v -> v
 end
 
-(** model parameters *)
-(*: \subsection{Model Parameters} :*)
-
-type propagate_write_params =
-  | Only_at_end
-  | Possibly_in_middle
-
-type new_coherence_params =
-  | Use_new_coherence
-  | Use_old_coherence
-  | Check_new_vs_old
-
-type storage_model =
-  | PLDI11_storage_model
-  | Flowing_storage_model
-  | Flat_storage_model
-  | POP_storage_model
-  | NOP_storage_model
-  | TSO_storage_model
-  | Promising_storage_model
-
-type flowing_topology =
-  | FTopo_leaf of thread_id
-  | FTopo_join of list flowing_topology
-
-type ss_params =
-  <| ss_model: storage_model;
-     ss_sc   : bool; (* behave like SC *)
-     pw      : propagate_write_params;
-     new_coh : new_coherence_params;
-
-     (* parameters for Flowing *)
-     flowing_topology : flowing_topology;
-
-     promise_first: bool;
-  |>
 
 
-type thread_flowing_same_address_params =
-  | Flowing_same_address_strict
-  | Flowing_same_address_aggressive
-
-type thread_restrict_write_commit_params =
-  | Forbid_prev_uncommitted_read_type0
-  | Allow_prev_uncommitted_determined_addr_read_type1
-
-type thread_restart_read_params =
-  | Restart_on_commit
-  | Restart_on_read_satisfy
-
-type aarch64_variant =
-  | AArch64HandSail   (* hand written ISA model *)
-  | AArch64GenSail    (* auto-generated ISA model *)
-
-type instruction_semantics_mode (* ism *) =
-  | PPCGEN_ism
-  | AARCH64_ism of aarch64_variant
-  | MIPS_ism
-  | RISCV_ism
-  | X86_ism
-
-type pop_thread_model =
-  | Standard_POP
-  | Flat_POP
-
-type thread_model =
-  | PLDI11_thread_model
-  | POP_thread_model of pop_thread_model
-  | TSO_thread_model
-  | Promising_thread_model
-  | Relaxed_thread_model  (* A bit of a hack! This is a very relaxed model
-                          intended to be used with 'rmem -dot_final_ok true ...'.
-                          It should allow all litmus tests that don't
-                          have a "data | addr | rf | fr" cycle.
-                          To be used together with flat-storage. *)
-
-type thread_restriction =
-  | RestrictionNone
-  | RestrictionSC      (* sequential consistency *)
-  | RestrictionSCANASC (* single-copy-atomic non-atomic-sequential-consistency *)
-
-type thread_start_info =
-  <|  (* these registers hold the arguments of the thread_start function *)
-      tsi_addr:   reg_name;
-      tsi_toc:    maybe reg_name; (* PPCGEN *)
-      tsi_extra:  maybe reg_name; (* PPCGEN, though unused *)
-      (* this register holds the value returned by the thread_start function *)
-      tsi_return: reg_name;
-
-      (* these registers hold the arguments of the new thread function *)
-      tsi_f_tid:  reg_name;
-      tsi_f_toc:  maybe reg_name; (* PPCGEN *)
-      tsi_f_addr: maybe reg_name; (* MIPS *)
-  |>
-
-let thread_start_info_stub =
-  <|  tsi_addr  = Reg "" 0 0 D_increasing;
-      tsi_toc   = Nothing;
-      tsi_extra = Nothing;
-      tsi_return = Reg "" 0 0 D_increasing;
-      tsi_f_tid  = Reg "" 0 0 D_increasing;
-      tsi_f_toc  = Nothing;
-      tsi_f_addr = Nothing;
-  |>
-
-type isa_info =
-  <|  ism : instruction_semantics_mode;
-      is_system_call_instruction  : instruction_ast -> maybe integer;
-      is_thread_start_instruction : instruction_ast -> bool;
-
-      thread_start_info : thread_start_info;
-
-      register_data_info     : registerdata;
-      fixed_pseudo_registers : list (reg_name * register_value);
-      cia_reg                : reg_name;
-      nia_reg                : reg_name;
-      dia_reg                : maybe reg_name;
-
-      make_empty_write_events  : thread_id -> instruction_instance ->
-        footprint -> write_kind -> ((list write) * (id_state ioid));
-      make_read_request_events : thread_id -> instruction_instance ->
-        footprint -> read_kind -> ((list read_request) * (id_state ioid))
-  |>
-
-let isa_info_stub =
-  <|  ism                         = PPCGEN_ism;
-      is_system_call_instruction  = fun _ -> failwith "stub";
-      is_thread_start_instruction = fun _ -> failwith "stub";
-      thread_start_info           = thread_start_info_stub;
-      register_data_info          = [];
-      fixed_pseudo_registers      = [];
-      cia_reg                     = Reg "" 0 0 D_increasing;
-      nia_reg                     = Reg "" 0 0 D_increasing;
-      dia_reg                     = Nothing;
-      make_empty_write_events     = fun _ _ _ _ -> failwith "stub";
-      make_read_request_events    = fun _ _ _ _ -> failwith "stub";
-  |>
-
-type branch_targets_map = map thread_id (map address (set address))
-
-type thread_params =
-  <| thread_model:       thread_model;
-     thread_restriction: thread_restriction; (* additional model restrictions *)
-     thread_fsa:         thread_flowing_same_address_params;
-     thread_rwc:         thread_restrict_write_commit_params;
-     thread_rr:          thread_restart_read_params;
-     thread_allow_tree_speculation:  bool;
-     thread_allow_write_subsumption: bool;
-     thread_fail_on_loop:            bool;
-     thread_isa_info :               isa_info;
-     thread_loop_unroll_limit:       maybe nat;
-
-     branch_targets: branch_targets_map;
-
-     thread_run_after_stop_promising : bool;
-     thread_certify_after_stop_promising : bool;
-     thread_promising_fuel : nat;
-
-     promising_partial_order : bool;
-  |>
-
-let is_pop_model params = match params.thread_model with
-  | POP_thread_model _ -> true
-  | _ -> false
-end
-
-let is_flat_model params = match params.thread_model with
-  | POP_thread_model Flat_POP -> true
-  | _ -> false
-end
-
-type model_params =
-  <| ss:             ss_params;
-     t:              thread_params;
-
-     (* shared_memory: this is an over approximation of the shared memory
-     locations. Used by Promising. *)
-     shared_memory:  maybe (set footprint)
-  |>
 
 (** whole system state *)
 (*: \subsection{Whole-system state} :*)
-
-type instruction_semantics =
-  <| initial_outcome_s_of_instruction: instruction_ast -> outcome_S;
-     instruction_analysis :
-       outcome_S (* the current outcome for the interpreter *) ->
-       instruction_ast ->
-       string (*analysis function*) ->
-       (string -> (Maybe.maybe string) -> (nat*nat*direction*(nat*nat))) (* reginfo*) ->
-       reg_name (* nia_reg *) ->
-       list (reg_name * register_value) ->
-       (list reg_name * list reg_name * list reg_name * list nia * dia * instruction_kind);
-     decode_to_instruction : address -> opcode -> fetch_and_decode_outcome;
-  |>
-
-
-type instruction_semantics_option =
-  | Interp of bool (* true for eager, false for non-eager *)
-  | Shallow_embedding
-
-type instruction_semantics_p =
-  instruction_semantics_option ->
-  instruction_semantics
-
-
 
 
 (** ***************   transitions ******************************)
@@ -1907,6 +1485,10 @@ end
 
 (** ***********************  UI auxiliary types ******************)
 
+
+type ui_trans 'ts 'ss = nat * trans 'ts 'ss
+(* not doing change colouration for transitions *)
+
 type changed3 'a =
   | C3_new of 'a 
   | C3_gone of 'a
@@ -1919,12 +1501,6 @@ type changed2 'a =
 type changed2b 'a =
   | C2b_changed of 'a
   | C2b_unchanged of 'a
-
-
-type ui_trans 'ts 'ss = nat * trans 'ts 'ss
-(* not doing change colouration for transitions *)
-
-
 
 
 type pldi11_ui_storage_subsystem_state 'ts 'ss =
@@ -2250,22 +1826,6 @@ type system_state_and_transitions 'ts 'ss =
      sst_inst_restarted:      bool;
      sst_inst_discarded:      bool;
      sst_write_after_stop_promising : bool;
-  |>
-
-type eager_mode =
-  <|
-    eager_fetch_single:        bool;
-    eager_fetch_multi:         bool;
-    eager_pseudocode_internal: bool;
-    eager_constant_reg_read:   bool;
-    eager_reg_rw:              bool;
-    eager_memory_aux:          bool;
-    eager_finish:              bool;
-    eager_fp_recalc:           bool;
-    eager_thread_start:        bool;
-
-    eager_local_mem:           bool;
-    em_shared_memory:          set footprint;
   |>
 
 (* two auxiliary functions for dealing with maps in Isabelle *)

@@ -30,6 +30,7 @@ open import MachineDefTypes
 import MachineDefInstructionPredicates
 open import MachineDefUtils
 open import MachineDefUI
+open import MachineDefParams
 open MaybeMonad
 
 (************************* propagate write *************************)

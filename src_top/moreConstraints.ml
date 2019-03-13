@@ -21,19 +21,19 @@
 (*                                                                                       *)
 (*=======================================================================================*)
 
-open MachineDefTypes
+(* open MachineDefTypes *)
 
 module type S = sig
   type value = int64
   type address = int64
   type size = Sail_impl_base.size
   type footprint = address * size
-  type register_snapshot = (MachineDefTypes.reg_base_name * int64) list
+  type register_snapshot = (Sail_impl_base.reg_base_name * int64) list
   type memory_snapshot = (footprint * Nat_big_num.num) list (* TODO: and with coherence_new? *)
 
   type location =
     | Loc_mem of address
-    | Loc_reg of MachineDefEvents.thread_id * MachineDefTypes.reg_base_name
+    | Loc_reg of MachineDefEvents.thread_id * Sail_impl_base.reg_base_name
 
   type symbol_table = (address * string) list
 
@@ -53,7 +53,7 @@ module type S = sig
       (MachineDefEvents.thread_id * register_snapshot) list 
         * memory_snapshot
   val trim_state :
-      (MachineDefEvents.thread_id * MachineDefTypes.reg_base_name) list ->
+      (MachineDefEvents.thread_id * Sail_impl_base.reg_base_name) list ->
         (Sail_impl_base.address * int) list -> state -> state
             
   val pp_state : symbol_table -> state -> string
@@ -72,12 +72,12 @@ module Make : S =
     type address = int64
     type size = Sail_impl_base.size
     type footprint = address * size
-    type register_snapshot = (MachineDefTypes.reg_base_name * int64) list
+    type register_snapshot = (Sail_impl_base.reg_base_name * int64) list
     type memory_snapshot = (footprint * Nat_big_num.num) list
 
     type location =
       | Loc_mem of address
-      | Loc_reg of MachineDefEvents.thread_id * MachineDefTypes.reg_base_name
+      | Loc_reg of MachineDefEvents.thread_id * Sail_impl_base.reg_base_name
             
     type prop = (location, value) ConstrGen.prop
     type constr = prop ConstrGen.constr
@@ -97,6 +97,9 @@ module Make : S =
 
     (* translate from Sail register name to litmus register name *)
     let pp_reg r =
+      let open MachineDefParams in
+      let open MachineDefInstructionSemantics in
+      let open MachineDefISAInfo in
       let params = !Globals.model_params in
       begin match params.t.thread_isa_info.ism with
       | PPCGEN_ism ->

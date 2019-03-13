@@ -25,7 +25,7 @@
 (*                                                                                                         *)
 (*=========================================================================================================*)
 
-open MachineDefTypes
+open MachineDefParams
 
 let logfile_name name =
   begin match !Globals.logdir with
@@ -43,7 +43,7 @@ let rec range from until =
 module Run_test (Test_file: Test_file.S) = struct
   (* name is either a file name to read the test from or the name of
   the test if data is provided *)
-  let run (run_options: RunOptions.t) (name: string) (data: Test_file.data option) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : unit =
+  let run (run_options: RunOptions.t) (name: string) (data: Test_file.data option) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : unit =
     (* read the file/data *)
     let (test_info, test) =
       begin match data with
@@ -56,13 +56,14 @@ module Run_test (Test_file: Test_file.S) = struct
     we force 'interpreter = false' in run_options, even if the user explicitly
     did '-shallow_embedding false' *)
     let run_options =
-      if test_info.Test.ism = RISCV_ism then
-        {run_options with interpreter = false}
+      if test_info.Test.ism = MachineDefInstructionSemantics.RISCV_ism then
+        {run_options with RunOptions.interpreter = false}
       else
         run_options
     in
 
     let run_options =
+      let open RunOptions in
       match !Globals.model_params.shared_memory with
       | Some sm ->
         { run_options with
@@ -141,7 +142,7 @@ let from_litmus_data
     (run_options: RunOptions.t)
     (name:        string)
     (data:        Litmus_test_file.data)
-    (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option)
+    (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option)
     : unit
   =
   Run_litmus.run run_options name (Some data) isa_callback
@@ -150,7 +151,7 @@ let from_ELF_data
     (run_options: RunOptions.t)
     (name:        string)
     (data:        Elf_test_file.data)
-    (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option)
+    (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option)
     : unit
   =
   Run_elf.run run_options name (Some data) isa_callback

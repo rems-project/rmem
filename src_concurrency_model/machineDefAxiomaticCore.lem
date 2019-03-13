@@ -27,7 +27,7 @@ abstract instructions, used in the ppcmem candidates.ml *)
 open import MachineDefUtils
 open import MachineDefFreshIds
 (*open import MachineDefValue*)
-open import MachineDefTypes
+(* open import MachineDefTypes *)
 (* open MachineDefInstructionSemantics *)
 
 type rd_eiid = <| rdeiid_thread:thread_id; rdeiid_ioid:ioid; rdeiid_addr:address;rdeiid_value:value |>

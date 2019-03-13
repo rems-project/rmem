@@ -20,8 +20,6 @@
 (*                                                                                      *)
 (*======================================================================================*)
 
-open MachineDefTypes
-
 module StringMap = Map.Make(String)
 
 (* TODO: use elf functions directly rather than via sail_interface *)
@@ -113,7 +111,8 @@ let initial_stack tid : ((Nat_big_num.num * int) (* entire footprint *) *
 
 let initial_stack_and_reg_data_of_PPC_elf_file e_entry memory elf_threads_list =
   let reg name =
-    match MachineDefTypes.reg_from_data MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefTypes.register_data_info name with
+    match MachineDefISAInfo.reg_from_data
+            MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefISAInfo.register_data_info name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoPPCGen.ppcgen_ism.register_data_info'")
   in
@@ -168,11 +167,11 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
   let reg name =
     let registerdata =
       if !Globals.aarch64gen then
-        MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefTypes.register_data_info
+        MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefISAInfo.register_data_info
       else
-        MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefTypes.register_data_info
+        MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefISAInfo.register_data_info
     in
-    match MachineDefTypes.reg_from_data registerdata name with
+    match MachineDefISAInfo.reg_from_data registerdata name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'register_data_info'")
   in
@@ -239,9 +238,9 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
 
 let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list =
       let reg name =
-        match MachineDefTypes.reg_from_data MachineDefISAInfoMIPS.mips_ism.MachineDefTypes.register_data_info name with
+        match MachineDefISAInfo.reg_from_data MachineDefISAInfoMIPS.mips_ism.MachineDefISAInfo.register_data_info name with
         | Some r -> r
-        | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoMIPS.mips_ism.MachineDefTypes.register_data_info'")
+        | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoMIPS.mips_ism.register_data_info'")
       in
 
   let stacks = List.map initial_stack elf_threads_list in
@@ -271,9 +270,9 @@ let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list 
 
 let initial_stack_and_reg_data_of_riscv_elf_file symbol_map memory elf_threads_list =
       let reg name =
-        match MachineDefTypes.reg_from_data MachineDefISAInfoRISCV.riscv_ism.MachineDefTypes.register_data_info name with
+        match MachineDefISAInfo.reg_from_data MachineDefISAInfoRISCV.riscv_ism.MachineDefISAInfo.register_data_info name with
         | Some r -> r
-        | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoRISCV.riscv_ism.MachineDefTypes.register_data_info'")
+        | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoRISCV.riscv_ism.register_data_info'")
       in
 
   let stacks = List.map initial_stack elf_threads_list in
@@ -328,7 +327,7 @@ let mk_elf_threads_list elf_threads =
 
 type data = char list
 
-let arch_of_test (test: test) : MachineDefTypes.isa_info =
+let arch_of_test (test: test) : MachineDefISAInfo.isa_info =
   begin match Nat_big_num.to_int test.e_machine with
   | 21  (* EM_PPC64 *)   -> MachineDefISAInfoPPCGen.ppcgen_ism
   | 183 (* EM_ARACH64 *) when !Globals.aarch64gen ->
@@ -439,7 +438,7 @@ let show_mem_locations (test: test) : (Sail_impl_base.address * int) list =
 let test_info (test: test) (name: string) : Test.info =
   let mems = show_mem_locations test in
   { Test.name           = name;
-    Test.ism            = (arch_of_test test).MachineDefTypes.ism;
+    Test.ism            = (arch_of_test test).MachineDefISAInfo.ism;
     Test.thread_count   = test.elf_threads;
     Test.symbol_map     = test.symbol_map;
     Test.symbol_table   = symbol_table test;
@@ -456,7 +455,7 @@ let test_info (test: test) (name: string) : Test.info =
   }
 
 
-let read (name: string) info (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read (name: string) info (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   Debug.timer_start_total ();
   Debug.print_string "elf read\n";
 
@@ -516,7 +515,7 @@ let read (name: string) info (isa_callback: (MachineDefTypes.instruction_semanti
   Globals.set_model_ism (arch_of_test test);
 
   begin match isa_callback with
-  | Some f -> f (!Globals.model_params).t.thread_isa_info.ism
+  | Some f -> f (!Globals.model_params).MachineDefParams.t.MachineDefParams.thread_isa_info.MachineDefISAInfo.ism
   | _ -> ()
   end;
 
@@ -526,10 +525,10 @@ let read (name: string) info (isa_callback: (MachineDefTypes.instruction_semanti
 
   (info, test)
 
-let read_data (name: string) (data: data) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_data (name: string) (data: data) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   read name (Sail_interface.populate_and_obtain_global_symbol_init_info' (Byte_sequence.byte_sequence_of_byte_list data)) isa_callback
 
-let read_file (name: string) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_file (name: string) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   read name (Sail_interface.populate_and_obtain_global_symbol_init_info name) isa_callback
 
 let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model : MachineDefSystem.initial_state_record =
@@ -770,6 +769,10 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
   let model' =
     let fixed_pseudo_registers' =
       let open Sail_impl_base in
+      let open MachineDefParams in
+      let open MachineDefInstructionSemantics in
+      let open MachineDefInstructionSemantics in
+      let open MachineDefISAInfo in
       match model.t.thread_isa_info.ism with
       | PPCGEN_ism ->
           let endianness =
@@ -800,6 +803,8 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
           (* TODO: set endianness? *)
           model.t.thread_isa_info.fixed_pseudo_registers
     in
+    let open MachineDefParams in
+    let open MachineDefISAInfo in
     {model with t =
       {model.t with thread_isa_info =
         {model.t.thread_isa_info with fixed_pseudo_registers =

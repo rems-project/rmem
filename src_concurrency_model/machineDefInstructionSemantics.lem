@@ -22,13 +22,11 @@ open import Pervasives_extra
 (* emacs fontification -*-caml-*- *)
 
 open import Sail_impl_base
-open import MachineDefDebug
+(* open import MachineDefDebug *)
+(* open import MachineDefParams *)
 open import MachineDefUtils
-open import MachineDefFreshIds
-open import MachineDefTypes
-     import MachineDefEvents
-open import MachineDefThreadSubsystemUtils
-open import MachineDefThreadSubsystem
+(* open import MachineDefFreshIds *)
+     (* import MachineDefEvents *)
 
 
 open import Sail_values
@@ -41,7 +39,106 @@ import Prompt
 import Power_embed
 import ArmV8_embed
 import Mips_embed
+import X86_embed
 import Riscv
+
+
+
+type aarch64_variant =
+  | AArch64HandSail   (* hand written ISA model *)
+  | AArch64GenSail    (* auto-generated ISA model *)
+
+type instruction_semantics_mode (* ism *) =
+  | PPCGEN_ism
+  | AARCH64_ism of aarch64_variant
+  | MIPS_ism
+  | RISCV_ism
+  | X86_ism
+
+type instruction_ast =
+  | PPCGEN_instr of Power_embed_types.ast
+  | AArch64_instr of ArmV8_embed_types.ast
+  | MIPS_instr of Mips_embed_types.ast
+  | RISCV_instr of Riscv_types.ast
+  | X86_instr of X86_embed_types.ast
+  | Fetch_error
+
+
+type decode_error_t =
+  | Unsupported_instruction_error of opcode * instruction_ast
+  | Not_an_instruction_error of opcode
+  | Internal_decode_error of string
+
+type fetch_and_decode_outcome =
+  | FDO_success of address * (maybe opcode) * instruction_ast
+  | FDO_address_not_concrete
+  | FDO_illegal_fetch_address
+  | FDO_decode_error of decode_error_t
+
+
+let decode_error_compare e1 e2 =
+  match (e1, e2) with
+  (* we assume 'opcode' deterministically defines 'instruction_ast' so we only
+  compare 'opcode', also it's hard to auto-gen compare for 'instruction_ast' *)
+  | (Unsupported_instruction_error a1 _, Unsupported_instruction_error a2 _)
+      -> compare a1 a2
+  | (Unsupported_instruction_error _ _, _) -> LT
+  | (_, Unsupported_instruction_error _ _) -> GT
+
+  | (Not_an_instruction_error o1, Not_an_instruction_error o2) -> compare o1 o2
+  | (Not_an_instruction_error _, _) -> LT
+  | (_, Not_an_instruction_error _) -> GT
+
+  | (Internal_decode_error s1, Internal_decode_error s2) -> compare s1 s2
+  end
+
+let decode_error_less e1 e2       = decode_error_compare e1 e2 =  LT
+let decode_error_less_eq e1 e2    = decode_error_compare e1 e2 <> GT
+let decode_error_greater e1 e2    = decode_error_compare e1 e2 =  GT
+let decode_error_greater_eq e1 e2 = decode_error_compare e1 e2 <> LT
+
+instance (Ord decode_error_t)
+  let compare = decode_error_compare
+  let (<)  = decode_error_less
+  let (<=) = decode_error_less_eq
+  let (>)  = decode_error_greater
+  let (>=) = decode_error_greater_eq
+end
+
+let {coq; ocaml} decode_error_equal e1 e2 = (decode_error_compare e1 e2) = EQ
+let inline {hol; isabelle} decode_error_equal = unsafe_structural_equality
+
+let {coq; ocaml} decode_error_inequal e1 e2 = not (decode_error_equal e1 e2)
+let inline {hol; isabelle} decode_error_inequal = unsafe_structural_inequality
+
+instance  (Eq decode_error_t)
+  let (=)  = decode_error_equal
+  let (<>) = decode_error_inequal
+end
+
+type instruction_semantics =
+  <| initial_outcome_s_of_instruction: instruction_ast -> outcome_S;
+     instruction_analysis :
+       outcome_S (* the current outcome for the interpreter *) ->
+       instruction_ast ->
+       string (*analysis function*) ->
+       (string -> (Maybe.maybe string) -> (nat*nat*direction*(nat*nat))) (* reginfo*) ->
+       reg_name (* nia_reg *) ->
+       list (reg_name * register_value) ->
+       (list reg_name * list reg_name * list reg_name * list nia * dia * instruction_kind);
+     decode_to_instruction : address -> opcode -> fetch_and_decode_outcome;
+  |>
+
+
+type instruction_semantics_option =
+  | Interp of bool (* true for eager, false for non-eager *)
+  | Shallow_embedding
+
+type instruction_semantics_p =
+  instruction_semantics_option ->
+  instruction_semantics
+
+
 
 let sail_bit_1to2 b =
   match b with

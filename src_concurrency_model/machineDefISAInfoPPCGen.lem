@@ -21,9 +21,9 @@ open import Pervasives
 open import Assert_extra
 
 open import MachineDefUtils
-open import MachineDefTypes
 open import Sail_impl_base
 open import MachineDefEvents
+open import MachineDefInstructionSemantics
 
 import Sail_values
 import Power_embed_types

@@ -55,7 +55,7 @@ val debug_sail_interp : bool ref
 
 (** model options ***************************************************)
 
-val model_params: MachineDefTypes.model_params ref
+val model_params: MachineDefParams.model_params ref
 
 val big_endian: (bool option) ref
 
@@ -64,7 +64,7 @@ has been set properly (i.e. set_model_ism was called) *)
 val get_endianness: unit -> Sail_impl_base.end_flag
 val pp_endianness: unit -> string
 
-val set_model_ism: MachineDefTypes.isa_info -> unit
+val set_model_ism: MachineDefISAInfo.isa_info -> unit
 
 val suppress_non_symbol_memory: bool ref (* ELF *)
 
@@ -224,7 +224,7 @@ val ppmode_for_hashing : ppmode
 
 val elf_threads: int ref
 
-val flowing_topologies : MachineDefTypes.flowing_topology list ref
+val flowing_topologies : MachineDefParams.flowing_topology list ref
 val topauto: bool ref
 
 (* topologies to use for web interface (not for text)*)
@@ -232,4 +232,4 @@ val topology_2: string ref
 val topology_3: string ref
 val topology_4: string ref
 
-val get_topologies : int -> MachineDefTypes.flowing_topology list
+val get_topologies : int -> MachineDefParams.flowing_topology list

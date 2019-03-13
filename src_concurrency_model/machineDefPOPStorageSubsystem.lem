@@ -33,6 +33,7 @@ open import MachineDefEvents
 open import MachineDefFlowingStorageSubsystem
 open import MachineDefUtils
 open import MachineDefUI
+open import MachineDefParams
 open MaybeMonad
 
 (** state abstraction ***********************************************)
