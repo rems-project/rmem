@@ -23,6 +23,7 @@
 (*                                                                                                       *)
 (*=======================================================================================================*)
 
+open MachineDefEvents
 open MachineDefTypes
 
 (* return the return value of the first continuation in the list that
@@ -1189,7 +1190,7 @@ let set_shared_memory
             end
       )
       shared_memory
-    |> Pset.from_list MachineDefTypes.footprintCompare
+    |> Pset.from_list Sail_impl_base.footprintCompare
   in
 
   {model with shared_memory = Some shared_memory}

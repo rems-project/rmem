@@ -30,8 +30,8 @@ open import MachineDefUtils
 open import Sail_impl_base
 open import MachineDefTypes
 open import MachineDefFragments
-     import MachineDefFreshIds
-     import MachineDefEvents
+open import MachineDefFreshIds
+open import MachineDefEvents
 open import MachineDefDebug
 open import MachineDefThreadSubsystemUtils
 open import MachineDefInstructionPredicates

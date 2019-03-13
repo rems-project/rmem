@@ -529,7 +529,7 @@ let initial_state_record
         ([], MachineDefFreshIds.initial_id_state init_thread)
         init_mem_values
     in
-    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.MachineDefTypes.w_addr w2.MachineDefTypes.w_addr) write_events in
+    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.MachineDefEvents.w_addr w2.MachineDefEvents.w_addr) write_events in
 
     (write_events, ist)
   in

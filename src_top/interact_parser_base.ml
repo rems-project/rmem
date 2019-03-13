@@ -61,7 +61,7 @@ type ast =
   | BreakpointLine of string * int
   | SetOption of string * string
   | FocusThread of int option
-  | FocusInstruction of MachineDefTypes.ioid option
+  | FocusInstruction of MachineDefEvents.ioid option
   | Search of ast_search
   | InfoBreakpoints
   | DeleteBreakpoint of int

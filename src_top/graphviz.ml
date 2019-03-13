@@ -22,6 +22,8 @@ open Printf
 open Interp_interface
 open Sail_impl_base
 open MachineDefUtils
+open MachineDefFragments
+open MachineDefEvents
 open MachineDefTypes
 open MachineDefUI
 open MachineDefCandidateExecution
@@ -703,8 +705,8 @@ module S : Pp.GraphBackend = struct
   let make_graph m test_info s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
     let m = { m with pp_pretty_eiid_table = Pp.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
 
-    let (ioid_trans_lookup_data  : (MachineDefTypes.ioid * (int * ('ts,'ss) MachineDefTypes.trans)) list) = List.map (function (n,t) -> (MachineDefTypes.principal_ioid_of_trans t, (n,t))) nc in
-    let ioid_trans_lookup (ioid: MachineDefTypes.ioid) : (int * ('ts,'ss) MachineDefTypes.trans) list = Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
+    let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * (int * ('ts,'ss) MachineDefTypes.trans)) list) = List.map (function (n,t) -> (MachineDefTypes.principal_ioid_of_trans t, (n,t))) nc in
+    let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : (int * ('ts,'ss) MachineDefTypes.trans) list = Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
 
 
     (* if generated_dir is set, create files there with filename based on the test name, otherwise create files here based on "out" *)
@@ -727,7 +729,7 @@ end
 
 let pp_raw_dot m legend_opt render_edges positions s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
   let m = { m with pp_pretty_eiid_table = Pp.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
-  let (ioid_trans_lookup_data  : (MachineDefTypes.ioid * (int * ('ts,'ss) MachineDefTypes.trans)) list) = List.map (function (n,t) -> (principal_ioid_of_trans t, (n,t))) nc in
-  let ioid_trans_lookup (ioid: MachineDefTypes.ioid) : (int * ('ts,'ss) MachineDefTypes.trans) list = Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
+  let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * (int * ('ts,'ss) MachineDefTypes.trans)) list) = List.map (function (n,t) -> (principal_ioid_of_trans t, (n,t))) nc in
+  let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : (int * ('ts,'ss) MachineDefTypes.trans) list = Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
 
   pp_candidate_execution m legend_opt render_edges positions cex ioid_trans_lookup

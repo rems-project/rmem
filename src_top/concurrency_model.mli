@@ -53,12 +53,12 @@ module type S = sig
     system_state -> MachineDefTypes.branch_targets_map
     (*(MachineDefTypes.thread_id, (Sail_impl_base.address, Sail_impl_base.address Pset.set) Pmap.map) Pmap.map*)
 
-  val shared_memory_of_state : system_state -> MachineDefTypes.footprint Pset.set
+  val shared_memory_of_state : system_state -> Sail_impl_base.footprint Pset.set
 
   val memory_value_of_footprints :
     system_state ->
-    MachineDefTypes.footprint list ->
-    (MachineDefTypes.footprint * Sail_impl_base.memory_value) list
+    Sail_impl_base.footprint list ->
+    (Sail_impl_base.footprint * Sail_impl_base.memory_value) list
 
   val make_cex_candidate :
     system_state ->

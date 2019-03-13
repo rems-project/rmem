@@ -48,7 +48,7 @@ type t =
     always_print:            bool;
 
     focused_thread:          int option;
-    focused_ioid:            MachineDefTypes.ioid option;
+    focused_ioid:            MachineDefEvents.ioid option;
     storage_first:           bool;
   }
 
@@ -134,7 +134,7 @@ let default_options =
         eager_thread_start        = false;
 
         eager_local_mem           = false;
-        em_shared_memory          = Pset.empty MachineDefTypes.footprintCompare;
+        em_shared_memory          = Pset.empty Sail_impl_base.footprintCompare;
       });
     hash_prune              = true;
     suppress_internal       = false;

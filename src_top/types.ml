@@ -21,17 +21,15 @@
 
 open MachineDefUtils
 open MachineDefFreshIds
-(*open MachineDefValue*)
-open MachineDefTypes
 open MachineDefUI
 
 (* type of information passed down in ppmode through pp functions for pp of addresses and values using dwarf debug info *)
 (* later this should probably involve caching; for now we recompute everything from the system_state *)
 type dwarf_dynamic =
-  { get_evaluation_context: MachineDefTypes.ioid ->
+  { get_evaluation_context: MachineDefEvents.ioid ->
         (Nat_big_num.num * MachineDefSystem.dwarf_evaluation_context) option;
-    pp_all_location_data_at_instruction: MachineDefTypes.thread_id ->
-        MachineDefTypes.ioid -> string;
+    pp_all_location_data_at_instruction: MachineDefEvents.thread_id ->
+        MachineDefEvents.ioid -> string;
   }
 
 (* (\* transitions *\) *)

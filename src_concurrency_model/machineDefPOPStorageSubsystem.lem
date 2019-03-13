@@ -29,6 +29,7 @@ open import Assert_extra
 
 open import MachineDefTypes
 open import MachineDefFragments
+open import MachineDefEvents
 open import MachineDefFlowingStorageSubsystem
 open import MachineDefUtils
 open import MachineDefUI

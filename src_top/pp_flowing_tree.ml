@@ -19,6 +19,7 @@ open Printf
 open Lem_basic_classes
 
 (* open MachineDefUtils *)
+open MachineDefEvents
 open MachineDefTypes
 open Types
 (* open Model_aux *)

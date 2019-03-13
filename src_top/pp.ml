@@ -32,7 +32,8 @@ open Printf
 open Interp_interface
 open Sail_impl_base
 open MachineDefUtils
-(* open MachineDefValue *)
+open MachineDefEvents
+open MachineDefFragments
 open MachineDefTypes
 (* open MachineDefInstructionSemantics *)
 (* open BitwiseCompatibility *)
@@ -732,12 +733,12 @@ let pp_address m mioid (a:Sail_impl_base.address) =
       maybe_pp_corresponding_symbol m mioid (Some a)
 
 
-let pp_footprint m mioid (fp:MachineDefTypes.footprint) =
+let pp_footprint m mioid (fp:footprint) =
   let (a,sz) = fp in
   pp_address m mioid a
   ^"/"^string_of_int sz
 
-let pp_raw_footprint m ((a, sz) : MachineDefTypes.footprint) =
+let pp_raw_footprint m ((a, sz) : footprint) =
   (pp_byte_list m (byte_list_of_address a)) ^ "/" ^ string_of_int sz
 
 let pp_opcode m (op:Sail_impl_base.opcode) =
@@ -747,7 +748,7 @@ let pp_reg m r =
   Printing_functions.reg_name_to_string r
 
 let pp_instruction
-      (symbol_table: ((Sail_impl_base.address * MachineDefTypes.size) * string) list)
+      (symbol_table: ((Sail_impl_base.address * size) * string) list)
       (inst: MachineDefTypes.instruction_ast)
       (program_loc: Sail_impl_base.address) =
   begin match inst with

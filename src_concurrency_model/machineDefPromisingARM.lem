@@ -23,7 +23,7 @@ open import MachineDefUtils
 open import Sail_impl_base
 open import MachineDefTypes
 open import MachineDefFragments
-     import MachineDefEvents
+open import MachineDefEvents
 open import MachineDefDebug
 open import MachineDefThreadSubsystemUtils
 open import MachineDefInstructionPredicates
@@ -1036,7 +1036,7 @@ let run_load_instruction params (s,ii,view,o) =
 (* see also run_store_exclusive_instruction *)
 val run_store_instruction : 
   forall 'v. View 'v, SetType 'v => 
-    (Maybe.maybe ((MachineDefTypes.w_eiid * Sail_impl_base.address) * 'v)) ->
+    (Maybe.maybe ((w_eiid * Sail_impl_base.address) * 'v)) ->
     instr_runner 'v
 let run_store_instruction xinfo params (s,ii,view,o) = 
   let (s,ii,addr_view,o) = do_local_effs (s,ii,view,o) in
@@ -1171,7 +1171,6 @@ let quick_detect_deadlock = function
   | PTSPO ts ->
      exists ((wid,WI v,addr) IN promises ts). 
      not (le (joinS [vWp ts;vCAP ts;vCoh addr ts]) (WI (Set.delete wid v)))
-  | _ -> fail
   end
 
 let quick_quick_detect_deadlock = function
@@ -1179,7 +1178,6 @@ let quick_quick_detect_deadlock = function
      exists ((wid,v,addr) IN promises ts). not (vCAP ts < v)
   | PTSPO ts ->
      exists ((wid,WI v,addr) IN promises ts). not (le (vCAP ts) (WI (Set.delete wid v)))
-  | _ -> fail
   end
 
 

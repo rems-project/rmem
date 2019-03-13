@@ -23,10 +23,10 @@ open import Pervasives_extra
 open import MachineDefUtils
 
 open import Sail_impl_base
-open import MachineDefTypes
 open import MachineDefFragments
-     import MachineDefFreshIds
-     import MachineDefEvents
+open import MachineDefFreshIds
+open import MachineDefEvents
+open import MachineDefTypes
 open import MachineDefDebug
 open import MachineDefInstructionPredicates
 open import MachineDefUI

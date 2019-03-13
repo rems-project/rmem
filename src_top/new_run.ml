@@ -26,7 +26,7 @@ module Make (ConcModel: Concurrency_model.S) = struct
 module StateHashSet = Set.Make(String)
 
 module TidMap = Map.Make(struct
-  type t = MachineDefTypes.thread_id
+  type t = MachineDefEvents.thread_id
   let compare = compare
 end)
 
@@ -49,7 +49,7 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = MachineDefTypes.thread_id * MachineDefTypes.ioid * MachineDefTypes.exception_type
+  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefTypes.exception_type
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
     | (0, 0) -> MachineDefTypes.exception_type_compare e1 e2
@@ -65,7 +65,7 @@ type state_and_trans_predicate = ConcModel.system_state -> ConcModel.trans -> bo
 type breakpoint_predicate =
   | StateBreakpoint of (ConcModel.system_state_and_transitions -> bool)
   | TransitionBreakpoint of (ConcModel.system_state_and_transitions -> ConcModel.trans -> bool)
-  | SharedBreakpoint of (MachineDefTypes.footprint Pset.set ->
+  | SharedBreakpoint of (Sail_impl_base.footprint Pset.set ->
                          ConcModel.system_state_and_transitions ->
                          ConcModel.trans ->
                          bool)
@@ -115,7 +115,7 @@ type search_state =
     observed_exceptions:       (trace * int) ExceptionMap.t;
 
     observed_branch_targets: MachineDefTypes.branch_targets_map;
-    observed_shared_memory:  MachineDefTypes.footprint Pset.set;
+    observed_shared_memory:  Sail_impl_base.footprint Pset.set;
 
     (*** statistics ***)
 

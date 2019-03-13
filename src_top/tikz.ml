@@ -22,6 +22,8 @@ open Printf
 open Interp_interface
 open Sail_impl_base
 open MachineDefUtils
+open MachineDefEvents
+open MachineDefFragments
 open MachineDefTypes
 open MachineDefUI
 open MachineDefCandidateExecution
@@ -34,7 +36,7 @@ open Globals
 
 module StringSet = Set.Make(String)
 module IoidMap = Map.Make(struct
-  type t = MachineDefTypes.ioid
+  type t = MachineDefEvents.ioid
   let compare = compare
 end)
 
@@ -80,7 +82,7 @@ let make_tikz_graph
     sprintf "%d-%d" tid ioid
   in
 
-  let pp_tikz_footprint ((addr, size): MachineDefTypes.footprint) : string =
+  let pp_tikz_footprint ((addr, size): Sail_impl_base.footprint) : string =
     let (loc, offset) =
       match Pp.lookup_symbol_and_offset m.pp_symbol_table addr with
       | Some (loc, offset) when m.pp_prefer_symbolic_values -> (loc, offset)
@@ -477,7 +479,7 @@ let make_tikz_graph
   close_out tikz_out
 
 module TidMap = Map.Make(struct
-  type t = MachineDefTypes.thread_id
+  type t = MachineDefEvents.thread_id
   let compare t1 t2 = Pervasives.compare t1 t2
 end)
 

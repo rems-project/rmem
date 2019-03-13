@@ -33,7 +33,7 @@ open import MachineDefDebug
 open import MachineDefUtils
 open import MachineDefFreshIds
 open import MachineDefTypes
-     import MachineDefEvents
+open import MachineDefEvents
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
 open import MachineDefFragments

@@ -277,7 +277,7 @@ type ppmode =
     pp_symbol_table:                   ((Sail_impl_base.address * int) * string) list;
     pp_dwarf_static:                   Dwarf.dwarf_static option;
     pp_dwarf_dynamic:                  Types.dwarf_dynamic option;
-    pp_initial_write_ioids:            MachineDefTypes.ioid list;
+    pp_initial_write_ioids:            MachineDefEvents.ioid list;
     pp_prefer_symbolic_values:         bool;
     pp_hide_pseudoregister_reads: bool;
     pp_max_finished:                   int option;
@@ -291,7 +291,7 @@ type ppmode =
     ppg_regs:                          bool;
     ppg_reg_rf:                        bool;
     ppg_trans:                         bool;
-    pp_pretty_eiid_table:              (MachineDefTypes.eiid * string) list;
+    pp_pretty_eiid_table:              (MachineDefEvents.eiid * string) list;
     pp_trans_prefix:                   bool;
     pp_announce_options:               bool;
     pp_sail:                           bool;

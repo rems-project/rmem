@@ -699,7 +699,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
     let ioid_ist = MachineDefFreshIds.initial_id_state ioid in
 
     (* construct initial writes *)
-    let rec mk_initial_writes symbol_table ist : (MachineDefTypes.write list * (MachineDefTypes.ioid MachineDefFreshIds.id_state)) =
+    let rec mk_initial_writes symbol_table ist : (MachineDefEvents.write list * (MachineDefEvents.ioid MachineDefFreshIds.id_state)) =
       match symbol_table with
       | [] -> ([], ist)
       | (name, (address:Nat_big_num.num), (size:int), (bytes: word8 list))::symbol_table' ->

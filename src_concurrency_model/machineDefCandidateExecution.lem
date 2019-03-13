@@ -45,6 +45,7 @@ open import Sail_impl_base
 open import Pervasives_extra
 open import MachineDefTypes
 open import MachineDefFreshIds
+open import MachineDefEvents
 open import MachineDefFragments
 open import MachineDefFlowingStorageSubsystem
 open import MachineDefInstructionPredicates
