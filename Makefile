@@ -297,7 +297,7 @@ clean: clean_ocaml
 
 ## marshal defs ######################################################
 
-MARSHAL_DEFS_FILES = PPCGen.defs AArch64.defs MIPS64.defs RISCV.defs X86.defs
+MARSHAL_DEFS_FILES = PPCGen.defs AArch64.defs MIPS64.defs X86.defs
 
 marshal_defs: build_concurrency_model/make_sentinel
 	rm -f marshal_defs.native
@@ -347,6 +347,7 @@ install_web_interface: web $(INSTALLDIR)
 # TODO:	rm -rf $(INSTALLDIR)/*
 	cp -r src_web_interface/* $(INSTALLDIR)/
 	cp $(MARSHAL_DEFS_FILES) $(INSTALLDIR)
+	cp $(INSTALL_DEFS_FILES) $(INSTALLDIR)
 	cp system.js $(INSTALLDIR)
 	[ ! -e system.map ] || cp system.map $(INSTALLDIR)
 	$(MAKE) console_help_printer
@@ -578,6 +579,7 @@ get_isa_model_%: BUILDISATARGET ?= all
 get_isa_model_%: ISASAILFILES ?= $(ISADIR)/*.sail
 get_isa_model_%: ISALEMFILES ?= $(ISADIR)/*.lem
 get_isa_model_%: ISAGENFILES ?= $(ISADIR)/gen/*
+get_isa_model_%: ISADEFSFILES ?=
 get_isa_model_%: FORCE
 	rm -rf $(ISABUILDDIR)
 	mkdir -p $(ISABUILDDIR)
@@ -590,6 +592,7 @@ get_isa_model_%: FORCE
 	cp -a src_top/generic_sail_ast_def_stub.ml $(ISABUILDDIR)/$(ISANAME).ml.stub
 	mkdir -p $(ISABUILDDIR)/gen
 	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
+	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) . ,)
 	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
@@ -645,10 +648,14 @@ get_all_isa_models: get_isa_model_mips
 get_isa_model_riscv: ISANAME=riscv
 get_isa_model_riscv: ISADIR=$(riscvdir)
 get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
-get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/lem-for-rmem/*.lem
+get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/for-rmem/*.lem
 get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/*.lem
-get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/generated_definitions/tofrominterp-for-rmem/riscv_toFromInterp2.ml
+get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/generated_definitions/for-rmem/riscv_toFromInterp2.ml
 get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
+get_isa_model_riscv: ISADEFSFILES=$(ISADIR)/generated_definitions/for-rmem/riscv.defs
+INSTALL_DEFS_FILES += riscv.defs
+CLEANFILES += riscv.defs
+
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
 get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv_rmem
