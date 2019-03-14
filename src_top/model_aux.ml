@@ -532,27 +532,6 @@ let cross_prod_set : 'a Pset.set -> 'b Pset.set -> ('a * 'b) Pset.set =
 
 
 
-(* 
-let to_8bytevalue n = 
-  Interp_inter_imp.num_to_bits 64
-    Interp_interface.Bytev (Big_int_Z.big_int_of_int n)
-
-let to_64bitvalue n = 
-  Interp_inter_imp.num_to_bits 64
-    Interp_interface.Bitv (Big_int_Z.big_int_of_int n)
-    
-let to_address n = 
-  MachineDefTypes.address_of_bytevector_value 
-    (Interp_inter_imp.num_to_bits 64
-       Interp_interface.Bytev (Big_int_Z.big_int_of_int n))
-    
-let to_memory_value n = 
-  MachineDefTypes.memory_value_of_value
-    (Interp_inter_imp.num_to_bits 32
-       Interp_interface.Bytev (Big_int_Z.big_int_of_int n))
-    *)
-
-
 
 (********************************************************************)
 

@@ -183,10 +183,6 @@ type ppmode =
     pp_sail:                           bool;
     pp_default_cmd:                    Interact_parser_base.ast option;
 
-(*    pp_instruction : (((Sail_impl_base.address * MachineDefTypes.size) * string) list) ->
-                     MachineDefTypes.instruction_ast ->
-                     Sail_impl_base.address ->
-                     string; *)
   }
 
 val pp_kind_lens                            : (ppmode, ppkind)                                                          Lens.t

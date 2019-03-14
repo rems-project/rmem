@@ -292,10 +292,6 @@ type ppmode =
     pp_sail:                           bool;
     pp_default_cmd:             Interact_parser_base.ast option;
 
-(*    pp_instruction : (((Sail_impl_base.address * MachineDefTypes.size) * string) list) ->
-                     MachineDefTypes.instruction_ast ->
-                     Sail_impl_base.address ->
-                     string; *)
   }
 
 (* ppmode lenses *)
@@ -355,14 +351,6 @@ let get_ppmode : unit -> ppmode = fun () ->
     pp_trans_prefix                       = true;
     pp_sail                               = !pp_sail;
     pp_default_cmd                        = None;
-    (*    pp_instruction = Pp.pp_instruction *)
-
-      (*fun
-        (_: ((Sail_impl_base.address * MachineDefTypes.size) * string) list)
-        (inst: Sail_impl_base.instruction)
-        (_: Sail_impl_base.address)
-      ->
-      Printing_functions.instruction_to_string inst; *)
   }
 
 let ppmode_for_hashing : ppmode =

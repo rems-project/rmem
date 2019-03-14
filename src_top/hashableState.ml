@@ -17,19 +17,19 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-type thread_id = MachineDefTypes.thread_id
+type thread_id = MachineDefEvents.thread_id
 
 type address = int64 (* Specialised *)
-type size = MachineDefTypes.size
+type size = Sail_impl_base.size
 type footprint = address * size
 
 type memory_value = int64 (* Specialised *)
 
-type w_eiid = MachineDefTypes.w_eiid
-type r_eiid = MachineDefTypes.r_eiid
-type b_eiid = MachineDefTypes.b_eiid
+type w_eiid = MachineDefEvents.w_eiid
+type r_eiid = MachineDefEvents.r_eiid
+type b_eiid = MachineDefEvents.b_eiid
 
-type ioid = MachineDefFreshIds.ioid
+type ioid = MachineDefEvents.ioid
 
 type write_kind = Interp_interface.write_kind
 type barrier_kind = Interp_interface.barrier_kind
@@ -51,7 +51,7 @@ type barrier = {
   } 
 
 type tracked_event = 
-  | SWrite of (write * MachineDefTypes.slices)
+  | SWrite of (write * MachineDefFragments.slices)
   | SBarrier of barrier
 
 type storage_subsystem_state = {
@@ -137,24 +137,24 @@ let conv_memory_value mv =
   Nat_big_num.to_int64 (match Interp_interface.integer_of_memory_value endianness mv with Some bi -> bi)
 
 let conv_write w = 
-  let module MT = MachineDefTypes in
-  { weiid = w.MT.weiid;
-    w_addr = conv_footprint w.MT.w_addr;
-    w_value = conv_memory_value w.MT.w_value;
-    w_write_kind = w.MT.w_write_kind;
+  let module ME = MachineDefEvents in
+  { weiid = w.ME.weiid;
+    w_addr = conv_footprint w.ME.w_addr;
+    w_value = conv_memory_value w.ME.w_value;
+    w_write_kind = w.ME.w_write_kind;
   }
 
 let conv_barrier b = 
-  let module MT = MachineDefTypes in
-  { beiid = b.MT.beiid;
-    b_barrier_kind = b.MT.b_barrier_kind;
+  let module ME = MachineDefEvents in
+  { beiid = b.ME.beiid;
+    b_barrier_kind = b.ME.b_barrier_kind;
   }
 
 let conv_tracked_event e =
-  let module MT = MachineDefTypes in
+  let module ME = MachineDefEvents in
   match e with
-  | MT.SWrite (w,sls) -> SWrite ((conv_write w),sls)
-  | MT.SBarrier b -> SBarrier (conv_barrier b)
+  | ME.SWrite (w,sls) -> SWrite ((conv_write w),sls)
+  | ME.SBarrier b -> SBarrier (conv_barrier b)
 
 let conv_storage_subsystem_state ss =
   let module MT = MachineDefTypes in
