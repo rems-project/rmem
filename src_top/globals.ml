@@ -98,7 +98,6 @@ let model_params = ref MachineDefSystem.default_model_params
 
 let big_endian = ref None
 (*let big_endian = fun () -> false
-  let open MachineDefTypes in
   begin match !model_params.t.thread_isa_info.ism with
   | PPCGEN_ism    -> true
   | AARCH64_ism _ -> false

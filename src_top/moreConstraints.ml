@@ -21,8 +21,6 @@
 (*                                                                                       *)
 (*=======================================================================================*)
 
-(* open MachineDefTypes *)
-
 module type S = sig
   type value = int64
   type address = int64

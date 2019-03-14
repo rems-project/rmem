@@ -24,7 +24,6 @@ open Sail_impl_base
 open MachineDefUtils
 open MachineDefEvents
 open MachineDefFragments
-open MachineDefTypes
 open MachineDefUI
 open MachineDefCandidateExecution
 
