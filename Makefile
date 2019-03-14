@@ -287,7 +287,7 @@ CLEANFILES += version.ml
 # that has to be done manually before updating system.js
 system.js: webppc.$(EXT)
 	rm -f system.map
-	js_of_ocaml $(JSOCFLAGS) +nat.js src_marshal_defs/primitives.js $< -o $@
+	js_of_ocaml $(JSOCFLAGS) +nat.js src_web_interface/web_assets/BigInteger.js src_web_interface/web_assets/zarith.js src_marshal_defs/primitives.js $< -o $@
 CLEANFILES += system.js system.map
 
 clean: clean_ocaml
@@ -407,7 +407,7 @@ else ifeq ($(UI),web)
   $(call require_package,js_of_ocaml-ppx)
   # the nozarith predicate makes ocamlfind pick the versions of lem and
   # linksem that don't use zarith (has no effect on other packages):
-  OCAMLBUILD_FLAGS += -tag 'predicate(nozarith)'
+  # OCAMLBUILD_FLAGS += -tag 'predicate(nozarith)'
 endif
 
 fetch_external_deps:
