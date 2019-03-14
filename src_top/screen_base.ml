@@ -319,7 +319,13 @@ module Make (Pr : Printers) : S = struct
     let str = read_filename (isa_name ^ ".defs") in
     try
       let (defs, env) = ((Marshal.from_string (B64.decode str) 0) : (Type_check.tannot Ast.defs * Type_check.Env.t)) in
-      (defs, Type_check.Env.set_prover (Some (Type_check.prove __POS__)) env)
+      let replace_prover (l, tannot) =
+        if Type_check.is_empty_tannot tannot then
+          (l, tannot)
+        else
+          (l, Type_check.replace_env (Type_check.Env.set_prover (Some (Type_check.prove __POS__)) (Type_check.env_of_tannot tannot)) tannot)
+      in
+      (Ast_util.map_defs_annot replace_prover defs, Type_check.Env.set_prover (Some (Type_check.prove __POS__)) env)
     with Failure s -> bail s
        | Sys_error s -> bail s
        | Not_found -> bail "invalid base64"
