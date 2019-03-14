@@ -154,13 +154,6 @@ type search_state =
 }
 
 
-let all_instructions_of_state state =
-  let thread_set = Pmap.range compare state.MachineDefTypes.thread_states in
-  let all_instructions =
-    Pset.map compare (MachineDefThreadSubsystemUtils.ts_instructions state.t_model) thread_set in
-  (Pset.fold Pset.union all_instructions (Pset.empty compare))
-
-
 (* retrun a trace leading to the head of search_state.search_nodes;
 head is the last transition *)
 let choices_so_far search_state : trace =
@@ -436,7 +429,7 @@ let is_eager search_state transition =
 
 let add_search_node system_state search_state : search_state =
   let filtered_transitions =
-    List.mapi (fun i t -> (i, t)) system_state.sst_system_transitions
+    List.mapi (fun i t -> (i, t)) system_state.MachineDefTypes.sst_system_transitions
     |> List.filter (fun (_, t) -> (List.for_all (fun p -> p t) search_state.filters))
   in
 
@@ -834,7 +827,7 @@ let rec search search_state : search_outcome =
                       single instruction (smallest ioid, i.e., po-oldest) *)
                       let cmp_ioid (_, t1) (_, t2) =
                         match (t1, t2) with
-                        | (T_trans t1, T_trans t2) ->
+                        | (MachineDefTypes.T_trans t1, MachineDefTypes.T_trans t2) ->
                             compare
                               (MachineDefTypes.ioid_of_thread_trans t1)
                               (MachineDefTypes.ioid_of_thread_trans t2)
