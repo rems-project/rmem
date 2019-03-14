@@ -15,6 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefTypes
+open import MachineDefISAInfo
 
 let mips_ism : isa_info = isa_info_stub

@@ -16,9 +16,11 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+open MachineDefParams
+
 type t =
   { interactive:             bool;
-    eager_mode:              MachineDefTypes.eager_mode;
+    eager_mode:              eager_mode;
     hash_prune:              bool;
     suppress_internal:       bool;
     allow_partial:           bool;
@@ -48,7 +50,7 @@ type t =
     always_print:            bool;
 
     focused_thread:          int option;
-    focused_ioid:            MachineDefTypes.ioid option;
+    focused_ioid:            MachineDefEvents.ioid option;
     storage_first:           bool;
   }
 
@@ -77,19 +79,19 @@ let focused_ioid_lens = { Lens.get = (fun o -> o.focused_ioid); Lens.set = (fun 
 let storage_first_lens = { Lens.get = (fun o -> o.storage_first); Lens.set = (fun v o -> { o with storage_first = v }) }
 
 
-let eager_fetch_single_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_fetch_single); Lens.set = (fun v o -> { o with eager_fetch_single = v }) })
-let eager_fetch_multi_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_fetch_multi); Lens.set = (fun v o -> { o with eager_fetch_multi = v }) })
-let eager_pseudocode_internal_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_pseudocode_internal); Lens.set = (fun v o -> { o with eager_pseudocode_internal = v }) })
-let eager_constant_reg_read_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_constant_reg_read); Lens.set = (fun v o -> { o with eager_constant_reg_read = v }) })
-let eager_reg_rw_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_reg_rw); Lens.set = (fun v o -> { o with eager_reg_rw = v }) })
-let eager_memory_aux_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_memory_aux); Lens.set = (fun v o -> { o with eager_memory_aux = v }) })
-let eager_finish_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_finish); Lens.set = (fun v o -> { o with eager_finish = v }) })
-let eager_fp_recalc_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_fp_recalc); Lens.set = (fun v o -> { o with eager_fp_recalc = v }) })
-let eager_thread_start_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_thread_start); Lens.set = (fun v o -> { o with eager_thread_start = v }) })
-let eager_local_mem_lens = (MachineDefTypes.{ Lens.get = (fun o -> o.eager_local_mem); Lens.set = (fun v o -> { o with eager_local_mem = v }) })
+let eager_fetch_single_lens = ({ Lens.get = (fun o -> o.eager_fetch_single); Lens.set = (fun v o -> { o with eager_fetch_single = v }) })
+let eager_fetch_multi_lens = ({ Lens.get = (fun o -> o.eager_fetch_multi); Lens.set = (fun v o -> { o with eager_fetch_multi = v }) })
+let eager_pseudocode_internal_lens = ({ Lens.get = (fun o -> o.eager_pseudocode_internal); Lens.set = (fun v o -> { o with eager_pseudocode_internal = v }) })
+let eager_constant_reg_read_lens = ({ Lens.get = (fun o -> o.eager_constant_reg_read); Lens.set = (fun v o -> { o with eager_constant_reg_read = v }) })
+let eager_reg_rw_lens = ({ Lens.get = (fun o -> o.eager_reg_rw); Lens.set = (fun v o -> { o with eager_reg_rw = v }) })
+let eager_memory_aux_lens = ({ Lens.get = (fun o -> o.eager_memory_aux); Lens.set = (fun v o -> { o with eager_memory_aux = v }) })
+let eager_finish_lens = ({ Lens.get = (fun o -> o.eager_finish); Lens.set = (fun v o -> { o with eager_finish = v }) })
+let eager_fp_recalc_lens = ({ Lens.get = (fun o -> o.eager_fp_recalc); Lens.set = (fun v o -> { o with eager_fp_recalc = v }) })
+let eager_thread_start_lens = ({ Lens.get = (fun o -> o.eager_thread_start); Lens.set = (fun v o -> { o with eager_thread_start = v }) })
+let eager_local_mem_lens = ({ Lens.get = (fun o -> o.eager_local_mem); Lens.set = (fun v o -> { o with eager_local_mem = v }) })
 
-let eager_mode_all_off eager_mode : MachineDefTypes.eager_mode =
-  (MachineDefTypes.{ eager_mode with
+let eager_mode_all_off eager_mode : eager_mode =
+  ({ eager_mode with
      eager_fetch_single        = false;
      eager_fetch_multi         = false;
      eager_pseudocode_internal = false;
@@ -103,8 +105,8 @@ let eager_mode_all_off eager_mode : MachineDefTypes.eager_mode =
      eager_local_mem           = false;
   })
 
-let eager_mode_all_on eager_mode : MachineDefTypes.eager_mode =
-  (MachineDefTypes.{ eager_mode with
+let eager_mode_all_on eager_mode : eager_mode =
+  ({ eager_mode with
      eager_fetch_single        = true;
      (*eager_fetch_multi         = true;*)
      eager_pseudocode_internal = true;
@@ -122,7 +124,7 @@ let eager_mode_all_on eager_mode : MachineDefTypes.eager_mode =
 let default_options =
   { interactive             = true;
     eager_mode              =
-      (MachineDefTypes.{
+      ({
         eager_fetch_single        = false;
         eager_fetch_multi         = false;
         eager_pseudocode_internal = false;
@@ -134,7 +136,7 @@ let default_options =
         eager_thread_start        = false;
 
         eager_local_mem           = false;
-        em_shared_memory          = Pset.empty MachineDefTypes.footprintCompare;
+        em_shared_memory          = Pset.empty Sail_impl_base.footprintCompare;
       });
     hash_prune              = true;
     suppress_internal       = false;

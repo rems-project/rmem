@@ -32,7 +32,7 @@ Notation
 <string[n]>    represents an arbitrary string containing no spaces
 <bool[n]>      represents a boolean. Accepted values:
                  true = 'true', 'on', '1', 't', 'yes', 'y'
-                 false = 'false', 'off', '0', 'f', 'yes', 'y'
+                 false = 'false', 'off', '0', 'f', 'no', 'n'
 
 Stepping commands
 -------------------------------------------------------------------------------
@@ -144,8 +144,7 @@ Global options
 set suppress_internal <bool>     Enable or disable whether Sail micro-steps
                                   (exposed as 'Internal' transitions) are suppressed
 
-set follow_list "<N>[,<N>,...]"  Set the list of upcoming transitions.
-                                   (Note, comma separated.)
+set follow_list "<N>[;<N>...]"  Set the list of upcoming transitions.
 
 Eager options
 -------------------------------------------------------------------------------
@@ -194,12 +193,6 @@ set choice_history_limit (<N>|none)
                             with the current state, 'none' for no limit.
 set always_print <bool>   Enable or disable printing the current
                             state after every command
-set suppress_newpage <bool>  Enable or disable not clearing the screen before
-                               every prompt
-set buffer_messages <bool>   Enable or disable holding messages until the
-                               next prompt is displayed, for easy reading
-set announce_options <bool>  Enable or disable printing the current
-                               configuration of options before each prompt
 set prefer_symbolic_values <bool>  Enable or disable preferring symbolic
                                      values to hex in output
 set hide_pseudoregister_reads <bool>  Hide or show pseudoregister reads in output
@@ -216,6 +209,9 @@ set dwarf_show_all_variable_locations <bool>  Enable or disable showing all DWAR
                                                 instruction
 set pp_sail <bool>         Enable or disable showing the Sail interpreter state
                              and code for instructions (if interpreter enabled)
+
+set state_output <file>   Print the current state, every time it changes, to <file>
+set trace_output <file>   Print the current trace, every time it changes, to <file>
 
 Graph options
 --------------------------------------------------------------------------------

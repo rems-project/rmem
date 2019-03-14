@@ -15,6 +15,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+exception Parse_error of string
+
 type ast_search =
   | Random of int
   | Exhaustive
@@ -58,11 +60,8 @@ type ast =
   | SharedWatchpoint of ast_watchpoint_type
   | BreakpointLine of string * int
   | SetOption of string * string
-  | SetFollowList of string
-  | SetBranchTargets of string
-  | SetSharedMemory of string
   | FocusThread of int option
-  | FocusInstruction of MachineDefTypes.ioid option
+  | FocusInstruction of MachineDefEvents.ioid option
   | Search of ast_search
   | InfoBreakpoints
   | DeleteBreakpoint of int
@@ -93,6 +92,15 @@ let pp_breakpoint_target : ast_breakpoint_target -> string = function
 let pp_transition_choice : transition_choice -> string = function
   | WithEager t             -> string_of_int t
   | WithBoundedEager (t, e) -> Printf.sprintf "%de%d" t e
+
+(* PP the second argument of 'set' *)
+let pp_string str =
+  if String.contains str ';'
+  || String.contains str ' '
+  || String.escaped str <> str (* we only really care about double quote and backslash *)
+  then
+    Printf.sprintf "%S" str (* '%S' adds double quotes and escapes *)
+  else str
 
 let pp : ast -> string = function
   | Quit              -> "quit"
@@ -140,10 +148,7 @@ let pp : ast -> string = function
                   ) in
      Printf.sprintf "%swatch shared" prefix
   | BreakpointLine (filename, line) -> Printf.sprintf "break %s:%d" filename line
-  | SetOption (key, value) -> Printf.sprintf "set %s %s" key value
-  | SetFollowList str -> Printf.sprintf "set follow_list \"%s\"" str
-  | SetBranchTargets str -> Printf.sprintf "set branch-targets \"%s\"" str
-  | SetSharedMemory str -> Printf.sprintf "set shared-memory \"%s\"" str
+  | SetOption (key, value) -> Printf.sprintf "set %s %s" key (pp_string value)
   | FocusThread maybe_thread -> (match maybe_thread with
                                  | None -> "focus thread off"
                                  | Some thread -> (Printf.sprintf "focus thread %d" thread))

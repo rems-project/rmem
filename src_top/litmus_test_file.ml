@@ -20,7 +20,6 @@
 (*                                                                                        *)
 (*========================================================================================*)
 
-open MachineDefTypes
 open Test
 
 (* given the thread index, tid, and the instruction offset in the
@@ -153,15 +152,16 @@ type data = string
 
 let test_info (test: Test.test) (name: string) : Test.info =
   let ism =
+    let open MachineDefInstructionSemantics in
     begin match test.arch with
-    | `PPC           -> MachineDefTypes.PPCGEN_ism
+    | `PPC           -> PPCGEN_ism
     | `AArch64 when !Globals.aarch64gen ->
-                        MachineDefTypes.AARCH64_ism MachineDefTypes.AArch64GenSail
+                        AARCH64_ism AArch64GenSail
     | `AArch64 when not !Globals.aarch64gen ->
-                        MachineDefTypes.AARCH64_ism MachineDefTypes.AArch64HandSail
-    | `MIPS          -> MachineDefTypes.MIPS_ism
-    | `RISCV         -> MachineDefTypes.RISCV_ism
-    | `X86           -> MachineDefTypes.X86_ism
+                        AARCH64_ism AArch64HandSail
+    | `MIPS          -> MIPS_ism
+    | `RISCV         -> RISCV_ism
+    | `X86           -> X86_ism
     | _ ->
         Printf.eprintf "Unsupported architecture\n";
         exit 1
@@ -273,7 +273,11 @@ let test_info (test: Test.test) (name: string) : Test.info =
     Test.constr         = test.Test.constr;
   }
 
-let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_channel 
+      (name: string)
+      (in_chan: lex_input)
+      (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) 
+    : Test.info * test =
   (* First split the input file in sections *)
   let module SPL = Splitter.Make(Splitter.Default) in
   let test_splitted =
@@ -297,6 +301,10 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
   end
   |> Globals.set_model_ism;
 
+  let open MachineDefParams in
+  let open MachineDefInstructionSemantics in
+  let open MachineDefISAInfo in
+
   begin match isa_callback with
   | Some f -> f (!Globals.model_params).t.thread_isa_info.ism
   | _ -> ()
@@ -304,6 +312,8 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
 
   (* parse and translate the litmus test *)
   let test =
+    let open MachineDefParams in
+    let open Globals in
     let params = !Globals.model_params in
     begin match (params.t.thread_isa_info.ism, params.ss.ss_model, params.t.thread_model) with
     | (AARCH64_ism AArch64HandSail, POP_storage_model, POP_thread_model _)
@@ -472,10 +482,10 @@ let read_channel (name: string) (in_chan: lex_input) (isa_callback: (MachineDefT
   (info, test)
 
 
-let read_data (name: string) (data: data) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_data (name: string) (data: data) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   read_channel name (LexInString data) isa_callback
 
-let read_file (name: string) (isa_callback: (MachineDefTypes.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_file (name: string) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   Misc.input_protect begin
       fun (in_chan: in_channel) ->
         read_channel name (LexInChannel in_chan) isa_callback
@@ -485,9 +495,14 @@ let read_file (name: string) (isa_callback: (MachineDefTypes.instruction_semanti
 let initial_state_record
     (test:      test)
     (isa_defs:  (module Isa_model.ISADefs))
-    (model:     MachineDefTypes.model_params)
+    (model:     MachineDefParams.model_params)
     (*: 'ss MachineDefTypes.system_state*)
   =
+
+  let open MachineDefParams in
+  let open MachineDefISAInfo in
+  let open MachineDefInstructionSemantics in
+
   (* list of tids 0,1,... *)
   let tids = Lem_list.genlist (fun n -> n) (List.length test.prog) in
 
@@ -529,7 +544,7 @@ let initial_state_record
         ([], MachineDefFreshIds.initial_id_state init_thread)
         init_mem_values
     in
-    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.MachineDefTypes.w_addr w2.MachineDefTypes.w_addr) write_events in
+    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.MachineDefEvents.w_addr w2.MachineDefEvents.w_addr) write_events in
 
     (write_events, ist)
   in
@@ -553,12 +568,12 @@ let initial_state_record
       prog_in_mem
   in
 
-  let prog _ (address: Sail_impl_base.address) : MachineDefTypes.fetch_and_decode_outcome =
+  let prog _ (address: Sail_impl_base.address) : MachineDefInstructionSemantics.fetch_and_decode_outcome =
     let address' = Sail_impl_base.integer_of_address address in
     begin match Pmap.lookup address' prog_map with
-    | None -> MachineDefTypes.FDO_illegal_fetch_address
+    | None -> MachineDefInstructionSemantics.FDO_illegal_fetch_address
     | Some inst ->
-       MachineDefTypes.FDO_success (address, None, inst)
+       MachineDefInstructionSemantics.FDO_success (address, None, inst)
     end
   in
 
@@ -579,17 +594,18 @@ let initial_state_record
 
   (* Set up TPIDR registers -- used for thread local storage, specifically
      seems to be a pointer to the TCB. For now, just put the thread id there *)
-  let reg_values : ((Nat_num.nat * MachineDefTypes.reg_base_name) * Sail_impl_base.register_value) list =
+  let reg_values : ((Nat_num.nat * Sail_impl_base.reg_base_name) * Sail_impl_base.register_value) list =
+    let open MachineDefISAInfo in
     match test.arch with
     | `AArch64 ->
        let tpidr_el0 =
          let registerdata =
            if !Globals.aarch64gen then
-             MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefTypes.register_data_info
+             MachineDefISAInfoAArch64.aarch64gen_ism.register_data_info
            else
-             MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefTypes.register_data_info
+             MachineDefISAInfoAArch64.aarch64hand_ism.register_data_info
          in
-         match MachineDefTypes.reg_from_data registerdata "TPIDR_EL0" with
+         match reg_from_data registerdata "TPIDR_EL0" with
          | Some r -> r
          | None -> failwith ("\"TPIDR_EL0\" is not in 'register_data_info'")
        in
@@ -599,8 +615,8 @@ let initial_state_record
           tids)
        @ test.init_reg_state
     | `RISCV ->
-       let registerdata = MachineDefISAInfoRISCV.riscv_ism.MachineDefTypes.register_data_info in
-       let get_reg r = match MachineDefTypes.reg_from_data registerdata r with
+       let registerdata = MachineDefISAInfoRISCV.riscv_ism.register_data_info in
+       let get_reg r = match reg_from_data registerdata r with
          | Some r -> r
          | None -> failwith (r ^ " not in register_data_info")
        in

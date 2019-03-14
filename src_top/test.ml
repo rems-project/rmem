@@ -19,7 +19,14 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open MachineDefTypes
+(* open MachineDefEvents *)
+
+type reg_base_name = Sail_impl_base.reg_base_name
+type address = Sail_impl_base.address
+type register_value = Sail_impl_base.register_value
+type memory_value = Sail_impl_base.memory_value
+type instruction_ast = MachineDefInstructionSemantics.instruction_ast
+type thread_id = MachineDefEvents.thread_id
 
 module C = MoreConstraints.Make
 
@@ -33,10 +40,10 @@ type labelmap = (string * int) list
 type test = 
   { arch:            Archs.t;
     info:            MiscParser.info;
-    init_reg_state:  ((thread_id * reg_base_name) * Sail_impl_base.register_value) list;
-    init_mem_state:  (Sail_impl_base.address * Sail_impl_base.memory_value) list;
-    mem_addr_map:    (Sail_impl_base.address * int) LocationMap.t;
-    prog:            (thread_id * MachineDefTypes.instruction_ast list * labelmap) list;
+    init_reg_state:  ((thread_id * reg_base_name) * register_value) list;
+    init_mem_state:  (address * memory_value) list;
+    mem_addr_map:    (address * int) LocationMap.t;
+    prog:            (thread_id * instruction_ast list * labelmap) list;
     filter:          C.prop option;
     constr:          C.constr;
     flocs:           C.location list;
@@ -45,19 +52,19 @@ type test =
 type info =
   { name:           string;
 
-    ism:            MachineDefTypes.instruction_semantics_mode;
+    ism:            MachineDefInstructionSemantics.instruction_semantics_mode;
     thread_count:   int;
     symbol_map:     Elf_file.global_symbol_init_info;
-    symbol_table:   ((Sail_impl_base.address * int) * string) list;
+    symbol_table:   ((address * int) * string) list;
     dwarf_static:   Dwarf.dwarf_static option;
 
     (* Locations that will show in the histogram *)
-    show_regs: (MachineDefTypes.thread_id * MachineDefTypes.reg_base_name) list;
-    show_mem:  (Sail_impl_base.address * int) list;
+    show_regs: (thread_id * reg_base_name) list;
+    show_mem:  (address * int) list;
 
     (* Locations we need for checking the filter property *)
-    filter_regs: (MachineDefTypes.thread_id * MachineDefTypes.reg_base_name) list;
-    filter_mem:  (Sail_impl_base.address * int) list;
+    filter_regs: (thread_id * reg_base_name) list;
+    filter_mem:  (address * int) list;
 
     info:           MiscParser.info;
     filter:         C.prop option;

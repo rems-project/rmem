@@ -16,7 +16,6 @@
 /*===============================================================================*/
 
 var started = false;
-var scroll_anyway = false;
 
 function show_prompt (str) {
     $(".interact_prompt").css("display", "inline-block");
@@ -28,30 +27,43 @@ function show_prompt (str) {
     });
 }
 
-function println (s) {
-    STATE.console_lines.push(s);
+function print (s) {
+    STATE.console_lines(STATE.console_lines() + s);
     $(document).ready(function() {
-        if (scroll_anyway || $("#scroll_on_output-toggle").prop("checked")) {
-            scroll_anyway = false;
-            ko.tasks.schedule(function () {
-                $(".system_state_lines > :last-child").each(function () {
-                    this.scrollIntoView(false);
-                });
-            });
-        }
+      ko.tasks.schedule(function () {
+          $(".console > .system_state > .system_state_lines > :last-child").each(function () {
+              this.scrollIntoView(false);
+          });
+      });
+    });
+}
+
+function update_system_state (state) {
+    STATE.state_lines(state);
+    $(document).ready(function() {
+// Do we want the system-state window to scroll to the bottom?
+//       ko.tasks.schedule(function () {
+//           $(".state > .system_state > .system_state_lines > :last-child").each(function () {
+//               this.scrollIntoView(false);
+//           });
+//       });
     });
 }
 
 function update_transition_history (history, available) {
-    STATE.trace_lines.removeAll();
-    history.split("\n").forEach(function(x) {
-        STATE.trace_lines.push(x);
-    });
+    STATE.trace_lines(history);
     STATE.trace_available_transitions(available);
+    $(document).ready(function() {
+      ko.tasks.schedule(function () {
+          $(".trace > .system_state > .system_state_lines > :last-child").each(function () {
+              this.scrollIntoView(false);
+          });
+      });
+    });
 }
 
 function clear_screen () {
-    STATE.console_lines.removeAll();
+    STATE.console_lines("");
 }
 
 function quit () {
@@ -89,10 +101,20 @@ function default_split () {
                         sizes: [50, 50],
                         contents: [
                             {
-                                pane: "console"
+                                pane: "state"
                             },
                             {
-                                pane: "help"
+                                vertical: {
+                                    sizes: [50, 50],
+                                    contents: [
+                                        {
+                                            pane: "console"
+                                        },
+                                        {
+                                            pane: "help"
+                                        }
+                                    ]
+                                },
                             }
                         ]
                     }
@@ -148,10 +170,9 @@ $(document).ready(function () {
     $(window).on("hashchange", hash_changed);
 
     window.onerror = function (e) {
-        var error_str = '<span class="error">Fatal error: Caught exception ' + e.toString() + "</span>";
+        var error_str = '<span class="error">Fatal error: Caught exception ' + e.toString() + "</span><br>";
         // scroll into view even if scroll-on-output is off
-        scroll_anyway = true;
-        println(error_str);
+        print(error_str);
     }
 });
 

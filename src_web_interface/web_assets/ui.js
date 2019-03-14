@@ -16,7 +16,7 @@
 /*===============================================================================*/
 
 function do_command (cmd, el) {
-    println(STATE.prompt() + "&nbsp;<b>" + escape_html(cmd) + "</b>");
+    print("<p>" + STATE.prompt() + "&nbsp;<b>" + escape_html(cmd) + "</b></p>");
     STATE.prompt("(...)");
     if (el) {
         $(el).val("");

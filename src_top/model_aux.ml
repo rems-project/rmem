@@ -23,6 +23,8 @@
 (*                                                                                                       *)
 (*=======================================================================================================*)
 
+open MachineDefEvents
+open MachineDefParams
 open MachineDefTypes
 
 (* return the return value of the first continuation in the list that
@@ -530,27 +532,6 @@ let cross_prod_set : 'a Pset.set -> 'b Pset.set -> ('a * 'b) Pset.set =
 
 
 
-(* 
-let to_8bytevalue n = 
-  Interp_inter_imp.num_to_bits 64
-    Interp_interface.Bytev (Big_int_Z.big_int_of_int n)
-
-let to_64bitvalue n = 
-  Interp_inter_imp.num_to_bits 64
-    Interp_interface.Bitv (Big_int_Z.big_int_of_int n)
-    
-let to_address n = 
-  MachineDefTypes.address_of_bytevector_value 
-    (Interp_inter_imp.num_to_bits 64
-       Interp_interface.Bytev (Big_int_Z.big_int_of_int n))
-    
-let to_memory_value n = 
-  MachineDefTypes.memory_value_of_value
-    (Interp_inter_imp.num_to_bits 32
-       Interp_interface.Bytev (Big_int_Z.big_int_of_int n))
-    *)
-
-
 
 (********************************************************************)
 
@@ -576,7 +557,7 @@ let exhaustive_topologies = function
      "[[[1,3],2],0]";
      "[[[2,3],0],1]";
      "[[[2,3],1],0]"]
-| _ -> raise (Failure "'-topauto true' does not support less than 1 or more than 4 threads")
+| _ -> raise (Misc.Fatal "'-topauto true' does not support less than 1 or more than 4 threads")
 
 (* the Flowing topologies the UI offers; head is the default topology *)
 let ui_topologies = function
@@ -777,7 +758,7 @@ let rec all_top_thread_ids top =
 let check_topology_duplicates top =
   let all_thread_ids = all_top_thread_ids top in
   if List.length (List.sort_uniq compare all_thread_ids) != List.length all_thread_ids then
-    failwith "duplicate thread IDs in topology"
+    raise (Misc.Fatal "duplicate thread IDs in topology")
   else
     top
 
@@ -1030,7 +1011,7 @@ let current_model params =
 let pp_model params =
   let model =
     try String.concat "; " (current_model params)
-    with Not_found -> failwith "failed to stringify the current model options"
+    with Not_found -> raise (Misc.Fatal "failed to stringify the current model options")
   in
   "[" ^ model ^ "]"
 
@@ -1095,7 +1076,7 @@ let set_branch_targets
             Sail_impl_base.integer_of_address addr
             |> Nat_big_num.add offset
             |> Sail_impl_base.address_of_integer
-        | exception Not_found -> failwith @@ "the location label \"" ^ label ^ "\" does not exist"
+        | exception Not_found -> raise (Misc.Fatal ("the location label \"" ^ label ^ "\" does not exist"))
         end
   in
 
@@ -1174,7 +1155,7 @@ let set_shared_memory
             (Sail_impl_base.address_of_integer addr, size)
         | Shared_memory_parser_base.Symbol (symb, None) ->
             begin try List.assoc symb labels_map with
-            | Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
+            | Not_found -> raise (Misc.Fatal ("the symbol \"" ^ symb ^ "\" does not exist"))
             end
         | Shared_memory_parser_base.Symbol (symb, Some (offset, size)) ->
             begin match List.assoc symb labels_map with
@@ -1185,11 +1166,11 @@ let set_shared_memory
                   |> Sail_impl_base.address_of_integer
                 in
                 (addr, size)
-            | exception Not_found -> failwith @@ "the symbol \"" ^ symb ^ "\" does not exist"
+            | exception Not_found -> raise (Misc.Fatal ("the symbol \"" ^ symb ^ "\" does not exist"))
             end
       )
       shared_memory
-    |> Pset.from_list MachineDefTypes.footprintCompare
+    |> Pset.from_list Sail_impl_base.footprintCompare
   in
 
   {model with shared_memory = Some shared_memory}

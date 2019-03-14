@@ -32,7 +32,12 @@ open Printf
 open Interp_interface
 open Sail_impl_base
 open MachineDefUtils
-(* open MachineDefValue *)
+open MachineDefEvents
+open MachineDefParams
+open MachineDefExceptions
+open MachineDefISAInfo
+open MachineDefInstructionSemantics
+open MachineDefFragments
 open MachineDefTypes
 (* open MachineDefInstructionSemantics *)
 (* open BitwiseCompatibility *)
@@ -377,16 +382,18 @@ let colour_changed3 m (cs:string changed3) =
   | C3_gone s ->
       if m.Globals.pp_colours then
         match m.Globals.pp_kind with
-        | Ascii | Hash -> col_dark_gray s
-        | Html -> "<span class='changed_gone'>"^ s ^"</span>"
+        | Hash  -> s
+        | Ascii -> col_dark_gray s
+        | Html  -> "<span class='changed_gone'>"^ s ^"</span>"
         | Latex -> "\\mydarkgray{" ^ s ^"}"
       else s
   | C3_unchanged s -> s
   | C3_new s ->
       if m.Globals.pp_colours then
         match m.Globals.pp_kind with
-        | Ascii | Hash -> col_red s
-        | Html -> "<span class='changed_new'>"^ s ^"</span>"
+        | Hash  -> s
+        | Ascii -> col_red s
+        | Html  -> "<span class='changed_new'>"^ s ^"</span>"
         | Latex -> "\\myred{" ^ s ^"}"
       else s
 
@@ -522,33 +529,28 @@ let pp_changed3_list_bis m (pp_f:Globals.ppmode->'a->string) (xs:'a changed3 lis
 let colour_tran_id m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_green s
-    | Html -> "<span class='tran_id'>"^ s ^"</span>"
+    | Hash  -> s
+    | Ascii -> col_green s
+    | Html  -> "<span class='tran_id'>"^ s ^"</span>"
     | Latex -> "\\mygreen{" ^ s ^"}"
   else s
 
 let colour_memory_action m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_cyan s
-    | Html -> "<span class='memory_action'>"^ s ^"</span>"
+    | Hash  -> s
+    | Ascii -> col_cyan s
+    | Html  -> "<span class='memory_action'>"^ s ^"</span>"
     | Latex -> "\\mycyan{" ^ s ^"}"
   else s
 
 let colour_bold m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_bold s
-    | Html -> "<b>"^ s ^"</b>"
+    | Hash  -> s
+    | Ascii -> col_bold s
+    | Html  -> "<b>"^ s ^"</b>"
     | Latex -> "\\mybold{" ^ s ^"}"
-  else s
-
-let colour_warning m s =
-  if m.Globals.pp_colours then
-    match m.Globals.pp_kind with
-    | Ascii | Hash -> col_yellow s
-    | Html -> "<span class='warning'>" ^ s ^ "</span>"
-    | Latex -> "\\myyellow{" ^ s ^ "}"
   else s
 
 let colour_finished_instruction m s = colour_bold m s
@@ -556,25 +558,10 @@ let colour_finished_instruction m s = colour_bold m s
 let colour_unfinished_instruction m s =
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash -> col_bold (col_yellow s)
-    | Html -> "<span class='warning'>" ^ s ^ "</span>"
+    | Hash  -> s
+    | Ascii -> col_bold (col_yellow s)
+    | Html  -> "<span class='warning'>" ^ s ^ "</span>"
     | Latex -> "\\myyellow{" ^ s ^ "}"
-  else s
-
-
-let colour_info m s =
-  if m.Globals.pp_colours then
-    match m.Globals.pp_kind with
-    | Ascii | Hash -> col_cyan s
-    | Html -> "<span class='info'>" ^ s ^ "</span>"
-    | Latex -> "\\mycyan{" ^ s ^ "}"
-  else s
-
-let colour_final m s =
-  if m.Globals.pp_colours then
-    match m.Globals.pp_kind with
-    | Ascii | Hash | Latex -> s
-    | Html -> "<span class='final'>" ^ s ^ "</span>"
   else s
 
 let colour_sail m s =
@@ -590,7 +577,8 @@ let colour_sail m s =
 *)
   if m.Globals.pp_colours then
     match m.Globals.pp_kind with
-    | Ascii | Hash ->
+    | Hash  -> s
+    | Ascii ->
         (*let r = Str.regexp_string "\x1b[m" in
         let s = (try
           let pos = Str.search_backward r s (String.length s -1) in
@@ -600,7 +588,7 @@ let colour_sail m s =
         | Not_found -> s) in
         pp_string s ^ "\n" ^ *)
         col_cyan s
-    | Html -> "<span class='sail'>"^ s ^"</span>"
+    | Html  -> "<span class='sail'>"^ s ^"</span>"
     | Latex -> "\\myblue{" ^ s ^"}"
   else s
 
@@ -749,12 +737,12 @@ let pp_address m mioid (a:Sail_impl_base.address) =
       maybe_pp_corresponding_symbol m mioid (Some a)
 
 
-let pp_footprint m mioid (fp:MachineDefTypes.footprint) =
+let pp_footprint m mioid (fp:footprint) =
   let (a,sz) = fp in
   pp_address m mioid a
   ^"/"^string_of_int sz
 
-let pp_raw_footprint m ((a, sz) : MachineDefTypes.footprint) =
+let pp_raw_footprint m ((a, sz) : footprint) =
   (pp_byte_list m (byte_list_of_address a)) ^ "/" ^ string_of_int sz
 
 let pp_opcode m (op:Sail_impl_base.opcode) =
@@ -764,8 +752,8 @@ let pp_reg m r =
   Printing_functions.reg_name_to_string r
 
 let pp_instruction
-      (symbol_table: ((Sail_impl_base.address * MachineDefTypes.size) * string) list)
-      (inst: MachineDefTypes.instruction_ast)
+      (symbol_table: ((Sail_impl_base.address * size) * string) list)
+      (inst: instruction_ast)
       (program_loc: Sail_impl_base.address) =
   begin match inst with
   | Fetch_error -> "fetch error"
@@ -859,10 +847,10 @@ let pp_bool m b =
 
 
 let pp_decode_error m de addr = match de with
-  | MachineDefTypes.Unsupported_instruction_error0 (_opcode, (i:MachineDefTypes.instruction_ast)) ->
+  | Unsupported_instruction_error0 (_opcode, (i:instruction_ast)) ->
      sprintf "Unsupported instruction (%s)" (pp_instruction m.pp_symbol_table i addr)
-  | MachineDefTypes.Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
-  | MachineDefTypes.Internal_decode_error (s:string) -> "Internal error "^s
+  | Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
+  | Internal_decode_error (s:string) -> "Internal error "^s
 
 (* TODO: need to feed in a pp mode (part of m) into the
 interpreter code so that special characters can be printed in
@@ -1020,6 +1008,19 @@ let pp_trans_kind _m = function
   | Transaction_commit -> "commit transaction"
   | Transaction_abort  -> "abort transaction"
 
+let pp_cache_kind m = function
+  | Cache_op_D_IVAC    -> "data-cache IVAC"
+  | Cache_op_D_ISW     -> "data-cache ISW"
+  | Cache_op_D_CSW     -> "data-cache CSW"
+  |  Cache_op_D_CISW   -> "data-cache CISW"
+  | Cache_op_D_ZVA     -> "data-cache ZVA"
+  | Cache_op_D_CVAC    -> "data-cache CVAC"
+  | Cache_op_D_CVAU    -> "data-cache CVAU"
+  | Cache_op_D_CIVAC   -> "data-cache CIVAC"
+  | Cache_op_I_IALLUIS -> "instruction-cache IALLUIS"
+  | Cache_op_I_IALLU   -> "instruction-cache IALLU"
+  | Cache_op_I_IVAU    -> "instruction-cache IVAU"
+
 let pp_instruction_kind m ik = match ik with
   | IK_barrier bk   -> pp_barrier_kind m bk
   | IK_mem_read rk  -> pp_read_kind m rk
@@ -1028,6 +1029,7 @@ let pp_instruction_kind m ik = match ik with
   | IK_branch       -> "branch"
   | IK_trans tk     -> pp_trans_kind m tk
   | IK_simple       -> "simple"
+  | IK_cache_op ck  -> pp_cache_kind m ck
 
 let pp_nia ioid m nia =
   match nia with
@@ -2445,8 +2447,9 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
        (match pp_dwarf_source_file_lines m ds true i.ui_program_loc with
         | Some s ->
            (match m.Globals.pp_kind with
-            | Ascii | Hash -> indent ^ col_yellow s ^ "\n"
-            | Html -> "<span class='dwarf_source_lines'>" ^ indent ^ s ^ "</span><br/>"
+            | Hash  -> s
+            | Ascii -> indent ^ col_yellow s ^ "\n"
+            | Html  -> "<span class='dwarf_source_lines'>" ^ indent ^ s ^ "</span><br/>"
             | Latex -> "\\myyellow{" ^ indent ^ s ^ "}\n"
            )
            | None ->
@@ -2998,10 +3001,9 @@ let transition_history_loc_max_width' = ref 0
 let pp_transition_history_trans m s j trans =
   let ioid = MachineDefTypes.principal_ioid_of_trans trans in
   let io = MachineDefUI.lookup_ui_instruction_in_system ioid s in
-(*  (pp_pretty_ioid_padded ioid)
+  (*  (pp_pretty_ioid_padded ioid)
   ^ " " ^ *)
-  (string_of_int j ^ " ")
-  ^
+  let res = string_of_int j ^ " " in
   let s1 =
     match io with
     | Some i ->
@@ -3022,11 +3024,17 @@ let pp_transition_history_trans m s j trans =
               )
           | _,_ -> "") in
         ppd_dwarf_source_file_lines
-   | None -> "" in
-(if String.length s1 > !transition_history_loc_max_width' then transition_history_loc_max_width' := String.length s1 else ());
-(pad (!transition_history_loc_max_width') s1)
-^ pp_trans m trans
-^ !linebreak
+   | None -> ""
+  in
+  (if String.length s1 > !transition_history_loc_max_width' then transition_history_loc_max_width' := String.length s1 else ());
+  let res =
+    res
+    ^ (pad (!transition_history_loc_max_width') s1)
+    ^ pp_trans m trans
+  in
+  match !Globals.pp_kind with
+  | Ascii | Latex | Hash -> res ^ !linebreak
+  | Html -> "<p>" ^ res ^ "</p>" (* this (instead of <br>) is needed to make JS scrollIntoView work *)
 
 let pp_transition_history m ?(filter = fun _ -> true) s =
   transition_history_loc_max_width := 0;

@@ -15,7 +15,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-val from_litmus_data: RunOptions.t -> string -> Litmus_test_file.data -> (MachineDefTypes.instruction_semantics_mode -> unit) option -> unit
-val from_ELF_data:    RunOptions.t -> string -> Elf_test_file.data    -> (MachineDefTypes.instruction_semantics_mode -> unit) option -> unit
+val from_litmus_data: RunOptions.t -> string -> Litmus_test_file.data -> (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option -> unit
+val from_ELF_data:    RunOptions.t -> string -> Elf_test_file.data    -> (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option -> unit
 
 val from_files: RunOptions.t -> (Types.filetype * string) list -> unit

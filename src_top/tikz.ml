@@ -22,7 +22,8 @@ open Printf
 open Interp_interface
 open Sail_impl_base
 open MachineDefUtils
-open MachineDefTypes
+open MachineDefEvents
+open MachineDefFragments
 open MachineDefUI
 open MachineDefCandidateExecution
 
@@ -34,7 +35,7 @@ open Globals
 
 module StringSet = Set.Make(String)
 module IoidMap = Map.Make(struct
-  type t = MachineDefTypes.ioid
+  type t = MachineDefEvents.ioid
   let compare = compare
 end)
 
@@ -80,7 +81,7 @@ let make_tikz_graph
     sprintf "%d-%d" tid ioid
   in
 
-  let pp_tikz_footprint ((addr, size): MachineDefTypes.footprint) : string =
+  let pp_tikz_footprint ((addr, size): Sail_impl_base.footprint) : string =
     let (loc, offset) =
       match Pp.lookup_symbol_and_offset m.pp_symbol_table addr with
       | Some (loc, offset) when m.pp_prefer_symbolic_values -> (loc, offset)
@@ -319,8 +320,9 @@ let make_tikz_graph
 
     | IK_branch
     | IK_trans _ (* TODO: TM *)
-    | IK_simple ->
-        (prev_instructions, labels, None, None)
+    | IK_simple
+    | IK_cache_op _(* TODO: DC/IC *)
+        -> (prev_instructions, labels, None, None)
     end
   in
 
@@ -476,7 +478,7 @@ let make_tikz_graph
   close_out tikz_out
 
 module TidMap = Map.Make(struct
-  type t = MachineDefTypes.thread_id
+  type t = MachineDefEvents.thread_id
   let compare t1 t2 = Pervasives.compare t1 t2
 end)
 
@@ -501,7 +503,7 @@ let make_init_state (info: Test.info) (test: Test.test) : unit =
             | regs -> TidMap.add thread_id ((reg_base_name, v) :: regs) acc
             | exception Not_found -> TidMap.add thread_id [(reg_base_name, v)] acc
         )
-        (TidMap.empty: ((MachineDefTypes.reg_base_name * int64) list) TidMap.t)
+        (TidMap.empty: ((Sail_impl_base.reg_base_name * int64) list) TidMap.t)
         test.Test.init_reg_state
 
       |> TidMap.bindings

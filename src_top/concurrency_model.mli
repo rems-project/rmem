@@ -30,7 +30,7 @@ module type S = sig
   val final_ss_state : system_state -> bool
 
   val initial_system_state :
-    MachineDefTypes.instruction_semantics_mode ->
+    MachineDefInstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
     MachineDefSystem.initial_state_record ->
     system_state
@@ -50,15 +50,15 @@ module type S = sig
     system_state -> bool
 
   val branch_targets_of_state :
-    system_state -> MachineDefTypes.branch_targets_map
+    system_state -> MachineDefParams.branch_targets_map
     (*(MachineDefTypes.thread_id, (Sail_impl_base.address, Sail_impl_base.address Pset.set) Pmap.map) Pmap.map*)
 
-  val shared_memory_of_state : system_state -> MachineDefTypes.footprint Pset.set
+  val shared_memory_of_state : system_state -> Sail_impl_base.footprint Pset.set
 
   val memory_value_of_footprints :
     system_state ->
-    MachineDefTypes.footprint list ->
-    (MachineDefTypes.footprint * Sail_impl_base.memory_value) list
+    Sail_impl_base.footprint list ->
+    (Sail_impl_base.footprint * Sail_impl_base.memory_value) list
 
   val make_cex_candidate :
     system_state ->
@@ -72,4 +72,4 @@ module type S = sig
     (Globals.ppmode * ui_state)
 end
 
-val make : (module Isa_model.S) -> MachineDefTypes.thread_model -> MachineDefTypes.storage_model -> (module S)
+val make : (module Isa_model.S) -> MachineDefParams.thread_model -> MachineDefParams.storage_model -> (module S)

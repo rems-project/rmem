@@ -19,9 +19,41 @@
 (*============================================================================================*)
 
 open import Pervasives_extra
-open import MachineDefTypes
+open import MachineDefEvents
 open import MachineDefUtils
 open import Sail_impl_base
+
+
+(** mixed-size register and memory support: slices of writes and read-requests *)
+
+
+(* for registers, all indices are wrt the base register_data indexing;
+   for memory, all indices are wrt the base address of the read-request
+    (arguably it would be cleaner to index wrt absolute memory addresses,
+     but at present we're using int for indexes)
+*)
+
+type slice = nat * nat
+type slices = list slice
+(* each pair is a (start,end) pair, denoting the elements indexed from start to end, inclusive *)
+(* invariant: the first of each pair is always less than or equal to the second, the list is sorted by the first element, and there is no overlap *)
+
+type value_fragment 'a = slice * list 'a
+(* use 'a=bool and 'a=word8 for register and memory fragments respectively*)
+
+type maybe_value_fragment 'a = slice * maybe (list 'a)
+(* Just data, if the data is available, or Nothing, if not (eg for register writes in an instruction footprint that have not yet occurred dynamically) *)
+
+type memory_read_source =
+  <| mrs_footprint:        footprint;    (* the footprint being read from *)
+     mrs_value:            memory_value; (* the assembled memory value *)
+     mrs_writes_read_from: list (write * slices);
+     (* the writes that contribute to the read (in no particular
+     order), with the slices they contribute, and no overlap (in the read indices) between
+     any distinct slices of any two writes *)
+  |>
+
+
 
 (** memory footprint support  ***************************************)
 
@@ -60,7 +92,7 @@ let overlapping_slices ((fp1,sls1): (footprint*slices)) ((fp2,sls2): (footprint*
 
 
 (* see if there is a pair of distinct writes in wss1 and wss2 whose slices footprint-intersect and where the second does not come from an instruction in ifeed_ioids *)
-let overlapping_slices_from_different_writes (wss1: set (write*slices)) (wss2: set (write*slices)) (ifeed_ioids: set MachineDefTypes.ioid) =
+let overlapping_slices_from_different_writes (wss1: set (write*slices)) (wss2: set (write*slices)) (ifeed_ioids: set ioid) =
   exists ((w1, sls1) IN wss1). exists ((w2, sls2) IN wss2).
     (w2.w_ioid NIN ifeed_ioids) &&
     (w1 <> w2) &&

@@ -18,6 +18,9 @@
 (*===============================================================================*)
 
 open RunOptions
+open Screen_base
+
+open MachineDefParams
 open MachineDefTypes
 
 module Make (ConcModel: Concurrency_model.S) = struct
@@ -25,7 +28,7 @@ module Make (ConcModel: Concurrency_model.S) = struct
 module StateHashSet = Set.Make(String)
 
 module TidMap = Map.Make(struct
-  type t = MachineDefTypes.thread_id
+  type t = MachineDefEvents.thread_id
   let compare = compare
 end)
 
@@ -48,10 +51,10 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = MachineDefTypes.thread_id * MachineDefTypes.ioid * MachineDefTypes.exception_type
+  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefExceptions.exception_type
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
-    | (0, 0) -> MachineDefTypes.exception_type_compare e1 e2
+    | (0, 0) -> MachineDefExceptions.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c
     end
@@ -64,7 +67,7 @@ type state_and_trans_predicate = ConcModel.system_state -> ConcModel.trans -> bo
 type breakpoint_predicate =
   | StateBreakpoint of (ConcModel.system_state_and_transitions -> bool)
   | TransitionBreakpoint of (ConcModel.system_state_and_transitions -> ConcModel.trans -> bool)
-  | SharedBreakpoint of (MachineDefTypes.footprint Pset.set ->
+  | SharedBreakpoint of (Sail_impl_base.footprint Pset.set ->
                          ConcModel.system_state_and_transitions ->
                          ConcModel.trans ->
                          bool)
@@ -113,8 +116,8 @@ type search_state =
     (* unhandled ISA exception states *)
     observed_exceptions:       (trace * int) ExceptionMap.t;
 
-    observed_branch_targets: MachineDefTypes.branch_targets_map;
-    observed_shared_memory:  MachineDefTypes.footprint Pset.set;
+    observed_branch_targets: MachineDefParams.branch_targets_map;
+    observed_shared_memory:  Sail_impl_base.footprint Pset.set;
 
     (*** statistics ***)
 
@@ -152,7 +155,7 @@ type search_state =
 
 
 let all_instructions_of_state state =
-  let thread_set = Pmap.range compare state.thread_states in
+  let thread_set = Pmap.range compare state.MachineDefTypes.thread_states in
   let all_instructions =
     Pset.map compare (MachineDefThreadSubsystemUtils.ts_instructions state.t_model) thread_set in
   (Pset.fold Pset.union all_instructions (Pset.empty compare))
@@ -172,12 +175,15 @@ let sprint_time () : string =
 
 let print_search_counters header search_state : unit =
   if header then
-    Screen.show_message search_state.ppmode "%s\n%s"
-      "                  |transit-|hashed |hash   |restart|discard|write|priori-|loop   "
-      "           traces |ions    |states |prunes |prunes |prunes |prune|ty red.|limit  ";
-    (*"[##:##:##] #######|########|#######|#######|#######|#######|#####|#######|#######"*)
+    OTConcat [
+      (*       "[##:##:##] #######|########|#######|#######|#######|#######|#####|#######|#######" *)
+      otStrLine "                  |transit-|hashed |hash   |restart|discard|write|priori-|loop   ";
+      otStrLine "           traces |ions    |states |prunes |prunes |prunes |prune|ty red.|limit  ";
+    ]
+    |> Screen.show_message search_state.ppmode;
 
-  Screen.show_message search_state.ppmode "%s %7d|%8d|%7d|%7d|%7d|%7d|%5d|%7d|%7d"
+
+  otStrLine "%s %7d|%8d|%7d|%7d|%7d|%7d|%5d|%7d|%7d"
     (sprint_time ())
     search_state.trace_count
     search_state.transitions_count
@@ -188,6 +194,7 @@ let print_search_counters header search_state : unit =
     search_state.late_write_prune_count
     search_state.pr_count
     search_state.loop_limit_count
+  |> Screen.show_message search_state.ppmode
 
 (* for throttling status messages *)
 let last_status_print          = ref 0.0
@@ -214,46 +221,59 @@ let print_status_message search_state : unit =
 let print_last_state title search_state : unit =
   let ppmode = search_state.ppmode in
 
-  Screen.show_message ppmode "***** %s *****" title;
-  begin match search_state.search_nodes with
-  | [] -> Screen.show_message ppmode "no state"
+  let state =
+    begin match search_state.search_nodes with
+    | [] -> OTString "no state"
 
-  | [node] ->
-      let (ppmode', ui_state) =
-        ConcModel.make_ui_system_state ppmode None node.system_state.sst_state []
-      in
-      Screen.show_message ppmode "%s"              (Pp.pp_ui_system_state ppmode' ui_state)
+    | [node] ->
+        let (ppmode', ui_state) =
+          ConcModel.make_ui_system_state ppmode None node.system_state.sst_state []
+        in
+        OTEncoded (Pp.pp_ui_system_state ppmode' ui_state)
 
-  | node :: node' :: _ ->
-      let pp_choices choices =
-        List.map
-          (fun et -> List.rev et |> List.map string_of_int |> String.concat ",")
-          choices
-        |> List.rev |> String.concat "; " |> Printf.sprintf "\"%s\""
-      in
+    | node :: node' :: _ ->
+        let pp_choices choices =
+          List.map
+            (fun et -> List.rev et |> List.map string_of_int |> String.concat ",")
+            choices
+          |> List.rev |> String.concat "; " |> Printf.sprintf "\"%s\""
+        in
 
-      begin match List.rev node'.open_transition with
-      | [] -> assert false
-      | t :: ts ->
-          let tran = List.nth node'.system_state.sst_system_transitions t in
-          let (ppmode', ui_state) =
-            ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state []
-          in
-          Screen.show_message ppmode "%s"     (Pp.pp_ui_system_state ppmode' ui_state);
-          Screen.show_message ppmode "via %s" (pp_choices (choices_so_far search_state));
-          Screen.show_message ppmode "last (non eager) transition: %s"
-                                              (Pp.pp_trans ppmode tran);
-          if ts <> [] then
-            Screen.show_message ppmode "(followed by eager transitions: %s)"
-              (List.map string_of_int ts |> String.concat ",");
+        begin match List.rev node'.open_transition with
+        | [] -> assert false
+        | t :: ts ->
+            let tran = List.nth node'.system_state.sst_system_transitions t in
+            let (ppmode', ui_state) =
+              ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state []
+            in
 
-          Screen.show_message ppmode  "all transitions: [\n%s]"
-              (Pp.pp_list ppmode (fun t -> Pp.pp_trans ppmode t ^ "\n") node.system_state.sst_system_transitions);
-          Screen.show_message ppmode  "unexplored (filtered) transitions: [\n%s]"
-              (Pp.pp_list ppmode (fun (i, t) -> "[" ^ string_of_int i ^ "] " ^ Pp.pp_trans ppmode t ^ "\n") node.unexplored_transitions)
-      end
-  end;
-  Screen.show_message ppmode "**********************************"
+            OTConcat [
+              OTEncoded (Pp.pp_ui_system_state ppmode' ui_state);
+              otStrLine "via %s" (pp_choices (choices_so_far search_state));
+              otStrLine "last (non eager) transition: %s" (Pp.pp_trans ppmode tran);
+              otIfTrue (ts <> []) @@ otStrLine "(followed by eager transitions: %s)"
+                  (List.map string_of_int ts |> String.concat ",");
+              otStrLine "all transitions: [";
+              otConcat @@ List.map
+                  (fun t -> otStrLine "%s" (Pp.pp_trans ppmode t))
+                  node.system_state.sst_system_transitions;
+              otStrLine "]";
+              otStrLine "unexplored (filtered) transitions: [";
+              otConcat @@ List.map
+                (fun (i, t) -> otStrLine "[%d] %s" i (Pp.pp_trans ppmode t))
+                node.unexplored_transitions;
+              otStrLine "]";
+            ]
+        end
+    end
+  in
+
+  OTConcat [
+    otStrLine "***** %s *****" title;
+    state;
+    otStrLine "**********************************";
+  ]
+  |> Screen.show_message ppmode
 
 let update_observed_branch_targets_and_shared_memory search_state search_node : search_state =
   let observed_branch_targets =
@@ -263,9 +283,10 @@ let update_observed_branch_targets_and_shared_memory search_state search_node : 
         search_state.observed_branch_targets
     in
     if diff <> [] && Globals.is_verbosity_at_least Globals.ThrottledInformation then
-      Screen.show_message search_state.ppmode "%s found new branch-register target(s): %s"
+      otStrLine "%s found new branch-register target(s): %s"
         (sprint_time ())
-        (Pp.pp_branch_targets search_state.ppmode diff);
+        (Pp.pp_branch_targets search_state.ppmode diff)
+      |> Screen.show_message search_state.ppmode;
     union
   in
 
@@ -277,9 +298,10 @@ let update_observed_branch_targets_and_shared_memory search_state search_node : 
           search_state.observed_shared_memory
       in
       if not (Pset.is_empty diff) && Globals.is_verbosity_at_least Globals.ThrottledInformation then
-        Screen.show_message search_state.ppmode "%s found new shared memory footprint(s): %s"
+        otStrLine "%s found new shared memory footprint(s): %s"
           (sprint_time ())
-          (Pp.pp_shared_memory search_state.ppmode diff);
+          (Pp.pp_shared_memory search_state.ppmode diff)
+        |> Screen.show_message search_state.ppmode;
       union
     else search_state.observed_shared_memory
   in
@@ -457,16 +479,21 @@ let take_transition search_state sst (i, transition) eager : search_state =
   match search_state.search_nodes with
   | [] -> assert false
   | search_node :: search_nodes ->
-      if Globals.is_verbosity_at_least Globals.Debug then
-        Screen.show_message m "Taking %s transition: [%d] %s\nof: (%d) [\n%s\n] (open_transition = [%s])"
+      OTConcat [
+        otStrLine "Taking %s transition: [%d] %s"
           (if eager then "eager" else "### NON-EAGER ###")
           i
-          (Pp.pp_trans m transition)
-          (List.length search_node.unexplored_transitions)
-          (Pp.pp_list m
-            (fun (i, t) -> "[" ^ string_of_int i ^ "] " ^ Pp.pp_trans m t ^ "\n")
-                search_node.unexplored_transitions)
+          (Pp.pp_trans m transition);
+        otStrLine "of: (%d) ["
+          (List.length search_node.unexplored_transitions);
+        OTConcat
+          (List.map
+            (fun (i, t) -> otStrLine "[%d] %s" i (Pp.pp_trans m t))
+            search_node.unexplored_transitions);
+        otStrLine "] (open_transition = [%s])"
           (Pp.pp_list m string_of_int search_node.open_transition);
+      ]
+      |> Screen.show_debug m;
 
       (* Invariant: either
           - we're at the initial state, or
@@ -732,7 +759,7 @@ let rec search search_state : search_outcome =
     | search_node :: _ ->
         if search_node.open_transition = [] && 
              search_state.options.hash_prune 
-             && not (search_node.system_state.sst_state.MachineDefTypes.s_model.ss_stopped_promising
+             && not (search_node.system_state.sst_state.s_model.ss_stopped_promising
                      search_node.system_state.sst_state.storage_subsystem)
         then
           let hash =
@@ -1034,7 +1061,8 @@ let search_from_state
     if options.allow_partial then
       let set_signal_with_restore (sig_name, sig_num) : unit -> unit =
         let interrupt_handler n =
-          Screen.show_message ppmode "received interrupt signal %s (%d)" sig_name n;
+          otStrLine "received interrupt signal %s (%d)" sig_name n
+          |> Screen.show_message ppmode;
           interrupt := true
         in
         let old_signal_behavior = Sys.signal sig_num (Sys.Signal_handle interrupt_handler) in
@@ -1054,30 +1082,31 @@ let search_from_state
 
   let print_diffs search_state bt_union bt_diff sm_union sm_diff : unit =
     if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
-      if not (Pmap.is_empty bt_union) then begin
-        Screen.show_message search_state.ppmode
-          "Branch-register targets that were observed:\n%s"
-          (MachineDefSystem.branch_targets_to_list bt_union |> Pp.pp_branch_targets search_state.ppmode);
-
-        if bt_diff <> [] then
-          Screen.show_message search_state.ppmode
-            "(from which the following are new: %s)"
-            (Pp.pp_branch_targets search_state.ppmode bt_diff);
-      end;
+      if not (Pmap.is_empty bt_union) then
+        OTConcat [
+          otStrLine "Branch-register targets that were observed:";
+          MachineDefSystem.branch_targets_to_list bt_union
+            |> Pp.pp_branch_targets search_state.ppmode
+            |> otStrLine "%s";
+          otIfTrue (bt_diff <> []) @@
+            otStrLine "(from which the following are new: %s)"
+              (Pp.pp_branch_targets search_state.ppmode bt_diff);
+        ]
+        |> Screen.show_message search_state.ppmode;
 
       if options.eager_mode.eager_local_mem then begin
         if Pset.is_empty sm_union then
-          Screen.show_message search_state.ppmode "No shared memory footprints were observed!"
-        else begin
-          Screen.show_message search_state.ppmode
-            "Shared memory footprints that were observed:\n%s"
-            (Pp.pp_shared_memory search_state.ppmode sm_union);
-
-          if not (Pset.is_empty sm_diff) then
-            Screen.show_message search_state.ppmode
-              "(from which the following are new: %s)"
-              (Pp.pp_shared_memory search_state.ppmode sm_diff);
-        end
+          otStrLine "No shared memory footprints were observed!"
+          |> Screen.show_message search_state.ppmode
+        else
+          OTConcat [
+            otStrLine "Shared memory footprints that were observed:";
+            otStrLine "%s" (Pp.pp_shared_memory search_state.ppmode sm_union);
+            otIfTrue (not (Pset.is_empty sm_diff)) @@
+              otStrLine "(from which the following are new: %s)"
+                (Pp.pp_shared_memory search_state.ppmode sm_diff);
+          ]
+          |> Screen.show_message search_state.ppmode;
       end;
     end;
   in
@@ -1105,10 +1134,10 @@ let search_from_state
           result
         else begin
           if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
-            Screen.show_message ppmode
-              "%s Finished exhaustive search %d (did not reach a fixed point)."
+            otStrLine "%s Finished exhaustive search %d (did not reach a fixed point)."
               (sprint_time ())
-              n;
+              n
+            |> Screen.show_message ppmode;
             print_diffs search_state' bt_union bt_diff sm_union sm_diff;
             if options.allow_partial then print_partial_results search_state';
           end;

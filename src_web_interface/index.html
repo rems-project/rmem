@@ -390,14 +390,35 @@
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <!-- note the comments to remove extraneous whitespace because this is formatted 'pre' -->
-            <div class="system_state_lines" data-bind="foreach: console_lines"><!--
-                --><p data-bind="html: $data"></p><!--
-            --></div>
+            <div class="system_state_lines" data-bind="html: console_lines"></div>
         </div>
         <div class="interact_prompt_line">
             <div class="interact_prompt" data-bind="html: prompt" style="display: inline-block"></div>
             <textarea class="input_cmd" style="display: inline-block"></textarea>
+        </div>
+    </template>
+
+    <template id="state_template">
+        <div class="mid_bar">
+            <select data-bind="switcher: 'state'"></select>
+            <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="font_size_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                <a class="font_size_reset toolbutton" href="#">100%</a>
+                <a class="font_size_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
+            </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+            </div>
+        </div>
+        <div class="system_state adjust_font_size">
+            <div class="interact_loading">
+                <img src="images/hourglass.gif" width="48" height="48" alt="working...">
+            </div>
+            <div class="system_state_lines" data-bind="html: state_lines"></div>
         </div>
     </template>
 
@@ -421,10 +442,7 @@
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <!-- note the comments to remove extraneous whitespace because this is formatted 'pre' -->
-            <div class="system_state_lines" data-bind="foreach: trace_lines"><!--
-                --><p data-bind="html: $data"></p><!--
-            --></div>
+            <div class="system_state_lines" data-bind="html: trace_lines"></div>
         </div>
         <div class="trace_prompt_lines" data-bind="html: trace_available_transitions">
         </div>

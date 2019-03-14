@@ -15,7 +15,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefTypes
+open import MachineDefISAInfo
 
 let aarch64hand_ism   : isa_info = isa_info_stub
 let aarch64gen_ism    : isa_info = isa_info_stub

@@ -24,9 +24,11 @@ open import Pervasives_extra
 open import Relation
 
 open import Sail_impl_base
+open import MachineDefEvents
 open import MachineDefUtils
 open import MachineDefTypes
 open import MachineDefFragments
+open import MachineDefParams
 
 open import MachineDefDebug
 open import MachineDefUI

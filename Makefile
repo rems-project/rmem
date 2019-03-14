@@ -789,8 +789,13 @@ MACHINEFILES-PRE=\
   $(MIPS_FILES)\
   $(RISCV_FILES)\
   $(X86_FILES)\
-  src_concurrency_model/machineDefTypes.lem\
+  src_concurrency_model/machineDefInstructionSemantics.lem\
+  src_concurrency_model/machineDefEvents.lem\
   src_concurrency_model/machineDefFragments.lem\
+  src_concurrency_model/machineDefExceptions.lem\
+  src_concurrency_model/machineDefISAInfo.lem\
+  src_concurrency_model/machineDefParams.lem\
+  src_concurrency_model/machineDefTypes.lem\
   src_concurrency_model/machineDefUI.lem\
   src_concurrency_model/machineDefPLDI11StorageSubsystem.lem\
   src_concurrency_model/machineDefFlowingStorageSubsystem.lem\
@@ -799,11 +804,9 @@ MACHINEFILES-PRE=\
   src_concurrency_model/machineDefNOPStorageSubsystem.lem\
   src_concurrency_model/machineDefTSOStorageSubsystem.lem\
   src_concurrency_model/machineDefPromisingARM.lem\
-  src_concurrency_model/machineDefEvents.lem\
   src_concurrency_model/machineDefInstructionPredicates.lem\
   src_concurrency_model/machineDefThreadSubsystemUtils.lem\
   src_concurrency_model/machineDefThreadSubsystem.lem\
-  src_concurrency_model/machineDefInstructionSemantics.lem\
   src_concurrency_model/machineDefSystem.lem\
   src_concurrency_model/machineDefTransitionUtils.lem\
   src_concurrency_model/machineDefCandidateExecution.lem

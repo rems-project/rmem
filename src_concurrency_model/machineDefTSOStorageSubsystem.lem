@@ -24,11 +24,13 @@ open import Assert_extra
 import Map_extra
 
 open import Sail_impl_base
+open import MachineDefEvents
+open import MachineDefFragments
 open import MachineDefTypes
-import MachineDefFragments
 import MachineDefInstructionPredicates
 open import MachineDefUtils
 open import MachineDefUI
+open import MachineDefParams
 open MaybeMonad
 
 (************************* propagate write *************************)

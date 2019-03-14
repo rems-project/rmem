@@ -25,7 +25,9 @@ open import MachineDefDebug
 open import MachineDefUtils
 open import MachineDefFreshIds
 open import MachineDefTypes
-     import MachineDefEvents
+open import MachineDefEvents
+open import MachineDefISAInfo
+open import MachineDefParams
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
 open import MachineDefFragments
@@ -34,7 +36,7 @@ open import MachineDefSystem
 
 open import Sail_values
 
-let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe MachineDefTypes.footprint =
+let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe footprint =
   match transition with
   | SS_trans _ -> Nothing
   | Sys_trans _ _ -> Nothing
@@ -108,7 +110,7 @@ let trans_reads_footprint
 
 (* NOTE: write_footprints_of_trans is (also) used to determine if the
 transition can be taken eagerly when eager_local_mem is enabled *)
-let write_footprints_of_trans (transition: trans 'ts 'ss) : list MachineDefTypes.footprint =
+let write_footprints_of_trans (transition: trans 'ts 'ss) : list footprint =
   match transition with
   | SS_trans _ -> []
   | Sys_trans _ _ -> []

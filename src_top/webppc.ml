@@ -97,9 +97,6 @@ let default_options : unit -> RunOptions.t = fun () ->
   Globals.use_dwarf := true;
   Globals.dwarf_show_all_variable_locations := true;
   Globals.run_dot := Some Globals.RD_step;
-  Globals.pp_suppress_newpage := false;
-  Globals.pp_buffer_messages := true;
-  Globals.pp_announce_options := false;
 
   Globals.model_params := MachineDefSystem.default_model_params;
 
@@ -115,7 +112,7 @@ let default_options : unit -> RunOptions.t = fun () ->
       RunOptions.suppress_internal   = true;
       RunOptions.pseudorandom        = false;
       RunOptions.pseudorandom_traces = 1;
-      RunOptions.always_print        = true;
+      RunOptions.always_print        = false;
       RunOptions.interpreter         = true;
   }
 ;;
@@ -250,14 +247,30 @@ let isa_callback (isa: MachineDefTypes.instruction_semantics_mode) =
   end;
   model_to_html ()
 
+let error_dialog (msg: string) : unit =
+  Js.Unsafe.fun_call (Js.Unsafe.js_expr "error_dialog") [|
+    Js.Unsafe.inject (Js.string msg)
+  |]
+  |> ignore
 
-let start_interactive (litmus_str: string) : unit =
-  begin match !elf_file_name with
+let start_interactive_litmus (name: string) (litmus_str: string) : unit =
+  try
+    Top.from_litmus_data (options_of_html ()) name litmus_str (Some isa_callback)
+  with
+  | Misc.Fatal msg -> error_dialog msg
+;;
+
+let start_interactive_elf () : unit =
+  match !elf_file_name with
   | None ->
-      Top.from_litmus_data (options_of_html ()) "web" litmus_str (Some isa_callback)
+      (* This should never happen *)
+      error_dialog "elf_file_name is not set"
   | Some file ->
+    begin try
       Top.from_ELF_data (options_of_html ()) file !elf_data (Some isa_callback)
-  end
+    with
+    | Misc.Fatal msg -> error_dialog msg
+    end
 ;;
 
 let load : unit -> unit  = fun () ->
@@ -309,7 +322,8 @@ let () =
       | Some s -> Js.some (Js.string s)
       | None   -> Js.null
 
-    method start_interactive_ litmus_str = start_interactive (Js.to_string litmus_str)
+    method start_interactive_litmus_ name litmus_str = start_interactive_litmus (Js.to_string name) (Js.to_string litmus_str)
+    method start_interactive_elf_ = start_interactive_elf ()
 
     method reset_options_    = options_to_html (default_options ())
     method get_version_      = Js.string Versions.Rmem.describe

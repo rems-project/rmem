@@ -31,6 +31,8 @@
 (* let solver = ref "MMExplorer2" *)
 (* let candidates = ref None *)
 
+open MachineDefParams
+
 
 (** output options **************************************************)
 
@@ -96,7 +98,6 @@ let model_params = ref MachineDefSystem.default_model_params
 
 let big_endian = ref None
 (*let big_endian = fun () -> false
-  let open MachineDefTypes in
   begin match !model_params.t.thread_isa_info.ism with
   | PPCGEN_ism    -> true
   | AARCH64_ism _ -> false
@@ -108,7 +109,8 @@ has been set properly (i.e. set_model_ism was called) *)
 let get_endianness = fun () ->
   begin match !big_endian with
   | None ->
-      let open MachineDefTypes in
+      let open MachineDefInstructionSemantics in
+      let open MachineDefISAInfo in
       begin match !model_params.t.thread_isa_info.ism with
       | PPCGEN_ism    -> Sail_impl_base.E_big_endian
       | AARCH64_ism _ -> Sail_impl_base.E_little_endian
@@ -128,10 +130,9 @@ let pp_endianness = fun () ->
 
 let set_model_ism ism =
   model_params :=
+    let open MachineDefParams in
     {!model_params with
-        MachineDefTypes.t = {!model_params.MachineDefTypes.t with
-                                MachineDefTypes.thread_isa_info = ism;
-                            }
+        t = {!model_params.t with thread_isa_info = ism; }
     }
 
 let suppress_non_symbol_memory = ref false (* ELF *)
@@ -235,8 +236,6 @@ let print_hex                  = ref false
 let pp_colours                 = ref false
 let pp_kind                    = ref Ascii
 let pp_condense_finished_instructions = ref true
-let pp_suppress_newpage        = ref false
-let pp_buffer_messages         = ref true
 let pp_style                   = ref Ppstyle_full
 let pp_prefer_symbolic_values  = ref true
 let pp_hide_pseudoregister_reads  = ref true
@@ -245,7 +244,6 @@ let ppg_shared                 = ref false
 let ppg_regs                   = ref false
 let ppg_reg_rf                 = ref false
 let ppg_trans                  = ref true
-let pp_announce_options        = ref false
 let pp_sail                    = ref true
 
 let set_pp_kind (k: string) =
@@ -271,13 +269,11 @@ type ppmode =
     pp_colours:                        bool;
     pp_condense_finished_instructions: bool;
     pp_style:                          ppstyle;
-    pp_suppress_newpage:               bool;
-    pp_buffer_messages:                bool;
     pp_choice_history_limit:           int option;
     pp_symbol_table:                   ((Sail_impl_base.address * int) * string) list;
     pp_dwarf_static:                   Dwarf.dwarf_static option;
     pp_dwarf_dynamic:                  Types.dwarf_dynamic option;
-    pp_initial_write_ioids:            MachineDefTypes.ioid list;
+    pp_initial_write_ioids:            MachineDefEvents.ioid list;
     pp_prefer_symbolic_values:         bool;
     pp_hide_pseudoregister_reads: bool;
     pp_max_finished:                   int option;
@@ -291,16 +287,11 @@ type ppmode =
     ppg_regs:                          bool;
     ppg_reg_rf:                        bool;
     ppg_trans:                         bool;
-    pp_pretty_eiid_table:              (MachineDefTypes.eiid * string) list;
+    pp_pretty_eiid_table:              (MachineDefEvents.eiid * string) list;
     pp_trans_prefix:                   bool;
-    pp_announce_options:               bool;
     pp_sail:                           bool;
     pp_default_cmd:             Interact_parser_base.ast option;
 
-(*    pp_instruction : (((Sail_impl_base.address * MachineDefTypes.size) * string) list) ->
-                     MachineDefTypes.instruction_ast ->
-                     Sail_impl_base.address ->
-                     string; *)
   }
 
 (* ppmode lenses *)
@@ -308,8 +299,6 @@ let pp_kind_lens = { Lens.get = (fun m -> m.pp_kind); Lens.set = (fun v m -> { m
 let pp_colours_lens = { Lens.get = (fun m -> m.pp_colours); Lens.set = (fun v m -> { m with pp_colours = v }) }
 let pp_condense_finished_instructions_lens = { Lens.get = (fun m -> m.pp_condense_finished_instructions); Lens.set = (fun v m -> { m with pp_condense_finished_instructions = v }) }
 let pp_style_lens = { Lens.get = (fun m -> m.pp_style); Lens.set = (fun v m -> { m with pp_style = v }) }
-let pp_suppress_newpage_lens = { Lens.get = (fun m -> m.pp_suppress_newpage); Lens.set = (fun v m -> { m with pp_suppress_newpage = v }) }
-let pp_buffer_messages_lens = { Lens.get = (fun m -> m.pp_buffer_messages); Lens.set = (fun v m -> { m with pp_buffer_messages = v }) }
 let pp_choice_history_limit_lens = { Lens.get = (fun m -> m.pp_choice_history_limit); Lens.set = (fun v m -> { m with pp_choice_history_limit = v }) }
 let pp_symbol_table_lens = { Lens.get = (fun m -> m.pp_symbol_table); Lens.set = (fun v m -> { m with pp_symbol_table = v }) }
 let pp_dwarf_static_lens = { Lens.get = (fun m -> m.pp_dwarf_static); Lens.set = (fun v m -> { m with pp_dwarf_static = v }) }
@@ -330,7 +319,6 @@ let ppg_reg_rf_lens = { Lens.get = (fun m -> m.ppg_reg_rf); Lens.set = (fun v m 
 let ppg_trans_lens = { Lens.get = (fun m -> m.ppg_trans); Lens.set = (fun v m -> { m with ppg_trans = v }) }
 let pp_pretty_eiid_table_lens = { Lens.get = (fun m -> m.pp_pretty_eiid_table); Lens.set = (fun v m -> { m with pp_pretty_eiid_table = v }) }
 let pp_trans_prefix_lens = { Lens.get = (fun m -> m.pp_trans_prefix); Lens.set = (fun v m -> { m with pp_trans_prefix = v }) }
-let pp_announce_options_lens = { Lens.get = (fun m -> m.pp_announce_options); Lens.set = (fun v m -> { m with pp_announce_options = v }) }
 let pp_sail_lens = { Lens.get = (fun m -> m.pp_sail); Lens.set = (fun v m -> { m with pp_sail = v }) }
 let pp_default_cmd_lens = { Lens.get = (fun m -> m.pp_default_cmd); Lens.set = (fun v m -> { m with pp_default_cmd = v }) }
 
@@ -341,8 +329,6 @@ let get_ppmode : unit -> ppmode = fun () ->
     pp_colours                            = !pp_colours;
     pp_condense_finished_instructions     = !pp_condense_finished_instructions;
     pp_style                              = !pp_style;
-    pp_suppress_newpage                   = !pp_suppress_newpage;
-    pp_buffer_messages                    = !pp_buffer_messages;
     pp_choice_history_limit               = None;
     pp_symbol_table                       = [];
     pp_dwarf_static                       = None;
@@ -363,17 +349,8 @@ let get_ppmode : unit -> ppmode = fun () ->
     ppg_trans                             = !ppg_trans;
     pp_pretty_eiid_table                  = [];
     pp_trans_prefix                       = true;
-    pp_announce_options                   = !pp_announce_options;
     pp_sail                               = !pp_sail;
     pp_default_cmd                        = None;
-    (*    pp_instruction = Pp.pp_instruction *)
-
-      (*fun
-        (_: ((Sail_impl_base.address * MachineDefTypes.size) * string) list)
-        (inst: Sail_impl_base.instruction)
-        (_: Sail_impl_base.address)
-      ->
-      Printing_functions.instruction_to_string inst; *)
   }
 
 let ppmode_for_hashing : ppmode =
@@ -381,8 +358,6 @@ let ppmode_for_hashing : ppmode =
     pp_colours                            = false;
     pp_condense_finished_instructions     = false;
     pp_style                              = Ppstyle_full;
-    pp_suppress_newpage                   = true;
-    pp_buffer_messages                    = false;
     pp_choice_history_limit               = None;
     pp_symbol_table                       = [];
     pp_dwarf_static                       = None;
@@ -403,7 +378,6 @@ let ppmode_for_hashing : ppmode =
     ppg_trans                             = false;
     pp_pretty_eiid_table                  = [];
     pp_trans_prefix                       = true;
-    pp_announce_options                   = true;
     pp_sail                               = true;
     pp_default_cmd                        = None;
     (*    pp_instruction                        = Pp.pp_instruction *)
@@ -413,7 +387,7 @@ let ppmode_for_hashing : ppmode =
 
 let elf_threads = ref 1
 
-let flowing_topologies = ref ([]: MachineDefTypes.flowing_topology list)
+let flowing_topologies = ref ([]: MachineDefParams.flowing_topology list)
 
 let topauto = ref false
 

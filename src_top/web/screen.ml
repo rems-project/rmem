@@ -17,9 +17,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let of_output_tree = Screen_base.html_of_output_tree;;
-
-let final_state_color = "blue"
+let set_state_output str = ()
+let set_trace_output str = ()
 
 let getElementById x =
   let document = Dom_html.window##.document in
@@ -35,11 +34,6 @@ let replace_text js_str p r =
   js_str##(replace x y)
 ;;
 
-let escape_newline js_str = replace_text js_str "\\n" "<br/>";;
-
-let clear_warnings : unit -> unit = fun () ->
-  Js.Unsafe.fun_call (Js.Unsafe.js_expr "clear_warnings") [||]
-
 let input_cont : (string -> unit) ref = ref (fun _ -> ());;
 let history : Interact_parser_base.ast list ref = ref []
 
@@ -47,36 +41,26 @@ let async_input new_history (cont: string -> unit) : unit =
   history := new_history;
   input_cont := (fun str -> input_cont := (fun _ -> ()); cont str)
 
-let replacements = [
-    ('&', "&amp;");
-    ('<', "&lt;");
-    ('>', "&gt;");
-    ('"', "&quot;");
-    ('\'', "&#x27;");
-    ('/', "&#x2f;");
-  ]
-
-let replace_char c r s =
-  let rec do_replace s =
-    try
-      let i = String.index s c in
-      String.sub s 0 i :: r :: do_replace (String.sub s (i + 1) (String.length s - i - 1))
-    with Not_found -> [s]
-  in
-  String.concat "" (do_replace s)
-
 
 module WebPrinters : Screen_base.Printers = struct
-  let println s = Js.Unsafe.fun_call (Js.Unsafe.js_expr "println")
+  let print s = Js.Unsafe.fun_call (Js.Unsafe.js_expr "print")
                                      [|Js.Unsafe.inject (Js.string s)|]
-  let clear_screen () = Js.Unsafe.fun_call (Js.Unsafe.js_expr "clear_screen") [||]
-  let escape s = List.fold_left (fun s (c, r) -> replace_char c r s) s replacements
-  let update_transition_history history available = Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_transition_history")
-                                                                       [|Js.Unsafe.inject (Js.string history);
-                                                                         Js.Unsafe.inject (Js.string available)|]
-                                                    |> ignore
+
+  let update_transition_history trace choice_summary =
+    Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_transition_history") [|
+        Js.Unsafe.inject (Js.string (trace ()));
+        Js.Unsafe.inject (Js.string (choice_summary ()))
+    |] |> ignore
+
+  let update_system_state state =
+    Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_system_state") [|
+        Js.Unsafe.inject (Js.string (state ()))
+    |] |> ignore
+
   let read_filename basename = Js.to_bytestring (Js.Unsafe.fun_call (Js.Unsafe.js_expr "read_filename")
                                                                 [|Js.Unsafe.inject (Js.string basename)|])
+
+  let of_output_tree = Screen_base.html_of_output_tree
 end
 
 include (Screen_base.Make (WebPrinters))
@@ -130,9 +114,6 @@ let current_options (options : Screen_base.options_state) =
     val always_graph_ = options.always_graph
     val dot_final_ok_ = options.dot_final_ok
     val dot_final_not_ok_ = options.dot_final_not_ok
-    val suppress_newpage_ = ppmode.pp_suppress_newpage
-    val buffer_messages_ = ppmode.pp_buffer_messages
-    val announce_options_ = ppmode.pp_announce_options
     val random_ = run_options.pseudorandom
     val storage_first_ = run_options.storage_first
     val priority_reduction_ = run_options.priority_reduction
@@ -192,10 +173,10 @@ let current_options (options : Screen_base.options_state) =
       | None -> Js.null
   end
 
-let prompt ppmode maybe_options prompt_str history cont =
-  flush_buffer ppmode;
-  Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt")
-                     [|Js.Unsafe.inject (Js.string prompt_str)|] |> ignore;
+let prompt ppmode maybe_options prompt_ot history cont =
+  Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt") [|
+    Js.Unsafe.inject (Js.string (Screen_base.html_of_output_tree ppmode prompt_ot))
+  |] |> ignore;
   begin match maybe_options with
   | Some options -> Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_options")
                                               [|Js.Unsafe.inject (current_options options)|] |> ignore

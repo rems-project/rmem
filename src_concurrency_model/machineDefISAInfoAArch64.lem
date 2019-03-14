@@ -18,12 +18,13 @@
 (* emacs fontification -*-caml-*- *)
 
 open import Pervasives
-open import Assert_extra
-
-open import MachineDefUtils
-open import MachineDefTypes
 open import Sail_impl_base
+open import Assert_extra
+open import MachineDefUtils
+open import MachineDefFreshIds
 open import MachineDefEvents
+open import MachineDefInstructionSemantics
+open import MachineDefISAInfo
 import Sail_values
 import ArmV8_embed_types
 
@@ -463,35 +464,39 @@ let aarch64_is_nonatomic_load_pair_instruction = function
 
 let aarch64_make_empty_write_events
     (tid:          thread_id)
-    (inst:         instruction_instance)
+    (inst: instruction_ast) 
+    (id_state: MachineDefFreshIds.id_state ioid) 
+    (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
     : (list write) * (MachineDefFreshIds.id_state ioid)
   =
-  let is_store_pair = aarch64_is_nonatomic_store_pair_instruction inst.instruction in
+  let is_store_pair = aarch64_is_nonatomic_store_pair_instruction inst in
   let addr' = integer_of_address addr in
   let write_size =
     if is_store_pair && List.elem size [2; 4; 8; 16] && aligned addr' (size / 2) then size / 2
     else if not is_store_pair && List.elem size [1; 2; 4; 8; 16] && aligned addr' size then size
     else 1
   in
-  make_empty_write_events' inst.instance_id_state tid inst.instance_ioid addr size write_size write_kind
+  make_empty_write_events' id_state tid ioid addr size write_size write_kind
 
 let aarch64_make_read_request_events
     (tid:          thread_id)
-    (inst:         instruction_instance)
+    (inst: instruction_ast) 
+    (id_state: MachineDefFreshIds.id_state ioid) 
+    (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:   read_kind)
     : (list read_request) * (MachineDefFreshIds.id_state ioid)
   =
-  let load_pair = aarch64_is_nonatomic_load_pair_instruction inst.instruction in
+  let load_pair = aarch64_is_nonatomic_load_pair_instruction inst in
   let addr' = integer_of_address addr in
   let read_size =
     if load_pair && List.elem size [2; 4; 8; 16] && aligned addr' (size / 2) then size / 2
     else if not load_pair && List.elem size [1; 2; 4; 8] && aligned addr' size then size
     else 1
   in
-  make_read_request_events' inst.instance_id_state tid inst.instance_ioid addr size read_size read_kind
+  make_read_request_events' id_state tid ioid addr size read_size read_kind
 
 (* aarch64hand_ism is the start point for aarch64gen_ism, when changing
 something here make sure you are not breaking aarch64gen *)

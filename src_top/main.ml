@@ -22,6 +22,10 @@
 (*                                                                                                  *)
 (*==================================================================================================*)
 
+open MachineDefParams;;
+open RunOptions;;
+
+
 (* FIXME: (SF) does this have any effect on performance? when needed
 OCAMLRUNPARAM=b can be used instead *)
 Printexc.record_backtrace true
@@ -37,8 +41,6 @@ let quiet = ref false;;
 
 let run_options : RunOptions.t ref =
   ref {RunOptions.default_options with RunOptions.interactive = Screen.interactive}
-
-let pp_buffer_messages : bool option ref = ref None
 
 let should_list_isas = ref false
 
@@ -69,7 +71,7 @@ let opts = [
         Printf.sprintf "<%s|%s|%s|...> model options (repeatable), see details below" m1 m2 m3
     | _ -> "<option> model options (repeatable), see details below");
 ("-loop_limit",
- Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with MachineDefTypes.t = { (!Globals.model_params).MachineDefTypes.t with MachineDefTypes.thread_loop_unroll_limit = Some i }}),
+ Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with t = { (!Globals.model_params).t with thread_loop_unroll_limit = Some i }}),
  ("<integer> automatically unroll loops to this depth (default: off)"));
 ("-topauto",
     Arg.Bool (fun b -> Globals.topauto := b; Globals.flowing_topologies := []),
@@ -222,10 +224,10 @@ let opts = [
     Arg.Bool (fun b ->
       let eager_mode =
         {!run_options.RunOptions.eager_mode with
-            MachineDefTypes.eager_local_mem = b}
+            eager_local_mem = b}
       in
       run_options := {!run_options with RunOptions.eager_mode = eager_mode}),
-    (Printf.sprintf "<bool> eagerly take thread-local memory access transitions (%b); exhaustive mode will run multiple times; at the end of each run we calculate the shared memory footprint and use it in the next run, to a fixed-point; the initial shared memory footprint can be set using the litmus file key \"Shared-memory=...\" and the -shared_memory option (empty otherwise)." !run_options.RunOptions.eager_mode.MachineDefTypes.eager_local_mem));
+    (Printf.sprintf "<bool> eagerly take thread-local memory access transitions (%b); exhaustive mode will run multiple times; at the end of each run we calculate the shared memory footprint and use it in the next run, to a fixed-point; the initial shared memory footprint can be set using the litmus file key \"Shared-memory=...\" and the -shared_memory option (empty otherwise)." !run_options.RunOptions.eager_mode.eager_local_mem));
 
 
 ("-shared_memory",
@@ -288,22 +290,21 @@ let opts = [
     " record back trace (true); \"true\" is equivalent to \"OCAMLRUNPARAM=b\" and \"ocamlrun -b\"");
 
 (** UI options ******************************************************)
+("-state_output",
+    Arg.String Screen.set_state_output,
+    "<file> for interactive mode, print the current state to <file>");
+
+("-trace_output",
+    Arg.String Screen.set_trace_output,
+    "<file> for interactive mode, print the current trace to <file>");
+
 ("-colours",
     Arg.Bool (fun b -> Globals.pp_colours := b),
     (Printf.sprintf "<bool> colours in interactive terminal output (turned on by -interactive true) (%b)" !Globals.pp_colours));
 ("-dumb_terminal",
  Arg.Bool (fun b -> Globals.dumb_terminal := b),
  (Printf.sprintf "<bool> disable readline, cursor movement, etc for dumb terminal or testing (%b)" !Globals.dumb_terminal));
-("-suppress_newpage",
-    Arg.Bool (fun b -> Globals.pp_suppress_newpage := b),
-    (Printf.sprintf "<bool> suppress newpage in interactive mode (%b)" !Globals.pp_suppress_newpage));
-("-buffer_messages",
-    Arg.Bool (fun b -> pp_buffer_messages := Some b),
-    Printf.sprintf "<bool> buffer messages until next prompt in interactive mode (%b)"
-        begin match !pp_buffer_messages with
-        | None -> !Globals.pp_buffer_messages
-        | Some b -> b
-        end);
+
 ("-pp_style",
     Arg.String (fun s -> match s with
     | "full" -> Globals.pp_style := Globals.Ppstyle_full
@@ -430,22 +431,11 @@ let main = fun () ->
   | Arg.Help msg -> help stdout msg; exit 0
   end;
 
-  (* decide early whether to buffer printing so startup messages don't get accidentally swallowed *)
-  begin match !pp_buffer_messages with
-  | None -> Globals.pp_buffer_messages := !run_options.RunOptions.interactive
-  | Some false -> Globals.pp_buffer_messages := false
-  | Some true  ->
-      if !run_options.RunOptions.interactive then
-        Globals.pp_buffer_messages := true
-      else
-        (* this does not have to be an error *)
-        fatal_error "'-buffer_messages true' is not allowed with '-interactive false'"
-  end;
-
   (* this ppmode is just for printing some messages, don't use it for anything else *)
   let ppmode = Globals.get_ppmode () in
 
-  Screen.show_debug ppmode "*** BEGIN ISA DEFS PATH AUTODETECTION";
+  Screen_base.otStrLine "*** BEGIN ISA DEFS PATH AUTODETECTION"
+  |> Screen.show_debug ppmode;
 
   let check_isa_path path =
     List.for_all
@@ -459,7 +449,8 @@ let main = fun () ->
           true
         with
         | Screen_base.Isa_defs_unmarshal_error (basename, msg) ->
-            Screen.show_debug ppmode "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename;
+            Screen_base.otStrLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename
+            |> Screen.show_debug ppmode;
             Globals.isa_defs_path := old_val;
             false)
       Isa_model.all_isa_defs
@@ -469,7 +460,8 @@ let main = fun () ->
     if !Globals.isa_defs_path = None then begin
         match path_thunk () with
         | Some path ->
-            Screen.show_debug ppmode "trying candidate %s for ISA defs path" path;
+            Screen_base.otStrLine "trying candidate %s for ISA defs path" path
+            |> Screen.show_debug ppmode;
             if check_isa_path path then
                 Globals.isa_defs_path := Some path
         | None -> ()
@@ -478,13 +470,15 @@ let main = fun () ->
   in
 
   if !Globals.isa_defs_path <> None then
-    Screen.show_debug ppmode "have ISA defs path from command line";
+    Screen_base.otStrLine "have ISA defs path from command line"
+    |> Screen.show_debug ppmode;
 
   let isa_path_candidates = [
       (fun () ->
         try
           let path = Sys.getenv "ISA_DEFS_PATH" in
-          Screen.show_debug ppmode "have ISA defs path from ISA_DEFS_PATH env var";
+          Screen_base.otStrLine "have ISA defs path from ISA_DEFS_PATH env var"
+          |> Screen.show_debug ppmode;
           Some path
         with
           Not_found -> None);
@@ -510,12 +504,16 @@ let main = fun () ->
   List.iter try_isa_path_candidate isa_path_candidates;
 
   begin match !Globals.isa_defs_path with
-  | Some path -> Screen.show_debug ppmode "found ISA defs in %s" path
+  | Some path ->
+      Screen_base.otStrLine "found ISA defs in %s" path
+      |> Screen.show_debug ppmode
   | None ->
-      Screen.show_message ppmode "warning, no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
+      Screen_base.otStrLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
+      |> Screen.show_warning ppmode
   end;
 
-  Screen.show_debug ppmode "*** ISA DEFS PATH AUTODETECTION COMPLETE";
+  Screen_base.otStrLine "*** ISA DEFS PATH AUTODETECTION COMPLETE"
+  |> Screen.show_debug ppmode;
 
   if !should_list_isas then
     do_list_isas ();
@@ -545,7 +543,7 @@ let main = fun () ->
 
   if !quiet then Globals.verbosity := Globals.Quiet;
 
-  if !Globals.model_params.MachineDefTypes.ss.MachineDefTypes.ss_model = MachineDefTypes.Flowing_storage_model
+  if !Globals.model_params.ss.ss_model = Flowing_storage_model
     && !Globals.flowing_topologies = []
     && not !Globals.topauto
   then
@@ -561,15 +559,17 @@ let main = fun () ->
   Pp.linebreak_init();
 
   if !Globals.verbosity <> Globals.Normal (* specially important for quiet mode as Luc's tools rely on this *)
-      && not !Globals.dont_tool then
-  begin
-    Screen.show_message ppmode "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
-    Screen.show_message ppmode "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
-    Screen.show_message ppmode "#Model: %s" (Model_aux.pp_model !Globals.model_params)
-  end;
+      && not !Globals.dont_tool
+  then
+    Screen_base.OTConcat [
+      Screen_base.otStrLine "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
+      Screen_base.otStrLine "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
+      Screen_base.otStrLine "#Model: %s" (Model_aux.pp_model !Globals.model_params);
+    ]
+    |> Screen.show_message ppmode;
 
   begin try Top.from_files !run_options files with
-  | Misc.Fatal msg           -> fatal_error msg
+  | Misc.Fatal msg -> fatal_error msg
   end
 ;;
 

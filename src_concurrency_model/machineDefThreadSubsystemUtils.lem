@@ -23,13 +23,17 @@ open import Pervasives_extra
 open import MachineDefUtils
 
 open import Sail_impl_base
-open import MachineDefTypes
 open import MachineDefFragments
-     import MachineDefFreshIds
-     import MachineDefEvents
+open import MachineDefFreshIds
+open import MachineDefEvents
+open import MachineDefTypes
 open import MachineDefDebug
 open import MachineDefInstructionPredicates
+open import MachineDefInstructionSemantics
+open import MachineDefExceptions
 open import MachineDefUI
+open import MachineDefISAInfo
+open import MachineDefParams
 
 import Power_embed_types
 
@@ -808,6 +812,7 @@ let starting_inst_instance_aux
       | IK_branch      -> Nothing
       | IK_trans _     -> Nothing
       | IK_simple      -> Nothing
+      | IK_cache_op _  -> Nothing
       end;
 
     committed_barriers =   [];
@@ -1455,4 +1460,21 @@ let make_ui_machine_thread_state (_s : 'storage_subsystem_state)
 
 
 
+let make_read_request_events_ii params tid iic_instance footprint read_kind = 
+  params.thread_isa_info.make_read_request_events
+    tid 
+    iic_instance.instruction
+    iic_instance.instance_id_state
+    iic_instance.instance_ioid
+    footprint
+    read_kind
 
+
+let make_empty_write_events_ii params tid iic_instance footprint write_kind = 
+  params.thread_isa_info.make_empty_write_events
+    tid
+    iic_instance.instruction
+    iic_instance.instance_id_state
+    iic_instance.instance_ioid
+    footprint
+    write_kind
