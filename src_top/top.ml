@@ -79,7 +79,7 @@ module Run_test (Test_file: Test_file.S) = struct
     if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] && run_options.RunOptions.interpreter then
       print_endline ("Warning: the interpreter ISA defs are missing");
     let module ConcModel  =
-      (val (Concurrency_model.make
+      (val (Machine_concurrency_model.make
               (module ISAModel)
               !Globals.model_params.t.thread_model !Globals.model_params.ss.ss_model)) in
 

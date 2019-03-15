@@ -1,7 +1,9 @@
 open import Pervasives
 open import Sail_impl_base
 open import MachineDefEvents
+open import MachineDefInstructionSemantics
 open import MachineDefISAInfo
+open import MachineDefFragments
 
 
 (** model parameters *)
@@ -136,3 +138,99 @@ type eager_mode =
     eager_local_mem:           bool;
     em_shared_memory:          set footprint;
   |>
+
+
+
+
+type initial_state_record =
+  <|  isr_params:            model_params;
+      isr_program:           instruction_semantics -> address -> fetch_and_decode_outcome;
+      isr_return_addr:       list (thread_id * address);
+      isr_thread_ids:        list thread_id;
+      isr_register_data:     thread_id -> list (reg_base_name * register_value);
+      isr_register_values:   thread_id -> reg_base_name -> register_value;
+      isr_first_instruction: thread_id -> maybe address;
+      isr_memory:            list write;
+  |>
+
+
+
+
+let branch_targets_from_list
+    (bts: list (thread_id * list (address * list address)))
+    : branch_targets_map
+  =
+  let thread_bts tbts =
+    [(addr, Set.fromList addrs) | forall ((addr, addrs) MEM tbts) | true]
+    $> Map.fromList
+  in
+  [(tid, thread_bts tbts) | forall ((tid, tbts) MEM bts) | true]
+  $> Map.fromList
+
+let branch_targets_to_list
+    (bts: branch_targets_map)
+    : list (thread_id * list (address * list address))
+  =
+  Map.map (Map.map Set_extra.toList) bts
+  $> Map.map Map_extra.toList
+  $> Map_extra.toList
+
+let union_and_diff_branch_targets
+    (branch_targets_lhs: branch_targets_map)
+    (branch_targets_rhs: branch_targets_map)
+    : branch_targets_map * list (thread_id * list (address * list address))
+  =
+  let diff =
+    Map.mapi
+      (fun tid tbts_lhs ->
+        let tbts_rhs = Map.findWithDefault tid Map.empty branch_targets_rhs in
+        Map.mapi
+          (fun addr addrs_lhs ->
+            Map.findWithDefault addr {} tbts_rhs
+            $> Set.difference addrs_lhs
+          )
+          tbts_lhs
+      )
+      branch_targets_lhs
+    $> branch_targets_to_list
+    $> List.map (fun (tid, tbts) -> (tid, List.filter (function (_, []) -> false | _ -> true end) tbts))
+    $> List.filter (function (_, []) -> false | _ -> true end)
+  in
+
+  let aunion =
+    List.foldl
+      (fun branch_targets (tid, tbts_diff) ->
+        let tbts =
+          List.foldl
+            (fun tbts (addr, addrs_diff) ->
+              let addrs =
+                (Set.fromList addrs_diff)
+                union
+                (Map.findWithDefault addr {} tbts)
+              in
+              Map.insert addr addrs tbts
+            )
+            (Map.findWithDefault tid Map.empty branch_targets)
+            tbts_diff
+        in
+        Map.insert tid tbts branch_targets
+      )
+      branch_targets_rhs
+      diff
+  in
+
+  (aunion, diff)
+
+
+let union_and_diff_shared_memory
+    (fps_lhs: set footprint)
+    (fps_rhs: set footprint)
+    : set footprint * set footprint (* (union, diff) *)
+  =
+  let merged_fps_rhs = MachineDefFragments.merge_footprints true fps_rhs in
+  let diff =
+    {fp_lhs | forall (fp_lhs IN fps_lhs)
+            | forall (fp_rhs IN merged_fps_rhs).
+                not (MachineDefFragments.sub_footprint fp_lhs fp_rhs)}
+  in
+  (fps_rhs union diff $> MachineDefFragments.merge_footprints false, diff)

@@ -34,6 +34,12 @@ open Model_aux
 open Globals
 
 
+module Make (ConcModel: Concurrency_model.S) (* : GraphBackend.S 
+        * with type state = ConcModel.state
+        * and type trans = ConcModel.trans
+        * and type ui_trans = ConcModel.ui_trans *)
+  = struct
+
 (** ******************** pp of graphs **************** *)
 
  (*
@@ -340,7 +346,7 @@ let table_node ?colour ?border positions nodeid rows =
                  pos_str
                  (table_body ?colour ?border rows)
 
-let trans_rows m ?colspan trans =
+let trans_rows m ?colspan (trans : ConcModel.ui_trans list) =
   if m.ppg_trans && trans <> [] then
     let highlight n =
       match m.pp_default_cmd with
@@ -353,23 +359,25 @@ let trans_rows m ?colspan trans =
       | _ ->
          (   "",     "", "blue", None,          None)
     in
-    let body = table_body ~border:0
-                          (List.mapi
-                             (function n' -> function (n,t) ->
-                                                      let (bold, unbold, colour, background, padding) = highlight n in
-                                                      let label =
-                                                        sprintf "%s%i:%s%s"
-                                                                       bold n (Pp.pp_trans ~graph:true {m with pp_kind=Html} t) unbold
-                                                      in
-                                                      [make_table_cell ?colspan
-                                                                       ?padding
-                                                                       ?background
-                                                                       ~colour
-                                                                       ~align:"left"
-                                                                       ~portid:(sprintf "\"tr%i\"" n')
-                                                                       label])
-
-                             trans)
+    let body =
+      table_body ~border:0
+        (List.mapi
+           (function n' -> 
+              function (n,t) ->
+                let (bold, unbold, colour, background, padding) = highlight n in
+                let label =
+                  sprintf "%s%i:%s%s"
+                    bold n (ConcModel.pp_trans ~graph:true {m with pp_kind=Html} t) unbold
+                in
+                [make_table_cell ?colspan
+                   ?padding
+                   ?background
+                   ~colour
+                   ~align:"left"
+                   ~portid:(sprintf "\"tr%i\"" n')
+                   label])
+           
+           trans)
     in
     [[make_table_cell ?colspan ~align:"left" body]]
   else
@@ -382,7 +390,8 @@ let ppd_trans_ids m trans =
   else
     ""
 
-let pp_html_node_of_thread_id m positions t ioid_trans_lookup =
+let pp_html_node_of_thread_id m positions t
+      (ioid_trans_lookup : MachineDefEvents.ioid -> (ConcModel.ui_trans) list) =
   let tid = t.cex_thread in
   (* HACK: we assume the dummy ioid used by the initil fetch will be 0 *)
   let init_ioid = (tid, 0) in
@@ -560,7 +569,9 @@ let prefix_list l =
   |> List.map List.rev
   |> List.rev
 
-let pp_html_nodes_of_thread m pi pw render_edges positions (cex_t:cex_thread_state) cex_it ioid_trans_lookup =
+let pp_html_nodes_of_thread m pi pw render_edges positions
+      (cex_t:cex_thread_state) cex_it
+      (ioid_trans_lookup : MachineDefEvents.ioid -> (ConcModel.ui_trans) list) =
   let thread_node = nodeid_of_thread_id m cex_t.cex_thread in
   pp_html_node_of_thread_id m positions cex_t ioid_trans_lookup
   ^ "/* thread nodes */\n"
@@ -600,7 +611,8 @@ let pp_html_thread m pi pw render_edges positions (cex_t:cex_thread_state) ioid_
  *)
   ^ "}\n"
 
-let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_candidate) ioid_trans_lookup =
+let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_candidate)
+      (ioid_trans_lookup : MachineDefEvents.ioid -> (ConcModel.ui_trans) list) =
   let iwi (*initial_write_ioids*) = List.map (function w -> w.w_ioid) cex.cex_initial_writes in
   let m = { m with pp_initial_write_ioids = iwi } in
   let threads = Pmap.bindings_list cex.cex_threads in
@@ -633,8 +645,7 @@ let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_ca
   ^ (postamble legend_opt)
 
 
-let pp_candidate_execution m legend_opt render_edges positions (cex: cex_candidate) ioid_trans_lookup =
-  pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_candidate) ioid_trans_lookup
+let pp_candidate_execution = pp_html_candidate_execution
 
 
 (*let mycommand_errors = ref ([]:string list)*)
@@ -701,12 +712,28 @@ let make_dot_graph m legend_opt cex basename_in_dir ioid_trans_lookup =
   mycommand ("neato -Tfig") (graph ^ ".dot") (graph ^ ".fig")
 
 
-module S : Pp.GraphBackend = struct
-  let make_graph m test_info s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
-    let m = { m with pp_pretty_eiid_table = Pp.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
+module S : GraphBackend.S 
+       with type state = ConcModel.state
+       with type trans = ConcModel.trans
+       with type ui_trans = ConcModel.ui_trans
+  = struct
 
-    let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * (int * ('ts,'ss) MachineDefTypes.trans)) list) = List.map (function (n,t) -> (MachineDefTypes.principal_ioid_of_trans t, (n,t))) nc in
-    let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : (int * ('ts,'ss) MachineDefTypes.trans) list = Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
+  type state = ConcModel.state
+  type trans = ConcModel.trans
+  type ui_trans = ConcModel.ui_trans
+
+  let make_graph m test_info s cex (nc: (ConcModel.ui_trans) list) =
+    let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s;
+                     pp_kind=Ascii;
+                     pp_colours=false;
+                     pp_trans_prefix=false } in
+
+    let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * (ConcModel.ui_trans)) list) =
+      List.map (fun (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
+
+    let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : (ConcModel.ui_trans) list =
+      Misc.option_map (fun (ioid',n) -> if ioid=ioid' then Some n else None)
+        ioid_trans_lookup_data in
 
 
     (* if generated_dir is set, create files there with filename based on the test name, otherwise create files here based on "out" *)
@@ -724,12 +751,16 @@ module S : Pp.GraphBackend = struct
     | Some RD_step
       -> ()
     end
-end
+  end
 
 
-let pp_raw_dot m legend_opt render_edges positions s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
-  let m = { m with pp_pretty_eiid_table = Pp.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
-  let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * (int * ('ts,'ss) MachineDefTypes.trans)) list) = List.map (function (n,t) -> (principal_ioid_of_trans t, (n,t))) nc in
-  let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : (int * ('ts,'ss) MachineDefTypes.trans) list = Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
+let pp_raw_dot m legend_opt render_edges positions (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) =
+  let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
+  let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * ConcModel.ui_trans) list) =
+    List.map (function (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
+  let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : ConcModel.ui_trans list =
+    Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
 
   pp_candidate_execution m legend_opt render_edges positions cex ioid_trans_lookup
+
+end (* Make *)

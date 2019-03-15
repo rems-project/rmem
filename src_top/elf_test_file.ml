@@ -531,7 +531,7 @@ let read_data (name: string) (data: data) (isa_callback: (MachineDefInstructionS
 let read_file (name: string) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   read name (Sail_interface.populate_and_obtain_global_symbol_init_info name) isa_callback
 
-let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model : MachineDefSystem.initial_state_record =
+let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model : MachineDefParams.initial_state_record =
   let elf_threads_list = mk_elf_threads_list elf_test.elf_threads in
 
   let (program_memory  : (Nat_big_num.num, word8) Pmap.map),
@@ -811,7 +811,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
           fixed_pseudo_registers'}}}
   in
 
-  let open MachineDefSystem in
+  let open MachineDefParams in
   { isr_params            = model';
     isr_program           = program_memory;
     isr_return_addr       = List.map (fun tid -> (tid, initial_LR_sentinel)) tids;

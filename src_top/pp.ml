@@ -3104,9 +3104,4 @@ let pp_ui_instruction m s tid ioid =
 let pp_ui_gen_eiid_table m (s: ('ts,'ss) MachineDefTypes.system_state) = { m with pp_pretty_eiid_table = pretty_eiids s }
 
 
-module type GraphBackend = sig
-  val make_graph :
-    Globals.ppmode -> Test.info ->
-    ('ts,'ss) MachineDefTypes.system_state -> MachineDefCandidateExecution.cex_candidate ->
-    (int * ('ts,'ss) MachineDefTypes.trans) list -> unit
-end
+

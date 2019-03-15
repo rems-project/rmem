@@ -448,15 +448,12 @@ let fetched_address (addr: address) (sst: system_state_and_transitions 'ts 'ss) 
                           (fun _prefix i -> i.program_loc = addr) t))
     sst.sst_state.thread_states
 
-let trans_fetches_address
-    (addr:  address)
-    (state: system_state_and_transitions 'ts 'ss)
-    : trans 'ts 'ss -> bool
+let trans_fetch_address : trans 'ts 'ss -> maybe address
   = function
   | T_trans (T_sync (T_fetch tl) _) ->
       let (addr', _) = tl.tl_label in
-      addr = addr'
-  | _ -> false
+      Just addr'
+  | _ -> Nothing
   end
 
 let is_ioid_finished (target_ioid : ioid) (sst: system_state_and_transitions 'ts 'ss) : bool =

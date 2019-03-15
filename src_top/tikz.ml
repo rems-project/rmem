@@ -39,6 +39,12 @@ module IoidMap = Map.Make(struct
   let compare = compare
 end)
 
+module Make (ConcModel: Concurrency_model.S) (* : GraphBackend.S 
+        * with type state = ConcModel.state
+        * and type trans = ConcModel.trans
+        * and type ui_trans = ConcModel.ui_trans *)
+  = struct
+
 (* if generated_dir is set, create files there with filename based on
 the test name, otherwise create files here based on "out" *)
 let basename_in_dir (name: string) : string =
@@ -557,9 +563,20 @@ let make_final_state (test_info: Test.info) (state: string) : unit =
   fprintf states_out "\\newcommand{\\finalstate}{%s}\n" state;
   close_out states_out
 
-module S : Pp.GraphBackend = struct
-  let make_graph m test_info s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
-    let m = { m with pp_pretty_eiid_table = Pp.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
+module S : GraphBackend.S 
+       with type state = ConcModel.state
+       with type trans = ConcModel.trans
+       with type ui_trans = ConcModel.ui_trans
+  = struct
+
+  type state = ConcModel.state
+  type trans = ConcModel.trans
+  type ui_trans = ConcModel.ui_trans
+  let make_graph m test_info (s : state) cex (nc: ui_trans list) =
+    let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s;
+                     pp_kind=Ascii;
+                     pp_colours=false;
+                     pp_trans_prefix=false } in
 
     make_tikz_graph m test_info cex;
 
@@ -574,3 +591,5 @@ module S : Pp.GraphBackend = struct
         -> ()
     end
 end
+
+end (* Make *)

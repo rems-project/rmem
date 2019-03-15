@@ -21,7 +21,8 @@
 (*                                                                                             *)
 (*=============================================================================================*)
 
-open MachineDefTypes
+open MachineDefInstructionSemantics
+open MachineDefParams
 
 let js = Js.string;;
 let document = Dom_html.window##.document;;
@@ -191,7 +192,7 @@ let options_of_html : unit -> RunOptions.t = fun () ->
   }
 ;;
 
-let isa_callback (isa: MachineDefTypes.instruction_semantics_mode) =
+let isa_callback (isa: MachineDefInstructionSemantics.instruction_semantics_mode) =
   begin match isa with
   | PPCGEN_ism ->
      Globals.model_params := Model_aux.parse_and_update_model "pldi11" !Globals.model_params;

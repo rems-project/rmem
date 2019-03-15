@@ -25,7 +25,7 @@ module type S = sig
       test ->
       (module Isa_model.ISADefs) ->
       MachineDefParams.model_params ->
-      MachineDefSystem.initial_state_record
+      MachineDefParams.initial_state_record
 
   (* the raw content of test file *)
   type data

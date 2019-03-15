@@ -1809,11 +1809,6 @@ and system_state 'ts 'ss =
   |>
 
 
-type transition_outcome 'a =
-  | TO_system_state of 'a
-  | TO_unhandled_exception of thread_id * ioid * exception_type
-
-
 type system_state_and_transitions 'ts 'ss =
   <| sst_state:               system_state 'ts 'ss;
      sst_system_transitions:  list (trans 'ts 'ss);

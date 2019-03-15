@@ -122,3 +122,8 @@ let showFromExceptionType = function
 instance (Show exception_type)
   let show = showFromExceptionType
 end
+
+
+type transition_outcome 'a =
+  | TO_system_state of 'a
+  | TO_unhandled_exception of thread_id * ioid * exception_type

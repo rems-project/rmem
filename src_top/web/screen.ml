@@ -17,6 +17,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+open MachineDefParams
+
 let set_state_output str = ()
 let set_trace_output str = ()
 
@@ -68,26 +70,30 @@ include (Screen_base.Make (WebPrinters))
 let quit : unit -> unit = fun () ->
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "quit") [||] |> ignore
 
-let render_dot ppmode legend_opt s cex (nc: (int * ('ss, 'b) MachineDefTypes.trans) list) = fun layout_dot ->
-  (* Pp.split doesn't like this for some reason --
-     I believe because of its 'skip beginning and end' behaviour *)
-  let lines = (Js.string layout_dot)##split (Js.string "\n") |>
-                Js.str_array |> Js.to_array |> Array.map Js.to_string |> Array.to_list in
-  let positions = Graphviz.parse_dot_positions lines in
-  let dot = Graphviz.pp_raw_dot ppmode legend_opt true positions s cex nc in
-  Js.Unsafe.fun_call (Js.Unsafe.js_expr "display_dot")
-                     [|Js.Unsafe.inject (Js.string dot)|]
-  |> ignore
+module Dot (ConcModel: Concurrency_model.S) = struct
+  module Graphviz = Graphviz.Make(ConcModel)
 
-let display_dot ppmode legend_opt s cex (nc: (int * ('ss, 'b) MachineDefTypes.trans) list) =
-  let layout_dot = Graphviz.pp_raw_dot ppmode legend_opt false [] s cex nc in
-  Js.Unsafe.fun_call (Js.Unsafe.js_expr "layout_dot")
-                     [|
-                       Js.Unsafe.inject (Js.string layout_dot);
-                       Js.Unsafe.inject (Js.wrap_callback
-                                           (render_dot ppmode legend_opt s cex nc))
-                     |]
-  |> ignore
+  let render_dot ppmode legend_opt (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) = fun layout_dot ->
+    (* Pp.split doesn't like this for some reason --
+       I believe because of its 'skip beginning and end' behaviour *)
+    let lines = (Js.string layout_dot)##split (Js.string "\n") |>
+                  Js.str_array |> Js.to_array |> Array.map Js.to_string |> Array.to_list in
+    let positions = Graphviz.parse_dot_positions lines in
+    let dot = Graphviz.pp_raw_dot ppmode legend_opt true positions s cex nc in
+    Js.Unsafe.fun_call (Js.Unsafe.js_expr "display_dot")
+                       [|Js.Unsafe.inject (Js.string dot)|]
+    |> ignore
+
+  let display_dot ppmode legend_opt s cex (nc: ConcModel.ui_trans list) =
+    let layout_dot = Graphviz.pp_raw_dot ppmode legend_opt false [] s cex nc in
+    Js.Unsafe.fun_call (Js.Unsafe.js_expr "layout_dot")
+                       [|
+                         Js.Unsafe.inject (Js.string layout_dot);
+                         Js.Unsafe.inject (Js.wrap_callback
+                                             (render_dot ppmode legend_opt s cex nc))
+                       |]
+    |> ignore
+end
 
 let current_options (options : Screen_base.options_state) =
   let open Screen_base in
@@ -168,7 +174,7 @@ let current_options (options : Screen_base.options_state) =
       | Some limit -> Js.some limit
       | None -> Js.null
     val loop_limit_ =
-      match options.model_params.MachineDefTypes.t.thread_loop_unroll_limit with
+      match options.model_params.MachineDefParams.t.thread_loop_unroll_limit with
       | Some limit -> Js.some limit
       | None -> Js.null
   end
