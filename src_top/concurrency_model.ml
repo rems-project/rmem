@@ -43,7 +43,7 @@ module type S = sig
     RunOptions.t ->
     sst ->
     trans ->
-    (sst MachineDefExceptions.transition_outcome)
+    (sst MachineDefBasicTypes.transition_outcome)
 
   val initial_state :
     MachineDefInstructionSemantics.instruction_semantics_mode ->

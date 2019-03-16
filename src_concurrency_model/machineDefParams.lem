@@ -1,9 +1,9 @@
 open import Pervasives
 open import Sail_impl_base
-open import MachineDefEvents
 open import MachineDefInstructionSemantics
-open import MachineDefISAInfo
+open import MachineDefEvents
 open import MachineDefFragments
+open import MachineDefBasicTypes
 
 
 (** model parameters *)

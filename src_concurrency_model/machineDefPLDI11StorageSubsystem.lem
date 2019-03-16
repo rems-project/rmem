@@ -26,6 +26,7 @@ open import Relation
 open import Sail_impl_base
 open import MachineDefEvents
 open import MachineDefUtils
+open import MachineDefUITypes
 open import MachineDefTypes
 open import MachineDefFragments
 open import MachineDefParams
@@ -37,6 +38,26 @@ open import MachineDefUI
 
 
 (** auxiliary library functions (these could move to the Lem library) *)
+
+(* these propagated_before* functions assume xs is most-recent first, while
+events_propagated_to is stored most-recent last.  Probably we should switch globally to the former *)
+let rec propagated_before y xs =
+  match xs with
+  | [] -> failwith "propagated_before not found"
+  | x::xs' -> if x=y then xs else propagated_before y xs'
+  end
+
+let rec propagated_before_by_strict p xs = 
+  match xs with
+  | [] -> failwith "propagated_before_by_strict not found"
+  | x::xs' -> if p x then xs' else propagated_before_by_strict p xs'
+  end
+
+let rec propagated_before_by p xs = 
+  match xs with
+  | [] -> []
+  | x::xs' -> if p x then xs' else propagated_before_by p xs'
+  end
 
 val map_forall_bounded : forall 'k 'v. SetType 'v, SetType 'k, MapKeyType 'k => ('k -> 'v -> bool) -> map 'k 'v -> set 'k -> bool
 (* (can't use Map_extra.fold as that requires 'v to be a set type *)

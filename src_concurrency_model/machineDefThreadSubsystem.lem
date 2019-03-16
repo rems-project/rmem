@@ -36,9 +36,8 @@ open import MachineDefDebug
 open import MachineDefThreadSubsystemUtils
 open import MachineDefInstructionPredicates
 open import MachineDefInstructionSemantics
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 open import MachineDefParams
-open import MachineDefExceptions
 open ListMonad
 
 (* SF: ???? *)

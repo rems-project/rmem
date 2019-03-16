@@ -64,7 +64,7 @@ has been set properly (i.e. set_model_ism was called) *)
 val get_endianness: unit -> Sail_impl_base.end_flag
 val pp_endianness: unit -> string
 
-val set_model_ism: MachineDefISAInfo.isa_info -> unit
+val set_model_ism: MachineDefBasicTypes.isa_info -> unit
 
 val suppress_non_symbol_memory: bool ref (* ELF *)
 

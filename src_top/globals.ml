@@ -110,7 +110,7 @@ let get_endianness = fun () ->
   begin match !big_endian with
   | None ->
       let open MachineDefInstructionSemantics in
-      let open MachineDefISAInfo in
+      let open MachineDefBasicTypes in
       begin match !model_params.t.thread_isa_info.ism with
       | PPCGEN_ism    -> Sail_impl_base.E_big_endian
       | AARCH64_ism _ -> Sail_impl_base.E_little_endian

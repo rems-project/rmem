@@ -27,6 +27,7 @@ import Map_extra
 import Set_extra
 open import Assert_extra
 
+open import MachineDefUITypes
 open import MachineDefTypes
 open import MachineDefFragments
 open import MachineDefEvents

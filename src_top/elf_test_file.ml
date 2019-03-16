@@ -111,8 +111,8 @@ let initial_stack tid : ((Nat_big_num.num * int) (* entire footprint *) *
 
 let initial_stack_and_reg_data_of_PPC_elf_file e_entry memory elf_threads_list =
   let reg name =
-    match MachineDefISAInfo.reg_from_data
-            MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefISAInfo.register_data_info name with
+    match MachineDefBasicTypes.reg_from_data
+            MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefBasicTypes.register_data_info name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoPPCGen.ppcgen_ism.register_data_info'")
   in
@@ -167,11 +167,11 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
   let reg name =
     let registerdata =
       if !Globals.aarch64gen then
-        MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefISAInfo.register_data_info
+        MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefBasicTypes.register_data_info
       else
-        MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefISAInfo.register_data_info
+        MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefBasicTypes.register_data_info
     in
-    match MachineDefISAInfo.reg_from_data registerdata name with
+    match MachineDefBasicTypes.reg_from_data registerdata name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'register_data_info'")
   in
@@ -238,7 +238,7 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
 
 let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list =
       let reg name =
-        match MachineDefISAInfo.reg_from_data MachineDefISAInfoMIPS.mips_ism.MachineDefISAInfo.register_data_info name with
+        match MachineDefBasicTypes.reg_from_data MachineDefISAInfoMIPS.mips_ism.MachineDefBasicTypes.register_data_info name with
         | Some r -> r
         | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoMIPS.mips_ism.register_data_info'")
       in
@@ -270,7 +270,7 @@ let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list 
 
 let initial_stack_and_reg_data_of_riscv_elf_file symbol_map memory elf_threads_list =
       let reg name =
-        match MachineDefISAInfo.reg_from_data MachineDefISAInfoRISCV.riscv_ism.MachineDefISAInfo.register_data_info name with
+        match MachineDefBasicTypes.reg_from_data MachineDefISAInfoRISCV.riscv_ism.MachineDefBasicTypes.register_data_info name with
         | Some r -> r
         | None -> failwith ("\"" ^ name ^ "\" is not in 'MachineDefISAInfoRISCV.riscv_ism.register_data_info'")
       in
@@ -327,7 +327,7 @@ let mk_elf_threads_list elf_threads =
 
 type data = char list
 
-let arch_of_test (test: test) : MachineDefISAInfo.isa_info =
+let arch_of_test (test: test) : MachineDefBasicTypes.isa_info =
   begin match Nat_big_num.to_int test.e_machine with
   | 21  (* EM_PPC64 *)   -> MachineDefISAInfoPPCGen.ppcgen_ism
   | 183 (* EM_ARACH64 *) when !Globals.aarch64gen ->
@@ -438,7 +438,7 @@ let show_mem_locations (test: test) : (Sail_impl_base.address * int) list =
 let test_info (test: test) (name: string) : Test.info =
   let mems = show_mem_locations test in
   { Test.name           = name;
-    Test.ism            = (arch_of_test test).MachineDefISAInfo.ism;
+    Test.ism            = (arch_of_test test).MachineDefBasicTypes.ism;
     Test.thread_count   = test.elf_threads;
     Test.symbol_map     = test.symbol_map;
     Test.symbol_table   = symbol_table test;
@@ -515,7 +515,7 @@ let read (name: string) info (isa_callback: (MachineDefInstructionSemantics.inst
   Globals.set_model_ism (arch_of_test test);
 
   begin match isa_callback with
-  | Some f -> f (!Globals.model_params).MachineDefParams.t.MachineDefParams.thread_isa_info.MachineDefISAInfo.ism
+  | Some f -> f (!Globals.model_params).MachineDefParams.t.MachineDefParams.thread_isa_info.MachineDefBasicTypes.ism
   | _ -> ()
   end;
 
@@ -771,8 +771,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
       let open Sail_impl_base in
       let open MachineDefParams in
       let open MachineDefInstructionSemantics in
-      let open MachineDefInstructionSemantics in
-      let open MachineDefISAInfo in
+      let open MachineDefBasicTypes in
       match model.t.thread_isa_info.ism with
       | PPCGEN_ism ->
           let endianness =
@@ -804,7 +803,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
           model.t.thread_isa_info.fixed_pseudo_registers
     in
     let open MachineDefParams in
-    let open MachineDefISAInfo in
+    let open MachineDefBasicTypes in
     {model with t =
       {model.t with thread_isa_info =
         {model.t.thread_isa_info with fixed_pseudo_registers =

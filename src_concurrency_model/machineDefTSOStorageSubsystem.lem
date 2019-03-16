@@ -26,6 +26,7 @@ import Map_extra
 open import Sail_impl_base
 open import MachineDefEvents
 open import MachineDefFragments
+open import MachineDefUITypes
 open import MachineDefTypes
 import MachineDefInstructionPredicates
 open import MachineDefUtils

@@ -22,11 +22,7 @@ open import Pervasives_extra
 (* emacs fontification -*-caml-*- *)
 
 open import Sail_impl_base
-(* open import MachineDefDebug *)
-(* open import MachineDefParams *)
 open import MachineDefUtils
-(* open import MachineDefFreshIds *)
-     (* import MachineDefEvents *)
 
 
 open import Sail_values

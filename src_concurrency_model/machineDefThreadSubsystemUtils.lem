@@ -30,9 +30,9 @@ open import MachineDefTypes
 open import MachineDefDebug
 open import MachineDefInstructionPredicates
 open import MachineDefInstructionSemantics
-open import MachineDefExceptions
+open import MachineDefUITypes
 open import MachineDefUI
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 open import MachineDefParams
 
 import Power_embed_types

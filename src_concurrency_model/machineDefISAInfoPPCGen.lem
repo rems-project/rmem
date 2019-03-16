@@ -22,7 +22,7 @@ open import Assert_extra
 
 open import MachineDefUtils
 open import Sail_impl_base
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 open import MachineDefEvents
 open import MachineDefInstructionSemantics
 

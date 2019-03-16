@@ -97,7 +97,7 @@ module Make : S =
     let pp_reg r =
       let open MachineDefParams in
       let open MachineDefInstructionSemantics in
-      let open MachineDefISAInfo in
+      let open MachineDefBasicTypes in
       let params = !Globals.model_params in
       begin match params.t.thread_isa_info.ism with
       | PPCGEN_ism ->

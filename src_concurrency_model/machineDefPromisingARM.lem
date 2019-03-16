@@ -20,17 +20,16 @@ open import Relation
 open import Pervasives_extra
 open import MachineDefFreshIds
 open import MachineDefUtils
+open import MachineDefBasicTypes
 open import Sail_impl_base
+open import MachineDefUITypes
 open import MachineDefTypes
 open import MachineDefFragments
 open import MachineDefEvents
 open import MachineDefDebug
 open import MachineDefThreadSubsystemUtils
 open import MachineDefInstructionSemantics
-open import MachineDefExceptions
 open import MachineDefParams
-open import MachineDefISAInfo
-(* open import MachineDefPOPStorageSubsystem *)
      import Map
 open import MachineDefUI
      import ArmV8_embed_types

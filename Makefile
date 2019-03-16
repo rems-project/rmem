@@ -777,8 +777,8 @@ MACHINEFILES-PRE=\
   src_concurrency_model/machineDefInstructionSemantics.lem\
   src_concurrency_model/machineDefEvents.lem\
   src_concurrency_model/machineDefFragments.lem\
-  src_concurrency_model/machineDefExceptions.lem\
-  src_concurrency_model/machineDefISAInfo.lem\
+  src_concurrency_model/machineDefBasicTypes.lem\
+  src_concurrency_model/machineDefUITypes.lem\
   src_concurrency_model/machineDefParams.lem\
   src_concurrency_model/machineDefTypes.lem\
   src_concurrency_model/machineDefUI.lem\

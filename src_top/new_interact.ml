@@ -653,12 +653,12 @@ let try_single_transition (eager: bool) (n: int) interact_state : interact_state
                   interact_node.system_state
                   transition
           with
-          | MachineDefExceptions.TO_unhandled_exception (tid, ioid, e) ->
+          | MachineDefBasicTypes.TO_unhandled_exception (tid, ioid, e) ->
               otStrLine "the transition leads to exception"
               |> Screen.show_message interact_state.ppmode;
               (* TODO: pp the exception *)
               None
-          | MachineDefExceptions.TO_system_state system_state' ->
+          | MachineDefBasicTypes.TO_system_state system_state' ->
               let interact_nodes =
                 if eager then
                   match interact_nodes with

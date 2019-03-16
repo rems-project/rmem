@@ -1,0 +1,261 @@
+open import Pervasives_extra
+open import Sail_impl_base
+open import MachineDefInstructionSemantics
+open import MachineDefEvents
+open import MachineDefFragments
+open import MachineDefUtils
+
+
+(** Registers *)
+
+(* the left nat is width and the right nat is initial index;
+the list is the register fields; if direction is D_increasing the left side of the
+slice is less or equal to the right, if direction is D_decreasing the right side of the
+slice is less or equal to the left *)
+type registerdata = list (reg_base_name * (direction * nat * nat * list (string * slice)))
+
+let reg_from_data (data: registerdata) (name: reg_base_name) : maybe reg_name =
+  Maybe.bind (List.lookup name data) $ fun (direction, width, start, _) ->
+  Just (Reg name start width direction)
+
+let reg_field_from_data (data: registerdata) (name: reg_base_name) (field_name: string) : maybe reg_name =
+  Maybe.bind (List.lookup name data) $ fun (direction, width, start, fields) ->
+  Maybe.bind (List.lookup field_name fields) $ fun slice ->
+  let norm (d: direction) (start: nat) (i, j) = (* see interp_inter_imp.lem extern_slice *)
+    match d with
+    | D_increasing -> (i, j)
+    | D_decreasing ->
+        let i' = start - i in
+        let j' = (i - j) + i' in
+        (i', j')
+    end
+  in
+  Just (Reg_field name start direction field_name (norm direction start slice))
+
+let fixed_reg (data: registerdata) value (name: reg_base_name) =
+  let reg = Maybe_extra.fromJust (reg_from_data data name) in
+  (reg, register_value_for_reg_of_integer reg value)
+
+let fixed_reg_field (data: registerdata) value (name: reg_base_name) (field_name: string) =
+  let reg = Maybe_extra.fromJust (reg_field_from_data data name field_name) in
+  (reg, register_value_for_reg_of_integer reg value)
+
+
+
+(** ISA info *)
+
+type thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr:   reg_name;
+      tsi_toc:    maybe reg_name; (* PPCGEN *)
+      tsi_extra:  maybe reg_name; (* PPCGEN, though unused *)
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return: reg_name;
+
+      (* these registers hold the arguments of the new thread function *)
+      tsi_f_tid:  reg_name;
+      tsi_f_toc:  maybe reg_name; (* PPCGEN *)
+      tsi_f_addr: maybe reg_name; (* MIPS *)
+  |>
+
+let thread_start_info_stub =
+  <|  tsi_addr  = Reg "" 0 0 D_increasing;
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      tsi_return = Reg "" 0 0 D_increasing;
+      tsi_f_tid  = Reg "" 0 0 D_increasing;
+      tsi_f_toc  = Nothing;
+      tsi_f_addr = Nothing;
+  |>
+
+
+type isa_info =
+  <|  ism : MachineDefInstructionSemantics.instruction_semantics_mode;
+      is_system_call_instruction  : MachineDefInstructionSemantics.instruction_ast -> maybe integer;
+      is_thread_start_instruction : MachineDefInstructionSemantics.instruction_ast -> bool;
+
+      thread_start_info : thread_start_info;
+
+      register_data_info     : registerdata;
+      fixed_pseudo_registers : list (reg_name * register_value);
+      cia_reg                : reg_name;
+      nia_reg                : reg_name;
+      dia_reg                : maybe reg_name;
+
+      make_empty_write_events  : thread_id -> 
+                                 MachineDefInstructionSemantics.instruction_ast -> (* instruction instance's AST node *)
+                                 MachineDefFreshIds.id_state ioid -> (* instruction instance's id state *)
+                                 ioid -> (* instruction instance's id *)
+                                 footprint ->
+                                 write_kind ->
+                                 ((list write) * (MachineDefFreshIds.id_state ioid));
+      make_read_request_events : thread_id ->
+                                 MachineDefInstructionSemantics.instruction_ast -> (* instruction instance's AST node *)
+                                 MachineDefFreshIds.id_state ioid -> (* instruction instance's id state *)
+                                 ioid -> (* instruction instance's id *)
+                                 footprint ->
+                                 read_kind ->
+                                 ((list read_request) * (MachineDefFreshIds.id_state ioid))
+  |>
+
+let isa_info_stub =
+  <|  ism                         = MachineDefInstructionSemantics.PPCGEN_ism;
+      is_system_call_instruction  = fun _ -> failwith "stub";
+      is_thread_start_instruction = fun _ -> failwith "stub";
+      thread_start_info           = thread_start_info_stub;
+      register_data_info          = [];
+      fixed_pseudo_registers      = [];
+      cia_reg                     = Reg "" 0 0 D_increasing;
+      nia_reg                     = Reg "" 0 0 D_increasing;
+      dia_reg                     = Nothing;
+      make_empty_write_events     = fun _ _ _ _ -> failwith "stub";
+      make_read_request_events    = fun _ _ _ _ -> failwith "stub";
+  |>
+
+
+
+
+(** Exceptions *)
+
+type fetch_and_decode_exception =
+  | FDE_non_concrete_fetch_address_error
+  | FDE_illegal_fetch_address_error of address
+  | FDE_decode_error of decode_error_t * address
+
+let fetch_and_decode_exception_compare e1 e2 =
+  match (e1, e2) with
+  | (FDE_non_concrete_fetch_address_error, FDE_non_concrete_fetch_address_error) -> EQ
+  | (FDE_non_concrete_fetch_address_error, _) -> LT
+  | (_, FDE_non_concrete_fetch_address_error) -> GT
+
+  | (FDE_illegal_fetch_address_error address1,
+     FDE_illegal_fetch_address_error address2)
+      -> compare address1 address2
+  | (FDE_illegal_fetch_address_error _, _) -> LT
+  | (_, FDE_illegal_fetch_address_error _) -> GT
+
+  | (FDE_decode_error decode_error1 address1,
+     FDE_decode_error decode_error2 address2)
+      -> compare (decode_error1, address1) (decode_error2, address2)
+  (* | (FDE_decode_error _ _, _) -> LT *)
+  (* | (_, FDE_decode_error _ _) -> GT *)
+  end
+
+let fetch_and_decode_exception_less e1 e2       = fetch_and_decode_exception_compare e1 e2 =  LT
+let fetch_and_decode_exception_less_eq e1 e2    = fetch_and_decode_exception_compare e1 e2 <> GT
+let fetch_and_decode_exception_greater e1 e2    = fetch_and_decode_exception_compare e1 e2 =  GT
+let fetch_and_decode_exception_greater_eq e1 e2 = fetch_and_decode_exception_compare e1 e2 <> LT
+
+instance (Ord fetch_and_decode_exception)
+  let compare = fetch_and_decode_exception_compare
+  let (<)  = fetch_and_decode_exception_less
+  let (<=) = fetch_and_decode_exception_less_eq
+  let (>)  = fetch_and_decode_exception_greater
+  let (>=) = fetch_and_decode_exception_greater_eq
+end
+
+let {coq; ocaml} fetch_and_decode_exception_equal e1 e2 = (fetch_and_decode_exception_compare e1 e2) = EQ
+let inline {hol; isabelle} fetch_and_decode_exception_equal = unsafe_structural_equality
+
+let {coq; ocaml} fetch_and_decode_exception_inequal e1 e2 = not (fetch_and_decode_exception_equal e1 e2)
+let inline {hol; isabelle} fetch_and_decode_exception_inequal = unsafe_structural_inequality
+
+ instance  (Eq fetch_and_decode_exception)
+  let (=)  = fetch_and_decode_exception_equal
+  let (<>) = fetch_and_decode_exception_inequal
+ end
+
+type exception_type =
+  (* the read_request and the unmapped footprint *)
+  | ET_read_from_unmapped_memory of read_request * slices
+  | ET_write_to_unmapped_memory of list write
+  | ET_fetch_and_decode of fetch_and_decode_exception
+  | ET_loop_limit_reached (* this exception will be recorded in the
+                          instruction instance of the branch target *)
+  | ET_ISA_termination of string
+
+let exception_type_compare e1 e2 =
+  match (e1, e2) with
+  | (ET_read_from_unmapped_memory read_request1 slices1,
+     ET_read_from_unmapped_memory read_request2 slices2)
+      -> compare (read_request1, slices1) (read_request2, slices2)
+  | (ET_read_from_unmapped_memory _ _, _) -> LT
+  | (_, ET_read_from_unmapped_memory _ _) -> GT
+
+  | (ET_write_to_unmapped_memory ws1, ET_write_to_unmapped_memory ws2)
+      -> compare ws1 ws2
+  | (ET_write_to_unmapped_memory _, _) -> LT
+  | (_, ET_write_to_unmapped_memory _) -> GT
+
+  | (ET_fetch_and_decode f1, ET_fetch_and_decode f2) -> compare f1 f2
+  | (ET_fetch_and_decode _, _) -> LT
+  | (_, ET_fetch_and_decode _) -> GT
+
+  | (ET_loop_limit_reached, ET_loop_limit_reached) -> EQ
+  | (ET_loop_limit_reached, _) -> LT
+  | (_, ET_loop_limit_reached) -> GT
+
+  | (ET_ISA_termination s1, ET_ISA_termination s2) -> compare s1 s2
+  (* | (ET_ISA_termination _, _) -> LT
+  | (_, ET_ISA_termination _) -> GT *)
+  end
+
+let exception_type_less e1 e2       = exception_type_compare e1 e2 =  LT
+let exception_type_less_eq e1 e2    = exception_type_compare e1 e2 <> GT
+let exception_type_greater e1 e2    = exception_type_compare e1 e2 =  GT
+let exception_type_greater_eq e1 e2 = exception_type_compare e1 e2 <> LT
+
+instance (Ord exception_type)
+  let compare = exception_type_compare
+  let (<)  = exception_type_less
+  let (<=) = exception_type_less_eq
+  let (>)  = exception_type_greater
+  let (>=) = exception_type_greater_eq
+end
+
+let {coq; ocaml} exception_type_equal e1 e2 = (exception_type_compare e1 e2) = EQ
+let inline {hol; isabelle} exception_type_equal = unsafe_structural_equality
+let {coq; ocaml} exception_type_inequal e1 e2 = not (exception_type_equal e1 e2)
+let {hol; isabelle} exception_type_inequal = unsafe_structural_inequality
+
+instance  (Eq exception_type)
+  let (=)  = exception_type_equal
+  let (<>) = exception_type_inequal
+end
+
+let showFromExceptionType = function
+  | ET_read_from_unmapped_memory rr s -> "ET_read_from_unmapped_memory " ^ show rr ^ "[" ^ show s ^ "]"
+  | ET_write_to_unmapped_memory ws    -> "ET_write_to_unmapped_memory " ^ show ws
+  | ET_fetch_and_decode fde           -> "ET_fetch_and_decode [???]"
+  | ET_loop_limit_reached             -> "ET_loop_limit_reached"
+  | ET_ISA_termination msg            -> "ET_ISA_termination " ^ msg
+  end
+
+instance (Show exception_type)
+  let show = showFromExceptionType
+end
+
+
+(** Transition outcomes *)
+
+type transition_outcome 'a =
+  | TO_system_state of 'a
+  | TO_unhandled_exception of thread_id * ioid * exception_type
+
+
+(** Dependency calculation *)
+type register_read_source =
+  | RRS_instruction of ioid * list reg_name * list (maybe_value_fragment bit_lifted)
+  | RRS_initial_state of list (maybe_value_fragment bit_lifted)
+  | RRS_pseudoregister
+(* the lists of maybe_value_fragments above are recorded only for the sake of constructing axiomatic executions for the user interface *)
+
+(* list with the most recent at the head *)
+type register_read_sources = list register_read_source
+
+type register_write_dependency =
+    | RWD_reg_write of ioid * list reg_name (* a po-previous instruction and register writes
+                                            that feed a register read that was performed
+                                            before the register write *)
+    | RWD_mem_read (* indicates the instruction performed a memory read
+                   before the register write *)

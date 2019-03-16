@@ -48,7 +48,7 @@ end
 
 module type ISADefs = sig
   val name : string
-  val reg_data : MachineDefISAInfo.registerdata
+  val reg_data : MachineDefBasicTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
   val isa_memory_access : (Interp_interface.memory_reads *

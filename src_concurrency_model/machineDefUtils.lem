@@ -18,11 +18,53 @@
 (*                                                                                             *)
 (*=============================================================================================*)
 
+open import Relation
 open import Pervasives_extra
 
 (* Help emacs fontification -*-caml-*- *)
 
-(** Utility Definitions *)
+(** Maybe *)
+
+let inline ensure_just (a : maybe 'a) (err : string) : 'a =
+  match a with
+  | Just a -> a
+  | Nothing -> failwith err
+  end
+
+(** Lists*)
+
+(* two auxiliary functions for dealing with maps in Isabelle *)
+val mapToList: forall 'k 'v. MapKeyType 'k, SetType 'k, SetType 'v => map 'k 'v -> list ('k * 'v)
+let {coq;ocaml} mapToList = Map_extra.toList
+let {isabelle}  mapToList l = Set_extra.toList (Map.toSet l)
+
+val mapi : forall 'k 'v 'w. MapKeyType 'k, SetType 'k, SetType 'v => ('k -> 'v -> 'w) -> map 'k 'v -> map 'k 'w
+let {isabelle;coq} mapi f m =
+  Map.fromList (map (fun (k,v) -> (k,f k v)) ((mapToList m) : list ('k * 'v)))
+let inline {ocaml} mapi = (Map.mapi)
+
+let inline ensure_singleton (xs : list 'x) (err : string) : 'x = 
+  match xs with
+  | [] -> failwith err
+  | [x] -> x
+  | _ -> failwith err
+  end
+
+val head : forall 'a. list 'a -> 'a
+let head l = ensure_just (index l 0) "head: empty list"
+
+let add_event l e = List.snoc e l
+let add_events l es = l ++ es
+
+val bigunionListMap : forall 'a 'b. SetType 'b => ('a -> set 'b) -> list 'a -> set 'b
+let rec bigunionListMap f xs =
+  match xs with
+  | [] -> {}
+  | x::xs' -> (f x) union bigunionListMap f xs'
+  end
+
+
+(** Associative lists *)
 
 (* map key 'k' to value 'v' in associative list 'm' (add the pair or
 replace the value of existing key) *)
@@ -57,49 +99,20 @@ let rec list_minimumBy (ord: 'a -> 'a -> ordering) (l: list 'a) : maybe 'a =
     Nothing
     l
 
+
+
+
+
+(** Functions *)
+
 (*: Map-like functions and Sets :*)
 let funupd f x y = fun x' -> if x'=x then y else f x'
 
 
-(*: \subsection{Relations} :*)
-open import Relation
+(** Relations *)
 
 let acyclic (r : rel 'a 'a) = isIrreflexive (transitiveClosure r)
 
-
-(*: \subsection{Lists as FIFO's} :*)
-let add_event l e =
-      List.snoc e l
-
-let add_events l es =
-      l ++ es
-
-
-(* these propagated_before* functions assume xs is most-recent first, while
-events_propagated_to is stored most-recent last.  Probably we should switch globally to the former *)
-let rec propagated_before y xs =
-  match xs with
-  | [] -> failwith "propagated_before not found"
-  | x::xs' -> if x=y then xs else propagated_before y xs'
-  end
-
-let rec propagated_before_by_strict p xs = 
-  match xs with
-  | [] -> failwith "propagated_before_by_strict not found"
-  | x::xs' -> if p x then xs' else propagated_before_by_strict p xs'
-  end
-
-let rec propagated_before_by p xs = 
-  match xs with
-  | [] -> []
-  | x::xs' -> if p x then xs' else propagated_before_by p xs'
-  end
-
-
-
-
-
-(* From POP *)
 
 let rec order_to_list_helper domain order minimals =
   if Set.null order then minimals ++ (Set_extra.toList domain)
@@ -117,51 +130,8 @@ let order_to_list domain order =
   order_to_list_helper domain order []
 
 
-(* for initial-state writes we allow them to be any power of 2 sized-and-aligned *)
 
-let aligned (a: integer) (n: nat) = (a mod (integerFromNat n)) = 0
-
-let max_exp : nat = 29
-let max_size : nat = 2 ** max_exp
-
-let rec biggest_initial_aligned_two_to_the_n_region' (a:integer) (sz:nat) (exp:nat) =
-  if sz = 0 then
-    failwith "sz = 0 illegal for biggest_initial_aligned_two_to_the_n_region'"
-  else
-    let size = 2 ** exp in
-    if sz >= size && aligned a size then
-      size
-    else
-      biggest_initial_aligned_two_to_the_n_region' a sz (exp-1)
-
-let rec repartition ((a:integer),(sz:nat)) : list (integer*nat) =
-  if sz=0 then
-    []
-  else
-    if sz > max_size then failwith "repartition given too big a footprint" else
-    let size = biggest_initial_aligned_two_to_the_n_region' a sz max_exp in
-    let a' = a + (integerFromNat size) in
-    let fp = (a,size) in
-    let fps = repartition (a',sz-size) in
-      fp::fps
-
-
-let inline ensure_just (a : maybe 'a) (err : string) : 'a =
-  match a with
-  | Just a -> a
-  | Nothing -> failwith err
-  end
-
-let inline ensure_singleton (xs : list 'x) (err : string) : 'x = 
-  match xs with
-  | [] -> failwith err
-  | [x] -> x
-  | _ -> failwith err
-  end
-
-val head : forall 'a. list 'a -> 'a
-let head l = ensure_just (index l 0) "head: empty list"
-
+(** Monads *)
 
 module ListMonad = struct
   val (>>=) : forall 'a 'b. list 'a -> ('a -> list 'b) -> list 'b

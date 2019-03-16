@@ -24,7 +24,7 @@ open import MachineDefUtils
 open import Sail_impl_base
 open import MachineDefEvents
 open import MachineDefInstructionSemantics
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 import Mips_embed_types
 
 let mips_is_system_call_instruction (_: instruction_ast) = Nothing

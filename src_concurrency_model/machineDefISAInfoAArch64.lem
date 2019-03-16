@@ -24,7 +24,7 @@ open import MachineDefUtils
 open import MachineDefFreshIds
 open import MachineDefEvents
 open import MachineDefInstructionSemantics
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 import Sail_values
 import ArmV8_embed_types
 

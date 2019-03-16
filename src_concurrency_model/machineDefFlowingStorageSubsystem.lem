@@ -25,6 +25,7 @@
 open import Pervasives
 open import Assert_extra
 
+open import MachineDefUITypes
 open import MachineDefTypes
 open import MachineDefEvents
 open import MachineDefFragments

@@ -85,7 +85,7 @@ let memo_unit (f : unit -> 'a) =
 
 module type ISADefs = sig
   val name : string
-  val reg_data : MachineDefISAInfo.registerdata
+  val reg_data : MachineDefBasicTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
   val isa_memory_access : (Interp_interface.memory_reads *
@@ -101,7 +101,7 @@ end
 
 module PPCGenISADefs : ISADefs = struct
   let name = "PPC"
-  let reg_data = MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefISAInfo.register_data_info
+  let reg_data = MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefBasicTypes.register_data_info
   let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "PPCGen")
   let isa_memory_access = (Power_extras.power_read_memory_functions,
                             [],
@@ -116,7 +116,7 @@ end
 
 module AArch64ISADefs : ISADefs = struct
     let name = "AArch64"
-    let reg_data = MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefISAInfo.register_data_info
+    let reg_data = MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefBasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64")
     let isa_memory_access = (ArmV8_extras.aArch64_read_memory_functions,
                               [],
@@ -131,7 +131,7 @@ end
 
 module AArch64GenISADefs : ISADefs = struct
     let name = "AArch64Gen"
-    let reg_data = MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefISAInfo.register_data_info
+    let reg_data = MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefBasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64Gen")
     let isa_memory_access = ([], (*ArmV8Gen_extras.aArch64_read_memory_functions*)
                               [],
@@ -146,7 +146,7 @@ end
 
 module MIPS64ISADefs : ISADefs = struct
     let name = "MIPS"
-    let reg_data = MachineDefISAInfoMIPS.mips_ism.MachineDefISAInfo.register_data_info
+    let reg_data = MachineDefISAInfoMIPS.mips_ism.MachineDefBasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "MIPS64")
     let isa_memory_access = (Mips_extras.mips_read_memory_functions,
                               [],
@@ -161,7 +161,7 @@ end
 
 module RISCVISADefs : ISADefs = struct
     let name = "RISCV"
-    let reg_data = MachineDefISAInfoRISCV.riscv_ism.MachineDefISAInfo.register_data_info
+    let reg_data = MachineDefISAInfoRISCV.riscv_ism.MachineDefBasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "RISCV")
     (* let isa_memory_access = (Riscv_extras.riscv_read_memory_functions,
      *                           [],
@@ -177,7 +177,7 @@ end
 
 module X86ISADefs : ISADefs = struct
     let name = "X86"
-    let reg_data = MachineDefISAInfoX86.x86_ism.MachineDefISAInfo.register_data_info
+    let reg_data = MachineDefISAInfoX86.x86_ism.MachineDefBasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "X86")
     let isa_memory_access = (X86_extras.x86_read_memory_functions,
                               [],

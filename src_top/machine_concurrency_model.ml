@@ -209,7 +209,7 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   let branch_targets_of_state = MachineDefSystem.branch_targets_of_state
   let shared_memory_of_state = MachineDefSystem.shared_memory_of_state
   let memory_value_of_footprints = MachineDefSystem.memory_value_of_footprints
-  let make_cex_candidate = MachineDefCandidateExecution.make_cex_candidate
+  let make_cex_candidate = MachineDefSystem.make_cex_candidate
 
   let is_eager_trans state eager_mode trans = 
     MachineDefTransitionUtils.is_eager_transition

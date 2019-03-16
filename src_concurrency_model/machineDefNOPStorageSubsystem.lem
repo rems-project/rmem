@@ -21,6 +21,7 @@ open import Relation
 
 (* emacs fontification -*-caml-*- *)
 
+open import MachineDefUITypes
 open import MachineDefUtils
 open import MachineDefFragments
 open import MachineDefEvents

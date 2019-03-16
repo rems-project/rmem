@@ -303,7 +303,7 @@ let read_channel
 
   let open MachineDefParams in
   let open MachineDefInstructionSemantics in
-  let open MachineDefISAInfo in
+  let open MachineDefBasicTypes in
 
   begin match isa_callback with
   | Some f -> f (!Globals.model_params).t.thread_isa_info.ism
@@ -503,7 +503,7 @@ let initial_state_record
   =
 
   let open MachineDefParams in
-  let open MachineDefISAInfo in
+  let open MachineDefBasicTypes in
   let open MachineDefInstructionSemantics in
 
   (* list of tids 0,1,... *)
@@ -598,7 +598,7 @@ let initial_state_record
   (* Set up TPIDR registers -- used for thread local storage, specifically
      seems to be a pointer to the TCB. For now, just put the thread id there *)
   let reg_values : ((Nat_num.nat * Sail_impl_base.reg_base_name) * Sail_impl_base.register_value) list =
-    let open MachineDefISAInfo in
+    let open MachineDefBasicTypes in
     match test.arch with
     | `AArch64 ->
        let tpidr_el0 =

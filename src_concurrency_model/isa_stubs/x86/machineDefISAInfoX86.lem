@@ -15,6 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 
 let x86_ism : isa_info = isa_info_stub

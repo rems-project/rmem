@@ -25,7 +25,7 @@ open import Assert_extra
 open import MachineDefUtils
 open import Sail_impl_base
 open import MachineDefEvents
-open import MachineDefISAInfo
+open import MachineDefBasicTypes
 open import MachineDefInstructionSemantics
 import X86_embed_types
 

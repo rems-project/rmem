@@ -51,10 +51,10 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefExceptions.exception_type
+  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefBasicTypes.exception_type
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
-    | (0, 0) -> MachineDefExceptions.exception_type_compare e1 e2
+    | (0, 0) -> MachineDefBasicTypes.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c
     end
@@ -514,10 +514,10 @@ let take_transition search_state sst (i, (transition : ConcModel.trans)) eager :
 
       begin match ConcModel.sst_after_trans search_state.options sst
                     (transition : ConcModel.trans) with
-      | MachineDefExceptions.TO_unhandled_exception (tid, ioid, e) ->
+      | MachineDefBasicTypes.TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
           record_exception search_state (tid, ioid, e)
-      | MachineDefExceptions.TO_system_state sst' when eager ->
+      | MachineDefBasicTypes.TO_system_state sst' when eager ->
           (* If the transition was eager, pop and re-push the head node,
           prepending it to the previous node's open_transition *)
           begin match (pop search_state) with
@@ -538,7 +538,7 @@ let take_transition search_state sst (i, (transition : ConcModel.trans)) eager :
               }
               |> add_search_node sst'
           end
-      | MachineDefExceptions.TO_system_state sst' (* when not eager *) ->
+      | MachineDefBasicTypes.TO_system_state sst' (* when not eager *) ->
           (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
           assert (search_node.open_transition = []);
           { search_state with

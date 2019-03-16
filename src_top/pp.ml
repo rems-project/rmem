@@ -34,8 +34,8 @@ open Sail_impl_base
 open MachineDefUtils
 open MachineDefEvents
 open MachineDefParams
-open MachineDefExceptions
-open MachineDefISAInfo
+open MachineDefBasicTypes
+open MachineDefUITypes
 open MachineDefInstructionSemantics
 open MachineDefFragments
 open MachineDefTypes
