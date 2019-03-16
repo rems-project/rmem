@@ -21,11 +21,11 @@ open Printf
 
 open Interp_interface
 open Sail_impl_base
-open MachineDefUtils
-open MachineDefEvents
-open MachineDefFragments
-open MachineDefUI
-open MachineDefCandidateExecution
+open Utils
+open Events
+open Fragments
+open UiTypes
+open CandidateExecution
 
 open Types
 open Model_aux
@@ -35,7 +35,7 @@ open Globals
 
 module StringSet = Set.Make(String)
 module IoidMap = Map.Make(struct
-  type t = MachineDefEvents.ioid
+  type t = Events.ioid
   let compare = compare
 end)
 
@@ -71,7 +71,7 @@ let pp_tex_header out test_info =
 let make_tikz_graph
     (m:         Globals.ppmode)
     (test_info: Test.info)
-    (cex:       MachineDefCandidateExecution.cex_candidate)
+    (cex:       CandidateExecution.cex_candidate)
     : unit
   =
   let replace (c: char) (n: string) (str: string) : string =
@@ -333,7 +333,7 @@ let make_tikz_graph
   in
 
   let rec instructions_path_from_tree acc
-      : MachineDefCandidateExecution.cex_instruction_tree -> MachineDefCandidateExecution.cex_instruction_instance list
+      : CandidateExecution.cex_instruction_tree -> CandidateExecution.cex_instruction_instance list
     = function
     | CEX_T []             -> List.rev acc
     | CEX_T [(inst, tree)] -> instructions_path_from_tree (inst :: acc) tree
@@ -484,7 +484,7 @@ let make_tikz_graph
   close_out tikz_out
 
 module TidMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id
+  type t = Events.thread_id
   let compare t1 t2 = Pervasives.compare t1 t2
 end)
 

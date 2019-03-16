@@ -32,13 +32,13 @@ open import Pervasives_extra
    any reserve/conditional or acquire/release variants *)
 
 open import Sail_impl_base
-open import MachineDefFreshIds
-open import MachineDefEvents
-open import MachineDefFragments
-open import MachineDefBasicTypes
-open import MachineDefUITypes
-open import MachineDefParams
-open import MachineDefInstructionSemantics
+open import FreshIds
+open import Events
+open import Fragments
+open import BasicTypes
+open import UiTypes
+open import Params
+open import InstructionSemantics
 import Power_embed
 import ArmV8_embed
 import Mips_embed

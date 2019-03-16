@@ -18,14 +18,14 @@
 (* emacs fontification -*-caml-*- *)
 
 open import Pervasives_extra
-open import MachineDefUtils
 
 open import Sail_impl_base
-open import MachineDefFragments
-     import MachineDefFreshIds
-     import MachineDefEvents
-open import MachineDefDebug
-open import MachineDefInstructionSemantics
+open import Utils
+open import Fragments
+     import FreshIds
+     import Events
+open import Debug
+open import InstructionSemantics
 open import MachineDefTypes
 
 (** read_kind *******************************************************)

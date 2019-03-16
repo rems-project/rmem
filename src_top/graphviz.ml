@@ -21,12 +21,12 @@ open Printf
 
 open Interp_interface
 open Sail_impl_base
-open MachineDefUtils
-open MachineDefFragments
-open MachineDefEvents
-open MachineDefBasicTypes
-open MachineDefUITypes
-open MachineDefCandidateExecution
+open Utils
+open Fragments
+open Events
+open BasicTypes
+open UiTypes
+open CandidateExecution
 
 open Types
 open Model_aux
@@ -391,7 +391,7 @@ let ppd_trans_ids m trans =
     ""
 
 let pp_html_node_of_thread_id m positions t
-      (ioid_trans_lookup : MachineDefEvents.ioid -> (ConcModel.ui_trans) list) =
+      (ioid_trans_lookup : Events.ioid -> (ConcModel.ui_trans) list) =
   let tid = t.cex_thread in
   (* HACK: we assume the dummy ioid used by the initil fetch will be 0 *)
   let init_ioid = (tid, 0) in
@@ -571,7 +571,7 @@ let prefix_list l =
 
 let pp_html_nodes_of_thread m pi pw render_edges positions
       (cex_t:cex_thread_state) cex_it
-      (ioid_trans_lookup : MachineDefEvents.ioid -> (ConcModel.ui_trans) list) =
+      (ioid_trans_lookup : Events.ioid -> (ConcModel.ui_trans) list) =
   let thread_node = nodeid_of_thread_id m cex_t.cex_thread in
   pp_html_node_of_thread_id m positions cex_t ioid_trans_lookup
   ^ "/* thread nodes */\n"
@@ -598,7 +598,7 @@ let pp_html_tree_edges_of_thread m pi (cex_t:cex_thread_state) cex_it =
     String.concat "" (List.map (pp_html_tree_edge m) edges)
 
 let pp_html_thread m pi pw render_edges positions (cex_t:cex_thread_state) ioid_trans_lookup =
-  let cex_it = MachineDefCandidateExecution.filter_instruction_tree pi cex_t.cex_instruction_tree in
+  let cex_it = CandidateExecution.filter_instruction_tree pi cex_t.cex_instruction_tree in
   "/* thread " ^( sprintf "%i" cex_t.cex_thread) ^ " */\n"
   ^ "subgraph cluster" ^ sprintf "%i" cex_t.cex_thread ^ " {\n"
   ^ pp_html_nodes_of_thread m pi pw render_edges positions cex_t cex_it ioid_trans_lookup
@@ -612,17 +612,17 @@ let pp_html_thread m pi pw render_edges positions (cex_t:cex_thread_state) ioid_
   ^ "}\n"
 
 let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_candidate)
-      (ioid_trans_lookup : MachineDefEvents.ioid -> (ConcModel.ui_trans) list) =
+      (ioid_trans_lookup : Events.ioid -> (ConcModel.ui_trans) list) =
   let iwi (*initial_write_ioids*) = List.map (function w -> w.w_ioid) cex.cex_initial_writes in
   let m = { m with pp_initial_write_ioids = iwi } in
   let threads = Pmap.bindings_list cex.cex_threads in
   let (pi,pw,pr) =
     match m.ppg_shared with
     | true ->
-        let fp_shared = MachineDefCandidateExecution.shared_memory_footprints cex in
-        let pi = function (i:cex_instruction_instance) -> MachineDefCandidateExecution.is_shared_memory_instruction fp_shared i in
-        let pw = function (w:write) -> MachineDefCandidateExecution.is_shared_memory_write fp_shared w in
-        let pr = function (r:read_request) -> MachineDefCandidateExecution.is_shared_memory_read fp_shared r in
+        let fp_shared = CandidateExecution.shared_memory_footprints cex in
+        let pi = function (i:cex_instruction_instance) -> CandidateExecution.is_shared_memory_instruction fp_shared i in
+        let pw = function (w:write) -> CandidateExecution.is_shared_memory_write fp_shared w in
+        let pr = function (r:read_request) -> CandidateExecution.is_shared_memory_read fp_shared r in
         (pi,pw,pr)
     | false ->
         let pi = function (i:cex_instruction_instance) -> true in
@@ -728,10 +728,10 @@ module S : GraphBackend.S
                      pp_colours=false;
                      pp_trans_prefix=false } in
 
-    let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * (ConcModel.ui_trans)) list) =
+    let (ioid_trans_lookup_data  : (Events.ioid * (ConcModel.ui_trans)) list) =
       List.map (fun (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
 
-    let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : (ConcModel.ui_trans) list =
+    let ioid_trans_lookup (ioid: Events.ioid) : (ConcModel.ui_trans) list =
       Misc.option_map (fun (ioid',n) -> if ioid=ioid' then Some n else None)
         ioid_trans_lookup_data in
 
@@ -756,9 +756,9 @@ module S : GraphBackend.S
 
 let pp_raw_dot m legend_opt render_edges positions (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) =
   let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
-  let (ioid_trans_lookup_data  : (MachineDefEvents.ioid * ConcModel.ui_trans) list) =
+  let (ioid_trans_lookup_data  : (Events.ioid * ConcModel.ui_trans) list) =
     List.map (function (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
-  let ioid_trans_lookup (ioid: MachineDefEvents.ioid) : ConcModel.ui_trans list =
+  let ioid_trans_lookup (ioid: Events.ioid) : ConcModel.ui_trans list =
     Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
 
   pp_candidate_execution m legend_opt render_edges positions cex ioid_trans_lookup

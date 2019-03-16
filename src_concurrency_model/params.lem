@@ -1,10 +1,10 @@
 open import Pervasives
 open import Sail_impl_base
-open import MachineDefInstructionSemantics
-open import MachineDefEvents
-open import MachineDefFragments
-open import MachineDefBasicTypes
-
+open import InstructionSemantics
+open import Events
+open import Fragments
+open import BasicTypes
+     import IsaInfoPPCGen
 
 (** model parameters *)
 (*: \subsection{Model Parameters} :*)
@@ -227,10 +227,55 @@ let union_and_diff_shared_memory
     (fps_rhs: set footprint)
     : set footprint * set footprint (* (union, diff) *)
   =
-  let merged_fps_rhs = MachineDefFragments.merge_footprints true fps_rhs in
+  let merged_fps_rhs = Fragments.merge_footprints true fps_rhs in
   let diff =
     {fp_lhs | forall (fp_lhs IN fps_lhs)
             | forall (fp_rhs IN merged_fps_rhs).
-                not (MachineDefFragments.sub_footprint fp_lhs fp_rhs)}
+                not (Fragments.sub_footprint fp_lhs fp_rhs)}
   in
-  (fps_rhs union diff $> MachineDefFragments.merge_footprints false, diff)
+  (fps_rhs union diff $> Fragments.merge_footprints false, diff)
+
+
+
+(** Default parameters *)
+
+let default_model_params =
+  let default_ss =
+    <|  ss_model = PLDI11_storage_model;
+        ss_sc = false;
+        (*coherence_commit = Partial_CC;*)
+        pw = Only_at_end;
+        (*bc = Weak_BC;*)
+        new_coh =  Use_old_coherence ;
+        (*new_coh =     No_new_coherence;*)
+        flowing_topology = FTopo_leaf 0;
+        promise_first = false;
+    |>
+  in
+
+  let default_t =
+    <|  thread_model                   = PLDI11_thread_model;
+        thread_restriction             = RestrictionNone;
+        thread_fsa                     = Flowing_same_address_strict;
+        thread_rwc                     = Forbid_prev_uncommitted_read_type0;
+        thread_rr                      = Restart_on_read_satisfy;
+        thread_allow_tree_speculation  = true;
+        thread_allow_write_subsumption = false;
+        thread_fail_on_loop            = false;
+        thread_isa_info                = IsaInfoPPCGen.ppcgen_ism;
+        thread_loop_unroll_limit       = Nothing;
+
+        thread_run_after_stop_promising = true;
+        thread_certify_after_stop_promising = false;
+        thread_promising_fuel = 10000;
+
+        branch_targets                 = Map.empty;
+
+        promising_partial_order = false;
+    |>
+  in
+
+  <|  ss             = default_ss;
+      t              = default_t;
+      shared_memory  = Nothing;
+  |>

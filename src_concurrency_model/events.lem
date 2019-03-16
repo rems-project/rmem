@@ -19,9 +19,9 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUtils
-open import MachineDefFreshIds
 open import Sail_impl_base
+open import Utils
+open import FreshIds
 
 
 
@@ -535,7 +535,7 @@ let make_transaction_start_event
     (ist:  id_state ioid)
     (tid:  thread_id)
     (ioid: ioid)
-    : transaction_start * (MachineDefFreshIds.id_state ioid)
+    : transaction_start * (FreshIds.id_state ioid)
   =
   let (new_eiid, ist') = gen_fresh_id ist in
   let event =

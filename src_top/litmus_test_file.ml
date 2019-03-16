@@ -152,7 +152,7 @@ type data = string
 
 let test_info (test: Test.test) (name: string) : Test.info =
   let ism =
-    let open MachineDefInstructionSemantics in
+    let open InstructionSemantics in
     begin match test.arch with
     | `PPC           -> PPCGEN_ism
     | `AArch64 when !Globals.aarch64gen ->
@@ -276,7 +276,7 @@ let test_info (test: Test.test) (name: string) : Test.info =
 let read_channel 
       (name: string)
       (in_chan: lex_input)
-      (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) 
+      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) 
     : Test.info * test =
   (* First split the input file in sections *)
   let module SPL = Splitter.Make(Splitter.Default) in
@@ -289,21 +289,21 @@ let read_channel
 
   (* extract the architecture from the litmus file *)
   begin match test_splitted.Splitter.arch with
-  | `PPC           -> MachineDefISAInfoPPCGen.ppcgen_ism
+  | `PPC           -> IsaInfoPPCGen.ppcgen_ism
   | `AArch64 when !Globals.aarch64gen ->
-                      MachineDefISAInfoAArch64.aarch64gen_ism
+                      IsaInfoAArch64.aarch64gen_ism
   | `AArch64 when not !Globals.aarch64gen ->
-                      MachineDefISAInfoAArch64.aarch64hand_ism
-  | `MIPS          -> MachineDefISAInfoMIPS.mips_ism
-  | `RISCV         -> MachineDefISAInfoRISCV.riscv_ism
-  | `X86           -> MachineDefISAInfoX86.x86_ism
+                      IsaInfoAArch64.aarch64hand_ism
+  | `MIPS          -> IsaInfoMIPS.mips_ism
+  | `RISCV         -> IsaInfoRISCV.riscv_ism
+  | `X86           -> IsaInfoX86.x86_ism
   | _ -> Warn.fatal "Can only do %s, %s, %s, %s and %s" (Archs.pp `PPC) (Archs.pp `AArch64) (Archs.pp `MIPS) (Archs.pp `RISCV) (Archs.pp `X86)
   end
   |> Globals.set_model_ism;
 
-  let open MachineDefParams in
-  let open MachineDefInstructionSemantics in
-  let open MachineDefBasicTypes in
+  let open Params in
+  let open InstructionSemantics in
+  let open BasicTypes in
 
   begin match isa_callback with
   | Some f -> f (!Globals.model_params).t.thread_isa_info.ism
@@ -312,7 +312,7 @@ let read_channel
 
   (* parse and translate the litmus test *)
   let test =
-    let open MachineDefParams in
+    let open Params in
     let open Globals in
     let params = !Globals.model_params in
     begin match (params.t.thread_isa_info.ism, params.ss.ss_model, params.t.thread_model) with
@@ -485,10 +485,10 @@ let read_channel
   (info, test)
 
 
-let read_data (name: string) (data: data) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_data (name: string) (data: data) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   read_channel name (LexInString data) isa_callback
 
-let read_file (name: string) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
+let read_file (name: string) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
   Misc.input_protect begin
       fun (in_chan: in_channel) ->
         read_channel name (LexInChannel in_chan) isa_callback
@@ -498,13 +498,12 @@ let read_file (name: string) (isa_callback: (MachineDefInstructionSemantics.inst
 let initial_state_record
     (test:      test)
     (isa_defs:  (module Isa_model.ISADefs))
-    (model:     MachineDefParams.model_params)
-    (*: 'ss MachineDefTypes.system_state*)
+    (model:     Params.model_params)
   =
 
-  let open MachineDefParams in
-  let open MachineDefBasicTypes in
-  let open MachineDefInstructionSemantics in
+  let open Params in
+  let open BasicTypes in
+  let open InstructionSemantics in
 
   (* list of tids 0,1,... *)
   let tids = Lem_list.genlist (fun n -> n) (List.length test.prog) in
@@ -537,17 +536,17 @@ let initial_state_record
     let (write_events, ist) =
       List.fold_left
         (fun (writes, ist) (footprint, value) ->
-          let (new_ioid, ist) = MachineDefFreshIds.gen_fresh_id ist in
-          let ioid_ist = MachineDefFreshIds.initial_id_state new_ioid in
+          let (new_ioid, ist) = FreshIds.gen_fresh_id ist in
+          let ioid_ist = FreshIds.initial_id_state new_ioid in
           let (new_writes, ioid_ist) =
-            MachineDefEvents.make_write_events_big_split
+            Events.make_write_events_big_split
               ioid_ist init_thread new_ioid footprint value Sail_impl_base.Write_plain
           in
           (new_writes @ writes, ist))
-        ([], MachineDefFreshIds.initial_id_state init_thread)
+        ([], FreshIds.initial_id_state init_thread)
         init_mem_values
     in
-    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.MachineDefEvents.w_addr w2.MachineDefEvents.w_addr) write_events in
+    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.Events.w_addr w2.Events.w_addr) write_events in
 
     (write_events, ist)
   in
@@ -571,12 +570,12 @@ let initial_state_record
       prog_in_mem
   in
 
-  let prog _ (address: Sail_impl_base.address) : MachineDefInstructionSemantics.fetch_and_decode_outcome =
+  let prog _ (address: Sail_impl_base.address) : InstructionSemantics.fetch_and_decode_outcome =
     let address' = Sail_impl_base.integer_of_address address in
     begin match Pmap.lookup address' prog_map with
-    | None -> MachineDefInstructionSemantics.FDO_illegal_fetch_address
+    | None -> InstructionSemantics.FDO_illegal_fetch_address
     | Some inst ->
-       MachineDefInstructionSemantics.FDO_success (address, None, inst)
+       InstructionSemantics.FDO_success (address, None, inst)
     end
   in
 
@@ -598,15 +597,15 @@ let initial_state_record
   (* Set up TPIDR registers -- used for thread local storage, specifically
      seems to be a pointer to the TCB. For now, just put the thread id there *)
   let reg_values : ((Nat_num.nat * Sail_impl_base.reg_base_name) * Sail_impl_base.register_value) list =
-    let open MachineDefBasicTypes in
+    let open BasicTypes in
     match test.arch with
     | `AArch64 ->
        let tpidr_el0 =
          let registerdata =
            if !Globals.aarch64gen then
-             MachineDefISAInfoAArch64.aarch64gen_ism.register_data_info
+             IsaInfoAArch64.aarch64gen_ism.register_data_info
            else
-             MachineDefISAInfoAArch64.aarch64hand_ism.register_data_info
+             IsaInfoAArch64.aarch64hand_ism.register_data_info
          in
          match reg_from_data registerdata "TPIDR_EL0" with
          | Some r -> r
@@ -618,7 +617,7 @@ let initial_state_record
           tids)
        @ test.init_reg_state
     | `RISCV ->
-       let registerdata = MachineDefISAInfoRISCV.riscv_ism.register_data_info in
+       let registerdata = IsaInfoRISCV.riscv_ism.register_data_info in
        let get_reg r = match reg_from_data registerdata r with
          | Some r -> r
          | None -> failwith (r ^ " not in register_data_info")
@@ -642,7 +641,7 @@ let initial_state_record
     | Not_found ->
         (* currently all registers that are not explicitly initialised
         in test are set to zero *)
-        MachineDefThreadSubsystemUtils.register_state_zero ISADefs.reg_data t r
+        RegUtils.register_state_zero ISADefs.reg_data t r
     end
   in
 
@@ -691,7 +690,7 @@ let initial_state_record
     {model with t = t'}
   in
 
-  let open MachineDefSystem in
+  let open Params in
   { isr_params            = model';
     isr_program           = prog;
     isr_return_addr       = return_addresses;

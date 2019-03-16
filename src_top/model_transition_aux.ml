@@ -23,7 +23,7 @@
 (*                                                                                                       *)
 (*=======================================================================================================*)
 
-open MachineDefEvents
+open Events
 open MachineDefTypes
 open Model_aux
 

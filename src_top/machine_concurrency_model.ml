@@ -110,7 +110,7 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   type ui_trans = int * trans
 
   let final_ss_state s = Sys.dict_ss.ss_is_final_state
-                           s.model.MachineDefParams.ss
+                           s.model.Params.ss
                            s.storage_subsystem
 
   let initial_state ism run_options initial_state_record =
@@ -271,31 +271,21 @@ end
 
 
 let make (isaModel: (module Isa_model.S))
-      (ts : MachineDefParams.thread_model)
-      (ss : MachineDefParams.storage_model) :
+      (ts : Params.thread_model)
+      (ss : Params.storage_model) :
       (module Concurrency_model.S) = 
 
 
   let (module Sys : SYS) = match (ts,ss) with
-    | (MachineDefParams.Promising_thread_model,_)  -> (module PromisingSYS)
-    | (_,MachineDefParams.Promising_storage_model) -> (module PromisingSYS)
-    | (_,MachineDefParams.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
-    | (_,MachineDefParams.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
-    | (_,MachineDefParams.Flat_storage_model)      -> (module MachineSYS(FlatSS))
-    | (_,MachineDefParams.POP_storage_model)       -> (module MachineSYS(POPSS))
-    | (_,MachineDefParams.NOP_storage_model)       -> (module MachineSYS(NOPSS))
-    | (_,MachineDefParams.TSO_storage_model)       -> (module MachineSYS(TSOSS))
+    | (Params.Promising_thread_model,_)  -> (module PromisingSYS)
+    | (_,Params.Promising_storage_model) -> (module PromisingSYS)
+    | (_,Params.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
+    | (_,Params.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
+    | (_,Params.Flat_storage_model)      -> (module MachineSYS(FlatSS))
+    | (_,Params.POP_storage_model)       -> (module MachineSYS(POPSS))
+    | (_,Params.NOP_storage_model)       -> (module MachineSYS(NOPSS))
+    | (_,Params.TSO_storage_model)       -> (module MachineSYS(TSOSS))
   in
 
   (module (Make ((val isaModel)) (Sys)) : Concurrency_model.S)
 
-(*
-let make (isaModel: (module Isa_model.S)) = function
-  | MachineDefTypes.PLDI11_storage_model  -> (module (Make ((val isaModel)) (PLDI11SS))  : S)
-  | MachineDefTypes.Flowing_storage_model -> (module (Make ((val isaModel)) (FlowingSS)) : S)
-  | MachineDefTypes.Flat_storage_model    -> (module (Make ((val isaModel)) (FlatSS))    : S)
-  | MachineDefTypes.POP_storage_model     -> (module (Make ((val isaModel)) (POPSS))     : S)
-  | MachineDefTypes.NOP_storage_model     -> (module (Make ((val isaModel)) (NOPSS))     : S)
-  | MachineDefTypes.TSO_storage_model     -> (module (Make ((val isaModel)) (TSOSS))     : S)
-  | MachineDefTypes.Promising_storage_model -> (module (Make ((val isaModel)) (PromisingSS)) : S)
- *)

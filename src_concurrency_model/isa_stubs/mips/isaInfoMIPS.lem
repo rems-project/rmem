@@ -15,6 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefBasicTypes
+open import BasicTypes
 
-let ppcgen_ism = isa_info_stub
+let mips_ism : isa_info = isa_info_stub

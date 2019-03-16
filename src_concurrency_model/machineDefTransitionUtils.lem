@@ -21,17 +21,17 @@ open import Pervasives_extra
 (* emacs fontification -*-caml-*- *)
 
 open import Sail_impl_base
-open import MachineDefDebug
-open import MachineDefUtils
-open import MachineDefFreshIds
+open import Debug
+open import Utils
+open import FreshIds
+open import Events
+open import BasicTypes
+open import Params
+open import Fragments
+open import InstructionSemantics
 open import MachineDefTypes
-open import MachineDefEvents
-open import MachineDefBasicTypes
-open import MachineDefParams
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
-open import MachineDefFragments
-open import MachineDefInstructionSemantics
 open import MachineDefSystem
 
 open import Sail_values

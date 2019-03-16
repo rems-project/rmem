@@ -18,13 +18,13 @@
 
 open import Pervasives_extra
 open import Relation
-open import MachineDefFreshIds 
-open import MachineDefEvents
-open import MachineDefUITypes
-open import MachineDefTypes
+open import FreshIds 
+open import Events
+open import UiTypes
 open import Sail_impl_base
-open import MachineDefDebug
-open import MachineDefFragments
+open import Debug
+open import Fragments
+open import MachineDefTypes
 
 
 let diff_subwrites subwrites subwrites' =

@@ -19,7 +19,7 @@
 (*===============================================================================*)
 
 
-type instruction_ast = MachineDefInstructionSemantics.instruction_ast
+type instruction_ast = InstructionSemantics.instruction_ast
 
 module type TransSail = sig
   type instruction
@@ -48,7 +48,7 @@ end
 
 module type ISADefs = sig
   val name : string
-  val reg_data : MachineDefBasicTypes.registerdata
+  val reg_data : BasicTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
   val isa_memory_access : (Interp_interface.memory_reads *
@@ -73,15 +73,15 @@ module type S = sig
   module ISADefs : ISADefs
 
   val instruction_semantics :
-    MachineDefInstructionSemantics.instruction_semantics_mode ->
+    InstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
-    MachineDefInstructionSemantics.instruction_semantics_p
+    InstructionSemantics.instruction_semantics_p
 
   val is_option :
     RunOptions.t ->
-    MachineDefInstructionSemantics.instruction_semantics_option
+    InstructionSemantics.instruction_semantics_option
 end
 
 val make :
-  MachineDefInstructionSemantics.instruction_semantics_mode ->
+  InstructionSemantics.instruction_semantics_mode ->
   (module S)

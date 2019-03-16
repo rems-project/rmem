@@ -6,6 +6,6 @@ module type S = sig
     Globals.ppmode ->
     Test.info ->
     state ->
-    MachineDefCandidateExecution.cex_candidate ->
+    CandidateExecution.cex_candidate ->
     ui_trans list -> unit
 end

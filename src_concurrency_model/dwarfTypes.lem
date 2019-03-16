@@ -1,0 +1,49 @@
+open import Pervasives
+open import Assert_extra
+open import Sail_impl_base
+open import InstructionSemantics
+open import BasicTypes
+
+type dwarf_register_read_result =
+  | DRRR_result of natural
+  | DRRR_not_currently_available
+  | DRRR_bad_register_number
+
+type dwarf_memory_read_result =
+  | DMRR_result of natural
+  | DMRR_not_currently_available
+  | DMRR_bad_address
+
+type dwarf_evaluation_context =
+  <| dec_read_register: natural -> dwarf_register_read_result;
+     dec_read_memory:   natural -> natural -> dwarf_memory_read_result;
+  |>
+
+let reg_name_of_dwarf
+    (ism: instruction_semantics_mode)
+    (registerdata: registerdata)
+    (n: natural)
+    : maybe reg_name
+  =
+  match ism with
+  | PPCGEN_ism ->
+      if n < 0 || 31 < n then Nothing
+      else reg_from_data registerdata ("GPR" ^ (show n))
+
+  | AARCH64_ism variant ->
+      if variant = AArch64HandSail || variant = AArch64GenSail then
+        (* General registers and SP_ELO have the same name in both; this is not guaranteed for other registers *)
+        if n < 0 || 31 < n then Nothing
+        else if n = 31 then reg_from_data registerdata "SP_EL0"  (* HACK: won't work for other EL - the Dwarf name is really context dependent? *)
+        else reg_from_data registerdata ("R" ^ (show n))
+      else fail
+  | MIPS_ism ->
+      if 0 <= n && n <= 9 then        reg_from_data registerdata ("GPR0" ^ (show n))
+      else if 10 <= n && n <= 31 then reg_from_data registerdata ("GPR"  ^ (show n))
+      else                            Nothing
+  | RISCV_ism ->
+     if n < 0 || 31 < n then Nothing
+     else reg_from_data registerdata ("x" ^ (show n))
+  | X86_ism ->
+     failwith "x86 reg_name_from_dwarf"
+  end

@@ -20,7 +20,7 @@
 open RunOptions
 open Screen_base
 
-open MachineDefParams
+open Params
 
 module Make (ConcModel: Concurrency_model.S) = struct
 
@@ -28,7 +28,7 @@ module Make (ConcModel: Concurrency_model.S) = struct
 module StateHashSet = Set.Make(String)
 
 module TidMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id
+  type t = Events.thread_id
   let compare = compare
 end)
 
@@ -51,10 +51,10 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefBasicTypes.exception_type
+  type t = Events.thread_id * Events.ioid * BasicTypes.exception_type
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
-    | (0, 0) -> MachineDefBasicTypes.exception_type_compare e1 e2
+    | (0, 0) -> BasicTypes.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c
     end
@@ -116,7 +116,7 @@ type search_state =
     (* unhandled ISA exception states *)
     observed_exceptions:       (trace * int) ExceptionMap.t;
 
-    observed_branch_targets: MachineDefParams.branch_targets_map;
+    observed_branch_targets: Params.branch_targets_map;
     observed_shared_memory:  Sail_impl_base.footprint Pset.set;
 
     (*** statistics ***)
@@ -279,7 +279,7 @@ let print_last_state title search_state : unit =
 let update_observed_branch_targets_and_shared_memory search_state search_node : search_state =
   let observed_branch_targets =
     let (union, diff) =
-      MachineDefParams.union_and_diff_branch_targets
+      Params.union_and_diff_branch_targets
         (ConcModel.branch_targets_of_state (ConcModel.sst_state search_node.system_state))
         search_state.observed_branch_targets
     in
@@ -294,7 +294,7 @@ let update_observed_branch_targets_and_shared_memory search_state search_node : 
   let observed_shared_memory =
     if search_state.options.eager_mode.eager_local_mem then
       let (union, diff) =
-        MachineDefParams.union_and_diff_shared_memory
+        Params.union_and_diff_shared_memory
           (ConcModel.shared_memory_of_state (ConcModel.sst_state search_node.system_state))
           search_state.observed_shared_memory
       in
@@ -338,7 +338,7 @@ let record_exception search_state (tid, ioid, e) : search_state =
 (* TODO: this should probably be in a different file *)
 let reduced_final_state regs mem (system_state: ConcModel.state) =
   let final_reg_states = ConcModel.final_reg_states system_state in
-  let reg_state : (MachineDefEvents.thread_id * (Sail_impl_base.reg_base_name * Test.C.value) list) list =
+  let reg_state : (Events.thread_id * (Sail_impl_base.reg_base_name * Test.C.value) list) list =
     let reg_values_of_thread (tid,regstate) =
       let final_value = function
         | Some v ->
@@ -514,10 +514,10 @@ let take_transition search_state sst (i, (transition : ConcModel.trans)) eager :
 
       begin match ConcModel.sst_after_trans search_state.options sst
                     (transition : ConcModel.trans) with
-      | MachineDefBasicTypes.TO_unhandled_exception (tid, ioid, e) ->
+      | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
           record_exception search_state (tid, ioid, e)
-      | MachineDefBasicTypes.TO_system_state sst' when eager ->
+      | BasicTypes.TO_system_state sst' when eager ->
           (* If the transition was eager, pop and re-push the head node,
           prepending it to the previous node's open_transition *)
           begin match (pop search_state) with
@@ -538,7 +538,7 @@ let take_transition search_state sst (i, (transition : ConcModel.trans)) eager :
               }
               |> add_search_node sst'
           end
-      | MachineDefBasicTypes.TO_system_state sst' (* when not eager *) ->
+      | BasicTypes.TO_system_state sst' (* when not eager *) ->
           (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
           assert (search_node.open_transition = []);
           { search_state with
@@ -1081,7 +1081,7 @@ let search_from_state
       if not (Pmap.is_empty bt_union) then
         OTConcat [
           otStrLine "Branch-register targets that were observed:";
-          MachineDefParams.branch_targets_to_list bt_union
+          Params.branch_targets_to_list bt_union
             |> Pp.pp_branch_targets search_state.ppmode
             |> otStrLine "%s";
           otIfTrue (bt_diff <> []) @@
@@ -1111,14 +1111,14 @@ let search_from_state
     match search initial_search_state with
     | (Complete search_state') as result ->
         let (bt_union, bt_diff) =
-          MachineDefParams.union_and_diff_branch_targets
+          Params.union_and_diff_branch_targets
             search_state'.observed_branch_targets
             initial_search_state.observed_branch_targets
             (*sst.sst_state.model.t.branch_targets*)
         in
 
         let (sm_union, sm_diff) =
-          MachineDefParams.union_and_diff_shared_memory
+          Params.union_and_diff_shared_memory
             search_state'.observed_shared_memory
             initial_search_state.observed_shared_memory
             (*options.eager_mode.em_shared_memory*)
@@ -1178,13 +1178,13 @@ let search_from_state
         match search !search_state with
         | Complete search_state' ->
             let (bt_union, bt_diff) =
-              MachineDefParams.union_and_diff_branch_targets
+              Params.union_and_diff_branch_targets
                 search_state'.observed_branch_targets
                 (!search_state).observed_branch_targets
             in
 
             let (sm_union, sm_diff) =
-              MachineDefParams.union_and_diff_shared_memory
+              Params.union_and_diff_shared_memory
                 search_state'.observed_shared_memory
                 (!search_state).observed_shared_memory
             in

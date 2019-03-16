@@ -1,0 +1,72 @@
+open import Pervasives
+open import Assert_extra
+open import Sail_impl_base
+open import Utils
+open import Events
+open import Fragments
+open import Params
+open import BasicTypes
+
+let reassemble_register_value (r: reg_name) (mfs: list (maybe_value_fragment bit_lifted))
+    : maybe register_value
+  =
+  value_of_maybe_value_fragments mfs
+  $> Maybe.map (register_value_for_reg r)
+
+
+let register_state_zero
+    (register_data:registerdata)
+    (tid: thread_id)
+    (rbn: reg_base_name)
+    : register_value =
+  let (dir,width,start_index,_) =
+    ensure_just (List.lookup rbn register_data)
+      $ "register_state_zero lookup failed (" ^ rbn ^ ") looking at " ^ show (List.length register_data) ^ " registers."
+  in
+  register_value_zeros dir width start_index
+
+
+let is_nia_register params (reg: reg_name) : bool =
+  register_base_name params.thread_isa_info.nia_reg = register_base_name reg
+
+let is_cia_register params (reg: reg_name) : bool =
+  register_base_name params.thread_isa_info.cia_reg = register_base_name reg
+
+(* 'is_pseudo_register params reg' is true iff 'reg' is a pseudo register *)
+let is_pseudo_register params : (reg_name -> bool) =
+  let (fixed_pseudo_regs, _) = List.unzip params.thread_isa_info.fixed_pseudo_registers in
+  (fun (reg: reg_name) ->
+      is_nia_register params reg ||
+      is_cia_register params reg ||
+      exists (reg' MEM fixed_pseudo_regs).
+        register_base_name reg' = register_base_name reg)
+
+
+let non_pseudo_registers params (regs: set reg_name) : set reg_name =
+  let is_pseudo_register' = is_pseudo_register params in
+  {reg | forall (reg IN regs) | not (is_pseudo_register' reg)}
+
+
+let pseudo_register_value params cia_address reg =
+  let pseudo_register_values =
+    let cia_reg = params.thread_isa_info.cia_reg in
+    let nia_reg = params.thread_isa_info.nia_reg in
+    (cia_reg, register_value_of_address cia_address (direction_of_reg_name cia_reg)) ::
+      (nia_reg, register_value_of_address (address_of_integer ((integer_of_address cia_address)+4)) (direction_of_reg_name nia_reg)) :: (* FIXME HACK *)
+      params.thread_isa_info.fixed_pseudo_registers
+  in
+
+  let (needed, found) =
+    match_maybe_value_fragments
+      [slice_of_reg_name reg]
+      [(slice_of_reg_name reg', Just rv.rv_bits)
+          | forall ((reg', rv) MEM pseudo_register_values)
+          | register_base_name reg' = register_base_name reg]
+      []
+  in
+
+  let () = ensure (needed = [])
+    $ "missing pseudo register slices (" ^ show reg ^ " " ^ show needed ^ ")"
+  in
+
+  ensure_just (reassemble_register_value reg found) "could not reconstruct pseudo register"

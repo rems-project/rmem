@@ -25,13 +25,13 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUITypes
+open import Events
+open import Fragments
+open import Utils
+open import Params
+open import UiTypes
 open import MachineDefTypes
-open import MachineDefEvents
-open import MachineDefFragments
-open import MachineDefUtils
 open import MachineDefUI
-open import MachineDefParams
 open MaybeMonad
 
 

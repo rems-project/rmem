@@ -31,18 +31,16 @@ open Printf
 
 open Interp_interface
 open Sail_impl_base
-open MachineDefUtils
-open MachineDefEvents
-open MachineDefParams
-open MachineDefBasicTypes
-open MachineDefUITypes
-open MachineDefInstructionSemantics
-open MachineDefFragments
+open Utils
+open Events
+open Params
+open BasicTypes
+open UiTypes
+open InstructionSemantics
+open Fragments
+open CandidateExecution
 open MachineDefTypes
-(* open MachineDefInstructionSemantics *)
-(* open BitwiseCompatibility *)
 open MachineDefUI
-open MachineDefCandidateExecution
 
 open Types
 open Model_aux
@@ -88,19 +86,19 @@ Notes:
 *)
 
 (* ugly wrapping function to avoid inter-dependency between linksem and model *)
-let wrap_ev (ev: MachineDefSystem.dwarf_evaluation_context) : Dwarf.evaluation_context =
+let wrap_ev (ev: DwarfTypes.dwarf_evaluation_context) : Dwarf.evaluation_context =
   { Dwarf.read_register =
     (function n ->
-      match ev.MachineDefSystem.dec_read_register n with
-      | MachineDefSystem.DRRR_result n' -> Dwarf.RRR_result n'
-      | MachineDefSystem.DRRR_not_currently_available -> Dwarf.RRR_not_currently_available
-      | MachineDefSystem.DRRR_bad_register_number -> Dwarf.RRR_bad_register_number);
+      match ev.DwarfTypes.dec_read_register n with
+      | DwarfTypes.DRRR_result n' -> Dwarf.RRR_result n'
+      | DwarfTypes.DRRR_not_currently_available -> Dwarf.RRR_not_currently_available
+      | DwarfTypes.DRRR_bad_register_number -> Dwarf.RRR_bad_register_number);
     Dwarf.read_memory =
     (function n1 -> function n2 ->
-      match ev.MachineDefSystem.dec_read_memory n1 n2 with
-      | MachineDefSystem.DMRR_result n' -> Dwarf.MRR_result n'
-      | MachineDefSystem.DMRR_not_currently_available -> Dwarf.MRR_not_currently_available
-      | MachineDefSystem.DMRR_bad_address -> Dwarf.MRR_bad_address);
+      match ev.DwarfTypes.dec_read_memory n1 n2 with
+      | DwarfTypes.DMRR_result n' -> Dwarf.MRR_result n'
+      | DwarfTypes.DMRR_not_currently_available -> Dwarf.MRR_not_currently_available
+      | DwarfTypes.DMRR_bad_address -> Dwarf.MRR_bad_address);
   }
 
 
@@ -210,7 +208,7 @@ let eiids_of_instruction i =
           (* HACK: the barrier has not been committed so there is no barrier
           event yet. We assume there will be exactly one barrier event from
           the instruction and that it will get the next fresh id *)
-          [fst (MachineDefFreshIds.gen_fresh_id i.instance_id_state)]
+          [fst (FreshIds.gen_fresh_id i.instance_id_state)]
         else
           List.map (fun b -> b.beiid) i.committed_barriers
     | _ -> []
@@ -620,7 +618,7 @@ let rec lookup_symbol_and_offset
   match st with
   | ((a,0),s) :: st' -> if a = a2 then Some (s, 0) else lookup_symbol_and_offset st' a2
   | (fp,s) :: st' ->
-      begin match MachineDefFragments.offset_in_footprint fp a2 with
+      begin match Fragments.offset_in_footprint fp a2 with
       | Some 0 -> Some (s, 0)
       | Some i -> Some (s, i)
       | None -> lookup_symbol_and_offset st' a2
@@ -1150,23 +1148,23 @@ let pp_slice' m (i1,i2) = if i1 = i2 then sprintf "[%d]" i1 else sprintf "[%d-%d
 
 let pp_read_with_slices_uncoloured m r unsat_slices =
   pp_read_uncoloured m r ^
-  if unsat_slices = [MachineDefFragments.complete_slice r.r_addr] then ""
+  if unsat_slices = [Fragments.complete_slice r.r_addr] then ""
   else " " ^ (pp_list m (pp_slice' m) unsat_slices)
 
 let pp_read_with_slices_and_view_uncoloured m r unsat_slices view =
   pp_read_uncoloured m r ^ "(view>=" ^ pp_view m view ^ ")" ^ 
-  if unsat_slices = [MachineDefFragments.complete_slice r.r_addr] then ""
+  if unsat_slices = [Fragments.complete_slice r.r_addr] then ""
   else " " ^ (pp_list m (pp_slice' m) unsat_slices)
 
 let pp_write_slice m write slice =
-  let slice_value = MachineDefFragments.value_of_write_slices [(write, [slice])] in
-  let slice_footprint = MachineDefFragments.footprint_of_write_slice write slice in
+  let slice_value = Fragments.value_of_write_slices [(write, [slice])] in
+  let slice_footprint = Fragments.footprint_of_write_slice write slice in
   sprintf "[%s=%s]" (pp_footprint m (Some write.w_ioid) slice_footprint) (pp_memory_value m write.w_ioid slice_value)
 (* ^ sprintf "[%s,%s]" (pp_slice m slice) (pp_memory_value m slice_value) *)
 
 let pp_write_slices_uncoloured m (w, slices) =
   pp_write_uncoloured m w ^
-  if slices = [MachineDefFragments.complete_slice w.w_addr] then ""
+  if slices = [Fragments.complete_slice w.w_addr] then ""
   else " " ^ String.concat "," (List.map (pp_write_slice m w) slices)
 
 let pp_mrs_uncoloured m r_ioid mrs =
@@ -2331,7 +2329,7 @@ let pp_writes_read_from_body m subreads =
       | [ C3_new (w, slices) ]
       | [ C3_unchanged (w, slices) ]
       | [ C3_gone (w, slices) ]
-        ->  rr.r_addr = w.w_addr &&  slices = [MachineDefFragments.complete_slice w.w_addr]
+        ->  rr.r_addr = w.w_addr &&  slices = [Fragments.complete_slice w.w_addr]
       | _ -> false
     in
     (if abbreviate then (pp_read_uncoloured_prefix m rr) else (pp_read_uncoloured m rr))

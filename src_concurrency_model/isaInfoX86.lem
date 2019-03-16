@@ -22,11 +22,11 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUtils
 open import Sail_impl_base
-open import MachineDefEvents
-open import MachineDefBasicTypes
-open import MachineDefInstructionSemantics
+open import Utils
+open import Events
+open import BasicTypes
+open import InstructionSemantics
 import X86_embed_types
 
 let x86_is_system_call_instruction (_: instruction_ast) = Nothing
@@ -98,11 +98,11 @@ let x86_thread_start_info =
 let x86_make_empty_write_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
-    : (list write) * (MachineDefFreshIds.id_state ioid)
+    : (list write) * (FreshIds.id_state ioid)
   =
   (* TODO: handle X86 version of store multiple/pair *)
   let addr' = integer_of_address addr in
@@ -116,11 +116,11 @@ let x86_make_empty_write_events
 let x86_make_read_request_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:    read_kind)
-    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+    : (list read_request) * (FreshIds.id_state ioid)
   =
   let addr' = integer_of_address addr in
   let read_size =

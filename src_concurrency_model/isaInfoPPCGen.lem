@@ -20,11 +20,11 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUtils
 open import Sail_impl_base
-open import MachineDefBasicTypes
-open import MachineDefEvents
-open import MachineDefInstructionSemantics
+open import Utils
+open import BasicTypes
+open import Events
+open import InstructionSemantics
 
 import Sail_values
 import Power_embed_types
@@ -281,11 +281,11 @@ let ppcgen_is_load_multiple_instruction = function
 let ppcgen_make_empty_write_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
-    : (list write) * (MachineDefFreshIds.id_state ioid)
+    : (list write) * (FreshIds.id_state ioid)
   =
   let store_multiple = ppcgen_is_store_multiple_instruction inst in
   let addr' = integer_of_address addr in
@@ -300,11 +300,11 @@ let ppcgen_make_empty_write_events
 let ppcgen_make_read_request_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:   read_kind)
-    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+    : (list read_request) * (FreshIds.id_state ioid)
   =
   let load_multiple = ppcgen_is_load_multiple_instruction inst in
   let addr' = integer_of_address addr in

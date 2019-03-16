@@ -16,7 +16,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open MachineDefParams
+open Params
 
 type t =
   { interactive:             bool;
@@ -50,7 +50,7 @@ type t =
     always_print:            bool;
 
     focused_thread:          int option;
-    focused_ioid:            MachineDefEvents.ioid option;
+    focused_ioid:            Events.ioid option;
     storage_first:           bool;
   }
 

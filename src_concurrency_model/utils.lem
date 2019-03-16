@@ -191,3 +191,15 @@ module MaybeMonad = struct
 end
 
 
+(** Debug *)
+val nothing1 : forall 'a. 'a -> unit
+let nothing1 _ = ()
+
+val nothing2 : forall 'a 'b. 'a -> 'b -> unit
+let nothing2 _ _ = ()
+
+val print_integer : integer -> unit
+declare ocaml    target_rep function print_integer = `Debug.print_integer`
+declare isabelle target_rep function print_integer = `nothing1`
+
+

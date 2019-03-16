@@ -15,6 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefBasicTypes
+open import BasicTypes
 
-let x86_ism : isa_info = isa_info_stub
+let riscv_ism : isa_info = isa_info_stub

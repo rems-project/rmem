@@ -17,7 +17,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open MachineDefParams
+open Params
 
 let set_state_output str = ()
 let set_trace_output str = ()
@@ -98,7 +98,6 @@ end
 let current_options (options : Screen_base.options_state) =
   let open Screen_base in
   let open RunOptions in
-  let open MachineDefTypes in
   let open Globals in
   let run_options = options.run_options in
   let ppmode = options.ppmode in
@@ -174,7 +173,7 @@ let current_options (options : Screen_base.options_state) =
       | Some limit -> Js.some limit
       | None -> Js.null
     val loop_limit_ =
-      match options.model_params.MachineDefParams.t.thread_loop_unroll_limit with
+      match options.model_params.Params.t.thread_loop_unroll_limit with
       | Some limit -> Js.some limit
       | None -> Js.null
   end

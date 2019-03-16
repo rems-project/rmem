@@ -22,12 +22,12 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefTypes
-open import MachineDefEvents
-open import MachineDefFragments
-open import MachineDefUtils
-open import MachineDefUITypes
+open import Events
+open import Fragments
+open import Utils
+open import UiTypes
 open import MachineDefUI
+open import MachineDefTypes
 open MaybeMonad
 
 let slice_of_write w = (w.w_addr, [complete_slice w.w_addr])

@@ -20,20 +20,22 @@
 (* emacs fontification -*-caml-*- *)
 
 open import Pervasives_extra
-open import MachineDefUtils
 
 open import Sail_impl_base
-open import MachineDefFragments
-open import MachineDefFreshIds
-open import MachineDefEvents
+open import Utils
+open import Fragments
+open import FreshIds
+open import Events
+open import Debug
+open import InstructionSemantics
+open import Params
+open import BasicTypes
+open import RegUtils
+open import UiTypes
+
 open import MachineDefTypes
-open import MachineDefDebug
 open import MachineDefInstructionPredicates
-open import MachineDefInstructionSemantics
-open import MachineDefUITypes
 open import MachineDefUI
-open import MachineDefBasicTypes
-open import MachineDefParams
 
 import Power_embed_types
 
@@ -75,12 +77,6 @@ let reg_write_slices (r: reg_name) (i: instruction_instance)
       else Nothing)
     i.reg_writes
 
-
-let reassemble_register_value (r: reg_name) (mfs: list (maybe_value_fragment bit_lifted))
-    : maybe register_value
-  =
-  value_of_maybe_value_fragments mfs
-  $> Maybe.map (register_value_for_reg r)
 
 (** Inter-instruction Register Reading ******************************)
 
@@ -266,63 +262,6 @@ let ioids_feeding_regs
 
 
 (* also see registers_final_state below *)
-
-let register_state_zero
-    (register_data:registerdata)
-    (tid: thread_id)
-    (rbn: reg_base_name)
-    : register_value =
-  let (dir,width,start_index,_) =
-    ensure_just (List.lookup rbn register_data)
-      $ "register_state_zero lookup failed (" ^ rbn ^ ") looking at " ^ show (List.length register_data) ^ " registers."
-  in
-  register_value_zeros dir width start_index
-
-
-let is_nia_register params (reg: reg_name) : bool =
-  register_base_name params.thread_isa_info.nia_reg = register_base_name reg
-
-let is_cia_register params (reg: reg_name) : bool =
-  register_base_name params.thread_isa_info.cia_reg = register_base_name reg
-
-(* 'is_pseudo_register params reg' is true iff 'reg' is a pseudo register *)
-let is_pseudo_register params : (reg_name -> bool) =
-  let (fixed_pseudo_regs, _) = List.unzip params.thread_isa_info.fixed_pseudo_registers in
-  (fun (reg: reg_name) ->
-      is_nia_register params reg ||
-      is_cia_register params reg ||
-      exists (reg' MEM fixed_pseudo_regs).
-        register_base_name reg' = register_base_name reg)
-
-
-let non_pseudo_registers params (regs: set reg_name) : set reg_name =
-  let is_pseudo_register' = is_pseudo_register params in
-  {reg | forall (reg IN regs) | not (is_pseudo_register' reg)}
-
-
-let pseudo_register_value params cia_address reg =
-  let pseudo_register_values =
-    let cia_reg = params.thread_isa_info.cia_reg in
-    let nia_reg = params.thread_isa_info.nia_reg in
-    (cia_reg, register_value_of_address cia_address (direction_of_reg_name cia_reg)) ::
-      (nia_reg, register_value_of_address (address_of_integer ((integer_of_address cia_address)+4)) (direction_of_reg_name nia_reg)) :: (* FIXME HACK *)
-      params.thread_isa_info.fixed_pseudo_registers
-  in
-
-  let (needed, found) =
-    match_maybe_value_fragments
-      [slice_of_reg_name reg]
-      [(slice_of_reg_name reg', Just rv.rv_bits)
-          | forall ((reg', rv) MEM pseudo_register_values)
-          | register_base_name reg' = register_base_name reg]
-      []
-  in
-
-  let () = ensure (needed = [])
-    $ "missing pseudo register slices (" ^ show reg ^ " " ^ show needed ^ ")"
-  in
-
-  ensure_just (reassemble_register_value reg found) "could not reconstruct pseudo register"
 
 
 let rec undetermined_reg_writes_read_from_helper active_prefix ioid reg_names : set ioid =
@@ -761,7 +700,7 @@ let starting_inst_instance_aux
     : instruction_instance
   =
  <| instance_ioid =     new_ioid;
-    instance_id_state = MachineDefFreshIds.initial_id_state new_ioid;
+    instance_id_state = FreshIds.initial_id_state new_ioid;
     program_loc =       loc;
     program_opcode =    mop;
     instruction =       inst;
@@ -854,7 +793,7 @@ let starting_fetch_exception_inst_instance
     : instruction_instance
   =
  <| instance_ioid =     new_ioid;
-    instance_id_state = MachineDefFreshIds.initial_id_state new_ioid;
+    instance_id_state = FreshIds.initial_id_state new_ioid;
     program_loc =       loc;
     program_opcode =    Nothing;
     instruction =       Fetch_error;
@@ -919,7 +858,7 @@ let restart_instruction (i: instruction_instance) : instruction_instance =
           (* restarting the id state means read/write/barrier events will get the
           same id as before the restart. This allows for better hash-pruning
           and infinite loop detection. *)
-          instance_id_state = MachineDefFreshIds.initial_id_state i.instance_ioid;
+          instance_id_state = FreshIds.initial_id_state i.instance_ioid;
 
           regs_in    = i.initial_regs_in;
           regs_out   = i.initial_regs_out;
@@ -1038,114 +977,6 @@ let nias_of_instruction
             end
         end)
         iic.iic_instance.nias
-  end
-
-let interp_nias_of_instruction
-    (instruction: instruction_ast)
-    (nia_address: list (maybe address)) (* Nothing for unknown/undef *)
-    : list nia
-  =
-  let nias = List.map
-      function
-      | Just a  -> NIA_concrete_address a
-      | Nothing -> NIA_indirect_address
-      end
-      nia_address
-  in
-
-  (* it's a fact of the Power2.06B instruction pseudocode that in the B and Bc
-     cases there should be no Unknown values in nia_values, while in the Bclr
-     and Bcctr cases nia_values will just be Unknown and the semantics should
-     match the comments in the machineDefTypes definition of nia *)
-
-  (* the Sail code only writes to the nia register when a branch is taken,
-  i.e., if the branch is not taken it will not explicitly writes PC+4;
-  hence, for most instructions we need to add NIA_successor to 'nias' *)
-  match instruction with
-  | PPCGEN_instr (Power_embed_types.B _) ->
-      let () = ensure
-        (forall (nia MEM nias).
-            match nia with
-            | NIA_concrete_address _ -> true
-            | _ -> false
-            end)
-        "unexpected unknown/undefined address in nia_values ('b' instruction)"
-      in
-      nias
-  | PPCGEN_instr i ->
-      let () = ensure
-        ((exists (nia MEM nias). nia = NIA_indirect_address) -->
-            match i with
-            | Power_embed_types.Bclr _  -> true
-                (* the indirect address is "LR0:61 || 0b00" in Power pseudocode *)
-            | Power_embed_types.Bcctr _ -> true
-                (* the indirect address is "CTR0:61 || 0b00" in Power pseudocode *)
-            | _ -> false
-            end)
-        "unexpected unknown/undefined address in nia_values"
-      in
-      NIA_successor :: nias
-
-  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) ->
-      let () = ensure
-        match nias with
-        | NIA_concrete_address _ :: [] -> true
-        | _ -> false
-        end
-        "unexpected nia_values ('BranchImmediate' instruction)"
-      in
-      nias
-  | AArch64_instr (ArmV8_embed_types.BranchRegister _) ->
-      let () = ensure
-        match nias with
-        | _ :: [] -> true
-            (* the nia will be NIA_concrete_address if the register is
-            XZR, otherwise it will be NIA_indirect_address *)
-        | _ -> false
-        end
-        "unexpected nia_values ('BranchImmediate' instruction)"
-      in
-      nias
-  | AArch64_instr _ -> NIA_successor :: nias
-
-  | MIPS_instr _ -> (* XXX TODO *)
-      let () = ensure (nias = [])
-        "unexpected address in nia_values" in
-      NIA_successor :: []
-
-  | RISCV_instr (Riscv_types.RISCV_JAL _) ->
-      let () = ensure
-        match nias with
-        | NIA_concrete_address _ :: [] -> true
-        | _ -> false
-        end
-        "unexpected nia_values ('BranchImmediate' instruction)"
-      in
-      nias
-  | RISCV_instr (Riscv_types.RISCV_JALR _) ->
-      let () = ensure
-        match nias with
-        | _ :: [] -> true
-            (* the nia will be NIA_concrete_address if the register is
-            x0, otherwise it will be NIA_indirect_address *)
-        | _ -> false
-        end
-        "unexpected nia_values ('BranchImmediate' instruction)"
-      in
-      nias
-  | RISCV_instr _ -> NIA_successor :: nias
-
-  | X86_instr (X86_embed_types.Jcc _)  -> NIA_successor :: nias
-  | X86_instr (X86_embed_types.LOOP _) -> NIA_successor :: nias
-(* XXX  | X86_instr(X86_embed_types.CALL(_)) -> NIA_successor :: nias *)
-(* XXX  | X86_instr(X86_embed_types.RET(_)) -> NIA_successor :: nias *)
-(* XXX  | X86_instr(X86_embed_types.JMP(_)) -> NIA_successor :: nias *)
-  | X86_instr _ ->
-      let () = ensure (nias = [])
-        "unexpected address in nia_values" in
-      NIA_successor :: []
-
-  | _ -> failwith "unexpected 'instruction' in interp_nias_of_instruction"
   end
 
 let potential_next_addresses_of_instruction

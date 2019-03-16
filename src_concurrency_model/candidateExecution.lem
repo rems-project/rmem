@@ -43,13 +43,13 @@ figures (and potentially also for actual axiomatic model definitions)
 
 open import Pervasives_extra
 open import Sail_impl_base
-open import MachineDefFreshIds
-open import MachineDefEvents
-open import MachineDefUtils
-open import MachineDefParams
-open import MachineDefFragments
-open import MachineDefBasicTypes
-open import MachineDefInstructionSemantics
+open import FreshIds
+open import Events
+open import Utils
+open import Params
+open import Fragments
+open import BasicTypes
+open import InstructionSemantics
 
 
 type cex_instruction_instance = 
@@ -140,7 +140,7 @@ let rec shared_memory_footprints_aux (acc: set footprint) (fpss: list (set footp
   | [] -> acc
   | fps::fpss' ->
       let fp_shared : set footprint = 
-        { fp | forall (fp IN fps) | exists (fps' MEM fpss'). exists (fp' IN fps'). MachineDefFragments.non_empty_intersection fp fp' } in
+        { fp | forall (fp IN fps) | exists (fps' MEM fpss'). exists (fp' IN fps'). Fragments.non_empty_intersection fp fp' } in
       shared_memory_footprints_aux (acc union fp_shared) fpss'
   end
 
@@ -151,17 +151,17 @@ let shared_memory_footprints (cex:cex_candidate) : set footprint =
   
 
 let is_shared_memory_write (fp_shared: set footprint) (w: write) =
-  MachineDefFragments.non_empty_intersection_set fp_shared { w.w_addr }
+  Fragments.non_empty_intersection_set fp_shared { w.w_addr }
 
 let is_shared_memory_read (fp_shared: set footprint) (r: read_request) =
-  MachineDefFragments.non_empty_intersection_set fp_shared { r.r_addr }
+  Fragments.non_empty_intersection_set fp_shared { r.r_addr }
 
 let is_shared_memory_instruction (fp_shared: set footprint) (i: cex_instruction_instance) =
   match i.cex_instruction_kind with
   | IK_barrier _ -> true
   | _ -> false
   end
-|| MachineDefFragments.non_empty_intersection_set fp_shared (footprints_of_cex_instruction_instance i)
+|| Fragments.non_empty_intersection_set fp_shared (footprints_of_cex_instruction_instance i)
 
 
 let rec filter_instruction_tree (pi: cex_instruction_instance -> bool) (it: cex_instruction_tree) : cex_instruction_tree =

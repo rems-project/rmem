@@ -18,13 +18,13 @@
 (* emacs fontification -*-caml-*- *)
 
 open import Pervasives
-open import Sail_impl_base
 open import Assert_extra
-open import MachineDefUtils
-open import MachineDefFreshIds
-open import MachineDefEvents
-open import MachineDefInstructionSemantics
-open import MachineDefBasicTypes
+open import Sail_impl_base
+open import Utils
+open import FreshIds
+open import Events
+open import InstructionSemantics
+open import BasicTypes
 import Sail_values
 import ArmV8_embed_types
 
@@ -465,11 +465,11 @@ let aarch64_is_nonatomic_load_pair_instruction = function
 let aarch64_make_empty_write_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
-    : (list write) * (MachineDefFreshIds.id_state ioid)
+    : (list write) * (FreshIds.id_state ioid)
   =
   let is_store_pair = aarch64_is_nonatomic_store_pair_instruction inst in
   let addr' = integer_of_address addr in
@@ -483,11 +483,11 @@ let aarch64_make_empty_write_events
 let aarch64_make_read_request_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:   read_kind)
-    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+    : (list read_request) * (FreshIds.id_state ioid)
   =
   let load_pair = aarch64_is_nonatomic_load_pair_instruction inst in
   let addr' = integer_of_address addr in

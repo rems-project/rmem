@@ -18,19 +18,20 @@
 
 open import Relation
 open import Pervasives_extra
-open import MachineDefFreshIds
-open import MachineDefUtils
-open import MachineDefBasicTypes
 open import Sail_impl_base
-open import MachineDefUITypes
-open import MachineDefTypes
-open import MachineDefFragments
-open import MachineDefEvents
-open import MachineDefDebug
-open import MachineDefThreadSubsystemUtils
-open import MachineDefInstructionSemantics
-open import MachineDefParams
+open import InstructionSemantics
+open import FreshIds
+open import Events
+open import Fragments
+open import Debug
+open import Utils
+open import Params
+open import BasicTypes
+open import RegUtils
+open import UiTypes
      import Map
+open import MachineDefThreadSubsystemUtils
+open import MachineDefTypes
 open import MachineDefUI
      import ArmV8_embed_types
 open ListMonad
@@ -818,7 +819,7 @@ let make_write_events params s ii (wk,addr,sz,memv) =
       ii.instruction ii.instance_id_state ii.instance_ioid
       (addr,sz) wk in
   let (s,wid) = gen_fresh_wid addr s in
-  let writes = MachineDefEvents.set_write_values memv write_addresses [] in
+  let writes = Events.set_write_values memv write_addresses [] in
   let write = ensure_singleton writes
                 "no/multiple write events generated for store" in
   let write = <| write with w_ioid = dummy_ioid tid; weiid = wid |> in
@@ -941,7 +942,7 @@ let promising_initial_thread_state_aux
            ; retAddr  = ret_addr
            ; initAddr = addr
            ; tid      = tid
-           ; ids      = MachineDefFreshIds.initial_id_state tid
+           ; ids      = FreshIds.initial_id_state tid
            ; wids     = Map.empty
            ; regdata  = rd
            ; instrs   = []

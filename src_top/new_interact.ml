@@ -18,7 +18,7 @@
 (*===============================================================================*)
 
 open Lexing
-open MachineDefParams
+open Params
 open RunOptions
 
 open Screen_base
@@ -453,7 +453,7 @@ let show_options interact_state : unit =
     otStrLine "Branch-targets:";
     otLine @@ otEncoded @@ begin
       (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets
-      |> MachineDefParams.branch_targets_to_list
+      |> Params.branch_targets_to_list
       |> Pp.pp_branch_targets interact_state.ppmode
       end
   ]
@@ -653,12 +653,12 @@ let try_single_transition (eager: bool) (n: int) interact_state : interact_state
                   interact_node.system_state
                   transition
           with
-          | MachineDefBasicTypes.TO_unhandled_exception (tid, ioid, e) ->
+          | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
               otStrLine "the transition leads to exception"
               |> Screen.show_message interact_state.ppmode;
               (* TODO: pp the exception *)
               None
-          | MachineDefBasicTypes.TO_system_state system_state' ->
+          | BasicTypes.TO_system_state system_state' ->
               let interact_nodes =
                 if eager then
                   match interact_nodes with
@@ -992,7 +992,7 @@ let set_follow_list_from_observations observed_finals interact_state : interact_
 
 let update_bt_and_sm search_state interact_state : interact_state =
   let (sm_union, _) =
-    MachineDefParams.union_and_diff_shared_memory
+    Params.union_and_diff_shared_memory
       search_state.Runner.observed_shared_memory
       interact_state.options.eager_mode.em_shared_memory
   in
@@ -1008,7 +1008,7 @@ let update_bt_and_sm search_state interact_state : interact_state =
   }
   |> change_model (fun model ->
       let (bt_union, _) =
-        MachineDefParams.union_and_diff_branch_targets
+        Params.union_and_diff_branch_targets
           search_state.Runner.observed_branch_targets
           model.t.branch_targets
       in
@@ -1023,7 +1023,7 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
         let branch_targets =
           (ConcModel.sst_state (List.hd interact_state.interact_nodes).system_state)
           |> ConcModel.branch_targets_of_state
-          |> MachineDefParams.union_and_diff_branch_targets model.t.branch_targets
+          |> Params.union_and_diff_branch_targets model.t.branch_targets
           |> fst
         in
         {model with t = {model.t with branch_targets = branch_targets}}
@@ -1036,7 +1036,7 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
     if interact_state.options.eager_mode.eager_local_mem then
       let system_state = (ConcModel.sst_state (List.hd interact_state.interact_nodes).system_state) in
       let shared_memory =
-        MachineDefParams.union_and_diff_shared_memory
+        Params.union_and_diff_shared_memory
           (ConcModel.shared_memory_of_state system_state)
           interact_state.options.eager_mode.em_shared_memory
         |> fst
@@ -1533,9 +1533,9 @@ let do_set key value interact_state =
   let open RunOptions in
 
   match key with
-  | s when Utils.string_startswith "eager_" s ->
+  | s when MlUtils.string_startswith "eager_" s ->
       let lens =
-        match Utils.string_drop (String.length "eager_") s with
+        match MlUtils.string_drop (String.length "eager_") s with
         | "fetch_single"        -> eager_fetch_single_lens
         | "fetch_multi"         -> eager_fetch_multi_lens
         | "pseudocode_internal" -> eager_pseudocode_internal_lens
@@ -2136,7 +2136,7 @@ let run_interactive
     (options:        RunOptions.t)
     (ppmode:         Globals.ppmode)
     (test_info:      Test.info)
-    (state_records:  MachineDefParams.initial_state_record list)
+    (state_records:  Params.initial_state_record list)
     : unit
   =
   let interact_state =
@@ -2172,7 +2172,7 @@ let print_observations interact_state search_state =
     otIfTrue (not (Pmap.is_empty branch_targets)) @@
       otVerbose Globals.Normal @@
         otStrLine "Branch-targets=%s"
-          (MachineDefParams.branch_targets_to_list branch_targets
+          (Params.branch_targets_to_list branch_targets
           |> Pp.pp_branch_targets interact_state.ppmode)
   in
 
@@ -2298,7 +2298,7 @@ let run_search
     (options:        RunOptions.t)
     (ppmode:         Globals.ppmode)
     (test_info:      Test.info)
-    (state_records:  MachineDefParams.initial_state_record list)
+    (state_records:  Params.initial_state_record list)
     : unit
   =
   (* breakpoint predicates and handlers *)

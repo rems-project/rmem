@@ -1,9 +1,9 @@
 open import Pervasives_extra
 open import Sail_impl_base
-open import MachineDefInstructionSemantics
-open import MachineDefEvents
-open import MachineDefFragments
-open import MachineDefUtils
+open import InstructionSemantics
+open import Events
+open import Fragments
+open import Utils
 
 
 (** Registers *)
@@ -13,6 +13,8 @@ the list is the register fields; if direction is D_increasing the left side of t
 slice is less or equal to the right, if direction is D_decreasing the right side of the
 slice is less or equal to the left *)
 type registerdata = list (reg_base_name * (direction * nat * nat * list (string * slice)))
+
+
 
 let reg_from_data (data: registerdata) (name: reg_base_name) : maybe reg_name =
   Maybe.bind (List.lookup name data) $ fun (direction, width, start, _) ->
@@ -39,6 +41,7 @@ let fixed_reg (data: registerdata) value (name: reg_base_name) =
 let fixed_reg_field (data: registerdata) value (name: reg_base_name) (field_name: string) =
   let reg = Maybe_extra.fromJust (reg_field_from_data data name field_name) in
   (reg, register_value_for_reg_of_integer reg value)
+
 
 
 
@@ -70,9 +73,9 @@ let thread_start_info_stub =
 
 
 type isa_info =
-  <|  ism : MachineDefInstructionSemantics.instruction_semantics_mode;
-      is_system_call_instruction  : MachineDefInstructionSemantics.instruction_ast -> maybe integer;
-      is_thread_start_instruction : MachineDefInstructionSemantics.instruction_ast -> bool;
+  <|  ism : InstructionSemantics.instruction_semantics_mode;
+      is_system_call_instruction  : InstructionSemantics.instruction_ast -> maybe integer;
+      is_thread_start_instruction : InstructionSemantics.instruction_ast -> bool;
 
       thread_start_info : thread_start_info;
 
@@ -83,23 +86,23 @@ type isa_info =
       dia_reg                : maybe reg_name;
 
       make_empty_write_events  : thread_id -> 
-                                 MachineDefInstructionSemantics.instruction_ast -> (* instruction instance's AST node *)
-                                 MachineDefFreshIds.id_state ioid -> (* instruction instance's id state *)
+                                 InstructionSemantics.instruction_ast -> (* instruction instance's AST node *)
+                                 FreshIds.id_state ioid -> (* instruction instance's id state *)
                                  ioid -> (* instruction instance's id *)
                                  footprint ->
                                  write_kind ->
-                                 ((list write) * (MachineDefFreshIds.id_state ioid));
+                                 ((list write) * (FreshIds.id_state ioid));
       make_read_request_events : thread_id ->
-                                 MachineDefInstructionSemantics.instruction_ast -> (* instruction instance's AST node *)
-                                 MachineDefFreshIds.id_state ioid -> (* instruction instance's id state *)
+                                 InstructionSemantics.instruction_ast -> (* instruction instance's AST node *)
+                                 FreshIds.id_state ioid -> (* instruction instance's id state *)
                                  ioid -> (* instruction instance's id *)
                                  footprint ->
                                  read_kind ->
-                                 ((list read_request) * (MachineDefFreshIds.id_state ioid))
+                                 ((list read_request) * (FreshIds.id_state ioid))
   |>
 
 let isa_info_stub =
-  <|  ism                         = MachineDefInstructionSemantics.PPCGEN_ism;
+  <|  ism                         = InstructionSemantics.PPCGEN_ism;
       is_system_call_instruction  = fun _ -> failwith "stub";
       is_thread_start_instruction = fun _ -> failwith "stub";
       thread_start_info           = thread_start_info_stub;
@@ -259,3 +262,42 @@ type register_write_dependency =
                                             before the register write *)
     | RWD_mem_read (* indicates the instruction performed a memory read
                    before the register write *)
+
+
+
+(** ELF-derived program memory **************************************)
+
+(* represent ELF-derived program memory as a Lem "Map (list word8)
+word8", where the "list word8" is the bytes of the address as would
+appear in a Bytevector interpreter value (the default OCaml compare
+should be fine for such maps) (it would be more efficient, and perhaps
+more elegant, to use a lem word64 type for the index) *)
+
+let empty_elf_memory : map address byte = Map.empty
+
+(* convert the address-to-word8 map memory into an "address -> maybe opcode" function *)
+let elf_program_memory_opcode_lookup (mem: map address byte) (endianness: end_flag) (a0: address) : maybe opcode =
+  let a1 = add_address_nat a0 1 in
+  let a2 = add_address_nat a0 2 in
+  let a3 = add_address_nat a0 3 in
+  let byte0 : maybe byte = Map.lookup a0 mem in
+  let byte1 : maybe byte = Map.lookup a1 mem in
+  let byte2 : maybe byte = Map.lookup a2 mem in
+  let byte3 : maybe byte = Map.lookup a3 mem in
+  match (endianness, byte0,byte1,byte2,byte3) with
+  | (E_big_endian,    Just b0, Just b1, Just b2, Just b3) -> Just (opcode_of_bytes b0 b1 b2 b3)
+  | (E_little_endian, Just b0, Just b1, Just b2, Just b3) -> Just (opcode_of_bytes b3 b2 b1 b0)
+  | _ -> Nothing
+  end
+
+let elf_program_memory (mem: map address byte) (endianness: end_flag) instruction_semantics (a: address) : fetch_and_decode_outcome =
+  let decode (instruction_semantics: instruction_semantics) (a:address) (mopcode:maybe opcode): fetch_and_decode_outcome =
+    match mopcode with
+      | Just opcode -> instruction_semantics.decode_to_instruction a opcode
+      | Nothing ->     FDO_illegal_fetch_address
+    end
+  in
+  elf_program_memory_opcode_lookup mem endianness a
+  $> decode instruction_semantics a
+
+

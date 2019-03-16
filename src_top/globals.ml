@@ -31,7 +31,7 @@
 (* let solver = ref "MMExplorer2" *)
 (* let candidates = ref None *)
 
-open MachineDefParams
+open Params
 
 
 (** output options **************************************************)
@@ -94,7 +94,7 @@ let debug_sail_interp = ref false
 
 (* model_params should probably not be changed after the initial state
 was created *)
-let model_params = ref MachineDefSystem.default_model_params
+let model_params = ref Params.default_model_params
 
 let big_endian = ref None
 (*let big_endian = fun () -> false
@@ -109,8 +109,8 @@ has been set properly (i.e. set_model_ism was called) *)
 let get_endianness = fun () ->
   begin match !big_endian with
   | None ->
-      let open MachineDefInstructionSemantics in
-      let open MachineDefBasicTypes in
+      let open InstructionSemantics in
+      let open BasicTypes in
       begin match !model_params.t.thread_isa_info.ism with
       | PPCGEN_ism    -> Sail_impl_base.E_big_endian
       | AARCH64_ism _ -> Sail_impl_base.E_little_endian
@@ -130,7 +130,7 @@ let pp_endianness = fun () ->
 
 let set_model_ism ism =
   model_params :=
-    let open MachineDefParams in
+    let open Params in
     {!model_params with
         t = {!model_params.t with thread_isa_info = ism; }
     }
@@ -273,7 +273,7 @@ type ppmode =
     pp_symbol_table:                   ((Sail_impl_base.address * int) * string) list;
     pp_dwarf_static:                   Dwarf.dwarf_static option;
     pp_dwarf_dynamic:                  Types.dwarf_dynamic option;
-    pp_initial_write_ioids:            MachineDefEvents.ioid list;
+    pp_initial_write_ioids:            Events.ioid list;
     pp_prefer_symbolic_values:         bool;
     pp_hide_pseudoregister_reads: bool;
     pp_max_finished:                   int option;
@@ -287,7 +287,7 @@ type ppmode =
     ppg_regs:                          bool;
     ppg_reg_rf:                        bool;
     ppg_trans:                         bool;
-    pp_pretty_eiid_table:              (MachineDefEvents.eiid * string) list;
+    pp_pretty_eiid_table:              (Events.eiid * string) list;
     pp_trans_prefix:                   bool;
     pp_sail:                           bool;
     pp_default_cmd:             Interact_parser_base.ast option;
@@ -387,7 +387,7 @@ let ppmode_for_hashing : ppmode =
 
 let elf_threads = ref 1
 
-let flowing_topologies = ref ([]: MachineDefParams.flowing_topology list)
+let flowing_topologies = ref ([]: Params.flowing_topology list)
 
 let topauto = ref false
 

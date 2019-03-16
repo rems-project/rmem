@@ -17,9 +17,9 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open MachineDefInstructionSemantics
+open InstructionSemantics
 
-type instruction_ast = MachineDefInstructionSemantics.instruction_ast
+type instruction_ast = InstructionSemantics.instruction_ast
 
 module type TransSail = sig
   type instruction
@@ -85,7 +85,7 @@ let memo_unit (f : unit -> 'a) =
 
 module type ISADefs = sig
   val name : string
-  val reg_data : MachineDefBasicTypes.registerdata
+  val reg_data : BasicTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
   val isa_memory_access : (Interp_interface.memory_reads *
@@ -101,7 +101,7 @@ end
 
 module PPCGenISADefs : ISADefs = struct
   let name = "PPC"
-  let reg_data = MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefBasicTypes.register_data_info
+  let reg_data = IsaInfoPPCGen.ppcgen_ism.BasicTypes.register_data_info
   let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "PPCGen")
   let isa_memory_access = (Power_extras.power_read_memory_functions,
                             [],
@@ -116,7 +116,7 @@ end
 
 module AArch64ISADefs : ISADefs = struct
     let name = "AArch64"
-    let reg_data = MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefBasicTypes.register_data_info
+    let reg_data = IsaInfoAArch64.aarch64hand_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64")
     let isa_memory_access = (ArmV8_extras.aArch64_read_memory_functions,
                               [],
@@ -131,7 +131,7 @@ end
 
 module AArch64GenISADefs : ISADefs = struct
     let name = "AArch64Gen"
-    let reg_data = MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefBasicTypes.register_data_info
+    let reg_data = IsaInfoAArch64.aarch64gen_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64Gen")
     let isa_memory_access = ([], (*ArmV8Gen_extras.aArch64_read_memory_functions*)
                               [],
@@ -146,7 +146,7 @@ end
 
 module MIPS64ISADefs : ISADefs = struct
     let name = "MIPS"
-    let reg_data = MachineDefISAInfoMIPS.mips_ism.MachineDefBasicTypes.register_data_info
+    let reg_data = IsaInfoMIPS.mips_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "MIPS64")
     let isa_memory_access = (Mips_extras.mips_read_memory_functions,
                               [],
@@ -161,7 +161,7 @@ end
 
 module RISCVISADefs : ISADefs = struct
     let name = "RISCV"
-    let reg_data = MachineDefISAInfoRISCV.riscv_ism.MachineDefBasicTypes.register_data_info
+    let reg_data = IsaInfoRISCV.riscv_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "RISCV")
     (* let isa_memory_access = (Riscv_extras.riscv_read_memory_functions,
      *                           [],
@@ -177,7 +177,7 @@ end
 
 module X86ISADefs : ISADefs = struct
     let name = "X86"
-    let reg_data = MachineDefISAInfoX86.x86_ism.MachineDefBasicTypes.register_data_info
+    let reg_data = IsaInfoX86.x86_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "X86")
     let isa_memory_access = (X86_extras.x86_read_memory_functions,
                               [],
@@ -258,7 +258,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     let interp__instruction_analysis outcome_s instruction analysis_function
                                     reg_info nia_reg environment =
 
-      let nias_function = MachineDefThreadSubsystemUtils.interp_nias_of_instruction instruction in
+      let nias_function = InstructionSemantics.interp_nias_of_instruction instruction in
       let instruction = instruction_to_interp_instruction instruction in
       let interp_exhaustive = match outcome_s with
         | (_,Some (_,interp_exhaustive)) -> interp_exhaustive
@@ -273,10 +273,10 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       in
 
       if compare_analyses then
-        let open MachineDefParams in
+        let open Params in
         Interp_inter_imp.interp_compare_analyses
           print_endline
-          (MachineDefThreadSubsystemUtils.non_pseudo_registers (!Globals.model_params.t))
+          (RegUtils.non_pseudo_registers (!Globals.model_params.t))
           context endianness interp_exhaustive instruction nia_reg nias_function ism_s environment
           analysis_function reg_info
 

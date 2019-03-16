@@ -19,17 +19,16 @@
 (*                                                                                                   *)
 (*===================================================================================================*)
 
-open MachineDefUtils
-open MachineDefFreshIds
-open MachineDefUI
+open Utils
+open FreshIds
 
 (* type of information passed down in ppmode through pp functions for pp of addresses and values using dwarf debug info *)
 (* later this should probably involve caching; for now we recompute everything from the system_state *)
 type dwarf_dynamic =
-  { get_evaluation_context: MachineDefEvents.ioid ->
-        (Nat_big_num.num * MachineDefSystem.dwarf_evaluation_context) option;
-    pp_all_location_data_at_instruction: MachineDefEvents.thread_id ->
-        MachineDefEvents.ioid -> string;
+  { get_evaluation_context: Events.ioid ->
+        (Nat_big_num.num * DwarfTypes.dwarf_evaluation_context) option;
+    pp_all_location_data_at_instruction: Events.thread_id ->
+        Events.ioid -> string;
   }
 
 (* (\* transitions *\) *)

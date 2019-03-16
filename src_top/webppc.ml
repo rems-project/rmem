@@ -21,8 +21,8 @@
 (*                                                                                             *)
 (*=============================================================================================*)
 
-open MachineDefInstructionSemantics
-open MachineDefParams
+open InstructionSemantics
+open Params
 
 let js = Js.string;;
 let document = Dom_html.window##.document;;
@@ -99,7 +99,7 @@ let default_options : unit -> RunOptions.t = fun () ->
   Globals.dwarf_show_all_variable_locations := true;
   Globals.run_dot := Some Globals.RD_step;
 
-  Globals.model_params := MachineDefSystem.default_model_params;
+  Globals.model_params := Params.default_model_params;
 
   Globals.model_params := Model_aux.parse_and_update_model "allow_tree_speculation" !Globals.model_params;
 
@@ -192,7 +192,7 @@ let options_of_html : unit -> RunOptions.t = fun () ->
   }
 ;;
 
-let isa_callback (isa: MachineDefInstructionSemantics.instruction_semantics_mode) =
+let isa_callback (isa: InstructionSemantics.instruction_semantics_mode) =
   begin match isa with
   | PPCGEN_ism ->
      Globals.model_params := Model_aux.parse_and_update_model "pldi11" !Globals.model_params;

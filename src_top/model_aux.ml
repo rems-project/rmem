@@ -23,8 +23,8 @@
 (*                                                                                                       *)
 (*=======================================================================================================*)
 
-open MachineDefEvents
-open MachineDefParams
+open Events
+open Params
 
 (* return the return value of the first continuation in the list that
 is not 0. *)
@@ -599,7 +599,7 @@ let branch_targets_parse lexbuf : Branch_targets_parser_base.ast list =
       raise (BranchTargetsParsingError msg)
 
 let branch_targets_parse_from_file (filename: string) : Branch_targets_parser_base.ast list =
-  Utils.safe_open_in filename @@ fun chan ->
+  MlUtils.safe_open_in filename @@ fun chan ->
   let lexbuf = Lexing.from_channel chan in
   lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = filename };
   branch_targets_parse lexbuf
@@ -655,7 +655,7 @@ let set_branch_targets
           (tid, (addr, addrs) :: tbts) :: acc
       | _ -> (tid, (addr, addrs) :: []) :: acc
     ) []
-    |> MachineDefParams.branch_targets_from_list
+    |> Params.branch_targets_from_list
   in
 
   {model with t = {model.t with branch_targets  = branch_targets}}
@@ -679,7 +679,7 @@ let shared_memory_parse lexbuf : Shared_memory_parser_base.footprint list =
       raise (SharedMemoryParsingError msg)
 
 let shared_memory_parse_from_file (filename: string) : Shared_memory_parser_base.footprint list =
-  Utils.safe_open_in filename @@ fun chan ->
+  MlUtils.safe_open_in filename @@ fun chan ->
   let lexbuf = Lexing.from_channel chan in
   lexbuf.Lexing.lex_curr_p <- { lexbuf.Lexing.lex_curr_p with Lexing.pos_fname = filename };
   shared_memory_parse lexbuf

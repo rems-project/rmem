@@ -26,6 +26,6 @@ let read_source_file (name: string) : string array option=
     !lines |> List.rev |> Array.of_list
   in
   let file = Filename.concat !Globals.dwarf_source_dir name in
-  match  Utils.safe_open_in file read_lines with
+  match MlUtils.safe_open_in file read_lines with
   | lines -> Some lines
   | exception Sys_error _ -> None
