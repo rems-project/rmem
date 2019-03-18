@@ -551,8 +551,15 @@ let main = fun () ->
 
   let files =
     List.map
-      (fun s -> if Filename.check_suffix s ".litmus" then (Types.Litmus_file, s)
-                else (Types.Binary_file, s))
+      (fun s ->
+          if not (Sys.file_exists s) then
+            (* It is important to check that the file exists at this point
+            as it is harder to catch this error later (e.g. linksem will just crash) *)
+            Printf.sprintf "%s: No such file" s
+            |> fatal_error;
+          if Filename.check_suffix s ".litmus" then (Types.Litmus_file, s)
+          else (Types.Binary_file, s)
+      )
       (Misc.expand_argv !sources)
   in
 

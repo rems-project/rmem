@@ -100,7 +100,8 @@ module TextPrinters : Screen_base.Printers = struct
     | NoOutput -> ()
     | FileName name ->
         (* FIXME: use open_out_gen? *)
-        begin match open_out name with
+        begin match open_out_gen [Open_append; Open_nonblock] 0o644 name with
+        (*begin match open_out name with*)
         | chan ->
             trace_output := OpenChan chan;
             to_chan chan
@@ -124,7 +125,8 @@ module TextPrinters : Screen_base.Printers = struct
     | NoOutput -> ()
     | FileName name ->
         (* FIXME: use open_out_gen? *)
-        begin match open_out name with
+        begin match open_out_gen [Open_append; Open_nonblock] 0o644 name with
+        (*begin match open_out name with*)
         | chan ->
             state_output := OpenChan chan;
             to_chan chan

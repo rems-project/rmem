@@ -1799,7 +1799,7 @@ let rec do_cmd
       assert false
 
   | Interact_parser_base.Help None ->
-      otStrLine "%s" Console_help.help_message
+      otStrLine "%s" (String.trim Console_help.help_message)
       |> Screen.show_message ppmode;
       interact_state
 

@@ -15,7 +15,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let help_message = {help_string|===============================================================================
+let help_message = {help_string|
+===============================================================================
 RMEM console help
 ===============================================================================
 
@@ -242,5 +243,4 @@ graph                Write a graphviz graph of state and transitions to out.dot
 print | p            Print the current state
 history | his        Print the history of previously entered commands
 options | o          Print the current configuration of options
-===============================================================================
 |help_string}
