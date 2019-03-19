@@ -19,14 +19,14 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-(* open MachineDefEvents *)
+(* open Events *)
 
 type reg_base_name = Sail_impl_base.reg_base_name
 type address = Sail_impl_base.address
 type register_value = Sail_impl_base.register_value
 type memory_value = Sail_impl_base.memory_value
-type instruction_ast = MachineDefInstructionSemantics.instruction_ast
-type thread_id = MachineDefEvents.thread_id
+type instruction_ast = InstructionSemantics.instruction_ast
+type thread_id = Events.thread_id
 
 module C = MoreConstraints.Make
 
@@ -52,7 +52,7 @@ type test =
 type info =
   { name:           string;
 
-    ism:            MachineDefInstructionSemantics.instruction_semantics_mode;
+    ism:            InstructionSemantics.instruction_semantics_mode;
     thread_count:   int;
     symbol_map:     Elf_file.global_symbol_init_info;
     symbol_table:   ((address * int) * string) list;

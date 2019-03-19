@@ -19,9 +19,9 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUtils
-open import MachineDefFreshIds
 open import Sail_impl_base
+open import Utils
+open import FreshIds
 
 
 
@@ -338,10 +338,38 @@ end
 
 
 
-
-
-
 (** Making Memory Model Events **************************************)
+
+(* for initial-state writes we allow them to be any power of 2 sized-and-aligned *)
+
+let aligned (a: integer) (n: nat) = (a mod (integerFromNat n)) = 0
+
+let max_exp : nat = 29
+let max_size : nat = 2 ** max_exp
+
+let rec biggest_initial_aligned_two_to_the_n_region' (a:integer) (sz:nat) (exp:nat) =
+  if sz = 0 then
+    failwith "sz = 0 illegal for biggest_initial_aligned_two_to_the_n_region'"
+  else
+    let size = 2 ** exp in
+    if sz >= size && aligned a size then
+      size
+    else
+      biggest_initial_aligned_two_to_the_n_region' a sz (exp-1)
+
+let rec repartition ((a:integer),(sz:nat)) : list (integer*nat) =
+  if sz=0 then
+    []
+  else
+    if sz > max_size then failwith "repartition given too big a footprint" else
+    let size = biggest_initial_aligned_two_to_the_n_region' a sz max_exp in
+    let a' = a + (integerFromNat size) in
+    let fp = (a,size) in
+    let fps = repartition (a',sz-size) in
+      fp::fps
+
+
+
 
 let make_read_request_event
     (ist:       id_state ioid)
@@ -507,7 +535,7 @@ let make_transaction_start_event
     (ist:  id_state ioid)
     (tid:  thread_id)
     (ioid: ioid)
-    : transaction_start * (MachineDefFreshIds.id_state ioid)
+    : transaction_start * (FreshIds.id_state ioid)
   =
   let (new_eiid, ist') = gen_fresh_id ist in
   let event =

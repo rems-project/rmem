@@ -24,19 +24,43 @@ open import Pervasives_extra
 open import Relation
 
 open import Sail_impl_base
-open import MachineDefEvents
-open import MachineDefUtils
+open import Events
+open import Fragments
+open import Params
+open import Debug
+open import Utils
+open import UiTypes
 open import MachineDefTypes
-open import MachineDefFragments
-open import MachineDefParams
-
-open import MachineDefDebug
 open import MachineDefUI
             
 (* emacs fontification -*-caml-*- *)
 
 
+val set_writes_seen : integer -> unit
+declare ocaml    target_rep function set_writes_seen = `Debug.set_writes_seen`
+declare isabelle target_rep function set_writes_seen = `nothing1`
+
 (** auxiliary library functions (these could move to the Lem library) *)
+
+(* these propagated_before* functions assume xs is most-recent first, while
+events_propagated_to is stored most-recent last.  Probably we should switch globally to the former *)
+let rec propagated_before y xs =
+  match xs with
+  | [] -> failwith "propagated_before not found"
+  | x::xs' -> if x=y then xs else propagated_before y xs'
+  end
+
+let rec propagated_before_by_strict p xs = 
+  match xs with
+  | [] -> failwith "propagated_before_by_strict not found"
+  | x::xs' -> if p x then xs' else propagated_before_by_strict p xs'
+  end
+
+let rec propagated_before_by p xs = 
+  match xs with
+  | [] -> []
+  | x::xs' -> if p x then xs' else propagated_before_by p xs'
+  end
 
 val map_forall_bounded : forall 'k 'v. SetType 'v, SetType 'k, MapKeyType 'k => ('k -> 'v -> bool) -> map 'k 'v -> set 'k -> bool
 (* (can't use Map_extra.fold as that requires 'v to be a set type *)
@@ -360,7 +384,6 @@ let rec separated_by_barrier s acc tes tid =
 
 
 let coherence_commitment_cand m s w1 w2 =
-  let () = timer_start "coherence_commitment_cand" in
   let result =
       (not (inRel w1 w2 s.coherence)) && 
       (not (inRel w2 w1 s.coherence)) && 
@@ -428,11 +451,9 @@ let coherence_commitment_cand m s w1 w2 =
 (*   end 
 *)
    in
-   let () = timer_stop "coherence_commitment_cand" in 
    result
 
 let coherence_commitment_action m s w1 w2 =
-  let () = timer_start "coherence_commitment_action" in
   let coherence' =
     match m.new_coh with
     | Use_new_coherence -> s.coherence
@@ -464,7 +485,6 @@ let coherence_commitment_action m s w1 w2 =
       <| s with coherence = coherence';
 		new_coherence = new_coherence';
                 potential_coherence_commitment_cands = potential_coherence_commitment_cands' |> in
-    let () = timer_stop "coherence_commitment_action" in
     result
 
 (** Accept a successful write-conditional request *)
@@ -707,7 +727,7 @@ let barrier_propagation_cand_loose m s b tid =
   (tid IN s.threads) &&
   (not (elem (SBarrier b) (s.events_propagated_to tid))) &&
   let wslss = write_slices_of_tes (s.events_propagated_to tid) in
-(*let _ = MachineDefDebug.print_endline ("--------------------------------------\n"^"barrier thread events="^ show (s.events_propagated_to b.b_thread) ^  "\nGroup A = "^show (group_A_writes s b)) in*)
+(*let _ = Debug.print_endline ("--------------------------------------\n"^"barrier thread events="^ show (s.events_propagated_to b.b_thread) ^  "\nGroup A = "^show (group_A_writes s b)) in*)
   (forall ((w,sls) MEM group_A_writes s b).
 
     let writes_coherence_after_or_equal_to_w = 
@@ -754,7 +774,6 @@ let pldi11_enumerate_transitions_of_storage_subsystem
       (s: pldi11_storage_subsystem_state)
       : set (ss_trans pldi11_storage_subsystem_state)
      = 
-     let () = timer_start "enumerate_transitions_of_storage_subsystem" in
   let all_writes = s.writes_seen in
 
   let () = print_string "writes seen " in
@@ -765,23 +784,19 @@ let pldi11_enumerate_transitions_of_storage_subsystem
 
   let all_barriers = barriers_seen s in 
   (* partial coherence commit *)
-  let () = timer_start "enumerate_transitions_of_storage_subsystem__pcc" in
   let pcc = 
     (map_on_pred
        (fun (w1, w2) -> coherence_commitment_cand m s w1 w2)
        (fun (w1, w2) -> SS_only (SS_PLDI11_partial_coherence_commit w1 w2) (fun () -> coherence_commitment_action m s w1 w2))
        (s.potential_coherence_commitment_cands)
     ) in
-  let () = timer_stop "enumerate_transitions_of_storage_subsystem__pcc" in
   (* propagate write to thread *)
-  let () = timer_start "enumerate_transitions_of_storage_subsystem__pw" in
   let pw = 
     (map_on_maybe_pred
        (fun (w, tid) -> write_propagate_cand m s w tid)
        (fun ((w, tid),sls) -> SS_only (SS_PLDI11_propagate_write_to_thread (w,sls) tid) (fun () -> write_propagate_action s (w,sls) tid))
        s.writes_not_propagated_to
     ) in
-  let () = timer_stop "enumerate_transitions_of_storage_subsystem__pw" in
   (* write reaches coherence point *)
   (* SS: temporarily turn off reaching CP *)
   (* PS: 2016.08.11 experiment turning it back on... *)
@@ -799,7 +814,6 @@ let pldi11_enumerate_transitions_of_storage_subsystem
        (fun (b, tid) -> SS_only (SS_PLDI11_propagate_barrier_to_thread b tid) (fun () -> barrier_propagation_action m s b tid))
        all_barriers s.threads
     ) in
-  let () = timer_start "enumerate_transitions_of_storage_subsystem__sack" in
   (* acknowledge sync barrier *)
   let sack = 
     (map_on_pred 
@@ -807,10 +821,8 @@ let pldi11_enumerate_transitions_of_storage_subsystem
        (fun b -> SS_sync (SS_PLDI11_acknowledge_sync_barrier b) (fun () -> acknowledge_sync_barrier_action m s b) ())
        all_barriers
     ) in
-  let () = timer_stop "enumerate_transitions_of_storage_subsystem__sack" in
   
   let result = pcc union pw union cp union pb union sack in
-  let () = timer_stop "enumerate_transitions_of_storage_subsystem" in
   result
 
 
@@ -859,7 +871,7 @@ let ss_send_read_response_new_aux
            | SBarrier b -> Nothing
            end)
          (s.events_propagated_to tid)) in
-  MachineDefFragments.possible_mrs_for_read addr wslss
+  Fragments.possible_mrs_for_read addr wslss
 
 (* send read response  new*)
 let ss_send_read_response_new

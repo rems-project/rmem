@@ -17,9 +17,9 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open MachineDefInstructionSemantics
+open InstructionSemantics
 
-type instruction_ast = MachineDefInstructionSemantics.instruction_ast
+type instruction_ast = InstructionSemantics.instruction_ast
 
 module type TransSail = sig
   type instruction
@@ -85,7 +85,7 @@ let memo_unit (f : unit -> 'a) =
 
 module type ISADefs = sig
   val name : string
-  val reg_data : MachineDefISAInfo.registerdata
+  val reg_data : BasicTypes.registerdata
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
   val interp2_isa_defs_thunk : ?no_memo:bool -> unit -> (Type_check.tannot Ast.defs * Type_check.Env.t)
@@ -105,7 +105,7 @@ let empty_interp2_isa_defs = memo_unit (fun () -> (Ast.Defs [], Type_check.initi
 
 module PPCGenISADefs : ISADefs = struct
   let name = "PPC"
-  let reg_data = MachineDefISAInfoPPCGen.ppcgen_ism.MachineDefISAInfo.register_data_info
+  let reg_data = IsaInfoPPCGen.ppcgen_ism.BasicTypes.register_data_info
   let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "PPCGen")
   let interp2_isa_defs_thunk = empty_interp2_isa_defs
   let isa_memory_access = (Power_extras.power_read_memory_functions,
@@ -121,7 +121,7 @@ end
 
 module AArch64ISADefs : ISADefs = struct
     let name = "AArch64"
-    let reg_data = MachineDefISAInfoAArch64.aarch64hand_ism.MachineDefISAInfo.register_data_info
+    let reg_data = IsaInfoAArch64.aarch64hand_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64")
     let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = (ArmV8_extras.aArch64_read_memory_functions,
@@ -137,7 +137,7 @@ end
 
 module AArch64GenISADefs : ISADefs = struct
     let name = "AArch64Gen"
-    let reg_data = MachineDefISAInfoAArch64.aarch64gen_ism.MachineDefISAInfo.register_data_info
+    let reg_data = IsaInfoAArch64.aarch64gen_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64Gen")
     let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = ([], (*ArmV8Gen_extras.aArch64_read_memory_functions*)
@@ -153,7 +153,7 @@ end
 
 module MIPS64ISADefs : ISADefs = struct
     let name = "MIPS"
-    let reg_data = MachineDefISAInfoMIPS.mips_ism.MachineDefISAInfo.register_data_info
+    let reg_data = IsaInfoMIPS.mips_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "MIPS64")
     let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = (Mips_extras.mips_read_memory_functions,
@@ -169,7 +169,7 @@ end
 
 module RISCVISADefs : ISADefs = struct
     let name = "RISCV"
-    let reg_data = MachineDefISAInfoRISCV.riscv_ism.MachineDefISAInfo.register_data_info
+    let reg_data = IsaInfoRISCV.riscv_ism.BasicTypes.register_data_info
     let isa_defs_thunk = empty_isa_defs
     let interp2_isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_interp2_defs "riscv")
     (* let isa_memory_access = (Riscv_extras.riscv_read_memory_functions,
@@ -186,7 +186,7 @@ end
 
 module X86ISADefs : ISADefs = struct
     let name = "X86"
-    let reg_data = MachineDefISAInfoX86.x86_ism.MachineDefISAInfo.register_data_info
+    let reg_data = IsaInfoX86.x86_ism.BasicTypes.register_data_info
     let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "X86")
     let interp2_isa_defs_thunk = empty_interp2_isa_defs
     let isa_memory_access = (X86_extras.x86_read_memory_functions,
@@ -269,7 +269,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     let interp__instruction_analysis outcome_s instruction analysis_function
           reg_info nia_reg environment =
 
-      let nias_function = MachineDefThreadSubsystemUtils.interp_nias_of_instruction instruction in
+      let nias_function = InstructionSemantics.interp_nias_of_instruction instruction in
       let instruction = instruction_to_interp_instruction instruction in
       let interp_exhaustive = match outcome_s with
         | (_,Some (_,interp_exhaustive)) -> interp_exhaustive
@@ -284,10 +284,10 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       in
 
       if compare_analyses then
-        let open MachineDefParams in
+        let open Params in
         Interp_inter_imp.interp_compare_analyses
           print_endline
-          (MachineDefThreadSubsystemUtils.non_pseudo_registers (!Globals.model_params.t))
+          (RegUtils.non_pseudo_registers (!Globals.model_params.t))
           context endianness interp_exhaustive instruction nia_reg nias_function ism_s environment
           analysis_function reg_info
 
@@ -489,7 +489,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     let interp2__regval_to_value rv =
       let open Value in
       let open Sail_impl_base in
-      let open MachineDefInstructionSemantics in
+      let open InstructionSemantics in
       if rv.rv_start <> 0 || rv.rv_dir <> D_decreasing then failwith "invalid vector interp2__regval_to_interp" else
         match List.length (rv.rv_bits) with
         | 1 -> V_bool (bool_from_bitl (List.hd rv.rv_bits))
@@ -514,7 +514,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     let interp2__value_to_regval v =
       let open Value in
       let open Sail_impl_base in
-      let open MachineDefInstructionSemantics in
+      let open InstructionSemantics in
       match v with
       | V_bool b -> build_register_value [interp2__bool_to_bitl b] D_decreasing 1 0
       | V_ctor ("Machine", [])
@@ -571,13 +571,13 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
               let rk = interp2__rk_to_rk rk in
               let addr = interp2__bitlist_to_address addr in
               let len = Value.coerce_int len in
-              (Sail_impl_base.Read_mem ((rk, MachineDefInstructionSemantics.address_lifted_of_address addr, Nat_big_num.to_int len), (fun mv -> frame_to_outcome (cont (interp2__memval_to_bitlist mv) state))), pp_state out stack state)
+              (Sail_impl_base.Read_mem ((rk, InstructionSemantics.address_lifted_of_address addr, Nat_big_num.to_int len), (fun mv -> frame_to_outcome (cont (interp2__memval_to_bitlist mv) state))), pp_state out stack state)
             end
           | Interpreter.Write_ea (wk, addr, len, cont) -> begin
               let wk = interp2__wk_to_wk wk in
               let addr = interp2__bitlist_to_address addr in
               let len = Value.coerce_int len in
-              (Sail_impl_base.Write_ea ((wk, MachineDefInstructionSemantics.address_lifted_of_address addr, Nat_big_num.to_int len), frame_to_outcome (cont () state)) , pp_state out stack state)
+              (Sail_impl_base.Write_ea ((wk, InstructionSemantics.address_lifted_of_address addr, Nat_big_num.to_int len), frame_to_outcome (cont () state)) , pp_state out stack state)
             end
           | Interpreter.Excl_res cont -> begin
               (Sail_impl_base.Excl_res (fun b -> frame_to_outcome (cont b state)), pp_state out stack state)
@@ -592,12 +592,12 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
             end
           | Interpreter.Read_reg (name, cont) -> begin
               let open Sail_impl_base in
-              let reg_name = MachineDefInstructionSemantics.string_to_sail1_reg name in
+              let reg_name = InstructionSemantics.string_to_sail1_reg name in
               ((Sail_impl_base.Read_reg (reg_name, fun rv -> frame_to_outcome (cont (interp2__regval_to_value rv) state))), pp_state out stack state)
             end
           | Interpreter.Write_reg (name, v, cont) -> begin
               let open Sail_impl_base in
-              let reg_name = MachineDefInstructionSemantics.string_to_sail1_reg name in
+              let reg_name = InstructionSemantics.string_to_sail1_reg name in
               (Sail_impl_base.Write_reg ((reg_name, interp2__value_to_regval v), frame_to_outcome (cont () state)), pp_state out stack state)
             end
         end
@@ -654,7 +654,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
           match eff with
           | Interpreter.Read_reg (name, cont) -> begin
               let open Sail_impl_base in
-              let reg_name = MachineDefInstructionSemantics.string_to_sail1_reg name in
+              let reg_name = InstructionSemantics.string_to_sail1_reg name in
               let rv = List.assoc reg_name rvs in
               frame_handle_reg_reads rvs (cont (interp2__regval_to_value rv) state)
             end

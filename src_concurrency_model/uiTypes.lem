@@ -1,0 +1,242 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2018                    *)
+(*  Copyright Shaked Flur, University of Cambridge       2018                    *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+
+open import Pervasives_extra
+open import Sail_impl_base
+open import Relation
+open import FreshIds 
+open import Events
+open import Fragments
+open import Utils
+
+
+type changed3 'a =
+  | C3_new of 'a 
+  | C3_gone of 'a
+  | C3_unchanged of 'a
+
+type changed2 'a =
+  | C2_new of 'a 
+  | C2_unchanged of 'a
+
+type changed2b 'a =
+  | C2b_changed of 'a
+  | C2b_unchanged of 'a
+
+
+
+(* diff for values compared with equality *)
+val ui_eq_diff2b : forall 'a. Eq 'a => 'a -> 'a -> (changed2b 'a)
+let ui_eq_diff2b x y = 
+  if x=y then C2b_unchanged y else C2b_changed y
+
+val ui_eq_diff2b_By : forall 'a. ('a -> 'a -> bool) -> 'a -> 'a -> (changed2b 'a)
+let ui_eq_diff2b_By eq x y = 
+  if eq x y then C2b_unchanged y else C2b_changed y
+
+(* set diff for sets that increase monotonically along transitions *)
+val ui_set_diff2 : forall 'a. SetType 'a => set 'a -> set 'a -> list (changed2 'a)
+let ui_set_diff2 xs ys (* precondition: xs subseteq ys *) = 
+  List.map 
+    (fun y -> 
+      match y IN xs with 
+      | true -> C2_unchanged y
+      | false -> C2_new y 
+      end)
+    (Set_extra.toList ys)
+
+
+let unchanged3 (a : 'a) : changed3 'a = C3_unchanged a
+let unchanged2 (a : 'a) : changed2 'a = C2_unchanged a
+let unchanged2b (a : 'a) : changed2b 'a = C2b_unchanged a
+
+let unchanged3_list (l : list 'a) : list (changed3 'a) =
+  List.map unchanged3 l
+let unchanged2_list (l : list 'a) : list (changed2 'a) =
+  List.map unchanged2 l
+let unchanged2b_list (l : list 'a) : list (changed2b 'a) =
+  List.map unchanged2b l
+
+let unchanged3_set (l : set 'a) : list (changed3 'a) =
+  List.map unchanged3 (Set_extra.toList l)
+let unchanged2_set (l : set 'a) : list (changed2 'a) =
+  List.map unchanged2 (Set_extra.toList l)
+let unchanged2b_set (l : set 'a) : list (changed2b 'a) =
+  List.map unchanged2b (Set_extra.toList l)
+
+
+(* set diff for sets that may have changed in either direction along transitions *)
+val ui_set_diff3 : forall 'a. SetType 'a => set 'a -> set 'a -> list (changed3 'a)
+let ui_set_diff3 xs ys =
+  List.map 
+    (fun z -> 
+      match ((z IN xs), (z IN ys)) with 
+      | (true,true)  -> C3_unchanged z
+      | (false,true) -> C3_new z
+      | (true,false) -> C3_gone z
+      | (false, false) -> C3_new z  (* failwith "ui_set_diff3"   HACK!!!*)
+      end)
+    (Set_extra.toList (xs union ys))
+
+(* list diff for lists that are normally extended monotonically at the head but sometimes reset *)
+val ui_list_diff3 : forall 'a. Eq 'a => list 'a -> list 'a -> list (changed3 'a)
+(* normal cases: ys = someprefix ++ xs  OR ys = []  (but eager transitioning might step further than the latter) *)
+let ui_list_diff3 xs ys = 
+  let gone = List.mapMaybe (fun x -> if List.elem x ys then Nothing else Just (C3_gone x)) xs in
+  let rest = List.map (fun y -> if List.elem y xs then C3_unchanged y else C3_new y) ys in
+  rest ++ gone
+
+
+let ui_map_diff3 (m : Map.map 'a 'b) (m' : Map.map 'a 'b) : list (changed3 ('a * 'b)) = 
+  ui_list_diff3 (Map_extra.toList m) (Map_extra.toList m')
+
+
+let rec ui_assoc_list_list_diff3_helper compare xs ys accum =
+  match (xs, ys) with
+  | ([], []) -> List.reverse accum
+  | ((xd, xr) :: xs', []) ->
+      ui_assoc_list_list_diff3_helper compare xs' ys ((xd, (ui_list_diff3 xr [])) :: accum) (* xd was removed *)
+  | ([], (yd, yr) :: ys') ->
+      ui_assoc_list_list_diff3_helper compare xs ys' ((yd, (ui_list_diff3 [] yr)) :: accum) (* yd was added *)
+  | ((xd, xr) :: xs', (yd, yr) :: ys') ->
+      match compare xd yd with
+      | EQ -> ui_assoc_list_list_diff3_helper compare xs' ys' ((yd, (ui_list_diff3 xr yr)) :: accum)
+      | LT -> ui_assoc_list_list_diff3_helper compare xs' ys ((xd, (ui_list_diff3 xr [])) :: accum) (* xd was removed *)
+      | GT -> ui_assoc_list_list_diff3_helper compare xs ys' ((yd, (ui_list_diff3 [] yr)) :: accum) (* yd was added *)
+      end
+  end
+
+
+val ui_assoc_list_list_diff3 : forall 'a 'b. Eq 'a, Eq 'b => ('a -> 'a -> ordering) -> list ('a * (list 'b)) -> list ('a * (list 'b)) -> list ('a * (list (changed3 'b)))
+let ui_assoc_list_list_diff3 compare xs ys =
+  let assoc_compare (lhs, _) (rhs, _) = compare lhs rhs in
+  let sorted_xs = Sorting.sortByOrd assoc_compare xs in
+  let sorted_ys = Sorting.sortByOrd assoc_compare ys in
+  ui_assoc_list_list_diff3_helper compare sorted_xs sorted_ys []
+
+
+(* Lem: to match the bounded list quantifier syntax, Lem should
+support x MEM xs as syntax for List.elem x xs *)
+
+
+(* list diff for lists that are extended (at the tail) monotonically along transitions *)
+val ui_list_diff2t : forall 'a. Eq 'a => list 'a -> list 'a -> list (changed2 'a)
+(* precondition: ys = xs ++ somesuffix *)
+let rec ui_list_diff2t xs ys = 
+  match (xs,ys) with
+  | ([], []) -> []
+  | ([], y::ys) -> C2_new y :: ui_list_diff2t [] ys 
+  | (x::xs, y::ys) -> 
+      if x=y then 
+        C2_unchanged x :: ui_list_diff2t xs ys
+      else 
+        failwith "checked_list_suffix assert failure"
+  | _ ->  failwith "checked_list_suffix assert failure"
+  end
+
+(* list diff for lists that are extended (at the head) monotonically along transitions *)
+val ui_list_diff2h : forall 'a. Eq 'a => list 'a -> list 'a -> list (changed2 'a)
+(* precondition: ys = someprefix ++ xs *)
+let rec ui_list_diff2h xs ys = 
+  List.map (fun y -> if List.elem y xs then C2_unchanged y else C2_new y) ys 
+
+
+(* list diff for lists that are only extended monotonically at the head *)
+val ui_list_diffhBy : forall 'a. ('a -> 'a -> bool) -> list 'a -> list 'a -> list (changed2 'a)
+(* precondition: ys = someprefix ++ xs *)
+let ui_list_diffhBy eq xs ys =  
+  List.map (fun y -> if List.elemBy eq y xs then C2_unchanged y else C2_new y) ys
+
+
+let map_changed2 (f: 'a -> 'b) (xc: changed2 'a) : changed2 'b= 
+  match xc with
+  | C2_new x -> C2_new (f x)
+  | C2_unchanged x -> C2_unchanged (f x)
+  end
+
+let map_changed2_list (f: 'a -> 'b) (xcs: list (changed2 'a)) : list (changed2 'b) = 
+  List.map (map_changed2 f) xcs
+
+
+
+
+val transitive_reduction: forall 'a. ('a->'a->bool) -> (list ('a*'a)) -> (list ('a*'a))
+(* precondition: r is acyclic *)
+let transitive_reduction eq r =
+  let transitive_pairs = 
+    List.concatMap 
+      (fun (a1,a2) -> 
+        List.mapMaybe (fun (a1',a2') -> if eq a2 a1' then Just (a1,a2') else Nothing) r)
+      r in
+  (* a partial check for cycles *)
+  if List.any (fun (a1,a2)->eq a1 a2) (r ++ transitive_pairs) then 
+    failwith "transitive_reduction: Transitive"
+  else
+    List.filter (fun (a1,a2) -> not (List.any (fun (b1,b2) -> (eq a1 b1 && eq a2 b2)) transitive_pairs)) r
+
+
+let set_transitive_reduction relation =
+  let relation2 = {(a,c) | forall ((a,b) IN relation) ((b',c) IN relation)
+                         | b = b'} in
+  let () = ensure (forall ((a,b) IN relation2). a <> b) "Cyclic extended coherence" in
+  relation \ relation2
+
+
+let diff_coherence coherence coherence' = 
+  let ui_coherence_old = transitive_reduction (fun w1 w2 -> w1=w2)
+      (Set_extra.toList coherence) in
+  let ui_coherence_new = transitive_reduction (fun w1 w2 -> w1=w2)
+      (Set_extra.toList (Set.difference coherence' coherence)) in
+  [C2_unchanged (w1,w2) | forall ((w1,w2) MEM ui_coherence_old) | true ]
+    ++  [C2_new (w1,w2) | forall ((w1,w2) MEM ui_coherence_new) | true ]
+
+let pop_diff_coherence coherence coherence' =
+  let coherence = set_transitive_reduction coherence in
+  let coherence' = set_transitive_reduction coherence' in
+  ui_set_diff3 coherence coherence'
+
+let rec mapMaybe f xs =
+  match xs with
+  | [] -> []
+  | x::xs ->
+      match f x with
+      | Nothing -> mapMaybe f xs
+      | Just y -> y :: (mapMaybe f xs)
+      end
+  end
+
+let diff_new_coherence new_coherence new_coherence' =
+  let domain = Map.domain new_coherence in
+  let domain' = Map.domain new_coherence' in
+  List.map (fun (fp,coh) -> 
+    if not(fp IN domain) then 
+      C3_new 
+        (fp, List.map (fun (w1,w2) -> C2_new (w1,w2)) (Set_extra.toList coh))
+    else
+      C3_unchanged 
+        (fp, diff_coherence (Map_extra.find fp new_coherence) coh))
+    (mapToList new_coherence')
+  ++
+  (mapMaybe 
+     (fun (fp,coh) -> 
+       if not (fp IN domain') then
+         Just (C3_gone 
+                 (fp, List.map (fun (w1,w2) -> C2_unchanged (w1,w2)) (Set_extra.toList coh)))
+       else
+         Nothing)
+     (mapToList new_coherence))

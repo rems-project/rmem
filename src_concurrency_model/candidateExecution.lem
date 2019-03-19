@@ -1,0 +1,180 @@
+(*======================================================================================*)
+(*                                                                                      *)
+(*                rmem executable model                                                 *)
+(*                =====================                                                 *)
+(*                                                                                      *)
+(*  This file is:                                                                       *)
+(*                                                                                      *)
+(*  Copyright Shaked Flur, University of Cambridge                          2015-2018   *)
+(*  Copyright Christopher Pulte, University of Cambridge                    2016-2018   *)
+(*  Copyright Peter Sewell, University of Cambridge                         2015-2016   *)
+(*  Copyright Kathy Gray, University of Cambridge (when this work was done)      2015   *)
+(*  Copyright Jon French, University of Cambridge                                2017   *)
+(*                                                                                      *)
+(*  All rights reserved.                                                                *)
+(*                                                                                      *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in          *)
+(*  LICENCE.txt.                                                                        *)
+(*                                                                                      *)
+(*======================================================================================*)
+
+(* types to describe an axiomatic-model-like candidate execution *)
+
+(* we're going to use this both for partial and complete executions,
+in the interactive user interface and to draw completed-execution
+figures (and potentially also for actual axiomatic model definitions)
+*)
+
+(*
+- writes_read_from will be subsumed by the subreads data, but we need
+  to remember the latter when leaving MOS_pending_mem_read
+
+- the reg_reads data doesn't remember the instruction (or initial
+  state) that it reads each slice from
+
+- the initial register writes are handled in an awkward way, as a function
+
+- do we want to record the success/fail of write-conditional?
+
+- do we want to record whether reads are by forwarding? 
+
+- what's aarch64_write_kind for?
+*)
+
+open import Pervasives_extra
+open import Sail_impl_base
+open import FreshIds
+open import Events
+open import Utils
+open import Params
+open import Fragments
+open import BasicTypes
+open import InstructionSemantics
+
+
+type cex_instruction_instance = 
+    <| 
+    cex_instance_ioid: ioid; 
+    cex_program_loc: address;  
+    cex_program_opcode: maybe opcode; 
+    cex_instruction: instruction_ast;
+    cex_instruction_kind: instruction_kind;
+    (*cex_aarch64_write_kind: maybe write_kind;*)
+    (* register part *)
+    cex_regs_in: set reg_name;
+    cex_regs_out: set reg_name;
+    cex_regs_in_feeding_address: set reg_name;  
+    cex_ioids_feeding_address: set ioid; (* these are the ioids of the
+                                            instructions writing to
+                                            cex_regs_in_feeding_address *)
+    cex_reg_reads: list (reg_name * register_read_sources * register_value); (* accumulated register reads, most recent at head (possibly including pseudoregister reads)*)
+    cex_reg_writes: list (reg_name * register_value); (* accumulated register writes, most recent at head (possibly including pseudoregister writes to NIA)*)
+    (* memory part *)
+    cex_writes_read_from: set (write*slices);  
+    cex_committed_barriers: list barrier; 
+    cex_potential_write_addresses: list write; 
+    cex_potential_writes: list write; 
+    cex_propagated_writes: list write;
+    cex_requested_unsatisfied_reads: list (read_request);
+    cex_satisfied_reads: list (read_request * memory_read_source);
+    (* status *)
+    cex_finished: bool;
+
+    (* dependencies *)
+    cex_address_dependencies: set ioid;
+    cex_data_dependencies:    set ioid;
+    cex_control_dependencies: set ioid;
+  |>
+
+
+type cex_instruction_tree =
+  | CEX_T of list (cex_instruction_instance * cex_instruction_tree)
+
+type cex_thread_state = 
+    <| 
+    cex_thread: thread_id;
+    cex_register_data: registerdata;
+    cex_initial_register_state: (reg_base_name -> register_value); (*TODO?*)
+    cex_initial_fetch_address: maybe address;
+    cex_instruction_tree: cex_instruction_tree;
+  |>
+
+type cex_candidate = 
+    <| 
+    cex_program_memory: (address -> fetch_and_decode_outcome);
+    cex_initial_writes: list write;
+    cex_threads: map thread_id cex_thread_state;
+    cex_rf: Relation.rel (write * slices) read_request;
+    cex_co: Relation.rel write write;
+    cex_fr: Relation.rel read_request write;
+    cex_model: model_params;
+  |> 
+
+
+(** cutting down graphs to the concurrent accesses *)
+
+let footprints_of_cex_instruction_instance (i:cex_instruction_instance) : set footprint =
+  { w.w_addr | forall ((w,sls) IN  i.cex_writes_read_from) | true }
+    union (Set.fromList [w.w_addr | forall (w MEM i.cex_potential_write_addresses) | true])
+    union (Set.fromList [w.w_addr | forall (w MEM i.cex_potential_writes) | true])
+    union (Set.fromList [w.w_addr | forall (w MEM i.cex_propagated_writes) | true])
+    union (Set.fromList [r.r_addr | forall (r MEM i.cex_requested_unsatisfied_reads) | true])
+    union (Set.fromList [r.r_addr | forall ((r,_) MEM i.cex_satisfied_reads) | true])
+
+let rec footprints_of_cex_instruction_tree (it:cex_instruction_tree) : set footprint =
+  match it with
+  | CEX_T iits ->
+     bigunionListMap 
+        (fun (i,it) -> footprints_of_cex_instruction_instance i union footprints_of_cex_instruction_tree it) 
+        iits
+  end
+
+let footprints_of_cex_thread_state (t:cex_thread_state) : set footprint =
+  footprints_of_cex_instruction_tree t.cex_instruction_tree
+
+let footprints_of_cex_candidate (cex:cex_candidate) : list (set footprint) =
+  List.map (fun (tid,t)->footprints_of_cex_thread_state t) (Map_extra.toList cex.cex_threads)
+
+let rec shared_memory_footprints_aux (acc: set footprint) (fpss: list (set footprint)) =
+  match fpss with
+  | [] -> acc
+  | fps::fpss' ->
+      let fp_shared : set footprint = 
+        { fp | forall (fp IN fps) | exists (fps' MEM fpss'). exists (fp' IN fps'). Fragments.non_empty_intersection fp fp' } in
+      shared_memory_footprints_aux (acc union fp_shared) fpss'
+  end
+
+
+let shared_memory_footprints (cex:cex_candidate) : set footprint = 
+  let fpss = footprints_of_cex_candidate cex in
+  shared_memory_footprints_aux {} fpss
+  
+
+let is_shared_memory_write (fp_shared: set footprint) (w: write) =
+  Fragments.non_empty_intersection_set fp_shared { w.w_addr }
+
+let is_shared_memory_read (fp_shared: set footprint) (r: read_request) =
+  Fragments.non_empty_intersection_set fp_shared { r.r_addr }
+
+let is_shared_memory_instruction (fp_shared: set footprint) (i: cex_instruction_instance) =
+  match i.cex_instruction_kind with
+  | IK_barrier _ -> true
+  | _ -> false
+  end
+|| Fragments.non_empty_intersection_set fp_shared (footprints_of_cex_instruction_instance i)
+
+
+let rec filter_instruction_tree (pi: cex_instruction_instance -> bool) (it: cex_instruction_tree) : cex_instruction_tree =
+  match it with
+  | CEX_T iits -> 
+      CEX_T 
+        (List.concatMap 
+           (fun (i,it') ->
+             let fit = filter_instruction_tree pi it' in
+             if pi i then 
+               [(i,fit)]
+             else 
+               match fit with CEX_T iits' -> iits' end
+           ) 
+           iits)
+  end

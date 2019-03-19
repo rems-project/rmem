@@ -15,7 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import MachineDefISAInfo
+open import BasicTypes
 
-let aarch64hand_ism   : isa_info = isa_info_stub
-let aarch64gen_ism    : isa_info = isa_info_stub
+let riscv_ism : isa_info = isa_info_stub

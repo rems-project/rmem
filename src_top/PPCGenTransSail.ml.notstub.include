@@ -142,7 +142,7 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
         failwith "Translation failure"
       end
   in
-  MachineDefInstructionSemantics.PPCGEN_instr instr
+  InstructionSemantics.PPCGEN_instr instr
 
 
 (* #include "build_isa_models/power/gen/shallow_types_to_herdtools_types.hgen" *)
@@ -150,7 +150,7 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Power_embed_types in
   match instr with
-  | MachineDefInstructionSemantics.PPCGEN_instr instr ->
+  | InstructionSemantics.PPCGEN_instr instr ->
      begin match instr with
      (* #include "build_isa_models/power/gen/shallow_ast_to_herdtools_ast.gen" *)
        (* | i -> failwith "cannot translate instruction" *)

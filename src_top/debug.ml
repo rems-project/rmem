@@ -180,7 +180,7 @@ let print_time3 s = if !debug3 then let t = Unix.gettimeofday () in Printf.print
 
 
 
-exception Thread_failure of MachineDefEvents.thread_id * MachineDefEvents.ioid * string * string
+exception Thread_failure of Events.thread_id * Events.ioid * string * string
 
 let catch_thread_errors tid ioid c =
   try c () with

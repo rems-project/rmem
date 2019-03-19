@@ -22,7 +22,7 @@
 (*                                                                                                  *)
 (*==================================================================================================*)
 
-open MachineDefParams;;
+open Params;;
 open RunOptions;;
 
 
@@ -46,7 +46,7 @@ let should_list_isas = ref false
 
 let do_list_isas () =
   let s =
-    String.concat " " (Utils.option_map
+    String.concat " " (MlUtils.option_map
                        (fun isa ->
                          let module Isa = (val isa : Isa_model.ISADefs) in
                          if Isa.isa_defs_thunk () <> Interp_ast.Defs [] then
@@ -423,7 +423,7 @@ let main = fun () ->
   let help outchan msg =
     Printf.fprintf outchan "%s\n\n" msg;
     Printf.fprintf outchan "Model options: %s\n\n" (String.concat "; " Model_aux.model_strings);
-    Printf.fprintf outchan "Default model: %s\n" (Model_aux.pp_model MachineDefSystem.default_model_params)
+    Printf.fprintf outchan "Default model: %s\n" (Model_aux.pp_model Params.default_model_params)
   in
 
   begin try Arg.parse_argv Sys.argv (Arg.align opts) collect_file usage' with

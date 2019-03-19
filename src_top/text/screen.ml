@@ -139,12 +139,13 @@ include (Screen_base.Make (TextPrinters))
 let quit = fun () -> (exit 0 |> ignore)
 
 
-let display_dot ppmode legend_opt s cex (nc: (int * ('ts,'ss) MachineDefTypes.trans) list) =
-  Screen_base.OTString "dot rendering not implemented on terminal yet"
-  |> show_warning ppmode
+module Dot (ConcModel: Concurrency_model.S) = struct
+  let display_dot ppmode legend_opt s cex (nc: ConcModel.ui_trans list) =
+    Screen_base.OTString "dot rendering not implemented on terminal yet"
+    |> show_warning ppmode
+end
 
 (* Adapted from Lambda-Term examples repl.ml *)
-
 class read_line ~term ~history ~prompt_str = object(self)
   inherit LTerm_read_line.read_line ~history ()
   inherit [Zed_utf8.t] LTerm_read_line.term term

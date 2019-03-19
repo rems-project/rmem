@@ -24,13 +24,14 @@ open import Assert_extra
 import Map_extra
 
 open import Sail_impl_base
-open import MachineDefEvents
-open import MachineDefFragments
+open import Events
+open import Fragments
+open import UiTypes
+open import Utils
+open import Params
 open import MachineDefTypes
-import MachineDefInstructionPredicates
-open import MachineDefUtils
 open import MachineDefUI
-open import MachineDefParams
+import MachineDefInstructionPredicates
 open MaybeMonad
 
 (************************* propagate write *************************)
@@ -49,10 +50,10 @@ let tso_ss_propagate_write_action _params state tid buffer' write =
     let old_mem =
       List.mapMaybe
         (fun (old_write, old_slices) ->
-          MachineDefFragments.match_writes
+          Fragments.match_writes
             old_write.w_addr
             old_slices
-            [ MachineDefFragments.write_with_complete_slice write;
+            [ Fragments.write_with_complete_slice write;
               (old_write, old_slices);
             ]
             []
@@ -61,7 +62,7 @@ let tso_ss_propagate_write_action _params state tid buffer' write =
         )
         state.tso_ss_memory_writes
     in
-    (write, [MachineDefFragments.complete_slice write.w_addr]) :: old_mem
+    (write, [Fragments.complete_slice write.w_addr]) :: old_mem
   in
 
   <| tso_ss_buffers       = buffers';
@@ -162,7 +163,7 @@ let tso_ss_accept_read_cand _params state read : maybe memory_read_source =
   let buffer =
     match Map.lookup read.r_thread state.tso_ss_buffers with
     | Nothing -> failwith "T_TSO_mem_satisfy_read can't find thread"
-    | Just ws -> List.map MachineDefFragments.write_with_complete_slice ws
+    | Just ws -> List.map Fragments.write_with_complete_slice ws
     end
   in
 
@@ -175,7 +176,7 @@ let tso_ss_accept_read_cand _params state read : maybe memory_read_source =
       buffer ++ state.tso_ss_memory_writes
   in
 
-  MachineDefFragments.mrs_from_writes read.r_addr writes_slices
+  Fragments.mrs_from_writes read.r_addr writes_slices
 
 let tso_ss_accept_read_request params state read =
   tso_ss_accept_read_cand   params state read >>= fun mrs ->
@@ -247,7 +248,7 @@ let tso_ss_initial_state params tids initial_writes =
   let buffers = Map_extra.fromSet (fun id -> []) tids in
   <|  tso_ss_buffers        = buffers;
       tso_ss_lock           = Nothing;
-      tso_ss_memory_writes  = MachineDefFragments.complete_writes initial_writes;
+      tso_ss_memory_writes  = Fragments.complete_writes initial_writes;
       tso_ss_old_writes     = initial_writes;
   |>
 
@@ -264,15 +265,15 @@ let tso_ss_thread_memory_value_of_footprint _params state tid addr : memory_valu
     | Just buffer -> buffer
     end
   in
-  let buffer_slices = List.map MachineDefFragments.write_with_complete_slice buffer in
+  let buffer_slices = List.map Fragments.write_with_complete_slice buffer in
   let writes_slices = buffer_slices ++ state.tso_ss_memory_writes in
   let write_slices_read_from =
-    match MachineDefFragments.match_writes addr [(MachineDefFragments.complete_slice addr)] writes_slices [] with
+    match Fragments.match_writes addr [(Fragments.complete_slice addr)] writes_slices [] with
     | ([], write_slices') -> write_slices'
     | _                   -> failwith "read from uninitialized address"
     end 
   in
-  MachineDefFragments.value_of_write_slices write_slices_read_from
+  Fragments.value_of_write_slices write_slices_read_from
 
 let rec tso_ss_induced_order (cur: relon 'a) (pred: 'a -> 'a -> bool) (todo: list 'a) : relon 'a =
   match todo with
@@ -281,7 +282,7 @@ let rec tso_ss_induced_order (cur: relon 'a) (pred: 'a -> 'a -> bool) (todo: lis
   end
 
 let tso_ss_coherence params state =
-  let pred = fun w w' -> MachineDefFragments.non_empty_intersection w.w_addr w'.w_addr in
+  let pred = fun w w' -> Fragments.non_empty_intersection w.w_addr w'.w_addr in
   let relons = Map.range (Map.map (tso_ss_induced_order relonEmpty pred) state.tso_ss_buffers) in
   let bigrelon = relonBigUnion relons in
   (tso_ss_induced_order bigrelon pred state.tso_ss_old_writes).relon_rel

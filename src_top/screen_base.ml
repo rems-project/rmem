@@ -297,7 +297,7 @@ end
 
 type options_state = {
     run_options: RunOptions.t;
-    model_params: MachineDefParams.model_params;
+    model_params: Params.model_params;
     ppmode: Globals.ppmode;
     always_graph: bool;
     dot_final_ok: bool;

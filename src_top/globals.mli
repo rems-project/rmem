@@ -55,7 +55,7 @@ val debug_sail_interp : bool ref
 
 (** model options ***************************************************)
 
-val model_params: MachineDefParams.model_params ref
+val model_params: Params.model_params ref
 
 val big_endian: (bool option) ref
 
@@ -64,7 +64,7 @@ has been set properly (i.e. set_model_ism was called) *)
 val get_endianness: unit -> Sail_impl_base.end_flag
 val pp_endianness: unit -> string
 
-val set_model_ism: MachineDefISAInfo.isa_info -> unit
+val set_model_ism: BasicTypes.isa_info -> unit
 
 val suppress_non_symbol_memory: bool ref (* ELF *)
 
@@ -164,7 +164,7 @@ type ppmode =
     pp_symbol_table: ((Sail_impl_base.address * Sail_impl_base.size) * string) list;
     pp_dwarf_static:                   Dwarf.dwarf_static option;
     pp_dwarf_dynamic:                  Types.dwarf_dynamic option;
-    pp_initial_write_ioids:            MachineDefEvents.ioid list;
+    pp_initial_write_ioids:            Events.ioid list;
     pp_prefer_symbolic_values:         bool;
     pp_hide_pseudoregister_reads:      bool;
     pp_max_finished:                   int option;
@@ -178,7 +178,7 @@ type ppmode =
     ppg_regs:                          bool;
     ppg_reg_rf:                        bool;
     ppg_trans:                         bool;
-    pp_pretty_eiid_table:              (MachineDefEvents.eiid * string) list;
+    pp_pretty_eiid_table:              (Events.eiid * string) list;
     pp_trans_prefix:                   bool;
     pp_sail:                           bool;
     pp_default_cmd:                    Interact_parser_base.ast option;
@@ -193,7 +193,7 @@ val pp_choice_history_limit_lens            : (ppmode, int option)              
 val pp_symbol_table_lens                    : (ppmode, ((Sail_impl_base.address * Sail_impl_base.size) * string) list) Lens.t
 val pp_dwarf_static_lens                    : (ppmode, Dwarf.dwarf_static option)                                       Lens.t
 val pp_dwarf_dynamic_lens                   : (ppmode, Types.dwarf_dynamic option)                                      Lens.t
-val pp_initial_write_ioids_lens             : (ppmode, MachineDefEvents.ioid list)                                       Lens.t
+val pp_initial_write_ioids_lens             : (ppmode, Events.ioid list)                                       Lens.t
 val pp_prefer_symbolic_values_lens          : (ppmode, bool)                                                            Lens.t
 val pp_hide_pseudoregister_reads_lens       : (ppmode, bool)                                                            Lens.t
 val pp_max_finished_lens                    : (ppmode, int option)                                                      Lens.t
@@ -207,7 +207,7 @@ val ppg_ctrl_lens                           : (ppmode, bool)                    
 val ppg_regs_lens                           : (ppmode, bool)                                                            Lens.t
 val ppg_reg_rf_lens                         : (ppmode, bool)                                                            Lens.t
 val ppg_trans_lens                          : (ppmode, bool)                                                            Lens.t
-val pp_pretty_eiid_table_lens               : (ppmode, (MachineDefEvents.eiid * string) list)                            Lens.t
+val pp_pretty_eiid_table_lens               : (ppmode, (Events.eiid * string) list)                            Lens.t
 val pp_trans_prefix_lens                    : (ppmode, bool)                                                            Lens.t
 val pp_sail_lens                            : (ppmode, bool)                                                            Lens.t
 val pp_default_cmd_lens                     : (ppmode, Interact_parser_base.ast option)                                 Lens.t
@@ -220,7 +220,7 @@ val ppmode_for_hashing : ppmode
 
 val elf_threads: int ref
 
-val flowing_topologies : MachineDefParams.flowing_topology list ref
+val flowing_topologies : Params.flowing_topology list ref
 val topauto: bool ref
 
 (* topologies to use for web interface (not for text)*)
@@ -228,4 +228,4 @@ val topology_2: string ref
 val topology_3: string ref
 val topology_4: string ref
 
-val get_topologies : int -> MachineDefParams.flowing_topology list
+val get_topologies : int -> Params.flowing_topology list

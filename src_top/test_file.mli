@@ -24,14 +24,14 @@ module type S = sig
   val initial_state_record :
       test ->
       (module Isa_model.ISADefs) ->
-      MachineDefParams.model_params ->
-      MachineDefSystem.initial_state_record
+      Params.model_params ->
+      Params.initial_state_record
 
   (* the raw content of test file *)
   type data
 
   (* parse data and return test and the test name *)
-  val read_data : string -> data -> (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option -> (Test.info * test)
+  val read_data : string -> data -> (InstructionSemantics.instruction_semantics_mode -> unit) option -> (Test.info * test)
   (* parse file and return test and the test name *)
-  val read_file : string -> (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option -> (Test.info * test)
+  val read_file : string -> (InstructionSemantics.instruction_semantics_mode -> unit) option -> (Test.info * test)
 end

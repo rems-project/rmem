@@ -22,11 +22,11 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUtils
 open import Sail_impl_base
-open import MachineDefEvents
-open import MachineDefISAInfo
-open import MachineDefInstructionSemantics
+open import Utils
+open import Events
+open import BasicTypes
+open import InstructionSemantics
 import Riscv_types
 
 let riscv_is_system_call_instruction (_: instruction_ast) = Nothing
@@ -153,11 +153,11 @@ let riscv_thread_start_info =
 let riscv_make_empty_write_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
-    : (list write) * (MachineDefFreshIds.id_state ioid)
+    : (list write) * (FreshIds.id_state ioid)
   =
   let addr' = integer_of_address addr in
   let write_size =
@@ -169,11 +169,11 @@ let riscv_make_empty_write_events
 let riscv_make_read_request_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:   read_kind)
-    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+    : (list read_request) * (FreshIds.id_state ioid)
   =
   let addr' = integer_of_address addr in
   let read_size =

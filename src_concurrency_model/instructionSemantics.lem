@@ -22,19 +22,12 @@ open import Pervasives_extra
 (* emacs fontification -*-caml-*- *)
 
 open import Sail_impl_base
-(* open import MachineDefDebug *)
-(* open import MachineDefParams *)
-open import MachineDefUtils
-(* open import MachineDefFreshIds *)
-     (* import MachineDefEvents *)
-
-
+open import Utils
 open import Sail_values
        import Sail2_values
        import Riscv_types
        import Sail2_prompt_monad
        import Sail2_operators_mwords
-
 import Prompt
 import Power_embed
 import ArmV8_embed
@@ -560,3 +553,112 @@ let initialise_shallow_embedding_semantics endianness ism =
        decode_to_instruction = shallow_embedding__decode_to_instruction;
        initial_outcome_s_of_instruction =
          shallow_embedding__initial_outcome_s_of_instruction |>
+
+
+let interp_nias_of_instruction
+    (instruction: instruction_ast)
+    (nia_address: list (maybe address)) (* Nothing for unknown/undef *)
+    : list nia
+  =
+  let nias = List.map
+      function
+      | Just a  -> NIA_concrete_address a
+      | Nothing -> NIA_indirect_address
+      end
+      nia_address
+  in
+
+  (* it's a fact of the Power2.06B instruction pseudocode that in the B and Bc
+     cases there should be no Unknown values in nia_values, while in the Bclr
+     and Bcctr cases nia_values will just be Unknown and the semantics should
+     match the comments in the machineDefTypes definition of nia *)
+
+  (* the Sail code only writes to the nia register when a branch is taken,
+  i.e., if the branch is not taken it will not explicitly writes PC+4;
+  hence, for most instructions we need to add NIA_successor to 'nias' *)
+  match instruction with
+  | PPCGEN_instr (Power_embed_types.B _) ->
+      let () = ensure
+        (forall (nia MEM nias).
+            match nia with
+            | NIA_concrete_address _ -> true
+            | _ -> false
+            end)
+        "unexpected unknown/undefined address in nia_values ('b' instruction)"
+      in
+      nias
+  | PPCGEN_instr i ->
+      let () = ensure
+        ((exists (nia MEM nias). nia = NIA_indirect_address) -->
+            match i with
+            | Power_embed_types.Bclr _  -> true
+                (* the indirect address is "LR0:61 || 0b00" in Power pseudocode *)
+            | Power_embed_types.Bcctr _ -> true
+                (* the indirect address is "CTR0:61 || 0b00" in Power pseudocode *)
+            | _ -> false
+            end)
+        "unexpected unknown/undefined address in nia_values"
+      in
+      NIA_successor :: nias
+
+  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) ->
+      let () = ensure
+        match nias with
+        | NIA_concrete_address _ :: [] -> true
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | AArch64_instr (ArmV8_embed_types.BranchRegister _) ->
+      let () = ensure
+        match nias with
+        | _ :: [] -> true
+            (* the nia will be NIA_concrete_address if the register is
+            XZR, otherwise it will be NIA_indirect_address *)
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | AArch64_instr _ -> NIA_successor :: nias
+
+  | MIPS_instr _ -> (* XXX TODO *)
+      let () = ensure (nias = [])
+        "unexpected address in nia_values" in
+      NIA_successor :: []
+
+  | RISCV_instr (Riscv_types.RISCV_JAL _) ->
+      let () = ensure
+        match nias with
+        | NIA_concrete_address _ :: [] -> true
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | RISCV_instr (Riscv_types.RISCV_JALR _) ->
+      let () = ensure
+        match nias with
+        | _ :: [] -> true
+            (* the nia will be NIA_concrete_address if the register is
+            x0, otherwise it will be NIA_indirect_address *)
+        | _ -> false
+        end
+        "unexpected nia_values ('BranchImmediate' instruction)"
+      in
+      nias
+  | RISCV_instr _ -> NIA_successor :: nias
+
+  | X86_instr (X86_embed_types.Jcc _)  -> NIA_successor :: nias
+  | X86_instr (X86_embed_types.LOOP _) -> NIA_successor :: nias
+(* XXX  | X86_instr(X86_embed_types.CALL(_)) -> NIA_successor :: nias *)
+(* XXX  | X86_instr(X86_embed_types.RET(_)) -> NIA_successor :: nias *)
+(* XXX  | X86_instr(X86_embed_types.JMP(_)) -> NIA_successor :: nias *)
+  | X86_instr _ ->
+      let () = ensure (nias = [])
+        "unexpected address in nia_values" in
+      NIA_successor :: []
+
+  | _ -> failwith "unexpected 'instruction' in interp_nias_of_instruction"
+  end

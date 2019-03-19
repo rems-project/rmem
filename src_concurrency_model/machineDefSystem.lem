@@ -29,76 +29,26 @@ open import Pervasives_extra
 (** The Whole System Behaviour *)
 
 open import Sail_impl_base
-open import MachineDefDebug
-open import MachineDefUtils
-open import MachineDefFreshIds
+open import Sail_values
+open import Debug
+open import Utils
+open import FreshIds
+open import Fragments
+open import Events
+open import BasicTypes
+open import Params
+open import DwarfTypes
+open import InstructionSemantics
+open import CandidateExecution
 open import MachineDefTypes
-open import MachineDefEvents
-open import MachineDefISAInfo
-open import MachineDefParams
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
-open import MachineDefFragments
-open import MachineDefInstructionSemantics
+open import MachineDefInstructionPredicates
 open import MachineDefPromisingARM
-open import Sail_values
-
-import MachineDefISAInfoPPCGen
 
 
 (** initial system state ********************************************)
 
-let default_model_params =
-  let default_ss =
-    <|  ss_model = PLDI11_storage_model;
-        ss_sc = false;
-        (*coherence_commit = Partial_CC;*)
-        pw = Only_at_end;
-        (*bc = Weak_BC;*)
-        new_coh =  Use_old_coherence ;
-        (*new_coh =     No_new_coherence;*)
-        flowing_topology = FTopo_leaf 0;
-        promise_first = false;
-    |>
-  in
-
-  let default_t =
-    <|  thread_model                   = PLDI11_thread_model;
-        thread_restriction             = RestrictionNone;
-        thread_fsa                     = Flowing_same_address_strict;
-        thread_rwc                     = Forbid_prev_uncommitted_read_type0;
-        thread_rr                      = Restart_on_read_satisfy;
-        thread_allow_tree_speculation  = true;
-        thread_allow_write_subsumption = false;
-        thread_fail_on_loop            = false;
-        thread_isa_info                = MachineDefISAInfoPPCGen.ppcgen_ism;
-        thread_loop_unroll_limit       = Nothing;
-
-        thread_run_after_stop_promising = true;
-        thread_certify_after_stop_promising = false;
-        thread_promising_fuel = 10000;
-
-        branch_targets                 = Map.empty;
-
-        promising_partial_order = false;
-    |>
-  in
-
-  <|  ss             = default_ss;
-      t              = default_t;
-      shared_memory  = Nothing;
-  |>
-
-type initial_state_record =
-  <|  isr_params:            model_params;
-      isr_program:           instruction_semantics -> address -> fetch_and_decode_outcome;
-      isr_return_addr:       list (thread_id * address);
-      isr_thread_ids:        list thread_id;
-      isr_register_data:     thread_id -> list (reg_base_name * register_value);
-      isr_register_values:   thread_id -> reg_base_name -> register_value;
-      isr_first_instruction: thread_id -> maybe address;
-      isr_memory:            list write;
-  |>
 
 (* the initial writes should be a list of one write for each address that the program will use *)
 let initial_system_state
@@ -143,43 +93,6 @@ let initial_system_state
 
      riscv_AMO_lock = Nothing;
   |>
-
-
-
-(** ELF-derived program memory **************************************)
-
-(* represent ELF-derived program memory as a Lem "Map (list word8)
-word8", where the "list word8" is the bytes of the address as would
-appear in a Bytevector interpreter value (the default OCaml compare
-should be fine for such maps) (it would be more efficient, and perhaps
-more elegant, to use a lem word64 type for the index) *)
-
-let empty_elf_memory : map address byte = Map.empty
-
-(* convert the address-to-word8 map memory into an "address -> maybe opcode" function *)
-let elf_program_memory_opcode_lookup (mem: map address byte) (endianness: end_flag) (a0: address) : maybe opcode =
-  let a1 = add_address_nat a0 1 in
-  let a2 = add_address_nat a0 2 in
-  let a3 = add_address_nat a0 3 in
-  let byte0 : maybe byte = Map.lookup a0 mem in
-  let byte1 : maybe byte = Map.lookup a1 mem in
-  let byte2 : maybe byte = Map.lookup a2 mem in
-  let byte3 : maybe byte = Map.lookup a3 mem in
-  match (endianness, byte0,byte1,byte2,byte3) with
-  | (E_big_endian,    Just b0, Just b1, Just b2, Just b3) -> Just (opcode_of_bytes b0 b1 b2 b3)
-  | (E_little_endian, Just b0, Just b1, Just b2, Just b3) -> Just (opcode_of_bytes b3 b2 b1 b0)
-  | _ -> Nothing
-  end
-
-let elf_program_memory (mem: map address byte) (endianness: end_flag) instruction_semantics (a: address) : fetch_and_decode_outcome =
-  let decode (instruction_semantics: instruction_semantics) (a:address) (mopcode:maybe opcode): fetch_and_decode_outcome =
-    match mopcode with
-      | Just opcode -> instruction_semantics.decode_to_instruction a opcode
-      | Nothing ->     FDO_illegal_fetch_address
-    end
-  in
-  elf_program_memory_opcode_lookup mem endianness a
-  $> decode instruction_semantics a
 
 (** memory snapshot *************************************************)
 
@@ -685,50 +598,6 @@ let machine_system (ms_model : machineStorageSubsystem thread_state 'ss)
 
 (** Dwarf support ***************************************************)
 
-type dwarf_register_read_result =
-  | DRRR_result of natural
-  | DRRR_not_currently_available
-  | DRRR_bad_register_number
-
-type dwarf_memory_read_result =
-  | DMRR_result of natural
-  | DMRR_not_currently_available
-  | DMRR_bad_address
-
-type dwarf_evaluation_context =
-  <| dec_read_register: natural -> dwarf_register_read_result;
-     dec_read_memory:   natural -> natural -> dwarf_memory_read_result;
-  |>
-
-let reg_name_of_dwarf
-    (ism: instruction_semantics_mode)
-    (registerdata: registerdata)
-    (n: natural)
-    : maybe reg_name
-  =
-  match ism with
-  | PPCGEN_ism ->
-      if n < 0 || 31 < n then Nothing
-      else reg_from_data registerdata ("GPR" ^ (show n))
-
-  | AARCH64_ism variant ->
-      if variant = AArch64HandSail || variant = AArch64GenSail then
-        (* General registers and SP_ELO have the same name in both; this is not guaranteed for other registers *)
-        if n < 0 || 31 < n then Nothing
-        else if n = 31 then reg_from_data registerdata "SP_EL0"  (* HACK: won't work for other EL - the Dwarf name is really context dependent? *)
-        else reg_from_data registerdata ("R" ^ (show n))
-      else fail
-  | MIPS_ism ->
-      if 0 <= n && n <= 9 then        reg_from_data registerdata ("GPR0" ^ (show n))
-      else if 10 <= n && n <= 31 then reg_from_data registerdata ("GPR"  ^ (show n))
-      else                            Nothing
-  | RISCV_ism ->
-     if n < 0 || 31 < n then Nothing
-     else reg_from_data registerdata ("x" ^ (show n))
-  | X86_ism ->
-     failwith "x86 reg_name_from_dwarf"
-  end
-
 
 let get_dwarf_evaluation_context
     (endianness: end_flag)
@@ -797,74 +666,8 @@ let get_dwarf_evaluation_context
        end
   end
 
-
-let branch_targets_from_list
-    (bts: list (thread_id * list (address * list address)))
-    : branch_targets_map
-  =
-  let thread_bts tbts =
-    [(addr, Set.fromList addrs) | forall ((addr, addrs) MEM tbts) | true]
-    $> Map.fromList
-  in
-  [(tid, thread_bts tbts) | forall ((tid, tbts) MEM bts) | true]
-  $> Map.fromList
-
-let branch_targets_to_list
-    (bts: branch_targets_map)
-    : list (thread_id * list (address * list address))
-  =
-  Map.map (Map.map Set_extra.toList) bts
-  $> Map.map Map_extra.toList
-  $> Map_extra.toList
-
 let branch_targets_of_state (state: system_state 'ts 'ss) : branch_targets_map =
   Map.map (ts_branch_targets state.t_model) state.thread_states
-
-let union_and_diff_branch_targets
-    (branch_targets_lhs: branch_targets_map)
-    (branch_targets_rhs: branch_targets_map)
-    : branch_targets_map * list (thread_id * list (address * list address))
-  =
-  let diff =
-    Map.mapi
-      (fun tid tbts_lhs ->
-        let tbts_rhs = Map.findWithDefault tid Map.empty branch_targets_rhs in
-        Map.mapi
-          (fun addr addrs_lhs ->
-            Map.findWithDefault addr {} tbts_rhs
-            $> Set.difference addrs_lhs
-          )
-          tbts_lhs
-      )
-      branch_targets_lhs
-    $> branch_targets_to_list
-    $> List.map (fun (tid, tbts) -> (tid, List.filter (function (_, []) -> false | _ -> true end) tbts))
-    $> List.filter (function (_, []) -> false | _ -> true end)
-  in
-
-  let aunion =
-    List.foldl
-      (fun branch_targets (tid, tbts_diff) ->
-        let tbts =
-          List.foldl
-            (fun tbts (addr, addrs_diff) ->
-              let addrs =
-                (Set.fromList addrs_diff)
-                union
-                (Map.findWithDefault addr {} tbts)
-              in
-              Map.insert addr addrs tbts
-            )
-            (Map.findWithDefault tid Map.empty branch_targets)
-            tbts_diff
-        in
-        Map.insert tid tbts branch_targets
-      )
-      branch_targets_rhs
-      diff
-  in
-
-  (aunion, diff)
 
 
 let shared_memory_of_state
@@ -884,15 +687,185 @@ let shared_memory_of_state
               non_empty_intersection wfp fp'}
 
 
-let union_and_diff_shared_memory
-    (fps_lhs: set footprint)
-    (fps_rhs: set footprint)
-    : set footprint * set footprint (* (union, diff) *)
+
+
+(** Make a candidate execution *)
+
+let rec ioids_influencing_reg_reads_helper prefix ioid reg_names =
+  match prefix with
+  | [] -> {}
+  | i :: prefix ->
+      if i.instance_ioid = ioid then
+        bigunionListMap
+          (fun reg ->
+            match List.lookup reg i.reg_writes with
+            | Nothing -> failwith "missing register write"
+            | Just (dependencies, _) ->
+                bigunionListMap
+                  (function
+                  | RWD_reg_write ioid reg_names -> {ioid} union (ioids_influencing_reg_reads_helper prefix ioid reg_names)
+                  | RWD_mem_read -> {}
+                  end)
+                  dependencies
+            end
+          )
+          reg_names
+      else ioids_influencing_reg_reads_helper prefix ioid reg_names
+  end
+
+let ioids_influencing_reg_reads
+    (prefix:    list instruction_instance)
+    (reg_reads: list (reg_name * register_read_sources * register_value))
+    : set ioid
   =
-  let merged_fps_rhs = MachineDefFragments.merge_footprints true fps_rhs in
-  let diff =
-    {fp_lhs | forall (fp_lhs IN fps_lhs)
-            | forall (fp_rhs IN merged_fps_rhs).
-                not (MachineDefFragments.sub_footprint fp_lhs fp_rhs)}
+  bigunionListMap
+    (fun (_, register_read_sources, _) ->
+      bigunionListMap
+        (function
+        | RRS_instruction ioid reg_names _ -> {ioid} union (ioids_influencing_reg_reads_helper prefix ioid reg_names)
+        | RRS_initial_state _ -> {}
+        | RRS_pseudoregister  -> {}
+        end)
+        register_read_sources
+    )
+    reg_reads
+
+let rec find_control_dependencies prefix =
+  match prefix with
+  | [] -> {}
+  | i :: prefix ->
+      if is_cond_branch_instruction i || is_indirect_branch_instruction i then
+        (* FIXME: should we add i.instance_ioid to the set? *)
+        (ioids_influencing_reg_reads prefix i.reg_reads)
+        union (find_control_dependencies prefix)
+      else find_control_dependencies prefix
+  end
+
+
+let make_cex_instruction_instance
+    (prefix: list instruction_instance)
+    (i:      instruction_instance)
+    : cex_instruction_instance
+  =
+  <|
+    cex_instance_ioid = i.instance_ioid;
+    cex_program_loc = i.program_loc;
+    cex_program_opcode = i.program_opcode;
+    cex_instruction = i.instruction; 
+    cex_instruction_kind = i.instruction_kind;
+    (* register part *)
+    cex_regs_in = i.regs_in;
+    cex_regs_out = i.regs_out;
+    cex_regs_in_feeding_address = i.regs_in_feeding_address;
+    cex_ioids_feeding_address = i.ioids_feeding_address;
+    cex_reg_reads = i.reg_reads;
+    cex_reg_writes = [(r, v) | forall ((r, (_, v)) MEM i.reg_writes) | true];
+    (* memory part *)
+    cex_writes_read_from =
+      Set.fromList (List.concat (snd (List.unzip i.subreads.sr_writes_read_from)));
+    cex_committed_barriers = i.committed_barriers;
+    cex_potential_write_addresses = i.subwrites.sw_potential_write_addresses;
+    cex_potential_writes = i.subwrites.sw_potential_writes;
+    cex_propagated_writes = i.subwrites.sw_propagated_writes;
+    cex_requested_unsatisfied_reads =
+      List.mapMaybe
+        (fun (rr, _) ->
+          match List.lookup rr i.subreads.sr_unsat_slices with
+          | Just [] -> Nothing (* request was already satisfied *)
+          | Just _ -> Just rr
+          | Nothing -> failwith "domain of sr_unsat_slices should include all read requests"
+          end
+        )
+        i.subreads.sr_requested;
+    cex_satisfied_reads =
+      List.mapMaybe
+        (fun (rr, writes_read_from) ->
+            match List.lookup rr i.subreads.sr_unsat_slices with
+            | Just [] ->
+                let mrs =
+                  <|  mrs_footprint        = rr.r_addr;
+                      mrs_value            = value_of_write_slices writes_read_from;
+                      mrs_writes_read_from = writes_read_from;
+                  |>
+                in
+                Just (rr, mrs)
+            | Just _ -> Nothing
+            | Nothing -> failwith "domain of sr_unsat_slices should include all read requests"
+            end
+        )
+        i.subreads.sr_writes_read_from;
+    (* status *)
+    cex_finished = i.finished;
+
+    (* dependencies *)
+    cex_address_dependencies =
+      List.filter (fun (r, _, _) -> r IN i.regs_in_feeding_address) i.reg_reads
+      $> ioids_influencing_reg_reads prefix;
+
+    cex_data_dependencies =
+      List.filter (fun (r, _, _) -> r NIN i.regs_in_feeding_address) i.reg_reads
+      $> ioids_influencing_reg_reads prefix;
+
+    cex_control_dependencies = find_control_dependencies prefix;
+  |>
+
+
+let rec entree_old (is: list instruction_instance) (it:cex_instruction_tree) : cex_instruction_tree =
+  match is with
+  | [] -> it
+  | i::is' -> entree_old is' (CEX_T [(make_cex_instruction_instance is' i,it)])
+  end
+
+let rec make_cex_instruction_tree (prefix: list instruction_instance) (it:instruction_tree) : cex_instruction_tree =
+  match it with
+  | T iits -> 
+      CEX_T (List.map (fun (i,it) -> (make_cex_instruction_instance prefix i, make_cex_instruction_tree (i :: prefix) it)) iits)
+  end
+
+
+
+let make_cex_thread_state tparams (thread_model : threadSubsystem 'ts) (t : 'ts) : cex_thread_state = 
+    <| 
+    cex_thread = thread_model.ts_tid t;
+    cex_register_data = tparams.thread_isa_info.register_data_info;
+    cex_initial_register_state = thread_model.ts_initial_reg_state t;
+    cex_initial_fetch_address = thread_model.ts_initial_fetch_address t;
+    cex_instruction_tree = 
+      let (old_instructions,instruction_tree) = thread_model.ts_instruction_tree t in
+      entree_old old_instructions (make_cex_instruction_tree old_instructions instruction_tree);
+  |>
+
+val make_cex_candidate : forall 'ts 'ss. system_state 'ts 'ss -> cex_candidate
+let make_cex_candidate (s: system_state 'ts 'ss) : cex_candidate =
+  let rf =
+    let instructions =
+      (Map.map (ts_instructions s.t_model) s.thread_states) $>
+      Map.range $> Set.bigunion in
+    Set.bigunionMap
+      (fun i ->
+        List.concatMap
+          (fun (r, wss) -> [(ws, r) | forall (ws MEM wss) |true])
+          i.subreads.sr_writes_read_from
+        $> Set.fromList
+      )
+      instructions
   in
-  (fps_rhs union diff $> MachineDefFragments.merge_footprints false, diff)
+
+
+  let co = s.s_model.ss_coherence s.model.ss s.storage_subsystem in
+
+  let fr =
+    let rfConverse = {(r, w) | forall (((w, _), r) IN rf) | true} in
+    Relation.relComp rfConverse co
+    $> Set.filter (fun (r,w) -> non_empty_intersection r.r_addr w.w_addr)
+  in
+
+  <|
+    cex_program_memory = s.program_memory;
+    cex_initial_writes = s.initial_writes;
+    cex_threads = Map.map (make_cex_thread_state s.model.t s.t_model) s.thread_states;
+    cex_rf = rf;
+    cex_co = Relation.withoutTransitiveEdges co;
+    cex_fr = fr;
+    cex_model = s.model;
+  |> 

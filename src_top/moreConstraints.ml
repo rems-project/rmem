@@ -31,7 +31,7 @@ module type S = sig
 
   type location =
     | Loc_mem of address
-    | Loc_reg of MachineDefEvents.thread_id * Sail_impl_base.reg_base_name
+    | Loc_reg of Events.thread_id * Sail_impl_base.reg_base_name
 
   type symbol_table = (address * string) list
 
@@ -48,10 +48,10 @@ module type S = sig
   val locations_prop : prop -> location list
 
   type state = 
-      (MachineDefEvents.thread_id * register_snapshot) list 
+      (Events.thread_id * register_snapshot) list 
         * memory_snapshot
   val trim_state :
-      (MachineDefEvents.thread_id * Sail_impl_base.reg_base_name) list ->
+      (Events.thread_id * Sail_impl_base.reg_base_name) list ->
         (Sail_impl_base.address * int) list -> state -> state
             
   val pp_state : symbol_table -> state -> string
@@ -75,7 +75,7 @@ module Make : S =
 
     type location =
       | Loc_mem of address
-      | Loc_reg of MachineDefEvents.thread_id * Sail_impl_base.reg_base_name
+      | Loc_reg of Events.thread_id * Sail_impl_base.reg_base_name
             
     type prop = (location, value) ConstrGen.prop
     type constr = prop ConstrGen.constr
@@ -95,9 +95,9 @@ module Make : S =
 
     (* translate from Sail register name to litmus register name *)
     let pp_reg r =
-      let open MachineDefParams in
-      let open MachineDefInstructionSemantics in
-      let open MachineDefISAInfo in
+      let open Params in
+      let open InstructionSemantics in
+      let open BasicTypes in
       let params = !Globals.model_params in
       begin match params.t.thread_isa_info.ism with
       | PPCGEN_ism ->
@@ -169,7 +169,7 @@ module Make : S =
       
 
     type state = 
-        (MachineDefEvents.thread_id * register_snapshot) list 
+        (Events.thread_id * register_snapshot) list 
           * memory_snapshot
 
     let trim_state kregs _ (regs,mem) =

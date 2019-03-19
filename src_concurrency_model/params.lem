@@ -1,0 +1,281 @@
+open import Pervasives
+open import Sail_impl_base
+open import InstructionSemantics
+open import Events
+open import Fragments
+open import BasicTypes
+     import IsaInfoPPCGen
+
+(** model parameters *)
+(*: \subsection{Model Parameters} :*)
+
+type propagate_write_params =
+  | Only_at_end
+  | Possibly_in_middle
+
+type new_coherence_params =
+  | Use_new_coherence
+  | Use_old_coherence
+  | Check_new_vs_old
+
+type storage_model =
+  | PLDI11_storage_model
+  | Flowing_storage_model
+  | Flat_storage_model
+  | POP_storage_model
+  | NOP_storage_model
+  | TSO_storage_model
+  | Promising_storage_model
+
+type flowing_topology =
+  | FTopo_leaf of thread_id
+  | FTopo_join of list flowing_topology
+
+type ss_params =
+  <| ss_model: storage_model;
+     ss_sc   : bool; (* behave like SC *)
+     pw      : propagate_write_params;
+     new_coh : new_coherence_params;
+
+     (* parameters for Flowing *)
+     flowing_topology : flowing_topology;
+
+     promise_first: bool;
+  |>
+
+
+type thread_flowing_same_address_params =
+  | Flowing_same_address_strict
+  | Flowing_same_address_aggressive
+
+type thread_restrict_write_commit_params =
+  | Forbid_prev_uncommitted_read_type0
+  | Allow_prev_uncommitted_determined_addr_read_type1
+
+type thread_restart_read_params =
+  | Restart_on_commit
+  | Restart_on_read_satisfy
+
+type pop_thread_model =
+  | Standard_POP
+  | Flat_POP
+
+type thread_model =
+  | PLDI11_thread_model
+  | POP_thread_model of pop_thread_model
+  | TSO_thread_model
+  | Promising_thread_model
+  | Relaxed_thread_model  (* A bit of a hack! This is a very relaxed model
+                          intended to be used with 'rmem -dot_final_ok true ...'.
+                          It should allow all litmus tests that don't
+                          have a "data | addr | rf | fr" cycle.
+                          To be used together with flat-storage. *)
+
+type thread_restriction =
+  | RestrictionNone
+  | RestrictionSC      (* sequential consistency *)
+  | RestrictionSCANASC (* single-copy-atomic non-atomic-sequential-consistency *)
+
+
+type branch_targets_map = map thread_id (map address (set address))
+
+
+type thread_params =
+  <| thread_model:       thread_model;
+     thread_restriction: thread_restriction; (* additional model restrictions *)
+     thread_fsa:         thread_flowing_same_address_params;
+     thread_rwc:         thread_restrict_write_commit_params;
+     thread_rr:          thread_restart_read_params;
+     thread_allow_tree_speculation:  bool;
+     thread_allow_write_subsumption: bool;
+     thread_fail_on_loop:            bool;
+     thread_isa_info :               isa_info;
+     thread_loop_unroll_limit:       maybe nat;
+
+     branch_targets: branch_targets_map;
+
+     thread_run_after_stop_promising : bool;
+     thread_certify_after_stop_promising : bool;
+     thread_promising_fuel : nat;
+
+     promising_partial_order : bool;
+  |>
+
+
+type model_params =
+  <| ss:             ss_params;
+     t:              thread_params;
+
+     (* shared_memory: this is an over approximation of the shared memory
+     locations. Used by Promising. *)
+     shared_memory:  maybe (set footprint)
+  |>
+
+
+let is_pop_model params = match params.thread_model with
+  | POP_thread_model _ -> true
+  | _ -> false
+end
+
+let is_flat_model params = match params.thread_model with
+  | POP_thread_model Flat_POP -> true
+  | _ -> false
+end
+
+
+type eager_mode =
+  <|
+    eager_fetch_single:        bool;
+    eager_fetch_multi:         bool;
+    eager_pseudocode_internal: bool;
+    eager_constant_reg_read:   bool;
+    eager_reg_rw:              bool;
+    eager_memory_aux:          bool;
+    eager_finish:              bool;
+    eager_fp_recalc:           bool;
+    eager_thread_start:        bool;
+
+    eager_local_mem:           bool;
+    em_shared_memory:          set footprint;
+  |>
+
+
+
+
+type initial_state_record =
+  <|  isr_params:            model_params;
+      isr_program:           instruction_semantics -> address -> fetch_and_decode_outcome;
+      isr_return_addr:       list (thread_id * address);
+      isr_thread_ids:        list thread_id;
+      isr_register_data:     thread_id -> list (reg_base_name * register_value);
+      isr_register_values:   thread_id -> reg_base_name -> register_value;
+      isr_first_instruction: thread_id -> maybe address;
+      isr_memory:            list write;
+  |>
+
+
+
+
+let branch_targets_from_list
+    (bts: list (thread_id * list (address * list address)))
+    : branch_targets_map
+  =
+  let thread_bts tbts =
+    [(addr, Set.fromList addrs) | forall ((addr, addrs) MEM tbts) | true]
+    $> Map.fromList
+  in
+  [(tid, thread_bts tbts) | forall ((tid, tbts) MEM bts) | true]
+  $> Map.fromList
+
+let branch_targets_to_list
+    (bts: branch_targets_map)
+    : list (thread_id * list (address * list address))
+  =
+  Map.map (Map.map Set_extra.toList) bts
+  $> Map.map Map_extra.toList
+  $> Map_extra.toList
+
+let union_and_diff_branch_targets
+    (branch_targets_lhs: branch_targets_map)
+    (branch_targets_rhs: branch_targets_map)
+    : branch_targets_map * list (thread_id * list (address * list address))
+  =
+  let diff =
+    Map.mapi
+      (fun tid tbts_lhs ->
+        let tbts_rhs = Map.findWithDefault tid Map.empty branch_targets_rhs in
+        Map.mapi
+          (fun addr addrs_lhs ->
+            Map.findWithDefault addr {} tbts_rhs
+            $> Set.difference addrs_lhs
+          )
+          tbts_lhs
+      )
+      branch_targets_lhs
+    $> branch_targets_to_list
+    $> List.map (fun (tid, tbts) -> (tid, List.filter (function (_, []) -> false | _ -> true end) tbts))
+    $> List.filter (function (_, []) -> false | _ -> true end)
+  in
+
+  let aunion =
+    List.foldl
+      (fun branch_targets (tid, tbts_diff) ->
+        let tbts =
+          List.foldl
+            (fun tbts (addr, addrs_diff) ->
+              let addrs =
+                (Set.fromList addrs_diff)
+                union
+                (Map.findWithDefault addr {} tbts)
+              in
+              Map.insert addr addrs tbts
+            )
+            (Map.findWithDefault tid Map.empty branch_targets)
+            tbts_diff
+        in
+        Map.insert tid tbts branch_targets
+      )
+      branch_targets_rhs
+      diff
+  in
+
+  (aunion, diff)
+
+
+let union_and_diff_shared_memory
+    (fps_lhs: set footprint)
+    (fps_rhs: set footprint)
+    : set footprint * set footprint (* (union, diff) *)
+  =
+  let merged_fps_rhs = Fragments.merge_footprints true fps_rhs in
+  let diff =
+    {fp_lhs | forall (fp_lhs IN fps_lhs)
+            | forall (fp_rhs IN merged_fps_rhs).
+                not (Fragments.sub_footprint fp_lhs fp_rhs)}
+  in
+  (fps_rhs union diff $> Fragments.merge_footprints false, diff)
+
+
+
+(** Default parameters *)
+
+let default_model_params =
+  let default_ss =
+    <|  ss_model = PLDI11_storage_model;
+        ss_sc = false;
+        (*coherence_commit = Partial_CC;*)
+        pw = Only_at_end;
+        (*bc = Weak_BC;*)
+        new_coh =  Use_old_coherence ;
+        (*new_coh =     No_new_coherence;*)
+        flowing_topology = FTopo_leaf 0;
+        promise_first = false;
+    |>
+  in
+
+  let default_t =
+    <|  thread_model                   = PLDI11_thread_model;
+        thread_restriction             = RestrictionNone;
+        thread_fsa                     = Flowing_same_address_strict;
+        thread_rwc                     = Forbid_prev_uncommitted_read_type0;
+        thread_rr                      = Restart_on_read_satisfy;
+        thread_allow_tree_speculation  = true;
+        thread_allow_write_subsumption = false;
+        thread_fail_on_loop            = false;
+        thread_isa_info                = IsaInfoPPCGen.ppcgen_ism;
+        thread_loop_unroll_limit       = Nothing;
+
+        thread_run_after_stop_promising = true;
+        thread_certify_after_stop_promising = false;
+        thread_promising_fuel = 10000;
+
+        branch_targets                 = Map.empty;
+
+        promising_partial_order = false;
+    |>
+  in
+
+  <|  ss             = default_ss;
+      t              = default_t;
+      shared_memory  = Nothing;
+  |>

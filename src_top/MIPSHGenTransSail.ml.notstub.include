@@ -44,7 +44,7 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
         failwith "Translation failure"
       end
   in
-  MachineDefInstructionSemantics.MIPS_instr instr
+  InstructionSemantics.MIPS_instr instr
 
 
 let unlabelize_ins lookup_loc label_map i ins =
@@ -108,7 +108,7 @@ let trans_out_reg flv =
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Mips_embed_types in
   match instr with
-  | MachineDefInstructionSemantics.MIPS_instr instr ->
+  | InstructionSemantics.MIPS_instr instr ->
      begin match instr with
      (* #include "build_isa_models/mips/gen/shallow_ast_to_herdtools_ast.hgen" *)
      | i -> failwith "cannot translate instruction"

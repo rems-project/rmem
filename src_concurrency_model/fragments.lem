@@ -19,9 +19,9 @@
 (*============================================================================================*)
 
 open import Pervasives_extra
-open import MachineDefEvents
-open import MachineDefUtils
 open import Sail_impl_base
+open import Events
+open import Utils
 
 
 (** mixed-size register and memory support: slices of writes and read-requests *)
@@ -249,7 +249,7 @@ let value_of_maybe_value_fragments (mfs: list (maybe_value_fragment 'a)) : maybe
 
 
 let value_of_write_slices (writes: list (write * slices)) : memory_value =
-  match MachineDefUtils.list_minimumBy (fun (w1, _) (w2, _) -> compare w1.w_addr w2.w_addr) writes with
+  match Utils.list_minimumBy (fun (w1, _) (w2, _) -> compare w1.w_addr w2.w_addr) writes with
   | Nothing -> []
   | Just (min_addr_w, _) ->
       let min_addr = integer_of_address (fst min_addr_w.w_addr) in

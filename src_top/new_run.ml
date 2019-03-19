@@ -20,15 +20,15 @@
 open RunOptions
 open Screen_base
 
-open MachineDefParams
-open MachineDefTypes
+open Params
 
 module Make (ConcModel: Concurrency_model.S) = struct
+
 
 module StateHashSet = Set.Make(String)
 
 module TidMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id
+  type t = Events.thread_id
   let compare = compare
 end)
 
@@ -51,24 +51,24 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = MachineDefEvents.thread_id * MachineDefEvents.ioid * MachineDefExceptions.exception_type
+  type t = Events.thread_id * Events.ioid * BasicTypes.exception_type
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
-    | (0, 0) -> MachineDefExceptions.exception_type_compare e1 e2
+    | (0, 0) -> BasicTypes.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c
     end
 end)
 
-type sst_predicate = ConcModel.system_state_and_transitions -> bool
+type sst_predicate = ConcModel.sst -> bool
 type trans_predicate = ConcModel.trans -> bool
-type state_and_trans_predicate = ConcModel.system_state -> ConcModel.trans -> bool
+type state_and_trans_predicate = ConcModel.state -> ConcModel.trans -> bool
 
 type breakpoint_predicate =
-  | StateBreakpoint of (ConcModel.system_state_and_transitions -> bool)
-  | TransitionBreakpoint of (ConcModel.system_state_and_transitions -> ConcModel.trans -> bool)
+  | StateBreakpoint of (ConcModel.sst -> bool)
+  | TransitionBreakpoint of (ConcModel.sst -> ConcModel.trans -> bool)
   | SharedBreakpoint of (Sail_impl_base.footprint Pset.set ->
-                         ConcModel.system_state_and_transitions ->
+                         ConcModel.sst ->
                          ConcModel.trans ->
                          bool)
 
@@ -79,7 +79,7 @@ type breakpoint_id =
 type breakpoint = (breakpoint_id * breakpoint_predicate * string)
 
 type search_node =
-  { system_state: ConcModel.system_state_and_transitions;
+  { system_state: ConcModel.sst;
 
     (* [] - not explored yet
        tn :: ... :: [t1] - t1 is transition that used to be in unexplored_transitions
@@ -116,7 +116,7 @@ type search_state =
     (* unhandled ISA exception states *)
     observed_exceptions:       (trace * int) ExceptionMap.t;
 
-    observed_branch_targets: MachineDefParams.branch_targets_map;
+    observed_branch_targets: Params.branch_targets_map;
     observed_shared_memory:  Sail_impl_base.footprint Pset.set;
 
     (*** statistics ***)
@@ -154,12 +154,9 @@ type search_state =
 }
 
 
-let all_instructions_of_state state =
-  let thread_set = Pmap.range compare state.MachineDefTypes.thread_states in
-  let all_instructions =
-    Pset.map compare (MachineDefThreadSubsystemUtils.ts_instructions state.t_model) thread_set in
-  (Pset.fold Pset.union all_instructions (Pset.empty compare))
-
+(* Auxiliary function *)
+let sst_model_params (s : ConcModel.sst) =
+  ConcModel.model_params (ConcModel.sst_state s)
 
 (* retrun a trace leading to the head of search_state.search_nodes;
 head is the last transition *)
@@ -227,9 +224,9 @@ let print_last_state title search_state : unit =
 
     | [node] ->
         let (ppmode', ui_state) =
-          ConcModel.make_ui_system_state ppmode None node.system_state.sst_state []
+          ConcModel.make_ui_state ppmode None (ConcModel.sst_state node.system_state) []
         in
-        OTEncoded (Pp.pp_ui_system_state ppmode' ui_state)
+        OTEncoded (ConcModel.pp_ui_state ppmode' ui_state)
 
     | node :: node' :: _ ->
         let pp_choices choices =
@@ -242,25 +239,29 @@ let print_last_state title search_state : unit =
         begin match List.rev node'.open_transition with
         | [] -> assert false
         | t :: ts ->
-            let tran = List.nth node'.system_state.sst_system_transitions t in
+            let tran = List.nth (ConcModel.sst_trans node'.system_state) t in
             let (ppmode', ui_state) =
-              ConcModel.make_ui_system_state ppmode (Some node'.system_state.sst_state) node.system_state.sst_state []
+              ConcModel.make_ui_state
+                ppmode
+                (Some (ConcModel.sst_state node'.system_state))
+                (ConcModel.sst_state node.system_state)
+                []
             in
 
             OTConcat [
-              OTEncoded (Pp.pp_ui_system_state ppmode' ui_state);
+              OTEncoded (ConcModel.pp_ui_state ppmode' ui_state);
               otStrLine "via %s" (pp_choices (choices_so_far search_state));
-              otStrLine "last (non eager) transition: %s" (Pp.pp_trans ppmode tran);
+              otStrLine "last (non eager) transition: %s" (ConcModel.pp_trans ppmode tran);
               otIfTrue (ts <> []) @@ otStrLine "(followed by eager transitions: %s)"
                   (List.map string_of_int ts |> String.concat ",");
               otStrLine "all transitions: [";
               otConcat @@ List.map
-                  (fun t -> otStrLine "%s" (Pp.pp_trans ppmode t))
-                  node.system_state.sst_system_transitions;
+                  (fun t -> otStrLine "%s" (ConcModel.pp_trans ppmode t))
+                  (ConcModel.sst_trans node.system_state);
               otStrLine "]";
               otStrLine "unexplored (filtered) transitions: [";
               otConcat @@ List.map
-                (fun (i, t) -> otStrLine "[%d] %s" i (Pp.pp_trans ppmode t))
+                (fun (i, t) -> otStrLine "[%d] %s" i (ConcModel.pp_trans ppmode t))
                 node.unexplored_transitions;
               otStrLine "]";
             ]
@@ -278,8 +279,8 @@ let print_last_state title search_state : unit =
 let update_observed_branch_targets_and_shared_memory search_state search_node : search_state =
   let observed_branch_targets =
     let (union, diff) =
-      MachineDefSystem.union_and_diff_branch_targets
-        (ConcModel.branch_targets_of_state search_node.system_state.sst_state)
+      Params.union_and_diff_branch_targets
+        (ConcModel.branch_targets_of_state (ConcModel.sst_state search_node.system_state))
         search_state.observed_branch_targets
     in
     if diff <> [] && Globals.is_verbosity_at_least Globals.ThrottledInformation then
@@ -293,8 +294,8 @@ let update_observed_branch_targets_and_shared_memory search_state search_node : 
   let observed_shared_memory =
     if search_state.options.eager_mode.eager_local_mem then
       let (union, diff) =
-        MachineDefSystem.union_and_diff_shared_memory
-          (ConcModel.shared_memory_of_state search_node.system_state.sst_state)
+        Params.union_and_diff_shared_memory
+          (ConcModel.shared_memory_of_state (ConcModel.sst_state search_node.system_state))
           search_state.observed_shared_memory
       in
       if not (Pset.is_empty diff) && Globals.is_verbosity_at_least Globals.ThrottledInformation then
@@ -335,38 +336,36 @@ let record_exception search_state (tid, ioid, e) : search_state =
 
 
 (* TODO: this should probably be in a different file *)
-let reduced_final_state regs mem (system_state: ConcModel.system_state) =
-  let reg_state =
-    let reg_values_of_thread state =
+let reduced_final_state regs mem (system_state: ConcModel.state) =
+  let final_reg_states = ConcModel.final_reg_states system_state in
+  let reg_state : (Events.thread_id * (Sail_impl_base.reg_base_name * Test.C.value) list) list =
+    let reg_values_of_thread (tid,regstate) =
       let final_value = function
         | Some v ->
-            begin match Sail_impl_base.integer_of_register_value v with
-            | Some i -> Test.C.big_num_to_value i
-            | None -> failwith "register final value has unknown/undef bits"
-            end
+           begin match Sail_impl_base.integer_of_register_value v with
+           | Some i -> Test.C.big_num_to_value i
+           | None -> failwith "register final value has unknown/undef bits"
+           end
         | None -> failwith "register final value read is blocked"
       in
 
-      List.filter
-        (fun (reg, _) -> List.mem ((system_state.t_model.ts_tid state), reg) regs)
-        (system_state.t_model.ts_final_reg_state state)
-      |> List.map (fun (reg, value) -> (reg, final_value value))
+      let filtered = List.filter (fun (reg, _) -> List.mem (tid, reg) regs) regstate in
+      let regvals = List.map (fun (reg, value) -> (reg, final_value value)) filtered in
+      (tid,regvals)
     in
-
-    Pmap.bindings_list system_state.thread_states
-    |> List.map (fun (tid, state) -> (tid, reg_values_of_thread state))
+    List.map reg_values_of_thread final_reg_states
   in
 
   let mem_state =
     List.map
       (fun ((addr, size), value) ->
-          let int64_addr = Test.C.interp_address_to_address addr in
-          let big_value =
-            match Sail_impl_base.integer_of_memory_value (Globals.get_endianness ()) value with
-            | Some bi -> bi
-            | None -> failwith "bad final memory value"
-          in
-          ((int64_addr, size), big_value))
+        let int64_addr = Test.C.interp_address_to_address addr in
+        let big_value =
+          match Sail_impl_base.integer_of_memory_value (Globals.get_endianness ()) value with
+          | Some bi -> bi
+          | None -> failwith "bad final memory value"
+        in
+        ((int64_addr, size), big_value))
       (ConcModel.memory_value_of_footprints system_state mem)
   in
 
@@ -383,10 +382,10 @@ let record_final_state search_state search_node : search_state =
 
   let search_state = update_observed_branch_targets_and_shared_memory search_state search_node in
 
-  if search_node.system_state.sst_system_transitions = [] &&
-    ConcModel.is_final_state search_node.system_state.sst_state
+  if (ConcModel.sst_trans search_node.system_state) = [] &&
+       (ConcModel.is_final_state (ConcModel.sst_state search_node.system_state))
   then
-    let final_state = reduced_final_state search_state.test_info.Test.show_regs search_state.test_info.Test.show_mem search_node.system_state.sst_state in
+    let final_state = reduced_final_state search_state.test_info.Test.show_regs search_state.test_info.Test.show_mem (ConcModel.sst_state search_node.system_state) in
 
     let (choices, count) =
       try StateMap.find final_state search_state.observed_finals with
@@ -399,7 +398,7 @@ let record_final_state search_state search_node : search_state =
       if  match search_state.test_info.Test.filter with
           | None -> true
           | Some filter ->
-              reduced_final_state search_state.test_info.Test.filter_regs search_state.test_info.Test.filter_mem search_node.system_state.sst_state
+              reduced_final_state search_state.test_info.Test.filter_regs search_state.test_info.Test.filter_mem (ConcModel.sst_state search_node.system_state)
               |> Test.C.check_filter filter
       then
         StateMap.add final_state (choices, count + 1) search_state.observed_filterred_finals
@@ -429,14 +428,14 @@ let is_eager search_state transition =
   match search_state.search_nodes with
   | [] -> assert false
   | node :: _ ->
-      MachineDefTransitionUtils.is_eager_transition
-        node.system_state.sst_state.model
+      ConcModel.is_eager_trans
+        (ConcModel.sst_state node.system_state)
         search_state.options.eager_mode
         transition
 
 let add_search_node system_state search_state : search_state =
   let filtered_transitions =
-    List.mapi (fun i t -> (i, t)) system_state.sst_system_transitions
+    List.mapi (fun i t -> (i, t)) (ConcModel.sst_trans system_state)
     |> List.filter (fun (_, t) -> (List.for_all (fun p -> p t) search_state.filters))
   in
 
@@ -474,7 +473,7 @@ let pop search_state : search_state =
      {search_state with search_nodes = search_nodes'}
   end
 
-let take_transition search_state sst (i, transition) eager : search_state =
+let take_transition search_state sst (i, (transition : ConcModel.trans)) eager : search_state =
   let m = search_state.ppmode in
   match search_state.search_nodes with
   | [] -> assert false
@@ -483,12 +482,12 @@ let take_transition search_state sst (i, transition) eager : search_state =
         otStrLine "Taking %s transition: [%d] %s"
           (if eager then "eager" else "### NON-EAGER ###")
           i
-          (Pp.pp_trans m transition);
+          (ConcModel.pp_trans m transition);
         otStrLine "of: (%d) ["
           (List.length search_node.unexplored_transitions);
         OTConcat
           (List.map
-            (fun (i, t) -> otStrLine "[%d] %s" i (Pp.pp_trans m t))
+            (fun (i, t) -> otStrLine "[%d] %s" i (ConcModel.pp_trans m t))
             search_node.unexplored_transitions);
         otStrLine "] (open_transition = [%s])"
           (Pp.pp_list m string_of_int search_node.open_transition);
@@ -513,11 +512,12 @@ let take_transition search_state sst (i, transition) eager : search_state =
       then
         failwith "trying to take a non-eager transition, but eager transitions still exist";
 
-      begin match ConcModel.sst_after_transition search_state.options sst transition with
-      | TO_unhandled_exception (tid, ioid, e) ->
+      begin match ConcModel.sst_after_trans search_state.options sst
+                    (transition : ConcModel.trans) with
+      | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
           record_exception search_state (tid, ioid, e)
-      | TO_system_state sst' when eager ->
+      | BasicTypes.TO_system_state sst' when eager ->
           (* If the transition was eager, pop and re-push the head node,
           prepending it to the previous node's open_transition *)
           begin match (pop search_state) with
@@ -538,7 +538,7 @@ let take_transition search_state sst (i, transition) eager : search_state =
               }
               |> add_search_node sst'
           end
-      | TO_system_state sst' (* when not eager *) ->
+      | BasicTypes.TO_system_state sst' (* when not eager *) ->
           (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
           assert (search_node.open_transition = []);
           { search_state with
@@ -674,7 +674,7 @@ let rec search search_state : search_outcome =
     | [] -> assert false
     | search_node :: _ ->
         if search_node.open_transition = [] && search_state.options.prune_restarts
-            && search_node.system_state.sst_inst_restarted
+            && (ConcModel.sst_inst_restarted search_node.system_state)
         then
           { search_state with
             restart_prune_count = search_state.restart_prune_count + 1
@@ -689,7 +689,7 @@ let rec search search_state : search_outcome =
     | [] -> assert false
     | search_node :: _ ->
         if search_node.open_transition = [] && search_state.options.prune_discards
-            && search_node.system_state.sst_inst_discarded
+            && (ConcModel.sst_inst_discarded search_node.system_state)
         then
           { search_state with
             discard_prune_count = search_state.discard_prune_count + 1
@@ -704,7 +704,7 @@ let rec search search_state : search_outcome =
     | [] -> assert false
     | search_node :: _ ->
         if search_node.open_transition = [] && search_state.options.prune_late_writes
-            && search_node.system_state.sst_write_after_stop_promising
+            && (ConcModel.sst_write_after_stop_promising search_node.system_state)
         then
           { search_state with
             late_write_prune_count = search_state.late_write_prune_count + 1
@@ -759,13 +759,13 @@ let rec search search_state : search_outcome =
     | search_node :: _ ->
         if search_node.open_transition = [] && 
              search_state.options.hash_prune 
-             && not (search_node.system_state.sst_state.s_model.ss_stopped_promising
-                     search_node.system_state.sst_state.storage_subsystem)
+             && not (ConcModel.sst_stopped_promising search_node.system_state)
         then
           let hash =
-            ConcModel.make_ui_system_state Globals.ppmode_for_hashing None search_node.system_state.sst_state []
+            ConcModel.make_ui_state Globals.ppmode_for_hashing
+              None (ConcModel.sst_state search_node.system_state) []
             |> snd
-            |> Pp.pp_ui_system_state Globals.ppmode_for_hashing
+            |> ConcModel.pp_ui_state Globals.ppmode_for_hashing
             |> Digest.string
           in
 
@@ -788,12 +788,10 @@ let rec search search_state : search_outcome =
     | [] -> assert false
     | search_node :: search_nodes' ->
         if search_node.open_transition = []
-            && search_node.system_state.sst_state.model.t.thread_loop_unroll_limit <> None
+            && (sst_model_params search_node.system_state).t.thread_loop_unroll_limit <> None
             && search_state.options.prune_discards
         then
-          let is_loop_limit (_, t) =
-            MachineDefTransitionUtils.is_loop_limit_exception_transition t
-          in
+          let is_loop_limit (_, t) = ConcModel.is_loop_limit_trans t in
           begin match List.filter is_loop_limit search_node.unexplored_transitions with
           | [] -> cont search_state
           | ts ->
@@ -817,9 +815,8 @@ let rec search search_state : search_outcome =
     | [] -> assert false
     | search_node :: search_nodes' ->
         let priority_transitions =
-          MachineDefTransitionUtils.priority_transitions 
-            search_node.system_state.sst_state.model
-            (ConcModel.final_ss_state search_node.system_state.sst_state)
+          ConcModel.priority_trans
+            search_node.system_state
             search_state.options.eager_mode
         in
         if search_node.open_transition = [] && search_state.options.priority_reduction then
@@ -832,13 +829,12 @@ let rec search search_state : search_outcome =
                     if per_ioid then
                       (* filter only the transitions from a single thread and
                       single instruction (smallest ioid, i.e., po-oldest) *)
-                      let cmp_ioid (_, t1) (_, t2) =
-                        match (t1, t2) with
-                        | (T_trans t1, T_trans t2) ->
-                            compare
-                              (MachineDefTypes.ioid_of_thread_trans t1)
-                              (MachineDefTypes.ioid_of_thread_trans t2)
-                        | _ -> assert false
+                      let cmp_ioid (_, t1) (_, t2) : int =
+                        if ConcModel.is_thread_trans t1 && 
+                           ConcModel.is_thread_trans t2
+                        then compare (ConcModel.ioid_of_thread_trans t1)
+                                     (ConcModel.ioid_of_thread_trans t2)
+                        else assert false
                       in
                       begin match List.stable_sort cmp_ioid reduced with
                       | t :: ts ->
@@ -960,7 +956,7 @@ let print_transitions trace : unit =
     | [] :: trace -> do_trace trace false search_state
     | (t :: ts) :: trace ->
         let node = List.hd search_state.search_nodes in
-        let transition = List.nth node.system_state.sst_system_transitions t in
+        let transition = List.nth (ConcModel.sst_trans node.system_state) t in
         take_transition search_state node.system_state (t, transition) eager
         |> do_trace (ts :: trace) true
   in
@@ -984,7 +980,7 @@ let search_from_state
     (options:        RunOptions.t)
     (test_info:      Test.info) (* TODO: probably should be abstracted,
                                 used only in reduced_final_state *)
-    (system_state:   ConcModel.system_state_and_transitions)
+    (system_state:   ConcModel.sst)
     (breakpoints:    breakpoint list)
     (bounds:         sst_predicate list)
     (targets:        sst_predicate list)
@@ -998,12 +994,12 @@ let search_from_state
   state hash to compare as equal *)
   if options.hash_prune &&
     not (options.eager_mode.eager_pseudocode_internal ||
-          system_state.sst_state.model.ss.ss_model = Promising_storage_model)
+          (sst_model_params system_state).ss.ss_model = Promising_storage_model)
   then
     raise (BadSearchOptions "hash_prune is not safe without eager_pseudocode_internal");
 
   if options.prune_discards &&
-      system_state.sst_state.model.t.thread_allow_tree_speculation
+      (sst_model_params system_state).t.thread_allow_tree_speculation
   then
     raise (BadSearchOptions "prune_discards requires forbid_tree_speculation");
 
@@ -1027,7 +1023,7 @@ let search_from_state
       observed_deadlocks        = None;
       observed_exceptions       = ExceptionMap.empty;
 
-      observed_branch_targets = system_state.sst_state.model.t.branch_targets;
+      observed_branch_targets = (sst_model_params system_state).t.branch_targets;
       observed_shared_memory  = options.eager_mode.em_shared_memory;
 
       (* statistics *)
@@ -1085,7 +1081,7 @@ let search_from_state
       if not (Pmap.is_empty bt_union) then
         OTConcat [
           otStrLine "Branch-register targets that were observed:";
-          MachineDefSystem.branch_targets_to_list bt_union
+          Params.branch_targets_to_list bt_union
             |> Pp.pp_branch_targets search_state.ppmode
             |> otStrLine "%s";
           otIfTrue (bt_diff <> []) @@
@@ -1115,14 +1111,14 @@ let search_from_state
     match search initial_search_state with
     | (Complete search_state') as result ->
         let (bt_union, bt_diff) =
-          MachineDefSystem.union_and_diff_branch_targets
+          Params.union_and_diff_branch_targets
             search_state'.observed_branch_targets
             initial_search_state.observed_branch_targets
             (*sst.sst_state.model.t.branch_targets*)
         in
 
         let (sm_union, sm_diff) =
-          MachineDefSystem.union_and_diff_shared_memory
+          Params.union_and_diff_shared_memory
             search_state'.observed_shared_memory
             initial_search_state.observed_shared_memory
             (*options.eager_mode.em_shared_memory*)
@@ -1152,14 +1148,14 @@ let search_from_state
           in
 
           let system_state' =
-            ConcModel.sst_of_state
-              options'
-              { system_state.sst_state with
-                model =
-                  { system_state.sst_state.model with
-                    t = {system_state.sst_state.model.t with branch_targets = bt_union};
-                  };
-              }
+            let state = ConcModel.sst_state system_state in
+            let model_params = ConcModel.model_params state in
+            let model_params' =
+              { model_params with
+                t = {model_params.t with branch_targets = bt_union}; }
+            in
+            let state' = ConcModel.set_model_params state model_params' in
+            ConcModel.sst_of_state options' state' 
           in
 
           { initial_search_state with
@@ -1182,13 +1178,13 @@ let search_from_state
         match search !search_state with
         | Complete search_state' ->
             let (bt_union, bt_diff) =
-              MachineDefSystem.union_and_diff_branch_targets
+              Params.union_and_diff_branch_targets
                 search_state'.observed_branch_targets
                 (!search_state).observed_branch_targets
             in
 
             let (sm_union, sm_diff) =
-              MachineDefSystem.union_and_diff_shared_memory
+              Params.union_and_diff_shared_memory
                 search_state'.observed_shared_memory
                 (!search_state).observed_shared_memory
             in
@@ -1209,14 +1205,14 @@ let search_from_state
               in
 
               let system_state' =
-                ConcModel.sst_of_state
-                  options'
-                  { system_state.sst_state with
-                    model =
-                      { system_state.sst_state.model with
-                        t = {system_state.sst_state.model.t with branch_targets = bt_union};
-                      };
-                  }
+                let state = ConcModel.sst_state system_state in
+                let model_params = ConcModel.model_params state in
+                let model_params' =
+                  { model_params with
+                    t = {model_params.t with branch_targets = bt_union}; } 
+                in
+                let state' = ConcModel.set_model_params state model_params' in
+                ConcModel.sst_of_state options' state'
               in
 
               search_state :=

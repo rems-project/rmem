@@ -20,11 +20,11 @@
 open import Pervasives
 open import Assert_extra
 
-open import MachineDefUtils
 open import Sail_impl_base
-open import MachineDefEvents
-open import MachineDefInstructionSemantics
-open import MachineDefISAInfo
+open import Utils
+open import Events
+open import InstructionSemantics
+open import BasicTypes
 import Mips_embed_types
 
 let mips_is_system_call_instruction (_: instruction_ast) = Nothing
@@ -116,11 +116,11 @@ let mips_thread_start_info =
 let mips_make_empty_write_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (write_kind:   write_kind)
-    : (list write) * (MachineDefFreshIds.id_state ioid)
+    : (list write) * (FreshIds.id_state ioid)
   =
   (* TODO: handle MIPS version of store multiple/pair *)
   let addr' = integer_of_address addr in
@@ -134,11 +134,11 @@ let mips_make_empty_write_events
 let mips_make_read_request_events
     (tid:          thread_id)
     (inst: instruction_ast) 
-    (id_state: MachineDefFreshIds.id_state ioid) 
+    (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
     (read_kind:   read_kind)
-    : (list read_request) * (MachineDefFreshIds.id_state ioid)
+    : (list read_request) * (FreshIds.id_state ioid)
   =
   (* TODO: handle MIPS version of load multiple/pair *)
   let addr' = integer_of_address addr in

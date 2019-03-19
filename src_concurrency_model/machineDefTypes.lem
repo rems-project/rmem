@@ -32,13 +32,13 @@ open import Pervasives_extra
    any reserve/conditional or acquire/release variants *)
 
 open import Sail_impl_base
-open import MachineDefFreshIds
-open import MachineDefEvents
-open import MachineDefFragments
-open import MachineDefISAInfo
-open import MachineDefParams
-open import MachineDefInstructionSemantics
-open import MachineDefExceptions
+open import FreshIds
+open import Events
+open import Fragments
+open import BasicTypes
+open import UiTypes
+open import Params
+open import InstructionSemantics
 import Power_embed
 import ArmV8_embed
 import Mips_embed
@@ -750,23 +750,6 @@ type subreads =
 let read_requests_of_subreads subreads : list read_request =
   fst (List.unzip subreads.sr_unsat_slices)
 
-
-
-type register_read_source =
-  | RRS_instruction of ioid * list reg_name * list (maybe_value_fragment bit_lifted)
-  | RRS_initial_state of list (maybe_value_fragment bit_lifted)
-  | RRS_pseudoregister
-(* the lists of maybe_value_fragments above are recorded only for the sake of constructing axiomatic executions for the user interface *)
-
-(* list with the most recent at the head *)
-type register_read_sources = list register_read_source
-
-type register_write_dependency =
-    | RWD_reg_write of ioid * list reg_name (* a po-previous instruction and register writes
-                                            that feed a register read that was performed
-                                            before the register write *)
-    | RWD_mem_read (* indicates the instruction performed a memory read
-                   before the register write *)
 
 (* these are the fields of instruction_instance we need for doing a
 partial restart of an rmw instruction *)
@@ -1489,19 +1472,6 @@ end
 type ui_trans 'ts 'ss = nat * trans 'ts 'ss
 (* not doing change colouration for transitions *)
 
-type changed3 'a =
-  | C3_new of 'a 
-  | C3_gone of 'a
-  | C3_unchanged of 'a
-
-type changed2 'a =
-  | C2_new of 'a 
-  | C2_unchanged of 'a
-
-type changed2b 'a =
-  | C2b_changed of 'a
-  | C2b_unchanged of 'a
-
 
 type pldi11_ui_storage_subsystem_state 'ts 'ss =
   <| ui_threads: list thread_id;
@@ -1809,11 +1779,6 @@ and system_state 'ts 'ss =
   |>
 
 
-type transition_outcome 'a =
-  | TO_system_state of 'a
-  | TO_unhandled_exception of thread_id * ioid * exception_type
-
-
 type system_state_and_transitions 'ts 'ss =
   <| sst_state:               system_state 'ts 'ss;
      sst_system_transitions:  list (trans 'ts 'ss);
@@ -1828,14 +1793,6 @@ type system_state_and_transitions 'ts 'ss =
      sst_write_after_stop_promising : bool;
   |>
 
-(* two auxiliary functions for dealing with maps in Isabelle *)
-val mapToList: forall 'k 'v. MapKeyType 'k, SetType 'k, SetType 'v => map 'k 'v -> list ('k * 'v)
-let {coq;ocaml} mapToList = Map_extra.toList
-let {isabelle}  mapToList l = Set_extra.toList (Map.toSet l)
 
-val mapi : forall 'k 'v 'w. MapKeyType 'k, SetType 'k, SetType 'v => ('k -> 'v -> 'w) -> map 'k 'v -> map 'k 'w
-let {isabelle;coq} mapi f m =
-  Map.fromList (map (fun (k,v) -> (k,f k v)) ((mapToList m) : list ('k * 'v)))
-let inline {ocaml} mapi = (Map.mapi)
 
 

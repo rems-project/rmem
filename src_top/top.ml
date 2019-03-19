@@ -25,7 +25,7 @@
 (*                                                                                                         *)
 (*=========================================================================================================*)
 
-open MachineDefParams
+open Params
 
 let logfile_name name =
   begin match !Globals.logdir with
@@ -43,7 +43,7 @@ let rec range from until =
 module Run_test (Test_file: Test_file.S) = struct
   (* name is either a file name to read the test from or the name of
   the test if data is provided *)
-  let run (run_options: RunOptions.t) (name: string) (data: Test_file.data option) (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option) : unit =
+  let run (run_options: RunOptions.t) (name: string) (data: Test_file.data option) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : unit =
     (* read the file/data *)
     let (test_info, test) =
       begin match data with
@@ -69,7 +69,7 @@ module Run_test (Test_file: Test_file.S) = struct
     if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] && run_options.RunOptions.interpreter then
       print_endline ("Warning: the interpreter ISA defs are missing");
     let module ConcModel  =
-      (val (Concurrency_model.make
+      (val (Machine_concurrency_model.make
               (module ISAModel)
               !Globals.model_params.t.thread_model !Globals.model_params.ss.ss_model)) in
 
@@ -132,7 +132,7 @@ let from_litmus_data
     (run_options: RunOptions.t)
     (name:        string)
     (data:        Litmus_test_file.data)
-    (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option)
+    (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
     : unit
   =
   Run_litmus.run run_options name (Some data) isa_callback
@@ -141,7 +141,7 @@ let from_ELF_data
     (run_options: RunOptions.t)
     (name:        string)
     (data:        Elf_test_file.data)
-    (isa_callback: (MachineDefInstructionSemantics.instruction_semantics_mode -> unit) option)
+    (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
     : unit
   =
   Run_elf.run run_options name (Some data) isa_callback

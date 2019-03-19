@@ -27,13 +27,14 @@ import Map_extra
 import Set_extra
 open import Assert_extra
 
+open import Fragments
+open import Events
+open import Utils
+open import Params
+open import UiTypes
 open import MachineDefTypes
-open import MachineDefFragments
-open import MachineDefEvents
-open import MachineDefFlowingStorageSubsystem
-open import MachineDefUtils
 open import MachineDefUI
-open import MachineDefParams
+open import MachineDefFlowingStorageSubsystem
 open MaybeMonad
 
 (** state abstraction ***********************************************)
