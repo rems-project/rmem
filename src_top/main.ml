@@ -434,7 +434,7 @@ let main = fun () ->
   (* this ppmode is just for printing some messages, don't use it for anything else *)
   let ppmode = Globals.get_ppmode () in
 
-  Screen_base.otStrLine "*** BEGIN ISA DEFS PATH AUTODETECTION"
+  (fun () -> Screen_base.otStrLine "*** BEGIN ISA DEFS PATH AUTODETECTION")
   |> Screen.show_debug ppmode;
 
   let check_isa_path path =
@@ -449,7 +449,7 @@ let main = fun () ->
           true
         with
         | Screen_base.Isa_defs_unmarshal_error (basename, msg) ->
-            Screen_base.otStrLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename
+            (fun () -> Screen_base.otStrLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename)
             |> Screen.show_debug ppmode;
             Globals.isa_defs_path := old_val;
             false)
@@ -460,7 +460,7 @@ let main = fun () ->
     if !Globals.isa_defs_path = None then begin
         match path_thunk () with
         | Some path ->
-            Screen_base.otStrLine "trying candidate %s for ISA defs path" path
+            (fun () -> Screen_base.otStrLine "trying candidate %s for ISA defs path" path)
             |> Screen.show_debug ppmode;
             if check_isa_path path then
                 Globals.isa_defs_path := Some path
@@ -470,14 +470,14 @@ let main = fun () ->
   in
 
   if !Globals.isa_defs_path <> None then
-    Screen_base.otStrLine "have ISA defs path from command line"
+    (fun () -> Screen_base.otStrLine "have ISA defs path from command line")
     |> Screen.show_debug ppmode;
 
   let isa_path_candidates = [
       (fun () ->
         try
           let path = Sys.getenv "ISA_DEFS_PATH" in
-          Screen_base.otStrLine "have ISA defs path from ISA_DEFS_PATH env var"
+          (fun () -> Screen_base.otStrLine "have ISA defs path from ISA_DEFS_PATH env var")
           |> Screen.show_debug ppmode;
           Some path
         with
@@ -505,14 +505,14 @@ let main = fun () ->
 
   begin match !Globals.isa_defs_path with
   | Some path ->
-      Screen_base.otStrLine "found ISA defs in %s" path
+      (fun () -> Screen_base.otStrLine "found ISA defs in %s" path)
       |> Screen.show_debug ppmode
   | None ->
       Screen_base.otStrLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
       |> Screen.show_warning ppmode
   end;
 
-  Screen_base.otStrLine "*** ISA DEFS PATH AUTODETECTION COMPLETE"
+  (fun () -> Screen_base.otStrLine "*** ISA DEFS PATH AUTODETECTION COMPLETE")
   |> Screen.show_debug ppmode;
 
   if !should_list_isas then

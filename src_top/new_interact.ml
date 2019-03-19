@@ -881,7 +881,7 @@ let print_observed_finals interact_state observed_finals : Screen_base.output_tr
           OTLine (OTConcat [
             otStrVerbose Globals.Normal "%-6d%s>" count (if check_prop state then "*" else ":");
             OTString (Test.C.pp_state symtab state);
-            OTVerbose (Globals.Normal, OTConcat [
+            OTVerbose (Globals.Normal, fun () -> OTConcat [
               OTString " via ";
               otStrClass OTCFollowList "%S" ui_choices;
             ]);
@@ -906,7 +906,7 @@ let print_observed_deadlocks interact_state observed_deadlocks : Screen_base.out
             otString "(could not reconstruct trace (%s))" s
       in
 
-      otVerbose Globals.Normal @@ otLine @@
+      otVerbose Globals.Normal @@ fun () -> otLine @@
         OTConcat [
           otString "Deadlock states %i" deadlock_count;
           OTString " ";
@@ -915,11 +915,10 @@ let print_observed_deadlocks interact_state observed_deadlocks : Screen_base.out
   | None -> OTEmpty
 
 let print_observed_exceptions interact_state observed_exceptions : Screen_base.output_tree =
-  let exceptions_count_output = otVerbose Globals.Normal @@ otStrLine "Unhandled exceptions %i" (Runner.ExceptionMap.cardinal observed_exceptions) in
+  let exceptions_count_output = otVerbose Globals.Normal @@ fun () -> otStrLine "Unhandled exceptions %i" (Runner.ExceptionMap.cardinal observed_exceptions) in
 
   let exceptions_output =
-    otVerbose Globals.Normal @@
-    OTConcat
+    otVerbose Globals.Normal @@ fun () -> OTConcat
       (List.map
         (fun ((tid, ioid, exception_type), (choices, count)) ->
           let ui_choices =
@@ -2170,7 +2169,7 @@ let print_observations interact_state search_state =
   let branch_targets_output =
     let branch_targets = (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets in
     otIfTrue (not (Pmap.is_empty branch_targets)) @@
-      otVerbose Globals.Normal @@
+      otVerbose Globals.Normal @@ fun () ->
         otStrLine "Branch-targets=%s"
           (Params.branch_targets_to_list branch_targets
           |> Pp.pp_branch_targets interact_state.ppmode)
@@ -2180,7 +2179,7 @@ let print_observations interact_state search_state =
   let shared_memory_output =
     let shared_memory = interact_state.options.eager_mode.em_shared_memory in
     otIfTrue (not (Pset.is_empty shared_memory)) @@
-      otVerbose Globals.Normal @@
+      otVerbose Globals.Normal @@ fun () ->
         otStrLine "Shared-memory=%s"
           (Pp.pp_shared_memory interact_state.ppmode shared_memory)
   in
@@ -2216,10 +2215,10 @@ let print_search_results interact_state search_state runtime : unit =
     in
     if holds then (true, otStrLine "Ok")
     else if ConstrGen.is_existential interact_state.test_info.Test.constr then
-      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ otStrClass OTCWarning "%s: Existential constraint not satisfied!" interact_state.test_info.Test.name;
+      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ (fun () -> otStrClass OTCWarning "%s: Existential constraint not satisfied!" interact_state.test_info.Test.name);
                 otStrLine "No (allowed not found)"])
     else (* universal failed *)
-      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ otStrClass OTCWarning "%s: Universal constraint invalidated!" interact_state.test_info.Test.name;
+      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ (fun () -> otStrClass OTCWarning "%s: Universal constraint invalidated!" interact_state.test_info.Test.name);
                 otStrLine "No (forbidden found)"])
   in
 

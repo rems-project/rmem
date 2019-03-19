@@ -35,7 +35,9 @@ type output_tree =
   | OTEmph of output_tree
   | OTColor of string * output_tree
   | OTCenter of output_tree
-  | OTVerbose of Globals.verbosity_level * output_tree
+  (* OTVerbose takes a continuation because we do not want to waste time
+  if the result is not printed out (specially for debug prints) *)
+  | OTVerbose of Globals.verbosity_level * (unit -> output_tree)
   | OTConcat of output_tree list
   | OTClass of ot_calss * output_tree
   | OTHorLine
@@ -44,7 +46,7 @@ let otString format          = Printf.ksprintf (fun s -> OTString s) format
 let otStrLine format         = Printf.ksprintf (fun s -> OTLine (OTString s)) format
 let otStrEmph format         = Printf.ksprintf (fun s -> OTEmph (OTString s)) format
 let otStrColor color format  = Printf.ksprintf (fun s -> OTColor (color, OTString s)) format
-let otStrVerbose verb format = Printf.ksprintf (fun s -> OTVerbose (verb, OTString s)) format
+let otStrVerbose verb format = Printf.ksprintf (fun s -> OTVerbose (verb, fun () -> OTString s)) format
 let otStrClass cls format    = Printf.ksprintf (fun s -> OTClass (cls, OTString s)) format
 
 let otEncoded str = OTEncoded str
@@ -52,7 +54,7 @@ let otLine tree = OTLine tree
 let otEmph tree = OTEmph tree
 let otColor color tree = OTColor (color, tree)
 let otCenter tree = OTCenter tree
-let otVerbose verb tree = OTVerbose (verb, tree)
+let otVerbose verb treec = OTVerbose (verb, treec)
 let otConcat trees = OTConcat trees
 let otClass cls tree = OTClass (cls, tree)
 let otIfTrue b tree = if b then tree else OTEmpty
@@ -100,8 +102,8 @@ let rec string_of_output_tree ppmode tree : string =
         string_of_output_tree ppmode tree
   | OTCenter tree -> string_of_output_tree ppmode tree
   | OTClass (cls, tree) -> string_of_calss_output_tree ppmode cls tree
-  | OTVerbose (verb, tree) ->
-      if Globals.is_verbosity_at_least verb then string_of_output_tree ppmode tree
+  | OTVerbose (verb, treec) ->
+      if Globals.is_verbosity_at_least verb then string_of_output_tree ppmode (treec ())
       else ""
   | OTConcat trees -> String.concat "" (List.map (string_of_output_tree ppmode) trees)
   | OTHorLine ->
@@ -159,8 +161,8 @@ let rec html_of_output_tree ppmode tree : string =
         html_of_calss_output_tree ppmode cls tree
       else
         html_of_output_tree ppmode tree
-  | OTVerbose (verb, tree) ->
-      if Globals.is_verbosity_at_least verb then html_of_output_tree ppmode tree
+  | OTVerbose (verb, treec) ->
+      if Globals.is_verbosity_at_least verb then html_of_output_tree ppmode (treec ())
       else ""
   | OTConcat trees -> String.concat "" (List.map (html_of_output_tree ppmode) trees)
   | OTHorLine -> "<hr style=\"border: 1px solid;\">"
@@ -189,8 +191,8 @@ let rec latex_of_output_tree ppmode tree : string =
   | OTColor (color, tree) -> "\\my" ^ color ^ "{" ^ (latex_of_output_tree ppmode tree) ^ "}"
   | OTCenter tree -> "\\begin{center}" ^ (latex_of_output_tree ppmode tree) ^ "\\end{center}"
   | OTClass (cls, tree) -> latex_of_class_output_tree ppmode cls tree
-  | OTVerbose (verb, tree) ->
-      if Globals.is_verbosity_at_least verb then latex_of_output_tree ppmode tree
+  | OTVerbose (verb, treec) ->
+      if Globals.is_verbosity_at_least verb then latex_of_output_tree ppmode (treec ())
       else ""
   | OTConcat trees -> String.concat "" (List.map (latex_of_output_tree ppmode) trees)
   | OTHorLine -> "\n\\line\n"
@@ -222,7 +224,7 @@ module type S = sig
 
   val show_message : Globals.ppmode -> output_tree -> unit
   val show_warning : Globals.ppmode -> output_tree -> unit
-  val show_debug :   Globals.ppmode -> output_tree -> unit
+  val show_debug :   Globals.ppmode -> (unit -> output_tree) -> unit
 
   (* print the system state and trace (normally those will be in a different window) *)
   val show_system_state : Globals.ppmode ->
@@ -251,8 +253,8 @@ module Make (Pr : Printers) : S = struct
     OTClass (OTCWarning, OTConcat [OTString "Warning: "; output_tree])
     |> print ppmode
 
-  let show_debug ppmode output_tree =
-    OTVerbose (Globals.Debug, output_tree)
+  let show_debug ppmode output_treec =
+    OTVerbose (Globals.Debug, output_treec)
     |> print ppmode
 
   let show_system_state ppmode trace choice_summary state =

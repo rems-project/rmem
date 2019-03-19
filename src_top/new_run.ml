@@ -478,7 +478,7 @@ let take_transition search_state sst (i, (transition : ConcModel.trans)) eager :
   match search_state.search_nodes with
   | [] -> assert false
   | search_node :: search_nodes ->
-      OTConcat [
+      Screen.show_debug m (fun () -> OTConcat [
         otStrLine "Taking %s transition: [%d] %s"
           (if eager then "eager" else "### NON-EAGER ###")
           i
@@ -491,8 +491,7 @@ let take_transition search_state sst (i, (transition : ConcModel.trans)) eager :
             search_node.unexplored_transitions);
         otStrLine "] (open_transition = [%s])"
           (Pp.pp_list m string_of_int search_node.open_transition);
-      ]
-      |> Screen.show_debug m;
+      ]);
 
       (* Invariant: either
           - we're at the initial state, or
