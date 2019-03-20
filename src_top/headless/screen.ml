@@ -121,13 +121,6 @@ include (Screen_base.Make (TextPrinters))
 
 let quit = fun () -> (exit 0 |> ignore)
 
-
-module Dot (ConcModel: Concurrency_model.S) = struct
-  let display_dot ppmode legend_opt cex (nc: ConcModel.ui_trans list) =
-    Screen_base.OTString "dot rendering not implemented on terminal yet"
-    |> show_warning ppmode
-end
-
 let rec prompt ppmode maybe_options prompt_ot _hist (cont: string -> unit) =
   Screen_base.string_of_output_tree ppmode prompt_ot
   |> Printf.printf "%s: %!";

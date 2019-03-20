@@ -49,7 +49,6 @@ let parse (str: string) : parser_outcome =
 
 module Make (ConcModel: Concurrency_model.S) = struct
   module Runner = New_run.Make (ConcModel)
-  module Dot = Screen.Dot (ConcModel)
   module Graphviz = Graphviz.Make (ConcModel)
   module Tikz = Tikz.Make (ConcModel)
 
@@ -112,8 +111,8 @@ let filtered_out_transitions node =
 
 let get_graph_backend () : (module GraphBackend.S with type ui_trans = ConcModel.ui_trans) =
   match !Globals.graph_backend with
-  | Globals.Dot  -> (module Graphviz.S)
-  | Globals.Tikz -> (module Tikz.S)
+  | Globals.Dot  -> (module Graphviz)
+  | Globals.Tikz -> (module Tikz)
 
 
 let number_transitions
@@ -1290,29 +1289,15 @@ let do_add_shared_watchpoint typ state : interact_state =
 let make_graph interact_state =
   let node = List.hd interact_state.interact_nodes in
   let state = ConcModel.sst_state node.system_state in
-  match interact_state.ppmode.Globals.pp_kind with
-  | Globals.Html ->
-    Dot.display_dot
-      { interact_state.ppmode with
-        Globals.pp_default_cmd = interact_state.default_cmd;
-        Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
-      }
-      (Some interact_state.test_info.Test.name)
-      (ConcModel.make_cex_candidate state)
-      (sorted_filtered_transitions node)
-  | _ ->
-    let module G = (val get_graph_backend ()) in
-    G.make_graph
-      { interact_state.ppmode with
-        Globals.pp_default_cmd = interact_state.default_cmd;
-        Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
-      }
-      interact_state.test_info
-      (ConcModel.make_cex_candidate state)
-      (sorted_filtered_transitions node);
-    (* TODO: make filename configurable and more DRY *)
-    otStrLine "wrote out.dot"
-    |> Screen.show_message interact_state.ppmode
+  let module G = (val get_graph_backend ()) in
+  G.make_graph
+    { interact_state.ppmode with
+      Globals.pp_default_cmd = interact_state.default_cmd;
+      Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
+    }
+    interact_state.test_info
+    (ConcModel.make_cex_candidate state)
+    (sorted_filtered_transitions node)
 
 let typeset interact_state filename =
   match interact_state.interact_nodes with

@@ -140,13 +140,6 @@ include (Screen_base.Make (TextPrinters))
 
 let quit = fun () -> (exit 0 |> ignore)
 
-
-module Dot (ConcModel: Concurrency_model.S) = struct
-  let display_dot ppmode legend_opt cex (nc: ConcModel.ui_trans list) =
-    Screen_base.OTString "dot rendering not implemented on terminal yet"
-    |> show_warning ppmode
-end
-
 (* Adapted from Lambda-Term examples repl.ml *)
 class read_line ~term ~history ~prompt_str = object(self)
   inherit LTerm_read_line.read_line ~history ()

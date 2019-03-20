@@ -19,19 +19,12 @@
 
 open Printf
 
-open Interp_interface
 open Sail_impl_base
-open Utils
 open Events
 open Fragments
-open UiTypes
 open CandidateExecution
 
-open Types
-open Model_aux
-
 open Globals
-
 
 module StringSet = Set.Make(String)
 module IoidMap = Map.Make(struct
@@ -39,11 +32,7 @@ module IoidMap = Map.Make(struct
   let compare = compare
 end)
 
-module Make (ConcModel: Concurrency_model.S) (* : GraphBackend.S 
-        * with type state = ConcModel.state
-        * and type trans = ConcModel.trans
-        * and type ui_trans = ConcModel.ui_trans *)
-  = struct
+module Make (ConcModel: Concurrency_model.S) = struct
 
 (* if generated_dir is set, create files there with filename based on
 the test name, otherwise create files here based on "out" *)
@@ -563,27 +552,25 @@ let make_final_state (test_info: Test.info) (state: string) : unit =
   fprintf states_out "\\newcommand{\\finalstate}{%s}\n" state;
   close_out states_out
 
-module S : GraphBackend.S 
-       with type ui_trans = ConcModel.ui_trans
-  = struct
-  type ui_trans = ConcModel.ui_trans
-  let make_graph m test_info cex (nc: ui_trans list) =
-    let m = { m with pp_kind=Ascii;
-                     pp_colours=false;
-                     pp_trans_prefix=false } in
+(** implements GraphBackend.S with type ui_trans = ConcModel.ui_trans *)
+type ui_trans = ConcModel.ui_trans
+let make_graph m test_info cex (nc: ui_trans list) =
+  let m = { m with pp_kind=Ascii;
+                    pp_colours=false;
+                    pp_trans_prefix=false } in
 
-    make_tikz_graph m test_info cex;
+  make_tikz_graph m test_info cex;
 
-    (* hack to terminate after finding the first "final" graph *)
-    begin match !Globals.run_dot with
-    | Some RD_final
-    | Some RD_final_ok
-    | Some RD_final_not_ok
-        -> exit 0
-    | None
-    | Some RD_step
-        -> ()
-    end
-end
+  (* hack to terminate after finding the first "final" graph *)
+  begin match !Globals.run_dot with
+  | Some RD_final
+  | Some RD_final_ok
+  | Some RD_final_not_ok
+      -> exit 0
+  | None
+  | Some RD_step
+      -> ()
+  end
+(** end GraphBackend.S *)
 
 end (* Make *)
