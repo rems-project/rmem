@@ -564,17 +564,11 @@ let make_final_state (test_info: Test.info) (state: string) : unit =
   close_out states_out
 
 module S : GraphBackend.S 
-       with type state = ConcModel.state
-       with type trans = ConcModel.trans
        with type ui_trans = ConcModel.ui_trans
   = struct
-
-  type state = ConcModel.state
-  type trans = ConcModel.trans
   type ui_trans = ConcModel.ui_trans
-  let make_graph m test_info (s : state) cex (nc: ui_trans list) =
-    let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s;
-                     pp_kind=Ascii;
+  let make_graph m test_info cex (nc: ui_trans list) =
+    let m = { m with pp_kind=Ascii;
                      pp_colours=false;
                      pp_trans_prefix=false } in
 

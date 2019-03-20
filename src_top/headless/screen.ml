@@ -123,7 +123,7 @@ let quit = fun () -> (exit 0 |> ignore)
 
 
 module Dot (ConcModel: Concurrency_model.S) = struct
-  let display_dot ppmode legend_opt s cex (nc: ConcModel.ui_trans list) =
+  let display_dot ppmode legend_opt cex (nc: ConcModel.ui_trans list) =
     Screen_base.OTString "dot rendering not implemented on terminal yet"
     |> show_warning ppmode
 end

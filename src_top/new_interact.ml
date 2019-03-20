@@ -50,6 +50,8 @@ let parse (str: string) : parser_outcome =
 module Make (ConcModel: Concurrency_model.S) = struct
   module Runner = New_run.Make (ConcModel)
   module Dot = Screen.Dot (ConcModel)
+  module Graphviz = Graphviz.Make (ConcModel)
+  module Tikz = Tikz.Make (ConcModel)
 
 type interact_node =
   {
@@ -108,22 +110,10 @@ let filtered_out_transitions node =
   |> List.split
   |> snd
 
-module Graphviz = Graphviz.Make (ConcModel)
-module Tikz = Tikz.Make (ConcModel)
-
-let get_graph_backend () =
-  begin match !Globals.graph_backend with
-  | Globals.Dot  -> 
-     (module Graphviz.S : GraphBackend.S 
-             with type state = ConcModel.state
-              and type trans = ConcModel.trans
-              and type ui_trans = ConcModel.ui_trans)
-  | Globals.Tikz -> 
-     (module Tikz.S : GraphBackend.S 
-             with type state = ConcModel.state
-              and type trans = ConcModel.trans
-              and type ui_trans = ConcModel.ui_trans)
-  end
+let get_graph_backend () : (module GraphBackend.S with type ui_trans = ConcModel.ui_trans) =
+  match !Globals.graph_backend with
+  | Globals.Dot  -> (module Graphviz.S)
+  | Globals.Tikz -> (module Tikz.S)
 
 
 let number_transitions
@@ -1298,29 +1288,31 @@ let do_add_shared_watchpoint typ state : interact_state =
 
 
 let make_graph interact_state =
-  match List.hd interact_state.interact_nodes with
-  | node ->
-      match interact_state.ppmode.Globals.pp_kind with
-      | Globals.Html ->
-        Dot.display_dot { interact_state.ppmode with Globals.pp_default_cmd = interact_state.default_cmd }
-                            (Some interact_state.test_info.Test.name)
-                            (ConcModel.sst_state node.system_state)
-                            (ConcModel.make_cex_candidate (ConcModel.sst_state node.system_state))
-                            (sorted_filtered_transitions node)
-      | _ ->
-        let module G = (val get_graph_backend ()) in
-        G.make_graph
-          interact_state.ppmode
-          interact_state.test_info
-          (ConcModel.sst_state node.system_state)
-          (ConcModel.make_cex_candidate (ConcModel.sst_state node.system_state))
-          (sorted_filtered_transitions node);
-        (* TODO: make filename configurable and more DRY *)
-        otStrLine "wrote out.dot"
-        |> Screen.show_message interact_state.ppmode
-  | exception Failure _ ->
-      otStrLine "could not generate graph from no state"
-      |> Screen.show_warning interact_state.ppmode
+  let node = List.hd interact_state.interact_nodes in
+  let state = ConcModel.sst_state node.system_state in
+  match interact_state.ppmode.Globals.pp_kind with
+  | Globals.Html ->
+    Dot.display_dot
+      { interact_state.ppmode with
+        Globals.pp_default_cmd = interact_state.default_cmd;
+        Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
+      }
+      (Some interact_state.test_info.Test.name)
+      (ConcModel.make_cex_candidate state)
+      (sorted_filtered_transitions node)
+  | _ ->
+    let module G = (val get_graph_backend ()) in
+    G.make_graph
+      { interact_state.ppmode with
+        Globals.pp_default_cmd = interact_state.default_cmd;
+        Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
+      }
+      interact_state.test_info
+      (ConcModel.make_cex_candidate state)
+      (sorted_filtered_transitions node);
+    (* TODO: make filename configurable and more DRY *)
+    otStrLine "wrote out.dot"
+    |> Screen.show_message interact_state.ppmode
 
 let typeset interact_state filename =
   match interact_state.interact_nodes with
@@ -2320,28 +2312,31 @@ let run_search
 
     let run_dot_final = fun sst ->
       match ppmode.Globals.pp_kind with
-      | Globals.Html ->
-         Dot.display_dot ppmode
-                            (Some test_info.Test.name)
-                            (ConcModel.sst_state sst)
-                            (ConcModel.make_cex_candidate (ConcModel.sst_state sst))
-                            []
+      | Globals.Html -> assert false
       | _ ->
-         if !Globals.graph_backend = Globals.Tikz then begin
-          let symtab =
-            List.map
-              (fun ((a,sz),s) ->
-                (Nat_big_num.to_int64 (Sail_impl_base.integer_of_address a), s))
-              ppmode.Globals.pp_symbol_table
-          in
-          let final_state = Runner.reduced_final_state test_info.Test.show_regs
-                              test_info.Test.show_mem (ConcModel.sst_state sst) in
-          Tikz.make_final_state test_info (Test.C.pp_state symtab final_state)
-         end;
+          if !Globals.graph_backend = Globals.Tikz then begin
+            let symtab =
+              List.map
+                (fun ((a, sz), s) ->
+                  (Nat_big_num.to_int64 (Sail_impl_base.integer_of_address a), s))
+                ppmode.Globals.pp_symbol_table
+            in
+            let final_state = Runner.reduced_final_state test_info.Test.show_regs
+              test_info.Test.show_mem (ConcModel.sst_state sst)
+            in
+            Tikz.make_final_state test_info (Test.C.pp_state symtab final_state)
+          end;
 
-         let module G = (val get_graph_backend ()) in
-         G.make_graph ppmode test_info (ConcModel.sst_state sst)
-                       (ConcModel.make_cex_candidate (ConcModel.sst_state sst)) []
+          let state = ConcModel.sst_state sst in
+          let module G = (val get_graph_backend ()) in
+          G.make_graph
+            { ppmode with
+              Globals.pp_default_cmd = None;
+              Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
+            }
+            test_info
+            (ConcModel.make_cex_candidate state)
+            []
     in
 
     match !Globals.run_dot with

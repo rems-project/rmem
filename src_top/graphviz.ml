@@ -362,8 +362,7 @@ let trans_rows m ?colspan (trans : ConcModel.ui_trans list) =
     let body =
       table_body ~border:0
         (List.mapi
-           (function n' -> 
-              function (n,t) ->
+           (fun i (n, t) ->
                 let (bold, unbold, colour, background, padding) = highlight n in
                 let label =
                   sprintf "%s%i:%s%s"
@@ -374,7 +373,7 @@ let trans_rows m ?colspan (trans : ConcModel.ui_trans list) =
                    ?background
                    ~colour
                    ~align:"left"
-                   ~portid:(sprintf "\"tr%i\"" n')
+                   ~portid:(sprintf "\"tr%i\"" i)
                    label])
            
            trans)
@@ -683,9 +682,9 @@ let make_dot_graph m legend_opt cex basename_in_dir ioid_trans_lookup =
   (*     let c = open_out_gen [Open_creat; ] 0o644 "out.dot" in*)
   let c = open_out (layout ^ ".dot") in
   (* Open_append *)
-  let ppd_cex = pp_candidate_execution m legend_opt false [] cex ioid_trans_lookup in
-  fprintf c "%s" ppd_cex;
-  let _ = close_out c in
+  pp_candidate_execution m legend_opt false [] cex ioid_trans_lookup
+  |> fprintf c "%s";
+  close_out c;
 
   mycommand ("dot -Tplain") (layout ^ ".dot") (layout ^ ".txt");
   mycommand ("dot -Tpdf")   (layout ^ ".dot") (layout ^ ".pdf");
@@ -704,27 +703,21 @@ let make_dot_graph m legend_opt cex basename_in_dir ioid_trans_lookup =
 
   (* now re-render the graph with those node positions *)
   let c = open_out (graph ^ ".dot") in
-  let ppd_cex = pp_candidate_execution m legend_opt true positions cex ioid_trans_lookup in
-  fprintf c "%s" ppd_cex;
+  pp_candidate_execution m legend_opt true positions cex ioid_trans_lookup
+  |> fprintf c "%s";
   let _ = close_out c in
 
   mycommand ("neato -Tpdf") (graph ^ ".dot") (graph ^ ".pdf");
   mycommand ("neato -Tfig") (graph ^ ".dot") (graph ^ ".fig")
 
 
-module S : GraphBackend.S 
-       with type state = ConcModel.state
-       with type trans = ConcModel.trans
+module S : GraphBackend.S
        with type ui_trans = ConcModel.ui_trans
   = struct
-
-  type state = ConcModel.state
-  type trans = ConcModel.trans
   type ui_trans = ConcModel.ui_trans
 
-  let make_graph m test_info s cex (nc: (ConcModel.ui_trans) list) =
-    let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s;
-                     pp_kind=Ascii;
+  let make_graph m test_info cex (nc: (ConcModel.ui_trans) list) =
+    let m = { m with pp_kind=Ascii;
                      pp_colours=false;
                      pp_trans_prefix=false } in
 
@@ -751,11 +744,11 @@ module S : GraphBackend.S
     | Some RD_step
       -> ()
     end
-  end
+  end (* S *)
 
 
-let pp_raw_dot m legend_opt render_edges positions (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) =
-  let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
+let pp_raw_dot m legend_opt render_edges positions cex (nc: ConcModel.ui_trans list) =
+  let m = { m with pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
   let (ioid_trans_lookup_data  : (Events.ioid * ConcModel.ui_trans) list) =
     List.map (function (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
   let ioid_trans_lookup (ioid: Events.ioid) : ConcModel.ui_trans list =

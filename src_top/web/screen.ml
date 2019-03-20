@@ -73,24 +73,24 @@ let quit : unit -> unit = fun () ->
 module Dot (ConcModel: Concurrency_model.S) = struct
   module Graphviz = Graphviz.Make(ConcModel)
 
-  let render_dot ppmode legend_opt (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) = fun layout_dot ->
+  let render_dot ppmode legend_opt cex (nc: ConcModel.ui_trans list) = fun layout_dot ->
     (* Pp.split doesn't like this for some reason --
        I believe because of its 'skip beginning and end' behaviour *)
     let lines = (Js.string layout_dot)##split (Js.string "\n") |>
                   Js.str_array |> Js.to_array |> Array.map Js.to_string |> Array.to_list in
     let positions = Graphviz.parse_dot_positions lines in
-    let dot = Graphviz.pp_raw_dot ppmode legend_opt true positions s cex nc in
+    let dot = Graphviz.pp_raw_dot ppmode legend_opt true positions cex nc in
     Js.Unsafe.fun_call (Js.Unsafe.js_expr "display_dot")
                        [|Js.Unsafe.inject (Js.string dot)|]
     |> ignore
 
-  let display_dot ppmode legend_opt s cex (nc: ConcModel.ui_trans list) =
-    let layout_dot = Graphviz.pp_raw_dot ppmode legend_opt false [] s cex nc in
+  let display_dot ppmode legend_opt cex (nc: ConcModel.ui_trans list) =
+    let layout_dot = Graphviz.pp_raw_dot ppmode legend_opt false [] cex nc in
     Js.Unsafe.fun_call (Js.Unsafe.js_expr "layout_dot")
                        [|
                          Js.Unsafe.inject (Js.string layout_dot);
                          Js.Unsafe.inject (Js.wrap_callback
-                                             (render_dot ppmode legend_opt s cex nc))
+                                             (render_dot ppmode legend_opt cex nc))
                        |]
     |> ignore
 end
