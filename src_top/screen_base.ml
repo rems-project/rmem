@@ -224,7 +224,7 @@ module type S = sig
 
   val show_message : Globals.ppmode -> output_tree -> unit
   val show_warning : Globals.ppmode -> output_tree -> unit
-  val show_debug :   Globals.ppmode -> (unit -> output_tree) -> unit
+  val show_debug   : Globals.ppmode -> (unit -> output_tree) -> unit
 
   (* print the system state and trace (normally those will be in a different window) *)
   val show_system_state : Globals.ppmode ->

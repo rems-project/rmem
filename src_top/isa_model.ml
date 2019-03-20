@@ -362,5 +362,5 @@ let make = function
   | AARCH64_ism AArch64HandSail -> (module (Make (AArch64ISADefs)    (AArch64HGenTransSail)): S)
   | AARCH64_ism AArch64GenSail  -> (module (Make (AArch64GenISADefs) (AArch64GenTransSail)) : S)
   | MIPS_ism                    -> (module (Make (MIPS64ISADefs)     (MIPSHGenTransSail))   : S)
-  | RISCV_ism                   -> (module (Make (RISCVISADefs)      (RiscvTransSail))  : S)
+  | RISCV_ism                   -> (module (Make (RISCVISADefs)      (RiscvTransSail))      : S)
   | X86_ism                     -> (module (Make (X86ISADefs)        (X86HGenTransSail))    : S)
