@@ -32,8 +32,6 @@ module IoidMap = Map.Make(struct
   let compare = compare
 end)
 
-module Make (ConcModel: Concurrency_model.S) = struct
-
 (* if generated_dir is set, create files there with filename based on
 the test name, otherwise create files here based on "out" *)
 let basename_in_dir (name: string) : string =
@@ -552,6 +550,7 @@ let make_final_state (test_info: Test.info) (state: string) : unit =
   fprintf states_out "\\newcommand{\\finalstate}{%s}\n" state;
   close_out states_out
 
+module Make (ConcModel: Concurrency_model.S) = struct
 (** implements GraphBackend.S with type ui_trans = ConcModel.ui_trans *)
 type ui_trans = ConcModel.ui_trans
 let make_graph m test_info cex (nc: ui_trans list) =

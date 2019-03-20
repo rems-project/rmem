@@ -49,8 +49,8 @@ let parse (str: string) : parser_outcome =
 
 module Make (ConcModel: Concurrency_model.S) = struct
   module Runner = New_run.Make (ConcModel)
-  module Graphviz = Graphviz.Make (ConcModel)
-  module Tikz = Tikz.Make (ConcModel)
+  module GraphvizBackend = Graphviz.Make (ConcModel)
+  module TikzBackend = Tikz.Make (ConcModel)
 
 type interact_node =
   {
@@ -111,8 +111,8 @@ let filtered_out_transitions node =
 
 let get_graph_backend () : (module GraphBackend.S with type ui_trans = ConcModel.ui_trans) =
   match !Globals.graph_backend with
-  | Globals.Dot  -> (module Graphviz)
-  | Globals.Tikz -> (module Tikz)
+  | Globals.Dot  -> (module GraphvizBackend)
+  | Globals.Tikz -> (module TikzBackend)
 
 
 let number_transitions
@@ -2309,7 +2309,8 @@ let run_search
             let final_state = Runner.reduced_final_state test_info.Test.show_regs
               test_info.Test.show_mem (ConcModel.sst_state sst)
             in
-            Tikz.make_final_state test_info (Test.C.pp_state symtab final_state)
+            Test.C.pp_state symtab final_state
+            |> Tikz.make_final_state test_info
           end;
 
           let state = ConcModel.sst_state sst in

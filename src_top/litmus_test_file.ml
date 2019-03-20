@@ -471,16 +471,16 @@ let read_channel
   (* CP: I'm commenting out because I don't know what to do with
      it. It makes no sense to call the tikz module from here *)
 
-  (* if !Globals.graph_backend = Globals.Tikz then
-   *   begin match !Globals.run_dot with
-   *   | Some Globals.RD_final
-   *   | Some Globals.RD_final_ok
-   *   | Some Globals.RD_final_not_ok
-   *     -> Tikz.make_init_state info test
-   *   | None
-   *   | Some Globals.RD_step
-   *     -> ()
-   *   end; *)
+  if !Globals.graph_backend = Globals.Tikz then
+    begin match !Globals.run_dot with
+    | Some Globals.RD_final
+    | Some Globals.RD_final_ok
+    | Some Globals.RD_final_not_ok
+        -> Tikz.make_init_state info test
+    | None
+    | Some Globals.RD_step
+        -> ()
+    end;
 
   (info, test)
 

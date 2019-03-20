@@ -16,7 +16,10 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-module Make (ConcModel: Concurrency_model.S) = struct
+module Make (ConcModel: Concurrency_model.S)
+    : (GraphBackend.S with type ui_trans = ConcModel.ui_trans)
+  = struct
+  type ui_trans = ConcModel.ui_trans
   module Base = Graphviz_base.Make(ConcModel)
 
   let render_dot ppmode legend_opt cex ioid_trans_lookup = fun layout_dot ->
@@ -30,10 +33,8 @@ module Make (ConcModel: Concurrency_model.S) = struct
                       [|Js.Unsafe.inject (Js.string dot)|]
     |> ignore
 
-  (** implements GraphBackend.S with type ui_trans = ConcModel.ui_trans *)
-  type ui_trans = ConcModel.ui_trans
 
-  let make_graph ppmode test_info cex (nc: (ConcModel.ui_trans) list) =
+  let make_graph ppmode test_info cex (nc: ui_trans list) =
     let ppmode =
       { ppmode with
         Globals.pp_kind = Globals.Ascii;
@@ -53,6 +54,4 @@ module Make (ConcModel: Concurrency_model.S) = struct
                                             (render_dot ppmode legend_opt cex ioid_trans_lookup))
                       |]
     |> ignore
-  (** end GraphBackend.S *)
-
 end (* Make *)

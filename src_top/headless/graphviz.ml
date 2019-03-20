@@ -42,7 +42,10 @@ let mycommand ppmode command input_file output_file =
     end
 
 
-module Make (ConcModel: Concurrency_model.S) = struct
+module Make (ConcModel: Concurrency_model.S)
+    : (GraphBackend.S with type ui_trans = ConcModel.ui_trans)
+  = struct
+  type ui_trans = ConcModel.ui_trans
   module Base = Graphviz_base.Make(ConcModel)
 
   let make_dot_graph ppmode legend_opt cex basename_in_dir ioid_trans_lookup =
@@ -92,10 +95,8 @@ module Make (ConcModel: Concurrency_model.S) = struct
     Screen_base.otStrLine "wrote %s.pdf" graph
     |> Screen.show_message ppmode
 
-  (** implements GraphBackend.S with type ui_trans = ConcModel.ui_trans *)
-  type ui_trans = ConcModel.ui_trans
 
-  let make_graph ppmode test_info cex (nc: (ConcModel.ui_trans) list) =
+  let make_graph ppmode test_info cex (nc: ui_trans list) =
     (* if generated_dir is set, create files there with filename based on the test name, otherwise create files here based on "out" *)
     let basename_in_dir = match !Globals.generateddir with None -> "out" | Some dir -> Filename.concat dir (Filename.basename test_info.Test.name) in
 
@@ -111,6 +112,4 @@ module Make (ConcModel: Concurrency_model.S) = struct
     | Some RD_step
       -> ()
     end
-  (** end GraphBackend.S *)
-
 end (* Make *)
