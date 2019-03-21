@@ -18,32 +18,27 @@
 
 module type S = sig
 
-  type sst (* state and transitions *)
   type state
   type trans
   type ui_state
   type ui_trans = int * trans
 
 
-  val sst_of_state :
-    RunOptions.t -> state -> sst
-  val sst_state :
-    sst -> state
-  val sst_inst_restarted :
-    sst -> bool
-  val sst_inst_discarded :
-    sst -> bool
-  val sst_write_after_stop_promising :
-    sst -> bool
-  val sst_stopped_promising :
-    sst -> bool
-  val sst_trans :
-    sst -> trans list
-  val sst_after_trans :
+  val inst_restarted :
+    state -> bool
+  val inst_discarded :
+    state -> bool
+  val write_after_stop_promising :
+    state -> bool
+  val stopped_promising :
+    state -> bool
+  val transitions :
+    state -> trans list
+  val state_after_trans :
     RunOptions.t ->
-    sst ->
+    state ->
     trans ->
-    (sst BasicTypes.transition_outcome)
+    (state BasicTypes.transition_outcome)
 
   val initial_state :
     InstructionSemantics.instruction_semantics_mode ->
@@ -66,8 +61,8 @@ module type S = sig
     state -> (Events.thread_id * (Sail_impl_base.reg_base_name * Sail_impl_base.register_value option) list) list
   val model_params :
     state -> Params.model_params
-  val set_model_params :
-    state -> Params.model_params -> state
+  val set_options_and_params :
+    RunOptions.t -> Params.model_params -> state -> state
 
   val number_finished_instructions : state -> int
   val number_constructed_instructions : state -> int
@@ -91,7 +86,7 @@ module type S = sig
     Globals.ppmode ->
     (int * trans) ->
     string
-  val pp_transition_history :           
+  val pp_transition_history :
     Globals.ppmode ->
     ?filter:(trans -> bool) ->
     ui_state ->
@@ -105,7 +100,7 @@ module type S = sig
   val is_storage_trans :
     trans -> bool
   val priority_trans :
-    sst -> Params.eager_mode -> ((trans -> bool) * bool) list 
+    state -> Params.eager_mode -> ((trans -> bool) * bool) list
   val is_loop_limit_trans :
     trans ->  bool
   val is_eager_trans :
@@ -117,15 +112,15 @@ module type S = sig
   val trans_fetch_addr :
     trans -> Sail_impl_base.address option
   val trans_reads_fp :
-    Sail_impl_base.footprint -> sst -> trans -> bool
+    Sail_impl_base.footprint -> state -> trans -> bool
   val trans_writes_fp :
-    Sail_impl_base.footprint -> sst -> trans -> bool
+    Sail_impl_base.footprint -> state -> trans -> bool
   val ioid_of_thread_trans :
     trans -> Events.ioid option
   val threadid_of_thread_trans :
     trans -> Events.thread_id option
   val is_ioid_finished :
-    Events.ioid -> sst -> bool
+    Events.ioid -> state -> bool
   val principal_ioid_of_trans :
     trans -> Events.ioid
   val fuzzy_compare_transitions :

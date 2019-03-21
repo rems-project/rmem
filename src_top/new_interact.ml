@@ -54,7 +54,7 @@ module Make (ConcModel: Concurrency_model.S) = struct
 
 type interact_node =
   {
-    system_state:         ConcModel.sst;
+    system_state:         ConcModel.state;
     (* open_transition: Tail is always a number from filtered_transitions that
     was taken as a non-eager transition. The following numbers are eager
     transitions that were taken in a sequence leading to the next interact_node
@@ -261,7 +261,7 @@ let is_eager interact_state transition : bool =
   | exception Failure _ -> assert false
   | node ->
       ConcModel.is_eager_trans
-        (ConcModel.sst_state node.system_state)
+        node.system_state
         (* eager_local_mem is sound only in a fixed-point *)
         {interact_state.options.eager_mode with eager_local_mem = false}
         transition
@@ -441,7 +441,7 @@ let show_options interact_state : unit =
   OTConcat [
     otStrLine "Branch-targets:";
     otLine @@ otEncoded @@ begin
-      (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets
+      (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets
       |> Params.branch_targets_to_list
       |> Pp.pp_branch_targets interact_state.ppmode
       end
@@ -451,7 +451,7 @@ let show_options interact_state : unit =
   OTConcat [
     otStrLine "Model options:";
     otStrLine "  %s"
-      (Model_aux.pp_model (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state));
+      (Model_aux.pp_model (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state));
   ]
   |> Screen.show_message ppmode;
 
@@ -528,14 +528,12 @@ let show_last_state inline interact_state : unit =
      let (ppmode, ui_state) =
        match ns with
        | [] ->
-          ConcModel.make_ui_state ppmode None (ConcModel.sst_state node.system_state) ts
+          ConcModel.make_ui_state ppmode None node.system_state ts
        | node' :: _ ->
-          ConcModel.make_ui_state ppmode (Some (ConcModel.sst_state node'.system_state))
-            (ConcModel.sst_state node.system_state) ts
+          ConcModel.make_ui_state ppmode (Some node'.system_state)
+            node.system_state ts
      in
      let ppmode = {ppmode with Globals.pp_default_cmd = interact_state.default_cmd} in
-
-     (*let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in*)
 
      let trace = fun () ->
        OTEncoded (ConcModel.pp_transition_history ppmode ui_state)
@@ -594,7 +592,7 @@ let filter_transitions options transitions =
 let generate_transitions interact_state system_state =
   let transitions = filter_transitions
                       interact_state.options
-                      (ConcModel.sst_trans system_state) in
+                      (ConcModel.transitions system_state) in
   (* add numbers to the transitions; try to use the same number
   for transitions that were present in the previous state *)
   match interact_state.interact_nodes with
@@ -637,7 +635,7 @@ let try_single_transition (eager: bool) (n: int) interact_state : interact_state
   | interact_node :: interact_nodes ->
       begin match List.find (function (Some n', _) -> n' = n | _ -> false) interact_node.filtered_transitions with
       | (_, transition) ->
-          begin match ConcModel.sst_after_trans
+          begin match ConcModel.state_after_trans
                   interact_state.options
                   interact_node.system_state
                   transition
@@ -730,9 +728,7 @@ let change_model update_model interact_state : interact_state =
   | []            -> interact_state (* nothing to change *)
   | node :: nodes ->
       let node' =
-        let state = ConcModel.sst_state node.system_state in
-        let state' = ConcModel.set_model_params state !Globals.model_params in
-        { node with system_state = ConcModel.sst_of_state interact_state.options state';}
+        {node with system_state = ConcModel.set_options_and_params interact_state.options !Globals.model_params node.system_state}
       in
       {interact_state with interact_nodes = node' :: nodes}
       |> regenerate_transitions
@@ -746,7 +742,7 @@ let rec do_fetch_all interact_state : interact_state =
                     (fun (f, transition) ->
                         f <> None &&
                         (ConcModel.is_fetch_single_trans transition ||
-                           ((Runner.sst_model_params node.system_state).t.thread_allow_tree_speculation &&
+                           ((ConcModel.model_params node.system_state).t.thread_allow_tree_speculation &&
                               ConcModel.is_fetch_multi_trans transition)))
                     node.filtered_transitions
       with
@@ -785,7 +781,7 @@ let rec do_back count interact_state : interact_state =
       }
       (* change_model also refilters the transitions, which we need
       because options might have changed. *)
-      |> change_model (fun _ -> Runner.sst_model_params n.system_state)
+      |> change_model (fun _ -> ConcModel.model_params n.system_state)
       |> update_default_cmd
       |> do_back (count - 1)
 
@@ -1009,7 +1005,7 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
     change_model
       (fun model ->
         let branch_targets =
-          (ConcModel.sst_state (List.hd interact_state.interact_nodes).system_state)
+          (List.hd interact_state.interact_nodes).system_state
           |> ConcModel.branch_targets_of_state
           |> Params.union_and_diff_branch_targets model.t.branch_targets
           |> fst
@@ -1022,7 +1018,7 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
   (* update the observed shared memory based on the current state *)
   let interact_state =
     if interact_state.options.eager_mode.eager_local_mem then
-      let system_state = (ConcModel.sst_state (List.hd interact_state.interact_nodes).system_state) in
+      let system_state = (List.hd interact_state.interact_nodes).system_state in
       let shared_memory =
         Params.union_and_diff_shared_memory
           (ConcModel.shared_memory_of_state system_state)
@@ -1288,30 +1284,28 @@ let do_add_shared_watchpoint typ state : interact_state =
 
 let make_graph interact_state =
   let node = List.hd interact_state.interact_nodes in
-  let state = ConcModel.sst_state node.system_state in
   let module G = (val get_graph_backend ()) in
   G.make_graph
     { interact_state.ppmode with
       Globals.pp_default_cmd = interact_state.default_cmd;
-      Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
+      Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids node.system_state;
     }
     interact_state.test_info
-    (ConcModel.make_cex_candidate state)
+    (ConcModel.make_cex_candidate node.system_state)
     (sorted_filtered_transitions node)
 
 let typeset interact_state filename =
   match interact_state.interact_nodes with
   | node :: _ ->
-      let state = ConcModel.sst_state node.system_state in
       let ppmode' = {interact_state.ppmode with Globals.pp_kind = Globals.Latex} in
       let prev_state =
         match interact_state.interact_nodes with
-        | _ :: node' :: _ -> Some (ConcModel.sst_state node'.system_state)
+        | _ :: node' :: _ -> Some node'.system_state
         | _ -> None
       in
 
       let (ppmode', ui_state) =
-        ConcModel.make_ui_state ppmode' prev_state state (sorted_filtered_transitions node)
+        ConcModel.make_ui_state ppmode' prev_state node.system_state (sorted_filtered_transitions node)
       in
       let fd = open_out filename in
       Printf.fprintf fd "%s\n" (ConcModel.pp_ui_state ppmode' ui_state);
@@ -1707,7 +1701,7 @@ let do_set key value interact_state =
               interact_state
           in
           let shared_memory =
-            match (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).shared_memory with
+            match (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state).shared_memory with
             | Some shared_memory -> shared_memory
             | None -> assert false
           in
@@ -2020,8 +2014,8 @@ let make_prompt interact_state : output_tree =
       OTConcat [
         otString "Step %d (%d/%d finished, %d trns)"
           (List.length interact_state.interact_nodes)
-          (ConcModel.number_finished_instructions (ConcModel.sst_state node.system_state))
-          (ConcModel.number_constructed_instructions (ConcModel. sst_state node.system_state))
+          (ConcModel.number_finished_instructions node.system_state)
+          (ConcModel.number_constructed_instructions node.system_state)
           (List.fold_left (+) 0 (List.map (fun n -> List.length n.open_transition) interact_state.interact_nodes));
 
         begin match interact_state.default_cmd with
@@ -2102,8 +2096,7 @@ let initial_interact_state
       breakpoints    = [];
     }
   in
-  ConcModel.sst_of_state options initial_state
-  |> add_interact_node interact_state
+  add_interact_node interact_state initial_state
   |> check_eager NoConstraints
   |> snd
 
@@ -2144,7 +2137,7 @@ let run_interactive
 let print_observations interact_state search_state =
   (* These are the branch targets as they were assumed before the search *)
   let branch_targets_output =
-    let branch_targets = (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets in
+    let branch_targets = (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets in
     otIfTrue (not (Pmap.is_empty branch_targets)) @@
       otVerbose Globals.Normal @@ fun () ->
         otStrLine "Branch-targets=%s"
@@ -2279,23 +2272,23 @@ let run_search
   =
   (* breakpoint predicates and handlers *)
   let breakpoints =
-    let run_dot_final_pred negate = fun sst ->
-      (ConcModel.sst_trans sst) = [] &&
+    let run_dot_final_pred negate = fun state ->
+      (ConcModel.transitions state) = [] &&
       begin match test_info.Test.filter with
       | None -> true
       | Some filter ->
          Runner.reduced_final_state test_info.Test.filter_regs
-           test_info.Test.filter_mem (ConcModel.sst_state sst)
+           test_info.Test.filter_mem state
           |> Test.C.check_filter filter
       end &&
         let final_state =
           Runner.reduced_final_state
             test_info.Test.show_regs
-            test_info.Test.show_mem (ConcModel.sst_state sst) in
+            test_info.Test.show_mem state in
       (Test.C.check_constr test_info.Test.constr [final_state]) <> negate
     in
 
-    let run_dot_final = fun sst ->
+    let run_dot_final = fun state ->
       match ppmode.Globals.pp_kind with
       | Globals.Html -> assert false
       | _ ->
@@ -2307,13 +2300,12 @@ let run_search
                 ppmode.Globals.pp_symbol_table
             in
             let final_state = Runner.reduced_final_state test_info.Test.show_regs
-              test_info.Test.show_mem (ConcModel.sst_state sst)
+              test_info.Test.show_mem state
             in
             Test.C.pp_state symtab final_state
             |> Tikz.make_final_state test_info
           end;
 
-          let state = ConcModel.sst_state sst in
           let module G = (val get_graph_backend ()) in
           G.make_graph
             { ppmode with
