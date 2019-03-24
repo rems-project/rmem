@@ -1738,7 +1738,6 @@ let enumerate_finalise_transitions isem state =
 
 
 let promising_enumerate_transitions_of_system
-    (is_option:           instruction_semantics_option)
     (* current system state *)
     (state:               system_state pts pss)
     (* cached transitions *)
@@ -1750,8 +1749,6 @@ let promising_enumerate_transitions_of_system
           (map thread_id (list (thread_trans pts))) *
             (map thread_id (list (trans pts pss * bool)))  
   =
-  let isem = state.instruction_semantics is_option in
-
   let stopped_promising = stopped_promising state.storage_subsystem in
 
   let stop_running =
@@ -1759,7 +1756,7 @@ let promising_enumerate_transitions_of_system
 
   if stop_running then
     let (possible_states : list (map thread_id pts * pss)) =
-      enumerate_finalise_transitions isem state in
+      enumerate_finalise_transitions state.instruction_semantics state in
     let transitions = List.map (fun (ptss, pss) -> Sys_trans ptss pss) possible_states in
     let transitions' = Map.singleton 1000 (List.map (fun tr -> (tr,true)) transitions) in
     (transitions, [], Map.empty, transitions')
@@ -1784,7 +1781,7 @@ let promising_enumerate_transitions_of_system
             then (m,already_have_one,deadlock)
             else
               match promising_enumerate_promising_transitions
-                      state.model isem stop_certifying ts state.storage_subsystem with
+                      state.model state.instruction_semantics stop_certifying ts state.storage_subsystem with
               | Just [] -> (Map.insert tid [] m, false, deadlock)
               | Just trs -> (Map.insert tid trs m, true, deadlock)
               | Nothing -> (m, true, true)

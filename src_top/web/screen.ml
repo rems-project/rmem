@@ -89,7 +89,6 @@ let current_options (options : Screen_base.options_state) =
     val eager_fp_recalc_ = run_options.eager_mode.eager_fp_recalc
     val eager_thread_start_ = run_options.eager_mode.eager_thread_start
     val eager_local_mem_ = run_options.eager_mode.eager_local_mem
-    val suppress_internal_ = run_options.suppress_internal
     val always_print_ = run_options.always_print
     val always_graph_ = options.always_graph
     val dot_final_ok_ = options.dot_final_ok

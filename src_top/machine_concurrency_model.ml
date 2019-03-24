@@ -101,23 +101,19 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   type storage_subsystem_state = Sys.ss
   type system_state = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.system_state
   type ui_state = (thread_subsystem_state,storage_subsystem_state) ui_system_state
-  type system_state_and_transitions =
-    (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.system_state_and_transitions
-  type state = system_state_and_transitions
 
+  (* For efficiency, 'state' also includes all the enabled transitions *)
+  type state = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.system_state_and_transitions
   type trans = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans
+
   type ui_trans = int * trans
 
   let final_ss_state s = Sys.dict_ss.ss_is_final_state
                            s.model.Params.ss
                            s.storage_subsystem
 
-  let sst_of_state run_options state =
-    begin try
-      MachineDefSystem.sst_of_state
-        (ISAModel.is_option run_options)
-        state
-    with
+  let sst_of_state state =
+    begin try MachineDefSystem.sst_of_state state with
     | Debug.Thread_failure (tid, ioid, s, bt) ->
         let ui_state = Sys.dict_sys.s_make_ui_system_state
             None state [] in
@@ -139,10 +135,9 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
       (Sys.dict_ts)
       (Sys.dict_ss)
       (Sys.dict_sys)
-      (ISAModel.is_option run_options)
       ISAModel.ISADefs.reg_data
       initial_state_record
-    |> sst_of_state run_options
+    |> sst_of_state
 
   let update_dwarf (state: system_state) (ppmode: Globals.ppmode) : Globals.ppmode =
     let pp_dwarf_dynamic =
@@ -189,13 +184,8 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
     in
     (ppmode', ui_state)
 
-  let state_after_trans run_options sst trans =
-    begin try
-      MachineDefSystem.sst_after_transition
-        (ISAModel.is_option run_options)
-        sst
-        trans
-    with
+  let state_after_trans sst trans =
+    begin try MachineDefSystem.sst_after_transition sst trans with
     | (Failure s) as e ->
         let (ppmode', ui_state) = make_ui_state (Globals.get_ppmode ()) None sst [] in
         Printf.eprintf "\n*** system state before taking the transition (see failure below) ***\n\n";
@@ -254,9 +244,7 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   let pp_cand = Pp.pp_cand
   let pp_trans = Pp.pp_trans
   let pp_ui_state = Pp.pp_ui_system_state
-  let set_options_and_params run_options model s =
-    {s.sst_state with model = model}
-    |> sst_of_state run_options
+  let set_model_params model s = sst_of_state {s.sst_state with model = model}
 
 
   let model_params s = s.sst_state.model
@@ -277,12 +265,12 @@ end
 
 
 
-let make (isaModel: (module Isa_model.S))
-      (ts : Params.thread_model)
-      (ss : Params.storage_model) :
-      (module Concurrency_model.S) = 
-
-
+let make
+    (isaModel: (module Isa_model.S))
+    (ts:       Params.thread_model)
+    (ss:       Params.storage_model)
+    : (module Concurrency_model.S)
+  =
   let (module Sys : SYS) = match (ts,ss) with
     | (Params.Promising_thread_model,_)  -> (module PromisingSYS)
     | (_,Params.Promising_storage_model) -> (module PromisingSYS)

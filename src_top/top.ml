@@ -81,7 +81,9 @@ module Run_test (Test_file: Test_file.S) = struct
     let module ConcModel  =
       (val (Machine_concurrency_model.make
               (module ISAModel)
-              !Globals.model_params.t.thread_model !Globals.model_params.ss.ss_model)) in
+              !Globals.model_params.t.thread_model
+              !Globals.model_params.ss.ss_model))
+    in
 
     (* calculate list of initial states (paired with their topology options) *)
     let initial_state_records =

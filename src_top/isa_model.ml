@@ -205,9 +205,7 @@ module type S = sig
   module ISADefs : ISADefs
 
   val instruction_semantics : instruction_semantics_mode ->
-      RunOptions.t -> instruction_semantics_p
-
-  val is_option : RunOptions.t -> instruction_semantics_option
+      RunOptions.t -> instruction_semantics
 end
 
 
@@ -300,61 +298,30 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       }
     )
 
-  let instruction_semantics ism run_options : instruction_semantics_p =
+  let instruction_semantics ism run_options : instruction_semantics =
     let endianness = Globals.get_endianness () in
 
-    let shallow_semantics =
-      initialise_shallow_embedding_semantics endianness ism
-    in
-
-    begin match ISADefs.isa_defs_thunk () with
-    | Interp_ast.Defs [] ->
-        begin function
-        | Interp eager -> failwith "Empty ISA defs"
-        | Shallow_embedding -> shallow_semantics
-        end
-
-    | _ ->
-        let interp_context =
-          let defs = ISADefs.isa_defs_thunk () in
-          let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
-            ISADefs.isa_memory_access in
-          let externs = ISADefs.isa_externs in
-
-          Interp_inter_imp.build_context
-            !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs
-        in
-
-(*
-        let (instruction_to_interp_instruction :
-                instruction_ast -> Interp_interface.instruction) =
-          cmb TransSail.herdtools_ast_to_interp_instruction
-              TransSail.shallow_ast_to_herdtools_ast
-        in
-        let (interp_instruction_to_instruction :
-                Interp_interface.instruction -> instruction_ast) =
-          cmb TransSail.herdtools_ast_to_shallow_ast
-              TransSail.interp_instruction_to_herdtools_ast
-        in
- *)
-
-        let interp_semantics =
-          initialise_interp_semantics
-                run_options.RunOptions.compare_analyses
-                ism
-                interp_context endianness
-        in
-        begin function
-        | Interp eager -> interp_semantics eager
-        | Shallow_embedding -> shallow_semantics
-        end
-    end
-
-  let is_option run_options =
     if run_options.RunOptions.interpreter then
-      let eager = run_options.RunOptions.suppress_internal in
-      Interp eager
-    else Shallow_embedding
+      match ISADefs.isa_defs_thunk () with
+      | Interp_ast.Defs [] ->
+          raise (Misc.Fatal "Empty ISA defs (use '-shallow_embedding true')")
+      | _ ->
+          let interp_context =
+            let defs = ISADefs.isa_defs_thunk () in
+            let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
+              ISADefs.isa_memory_access in
+            let externs = ISADefs.isa_externs in
+
+            Interp_inter_imp.build_context
+              !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs
+          in
+          initialise_interp_semantics
+            run_options.RunOptions.compare_analyses
+            ism
+            interp_context
+            endianness
+            false (* suppress internal *)
+    else initialise_shallow_embedding_semantics endianness ism
 end
 
 let make = function

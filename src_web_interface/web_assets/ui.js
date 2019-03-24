@@ -15,12 +15,11 @@
 /*                                                                               */
 /*===============================================================================*/
 
-function do_command (cmd, el) {
-    print("<p>" + STATE.prompt() + "&nbsp;<b>" + escape_html(cmd) + "</b></p>");
-    STATE.prompt("(...)");
-    if (el) {
-        $(el).val("");
+function do_command (cmd, log) {
+    if (log) {
+      print("<p>" + STATE.prompt() + "&nbsp;<b>" + escape_html(cmd) + "</b></p>");
     }
+    STATE.prompt("(...)");
     $(".interact_loading").show();
     graph_outdated();
     interact_lib.input_str(cmd);
@@ -35,7 +34,7 @@ function create_ui (root) {
 
 $(document).ready(function () {
     $(document).on("click", ".cmdbutton:not(.disabled)", function (e) {
-        do_command($(this).attr("cmd"));
+        do_command($(this).attr("cmd"), true);
     });
 
     $(document).on("click", ".restart", function (e) {
@@ -85,7 +84,7 @@ $(document).ready(function () {
     });
 
     $(document).on("click", "span.follow_list", function (e) {
-        do_command("set follow_list " + $(this).text());
+        do_command("set follow_list " + $(this).text(), true);
         e.preventDefault();
         return false;
     });
@@ -208,13 +207,14 @@ $(document).ready(function () {
     });
 
     $(document).on("click", ".trans", function () {
-        do_command($(this).attr("id"));
+        do_command($(this).attr("id"), true);
     });
 
 
     $(document).on("keypress", ".input_cmd", function (e) {
         if (e.keyCode === 13) { // enter/newline
-            do_command($(this).val(), this);
+            do_command($(this).val(), true);
+            $(this).val("");
             e.preventDefault();
             return false;
         } else {

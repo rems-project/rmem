@@ -75,11 +75,7 @@ module type S = sig
   val instruction_semantics :
     InstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
-    InstructionSemantics.instruction_semantics_p
-
-  val is_option :
-    RunOptions.t ->
-    InstructionSemantics.instruction_semantics_option
+    InstructionSemantics.instruction_semantics
 end
 
 val make :

@@ -163,15 +163,12 @@ let opts = [
     (Printf.sprintf "<bool> for interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
 
 (** optimizations ***************************************************)
-("-suppress_internal",
-    Arg.Bool (fun b -> run_options := {!run_options with RunOptions.suppress_internal = b}),
-    (Printf.sprintf "<bool> suppress visibility of internal transitions, doing them within the Sail interpreter (%b)" !run_options.RunOptions.suppress_internal));
 ("-shallow_embedding",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.interpreter = not b}),
-    (Printf.sprintf "<bool> Run shallow embedding instruction semantics (%b)" !run_options.RunOptions.suppress_internal));
+    (Printf.sprintf "<bool> Run shallow embedding instruction semantics (%b)" (not !run_options.RunOptions.interpreter)));
 ("-compare_analyses",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.compare_analyses = b}),
-    (Printf.sprintf "<bool> Compare the exhaustive and the handwritten analysis (%b)" !run_options.RunOptions.suppress_internal));
+    (Printf.sprintf "<bool> Compare the exhaustive and the handwritten analysis (%b)" !run_options.RunOptions.compare_analyses));
 ("-eager",
     Arg.Bool (fun b -> run_options :=
         {!run_options with RunOptions.eager_mode =
@@ -392,16 +389,18 @@ let opts = [
     Arg.Unit (fun () -> fatal_error "-auto was renamed to -dont"),
     "");
 ("-follow_to",
-    Arg.Int (fun n -> fatal_error "-follow_to was deprecated"),
+    Arg.Unit (fun () -> fatal_error "-follow_to was deprecated"),
     "");
 ("-breakpoint_actual",
-    Arg.Int (fun n -> fatal_error "-breakpoint_actual was deprecated"),
+    Arg.Unit (fun () -> fatal_error "-breakpoint_actual was deprecated"),
     "");
 ("-sequential",
     Arg.Unit (fun () -> fatal_error "-sequential was deprecated"),
     "");
+("-suppress_internal",
+    Arg.Unit (fun () -> fatal_error "-suppress_internal was deprecated. The interactive mode command 'set eaget_pseudocode_internal true' has a simmilar effect to '-suppress_internal true'."),
+    "");
 (*
-
 ("-test_syscall",
     Arg.Unit (fun () -> ignore (Syscalls.load_footprints_from_file "src_syscall_libs/syscall-introspect-tools/submodules/libfootprints-ocaml/spec.idl")),
     " test syscall machinery");

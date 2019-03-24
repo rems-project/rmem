@@ -505,7 +505,7 @@ let take_transition search_state state (i, (transition : ConcModel.trans)) eager
       then
         failwith "trying to take a non-eager transition, but eager transitions still exist";
 
-      begin match ConcModel.state_after_trans search_state.options state
+      begin match ConcModel.state_after_trans state
                     (transition : ConcModel.trans) with
       | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
@@ -666,8 +666,9 @@ let rec search search_state : search_outcome =
     begin match search_state.search_nodes with
     | [] -> assert false
     | search_node :: _ ->
-        if search_node.open_transition = [] && search_state.options.prune_restarts
-            && (ConcModel.inst_restarted search_node.system_state)
+        if search_node.open_transition = []
+            && search_state.options.prune_restarts
+            && ConcModel.inst_restarted search_node.system_state
         then
           { search_state with
             restart_prune_count = search_state.restart_prune_count + 1
@@ -681,8 +682,9 @@ let rec search search_state : search_outcome =
     begin match search_state.search_nodes with
     | [] -> assert false
     | search_node :: _ ->
-        if search_node.open_transition = [] && search_state.options.prune_discards
-            && (ConcModel.inst_discarded search_node.system_state)
+        if search_node.open_transition = []
+            && search_state.options.prune_discards
+            && ConcModel.inst_discarded search_node.system_state
         then
           { search_state with
             discard_prune_count = search_state.discard_prune_count + 1
@@ -696,8 +698,9 @@ let rec search search_state : search_outcome =
     begin match search_state.search_nodes with
     | [] -> assert false
     | search_node :: _ ->
-        if search_node.open_transition = [] && search_state.options.prune_late_writes
-            && (ConcModel.write_after_stop_promising search_node.system_state)
+        if search_node.open_transition = []
+            && search_state.options.prune_late_writes
+            && ConcModel.write_after_stop_promising search_node.system_state
         then
           { search_state with
             late_write_prune_count = search_state.late_write_prune_count + 1
@@ -1147,7 +1150,7 @@ let search_from_state
                 t = {model_params.t with branch_targets = bt_union};
               }
             in
-            ConcModel.set_options_and_params options' model_params' system_state
+            ConcModel.set_model_params model_params' system_state
           in
 
           { initial_search_state with
@@ -1203,7 +1206,7 @@ let search_from_state
                     t = {model_params.t with branch_targets = bt_union};
                   }
                 in
-                ConcModel.set_options_and_params options' model_params' system_state
+                ConcModel.set_model_params model_params' system_state
               in
 
               search_state :=

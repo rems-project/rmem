@@ -70,7 +70,7 @@ function make_toggler (group, option_id, name, desc, data_bind, disabled_msg) {
               + '>')
                 .on("change", function (e) {
                     var cmd = "set " + opt.id + " " + ($(this).prop("checked") ? "on" : "off");
-                    do_command(cmd);
+                    do_command(cmd, true);
                 }).appendTo(div);
             var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
             if (opt.disabled_msg) {
@@ -105,7 +105,7 @@ function make_custom_toggler (group, option_id, name, desc, values, data_bind, d
               + '>')
                 .on("change", function (e) {
                     var cmd = "set " + opt.id + " " + ($(this).prop("checked") ? opt.values[0] : opt.values[1]);
-                    do_command(cmd);
+                    do_command(cmd, true);
                 }).appendTo(div);
             var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
             if (opt.disabled_msg) {
@@ -178,7 +178,7 @@ function make_dropdown (group, option_id, name, desc, choices, data_bind, disabl
             select.appendTo(div);
             select.on("change", function (e) {
                 var cmd = "set " + opt.id + " " + select.val();
-                do_command(cmd);
+                do_command(cmd, true);
             });
 
             return div;
@@ -256,7 +256,7 @@ function make_int_option (group, option_id, name, desc, data_bind, disabled_msg,
                     } else {
                         cmd = "set " + opt.id + " " + $("#" + opt.id + "-button").text();
                     }
-                    do_command(cmd);
+                    do_command(cmd, true);
                 }).appendTo(div);
             var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
             if (opt.disabled_msg) {
@@ -268,7 +268,7 @@ function make_int_option (group, option_id, name, desc, data_bind, disabled_msg,
                     var value = window.prompt("Enter new value for '" + opt.name + "'", $(this).text());
                     if (value != null) {
                         var cmd = "set " + opt.id + " " + value;
-                        do_command(cmd);
+                        do_command(cmd, true);
                     }
                 }).appendTo(div);
             if (suffix) {
@@ -377,21 +377,20 @@ function make_line (group, option_id) {
 
 //                    group                id                                       name                         desc
         make_toggler("Execution",         "random",                                "Random",                    "Choose the default transition pseudorandomly");
-        make_toggler("Execution",         "suppress_internal",                     "Suppress pseudocode internal", "Automatically take internal Sail transitions", "css: { disabled: embedding() !== 'interpreter' }", "N/A to shallow embedding");
         make_toggler("Execution",         "storage_first",                         "Storage first",             "Take storage transitions preferentially when stepping", "css: { disabled: model_name() === 'flat' }", "N/A to flat model");
      make_int_option("Execution",         "loop_limit",                            "Loop unroll limit (EXPERIMENTAL)", "Limit loops to N repeats: i.e. limit = N -> (N+1) unrolled iterations through loop");
       make_separator("Execution",         "execution_eager",                       "Eager modes");
 
 make_button_row("Execution", "eager_shortcut_buttons_all", {
     "All eager": function (e) {
-        do_command("set eager on");
+        do_command("set eager on", true);
         e.preventDefault();
         return false;
     }
 });
 make_button_row("Execution", "eager_shortcut_buttons_none", {
     "None eager": function (e) {
-        do_command("set eager off");
+        do_command("set eager off", true);
         e.preventDefault();
         return false;
     }
@@ -442,7 +441,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
      make_button_row("Search", "search_buttons_random", {
          "Random": function (e) {
              var n = $("#random_trials-button").text();
-             do_command("search random " + n);
+             do_command("search random " + n, true);
              e.preventDefault();
              return false;
          }
@@ -453,7 +452,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
                             + "unless your browser has tail call optimisation. Continue?",
                             function () {
                                 console.log("Exhaustive search started: " + new Date().toString());
-                                do_command("search exhaustive");
+                                do_command("search exhaustive", true);
                                 console.log("Exhaustive search finished: " + new Date().toString());
                             });
              e.preventDefault();
@@ -511,12 +510,11 @@ function update_options (updates) {
 
 function set_all_options(options) {
     if (options !== null) {
-        do_command("silence;" +
-                   Object.keys(options).map(function (option_id) {
+        do_command(Object.keys(options).map(function (option_id) {
                        var value = options[option_id];
                        var option_str = (value === null ? "none" : value.toString());
                        return "set " + option_id + " " + option_str;
-                   }).join(";"));
+                   }).join(";"), true);
     }
 }
 

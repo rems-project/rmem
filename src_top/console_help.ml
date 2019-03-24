@@ -142,9 +142,6 @@ delete [break] <N>    Delete the breakpoint with the given number
 
 Global options
 -------------------------------------------------------------------------------
-set suppress_internal <bool>     Enable or disable whether Sail micro-steps
-                                  (exposed as 'Internal' transitions) are suppressed
-
 set follow_list "<N>[;<N>...]"  Set the list of upcoming transitions.
 
 Eager options

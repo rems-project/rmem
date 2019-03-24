@@ -320,8 +320,6 @@ let show_options interact_state : unit =
 
   OTConcat [
     otStrLine "Global options:";
-    otStrLine "  suppress_internal = %b"
-      interact_state.options.suppress_internal;
     otStrLine "  embedding = %s"
       (if interact_state.options.interpreter then "interpreter" else "shallow");
     otStrLine "  loop_limit = %s"
@@ -636,7 +634,6 @@ let try_single_transition (eager: bool) (n: int) interact_state : interact_state
       begin match List.find (function (Some n', _) -> n' = n | _ -> false) interact_node.filtered_transitions with
       | (_, transition) ->
           begin match ConcModel.state_after_trans
-                  interact_state.options
                   interact_node.system_state
                   transition
           with
@@ -728,7 +725,7 @@ let change_model update_model interact_state : interact_state =
   | []            -> interact_state (* nothing to change *)
   | node :: nodes ->
       let node' =
-        {node with system_state = ConcModel.set_options_and_params interact_state.options !Globals.model_params node.system_state}
+        {node with system_state = ConcModel.set_model_params !Globals.model_params node.system_state}
       in
       {interact_state with interact_nodes = node' :: nodes}
       |> regenerate_transitions
@@ -1534,10 +1531,6 @@ let do_set key value interact_state =
       |> (run_options_lens |-- eager_mode_lens) ^= eager_mode
       |> check_eager NoConstraints
       |> snd
-
-  | "suppress_internal" ->
-      interact_state
-      |> (run_options_lens |-- suppress_internal_lens) ^= (parse_bool value)
 
   | "random" ->
       interact_state

@@ -16,6 +16,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+(* Abstraction of operational concurrency model *)
 module type S = sig
 
   type state
@@ -23,30 +24,28 @@ module type S = sig
   type ui_state
   type ui_trans = int * trans
 
-
-  val inst_restarted :
-    state -> bool
-  val inst_discarded :
-    state -> bool
-  val write_after_stop_promising :
-    state -> bool
-  val stopped_promising :
-    state -> bool
-  val transitions :
-    state -> trans list
-  val state_after_trans :
-    RunOptions.t ->
-    state ->
-    trans ->
-    (state BasicTypes.transition_outcome)
-
   val initial_state :
     InstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
     Params.initial_state_record ->
     state
-  val is_final_state :
-    state -> bool
+
+  val transitions : state -> trans list
+  val state_after_trans :
+    state -> trans -> (state BasicTypes.transition_outcome)
+
+  val model_params     : state -> Params.model_params
+  val set_model_params : Params.model_params -> state -> state
+
+  (* state predicates *)
+  val is_final_state    : state -> bool
+  val inst_restarted    : state -> bool
+  val inst_discarded    : state -> bool
+  val write_after_stop_promising
+                        : state -> bool
+  val stopped_promising : state -> bool
+
+
   val branch_targets_of_state :
     state -> Params.branch_targets_map
   val shared_memory_of_state :
@@ -54,17 +53,14 @@ module type S = sig
   val memory_value_of_footprints :
     state -> Sail_impl_base.footprint list ->
     (Sail_impl_base.footprint * Sail_impl_base.memory_value) list
+  val final_reg_states :
+    state -> (Events.thread_id * (Sail_impl_base.reg_base_name * Sail_impl_base.register_value option) list) list
+
   val make_cex_candidate :
     state ->
     CandidateExecution.cex_candidate
-  val final_reg_states :
-    state -> (Events.thread_id * (Sail_impl_base.reg_base_name * Sail_impl_base.register_value option) list) list
-  val model_params :
-    state -> Params.model_params
-  val set_options_and_params :
-    RunOptions.t -> Params.model_params -> state -> state
 
-  val number_finished_instructions : state -> int
+  val number_finished_instructions    : state -> int
   val number_constructed_instructions : state -> int
 
   val make_ui_state :
