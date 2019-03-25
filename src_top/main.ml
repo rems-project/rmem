@@ -160,7 +160,7 @@ let opts = [
 
 ("-auto_internal",
     Arg.Bool (fun b -> Globals.auto_internal := b),
-    (Printf.sprintf "<bool> for interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
+    (Printf.sprintf "<bool> in interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
 
 (** optimizations ***************************************************)
 ("-shallow_embedding",
@@ -289,11 +289,11 @@ let opts = [
 (** UI options ******************************************************)
 ("-state_output",
     Arg.String Screen.set_state_output,
-    "<file> for interactive mode, print the current state to <file>");
+    "<file> in interactive mode, print the current state to <file>");
 
 ("-trace_output",
     Arg.String Screen.set_trace_output,
-    "<file> for interactive mode, print the current trace to <file>");
+    "<file> in interactive mode, print the current trace to <file>");
 
 ("-colours",
     Arg.Bool (fun b -> Globals.pp_colours := b),
@@ -324,22 +324,22 @@ let opts = [
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_step
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf at every step (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_step)));
+    (Printf.sprintf "<bool> in interactive mode, generate execution graph out.pdf at every step (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_step)));
 ("-dot_final",
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_final
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf for first complete execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final)));
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first complete execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final)));
 ("-dot_final_ok",
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_final_ok
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_ok)));
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_ok)));
 ("-dot_final_not_ok",
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_final_not_ok
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_not_ok)));
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_not_ok)));
 ("-dot_dir",
     Arg.String (fun dir -> Globals.generateddir := Some dir),
     (Printf.sprintf "<dir> directory for generated graphs (%s)" (match !Globals.generateddir with None -> "\"\"" | Some s -> s)));
@@ -547,6 +547,27 @@ let main = fun () ->
     && not !Globals.topauto
   then
       fatal_error "'-model flowing' requires a topology ('-topauto true' or '-top <topology-list>')";
+
+  if not !run_options.RunOptions.interactive
+      && !Globals.run_dot = Some Globals.RD_step
+  then
+    Screen_base.otStrLine "'-dot true' is ignored in non-interactive mode"
+    |> Screen.show_warning ppmode;
+
+  if !run_options.RunOptions.interactive then
+    begin match !Globals.run_dot with
+    | Some Globals.RD_final ->
+        Screen_base.otStrLine "'-dot_final true' is ignored in interactive mode"
+        |> Screen.show_warning ppmode;
+    | Some Globals.RD_final_ok ->
+        Screen_base.otStrLine "'-dot_final_ok true' is ignored in interactive mode"
+        |> Screen.show_warning ppmode;
+    | Some Globals.RD_final_not_ok ->
+        Screen_base.otStrLine "'-dot_final_not_ok true' is ignored in interactive mode"
+        |> Screen.show_warning ppmode;
+    | Some Globals.RD_step
+    | None -> ()
+    end;
 
   let files =
     List.map

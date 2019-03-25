@@ -46,6 +46,9 @@ let keywords =
     (["search"],            SEARCH);
     (["ran"; "random"],     RANDOM);
     (["exh"; "exhaustive"], EXHAUSTIVE);
+    (["final"],             FINAL Interact_parser_base.Any_final);
+    (["final_ok"],          FINAL Interact_parser_base.Final_ok);
+    (["final_not_ok"],      FINAL Interact_parser_base.Final_not_ok);
 
     (["typeset"], TYPESET);
     (["graph"],   GRAPH);

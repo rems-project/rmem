@@ -21,6 +21,11 @@ type ast_search =
   | Random of int
   | Exhaustive
 
+type ast_search_final =
+  | Any_final
+  | Final_ok
+  | Final_not_ok
+
 type ast_breakpoint_target =
   | Address of Nat_big_num.num
   | Footprint of Nat_big_num.num * int
@@ -62,13 +67,18 @@ type ast =
   | SetOption of string * string
   | FocusThread of int option
   | FocusInstruction of Events.ioid option
-  | Search of ast_search
+  | Search of ast_search * (ast_search_final option)
   | InfoBreakpoints
   | DeleteBreakpoint of int
 
 let pp_ast_search : ast_search -> string = function
   | Random i   -> Printf.sprintf "random %d" i
   | Exhaustive -> "exhaustive"
+
+let pp_ast_search_final : ast_search_final -> string = function
+  | Any_final    -> "final"
+  | Final_ok     -> "final_ok"
+  | Final_not_ok -> "final_not_ok"
 
 let pp_on_off : bool -> string = function
   | true  -> "on"
@@ -155,7 +165,8 @@ let pp : ast -> string = function
   | FocusInstruction maybe_ioid -> (match maybe_ioid with
                                     | None -> "focus instruction off"
                                     | Some (tid, iid) -> (Printf.sprintf "focus instruction (%d:%d)" tid iid))
-  | Search s          -> Printf.sprintf "search %s" (pp_ast_search s)
+  | Search (s, None)   -> Printf.sprintf "search %s" (pp_ast_search s)
+  | Search (s, Some f) -> Printf.sprintf "search %s %s" (pp_ast_search s) (pp_ast_search_final f)
   | InfoBreakpoints    -> "info break"
   | DeleteBreakpoint n -> Printf.sprintf "delete break %d" n
 

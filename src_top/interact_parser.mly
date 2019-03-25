@@ -53,6 +53,7 @@ module Base = Interact_parser_base
 %token SEARCH
 %token RANDOM
 %token EXHAUSTIVE
+%token <Interact_parser_base.ast_search_final> FINAL
 
 %token BREAK
 %token FETCH
@@ -179,8 +180,10 @@ watchpoint:
   ;
 
 search:
-  | SEARCH EXHAUSTIVE { Base.Search Base.Exhaustive  }
-  | SEARCH RANDOM NUM { Base.Search (Base.Random $3) }
+  | SEARCH EXHAUSTIVE       { Base.Search (Base.Exhaustive, None)    }
+  | SEARCH EXHAUSTIVE FINAL { Base.Search (Base.Exhaustive, Some $3) }
+  | SEARCH RANDOM NUM       { Base.Search (Base.Random $3, None)     }
+  | SEARCH RANDOM NUM FINAL { Base.Search (Base.Random $3, Some $4)  }
   ;
 
 set:

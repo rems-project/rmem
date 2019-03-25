@@ -107,6 +107,8 @@ type search_state =
 
     (*** accumulation of observed states ***)
 
+    (* states that hit a target predicate *)
+    observed_targets:          (trace * ConcModel.state) list;
     (* final states paired with trace and the number of times they were observed *)
     observed_finals:           (trace * int) StateMap.t;
     (* the above states that pass the (litmus file) filter property *)
@@ -141,7 +143,7 @@ type search_state =
     (* back track when these states are reached *)
     bounds:        state_predicate list;
 
-    (* back track when these states are reached but also record them as if they were final *)
+    (* back track when these states are reached, recorded in observed_targets *)
     targets:       state_predicate list;
 
     (* filter out transitions that do not match all of these predicates,
@@ -368,8 +370,10 @@ let reduced_final_state regs mem (system_state: ConcModel.state) =
   (reg_state, mem_state)
 
 
-let record_final_state search_state search_node : search_state =
+let record_final_state target search_state search_node : search_state =
+  (* the following is true, but it is not a good idea to use compare:
   assert (compare (List.hd search_state.search_nodes) search_node = 0);
+  *)
 
   if Globals.is_verbosity_at_least Globals.Debug then
     print_last_state "final state" search_state;
@@ -378,15 +382,25 @@ let record_final_state search_state search_node : search_state =
 
   let search_state = update_observed_branch_targets_and_shared_memory search_state search_node in
 
-  if ConcModel.is_final_state search_node.system_state then
+  let choices = choices_so_far search_state in
+
+  if target then
+    { search_state with
+      observed_targets = (choices, search_node.system_state) :: search_state.observed_targets;
+    }
+  else if ConcModel.is_final_state search_node.system_state then
     let final_state = reduced_final_state search_state.test_info.Test.show_regs search_state.test_info.Test.show_mem search_node.system_state in
 
-    let (choices, count) =
-      try StateMap.find final_state search_state.observed_finals with
-      | Not_found -> (choices_so_far search_state, 0)
+    let observed_finals =
+      let (choices, count) =
+        match StateMap.find final_state search_state.observed_finals with
+        | (choices', count) ->
+            if List.length choices < List.length choices' then (choices, count + 1)
+            else (choices', count + 1)
+        | exception Not_found -> (choices, 1)
+      in
+      StateMap.add final_state (choices, count) search_state.observed_finals
     in
-
-    let observed_finals = StateMap.add final_state (choices, count + 1) search_state.observed_finals in
 
     let observed_filterred_finals =
       if  match search_state.test_info.Test.filter with
@@ -395,7 +409,14 @@ let record_final_state search_state search_node : search_state =
               reduced_final_state search_state.test_info.Test.filter_regs search_state.test_info.Test.filter_mem search_node.system_state
               |> Test.C.check_filter filter
       then
-        StateMap.add final_state (choices, count + 1) search_state.observed_filterred_finals
+        let (choices, count) =
+          match StateMap.find final_state search_state.observed_filterred_finals with
+          | (choices', count) ->
+              if List.length choices < List.length choices' then (choices, count + 1)
+              else (choices', count + 1)
+          | exception Not_found -> (choices, 1)
+        in
+        StateMap.add final_state (choices, count) search_state.observed_filterred_finals
       else
         search_state.observed_filterred_finals
     in
@@ -405,18 +426,17 @@ let record_final_state search_state search_node : search_state =
       observed_filterred_finals = observed_filterred_finals;
     }
   else
-    let choices' = choices_so_far search_state in
     match search_state.observed_deadlocks with
-    | Some (choices, count) ->
+    | Some (choices', count) ->
         { search_state with
             observed_deadlocks =
-              if List.length choices' < List.length choices then
-                Some (choices', count + 1)
-              else
+              if List.length choices < List.length choices' then
                 Some (choices, count + 1)
+              else
+                Some (choices', count + 1)
         }
     | None ->
-        {search_state with observed_deadlocks = Some (choices', 1)}
+        {search_state with observed_deadlocks = Some (choices, 1)}
 
 let is_eager search_state transition =
   match search_state.search_nodes with
@@ -640,7 +660,7 @@ let rec search search_state : search_outcome =
         if search_node.open_transition = []
           && List.exists (fun f -> f search_node.system_state) search_state.targets
         then
-          Continue_search (record_final_state search_state search_node |> pop)
+          Continue_search (record_final_state true search_state search_node |> pop)
         else
           cont search_state
     end
@@ -902,7 +922,7 @@ let rec search search_state : search_outcome =
     | [] -> Terminate_search (Complete search_state) (* no more nodes to explore *)
     | search_node :: _ ->
         if search_node.open_transition = [] && search_node.unexplored_transitions = [] then
-          Continue_search (record_final_state search_state search_node |> pop)
+          Continue_search (record_final_state false search_state search_node |> pop)
         else
           cont search_state
     end
@@ -1014,6 +1034,7 @@ let search_from_state
 
       state_hashes        = StateHashSet.empty;
 
+      observed_targets          = [];
       observed_finals           = StateMap.empty;
       observed_filterred_finals = StateMap.empty;
       observed_deadlocks        = None;

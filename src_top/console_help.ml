@@ -69,7 +69,7 @@ focus instruction (<N>|off)      Enable only transitions for the given
 
 Searching commands
 --------------------------------------------------------------------------------
-search exhaustive | search random <N>
+search (exhaustive|random <N>) [final|final_ok|final_not_ok]
                                  Run an exhaustive search, or <N> pseudorandom
                                    linear searches, through the graph of
                                    possible states, looking for final states
@@ -79,8 +79,7 @@ search exhaustive | search random <N>
                                    during the search, it will stop and jump
                                    to the breakpoint-matching state.
                                    For exhaustive search, one usually wants
-                                   hash_prune, eager, eager_fetch,
-                                   and forbid_tree_speculation.
+                                   hash_prune and forbid_tree_speculation.
 
 set hash_prune <bool>     Enable or disable using hashing of states to
                             avoid visiting a state's subtree more than

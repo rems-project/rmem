@@ -282,9 +282,6 @@ type options_state = {
     run_options: RunOptions.t;
     model_params: Params.model_params;
     ppmode: Globals.ppmode;
-    always_graph: bool;
-    dot_final_ok: bool;
-    dot_final_not_ok: bool;
     pp_hex: bool;
     dwarf_show_all_variable_locations: bool;
     verbosity: Globals.verbosity_level;

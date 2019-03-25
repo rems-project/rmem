@@ -399,10 +399,6 @@ let show_options interact_state : unit =
   OTConcat [
     otStrLine "Graph options:";
     otStrLine "  always_graph = %b" (!Globals.run_dot = Some Globals.RD_step);
-    otStrLine "  dot_final_ok = %b"
-      (!Globals.run_dot = Some Globals.RD_final_ok);
-    otStrLine "  dot_final_not_ok = %b"
-      (!Globals.run_dot = Some Globals.RD_final_not_ok);
     otStrLine "  ppg_shared = %b" ppmode.Globals.ppg_shared;
     otStrLine "  ppg_rf = %b" ppmode.Globals.ppg_rf;
     otStrLine "  ppg_fr = %b" ppmode.Globals.ppg_fr;
@@ -996,7 +992,7 @@ let update_bt_and_sm search_state interact_state : interact_state =
       {model with t = {model.t with branch_targets = bt_union}}
   )
 
-let do_search mode interact_state breakpoints bounds targets filters : interact_state =
+let run_interactive_search mode interact_state breakpoints bounds targets filters handle_search_outcome : interact_state =
   (* update the observed branch targets based on the current state *)
   let interact_state =
     change_model
@@ -1076,6 +1072,13 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
       (filters @ interact_filters)
       (fun _ -> ()) (* TODO: print_partial_results? *)
   with
+  | outcome -> handle_search_outcome interact_state outcome
+  | exception (Runner.BadSearchOptions msg) ->
+      Screen.show_warning interact_state.ppmode (otStrLine "%s" msg);
+      interact_state
+
+let handle_search_outcome interact_state search_outcome : interact_state =
+  match search_outcome with
   | Runner.Complete search_state' ->
       (* search terminated after exploring all reachable states *)
       let interact_state = update_bt_and_sm search_state' interact_state in
@@ -1100,7 +1103,7 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
 
       let interact_state = update_bt_and_sm search_state' interact_state in
       let search_trace = Runner.choices_so_far search_state' in
-      begin try follow_search_trace true search_trace interact_state with
+      begin try follow_search_trace true search_trace {interact_state with follow_suffix = []} with
       | TraceRecon s ->
           otStrLine "Problem reconstructing trace: %s" s
           |> Screen.show_warning interact_state.ppmode;
@@ -1134,10 +1137,62 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
       interact_state
       |> set_follow_list_from_search_trace (Runner.choices_so_far search_state')
 
-  | exception (Runner.BadSearchOptions msg) ->
-      Screen.show_warning interact_state.ppmode (otStrLine "%s" msg);
-      interact_state
+let do_search_final final mode interact_state : interact_state =
+  let final_pred = fun state ->
+    let test_info = interact_state.test_info in
+    (ConcModel.transitions state) = [] &&
+    begin match test_info.Test.filter with
+    | None -> true
+    | Some filter ->
+        Runner.reduced_final_state test_info.Test.filter_regs
+          test_info.Test.filter_mem state
+        |> Test.C.check_filter filter
+    end &&
+    let final_state =
+      Runner.reduced_final_state
+        test_info.Test.show_regs
+        test_info.Test.show_mem state in
+    match final with
+    | Interact_parser_base.Any_final -> true
+    | Interact_parser_base.Final_ok ->
+        Test.C.check_constr test_info.Test.constr [final_state]
+    | Interact_parser_base.Final_not_ok ->
+        not (Test.C.check_constr test_info.Test.constr [final_state])
+  in
 
+  let final_desc =
+    match final with
+    | Interact_parser_base.Any_final    -> "final state"
+    | Interact_parser_base.Final_ok     -> "final state ok"
+    | Interact_parser_base.Final_not_ok -> "final state not ok"
+  in
+
+  run_interactive_search mode interact_state
+    [(Runner.Numbered (-1), Runner.StateBreakpoint final_pred, final_desc)]
+    [] [] []
+    (fun interact_state outcome ->
+        match outcome with
+        | Runner.Complete search_state' ->
+            (* search terminated after exploring all reachable states *)
+            let interact_state = update_bt_and_sm search_state' interact_state in
+
+            begin match final with
+            | Interact_parser_base.Any_final ->
+                Screen_base.otStrLine "Did not find a final state"
+            | Interact_parser_base.Final_ok ->
+                Screen_base.otStrLine "Did not find a final state where the assertion holds"
+            | Interact_parser_base.Final_not_ok ->
+                Screen_base.otStrLine "Did not find a final state where the assertion does not hold"
+            end
+            |> Screen.show_message interact_state.ppmode;
+
+            interact_state
+
+        | outcome -> handle_search_outcome interact_state outcome
+    )
+
+let do_search mode interact_state : interact_state =
+  run_interactive_search mode interact_state [] [] [] [] handle_search_outcome
 
 let fresh_bp_id bps' =
   let numbers =
@@ -1383,7 +1438,7 @@ let rec filter_map f l =
                | None -> filter_map f xs
                | Some y -> y :: filter_map f xs
 
-let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int option) interact_state : interact_state =
+let do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int option) interact_state : interact_state =
   let m = interact_state.ppmode in
   (* TODO FIXME: should we know about the internal structure of an ioid? *)
   let step ioid =
@@ -1395,7 +1450,21 @@ let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int op
     let (tid, iid) = ioid in
     otStrLine "stepping instruction (%d:%d)" tid iid
     |> Screen.show_message m;
-    do_search Interact_parser_base.Exhaustive interact_state new_breakpoints [] [] new_filters
+    run_interactive_search
+      Interact_parser_base.Exhaustive
+      interact_state
+      new_breakpoints [] [] new_filters
+      (fun interact_state outcome ->
+          match outcome with
+          | Runner.Complete search_state' ->
+              (* search terminated after exploring all reachable states *)
+              Screen_base.otStrLine "Did not find a state where the instruction is finished (blocked by other instructions?)"
+              |> Screen.show_message interact_state.ppmode;
+
+              update_bt_and_sm search_state' interact_state
+
+          | outcome -> handle_search_outcome interact_state outcome
+      )
   in
 
   let node = List.hd interact_state.interact_nodes in
@@ -1453,13 +1522,13 @@ let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int op
       then
         step (tid, iid)
       else begin
-        otStrLine "no such instruction (%d:%d) to step" tid iid
+        otStrLine "instruction (%d:%d) has no transitions to step" tid iid
         |> Screen.show_warning m;
         interact_state
       end
 
 
-let rec do_peek_instruction (thread_n : int) (inst_n : int)  interact_state : interact_state =
+let do_peek_instruction (thread_n : int) (inst_n : int)  interact_state : interact_state =
   match interact_state.interact_nodes with
   | [] -> assert false
   | interact_node :: _ ->
@@ -1467,7 +1536,25 @@ let rec do_peek_instruction (thread_n : int) (inst_n : int)  interact_state : in
       let ioid = (thread_n, inst_n) in
       let new_targets = [ConcModel.is_ioid_finished ioid] in
       let new_filters = [fun t -> ConcModel.ioid_of_thread_trans t = Some ioid] in
-      do_search Interact_parser_base.Exhaustive interact_state [] [] new_targets new_filters
+      run_interactive_search
+        Interact_parser_base.Exhaustive
+        interact_state
+        [] [] new_targets new_filters
+        (fun interact_state outcome ->
+            match outcome with
+            | Runner.Complete search_state' ->
+                (* search terminated after exploring all reachable states *)
+                if search_state'.observed_targets = [] then
+                  Screen_base.otStrLine "Did not find a state where the instruction is finished (blocked by other instructions?)"
+                  |> Screen.show_message interact_state.ppmode
+                else
+                  Screen_base.otStrLine "TODO: PP the instruction in each of the states in search_state'.observed_targets with a trace"
+                  |> Screen.show_message interact_state.ppmode;
+
+                update_bt_and_sm search_state' interact_state
+
+            | outcome -> handle_search_outcome interact_state outcome
+        )
 
 exception InvalidKey
 exception InvalidValue
@@ -1624,31 +1711,10 @@ let do_set key value interact_state =
       )
       interact_state
 
-  (* always_graph and dot_final_ok are mutually exclusive
-    because always_graph would overwrite the final graph  *)
-
   | "always_graph" ->
     begin
       if parse_bool value then
         Globals.run_dot := Some RD_step
-      else
-        Globals.run_dot := None;
-      interact_state
-    end
-
-  | "dot_final_ok" ->
-    begin
-      if parse_bool value then
-        Globals.run_dot := Some RD_final_ok
-      else
-        Globals.run_dot := None;
-      interact_state
-    end
-
-  | "dot_final_not_ok" ->
-    begin
-      if parse_bool value then
-        Globals.run_dot := Some RD_final_not_ok
       else
         Globals.run_dot := None;
       interact_state
@@ -1904,11 +1970,14 @@ let rec do_cmd
         in
         do_auto interact_state
 
-  | Interact_parser_base.Search (Interact_parser_base.Random i) when i < 1 ->
+  | Interact_parser_base.Search (Interact_parser_base.Random i, _) when i < 1 ->
       raise (DoCmdError (interact_state, "the number of traces must be greater than 0"))
 
-  | Interact_parser_base.Search mode ->
-      do_search mode interact_state [] [] [] []
+  | Interact_parser_base.Search (mode, None) ->
+      do_search mode interact_state
+
+  | Interact_parser_base.Search (mode, Some final) ->
+      do_search_final final mode interact_state
 
   | Interact_parser_base.Typeset ->
       typeset interact_state "ui_snapshot.tex";
@@ -2029,9 +2098,6 @@ let extract_options interact_state : Screen_base.options_state =
       run_options = interact_state.options;
       model_params = !Globals.model_params;
       ppmode = interact_state.ppmode;
-      always_graph = (!Globals.run_dot = Some RD_step);
-      dot_final_ok = (!Globals.run_dot = Some RD_final_ok);
-      dot_final_not_ok = (!Globals.run_dot = Some RD_final_not_ok);
       pp_hex = !Globals.print_hex;
       dwarf_show_all_variable_locations = !Globals.dwarf_show_all_variable_locations;
       verbosity = !Globals.verbosity;
@@ -2265,7 +2331,7 @@ let run_search
   =
   (* breakpoint predicates and handlers *)
   let breakpoints =
-    let run_dot_final_pred negate = fun state ->
+    let run_dot_final_pred = fun state ->
       (ConcModel.transitions state) = [] &&
       begin match test_info.Test.filter with
       | None -> true
@@ -2274,11 +2340,19 @@ let run_search
            test_info.Test.filter_mem state
           |> Test.C.check_filter filter
       end &&
-        let final_state =
-          Runner.reduced_final_state
-            test_info.Test.show_regs
-            test_info.Test.show_mem state in
-      (Test.C.check_constr test_info.Test.constr [final_state]) <> negate
+      let final_state =
+        Runner.reduced_final_state
+          test_info.Test.show_regs
+          test_info.Test.show_mem state in
+      match !Globals.run_dot with
+      | Some Globals.RD_final -> true
+      | Some Globals.RD_final_ok ->
+          Test.C.check_constr test_info.Test.constr [final_state]
+      | Some Globals.RD_final_not_ok ->
+          not (Test.C.check_constr test_info.Test.constr [final_state])
+
+      | Some Globals.RD_step
+      | None -> assert false
     in
 
     let run_dot_final = fun state ->
@@ -2311,13 +2385,17 @@ let run_search
     in
 
     match !Globals.run_dot with
-    (* FIXME: handle RD_final *)
+    | Some Globals.RD_final ->
+        [ ((Runner.Numbered 0, Runner.StateBreakpoint run_dot_final_pred, "final (run dot)"), run_dot_final);
+        ]
     | Some Globals.RD_final_ok ->
-        [ ((Runner.Numbered 0, Runner.StateBreakpoint (run_dot_final_pred false), "final ok (run dot)"), run_dot_final);
+        [ ((Runner.Numbered 0, Runner.StateBreakpoint run_dot_final_pred, "final ok (run dot)"), run_dot_final);
         ]
     | Some Globals.RD_final_not_ok ->
-        [ ((Runner.Numbered 0, Runner.StateBreakpoint (run_dot_final_pred true), "final not ok (run dot)"), run_dot_final);
+        [ ((Runner.Numbered 0, Runner.StateBreakpoint run_dot_final_pred, "final not ok (run dot)"), run_dot_final);
         ]
+
+    | Some Globals.RD_step
     | _ -> []
   in
 

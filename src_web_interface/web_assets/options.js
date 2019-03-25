@@ -424,9 +424,6 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
      make_int_option("Interface",         "choice_history_limit",                  "Choice history limit",      "Maximum number of 'choices so far' printed with states");
         make_toggler("Interface",         "dwarf_show_all_variable_locations",     "Show all DWARF var locations", "Show all DWARF variable location data in output");
 
-        make_toggler("Graph",             "always_graph",                          "Update every step",         "Update the graph before each prompt");
-        make_toggler("Graph",             "dot_final_ok",                          "Final OK graph",            "Update the graph for the first final-constraint-satisfying execution of searches");
-        make_toggler("Graph",             "dot_final_not_ok",                      "Final not OK graph",        "Update the graph for the first final-constraint-not-satisfying execution of searches");
         make_toggler("Graph",             "ppg_shared",                            "Only show shared instructions", "Only graph shared-memory instructions");
         make_toggler("Graph",             "ppg_rf",                                "Show read-from (rf) edges", "Display read-from (rf) edges in the graph");
         make_toggler("Graph",             "ppg_fr",                                "Show from-read (fr) edges", "Display from-read (fr) edges in the graph. These indicate writes co-after the write which satisfied a read.");
@@ -514,7 +511,7 @@ function set_all_options(options) {
                        var value = options[option_id];
                        var option_str = (value === null ? "none" : value.toString());
                        return "set " + option_id + " " + option_str;
-                   }).join(";"), true);
+                   }).join(";"), false);
     }
 }
 
