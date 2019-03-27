@@ -406,8 +406,8 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
         make_toggler("Execution",         "eager_fp_recalc",                       "Eager footprint recalc",    "Are footprint calculations considered eagerly takeable?");
         make_toggler("Execution",         "eager_thread_start",                    "Eager thread start",        "Are thread starts considered eagerly takeable?");
 
-      make_separator("Execution",         "execution_advanced",                    "Advanced execution options");
-        make_toggler("Execution",         "priority_reduction",                    "Priority reduction",        "Take priority transitions preferentially (currently: exclusives and multi-successor fetches)");
+//       make_separator("Execution",         "execution_advanced",                    "Advanced execution options");
+
 
  make_custom_toggler("Interface",         "pp_style",                              "Show instruction metadata", "Show or hide instruction bookkeeping/metadata in state printing, e.g. register read/writes", ["full", "compact"]);
         make_toggler("Interface",         "pp_sail",                               "Show Sail state and code",  "Show the Sail interpreter state and code for each in-flight instruction. Note: " +
@@ -464,9 +464,10 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
       make_separator("Search",            "search_random_options",                 "Random search options");
     make_virtual_int("Search",            "random_trials",                         "Number of trials",          "The number of times to randomly search for a final state");
       make_separator("Search",            "search_advanced",                       "Advanced search options");
-     make_int_option("Search",            "transition_limit",                      "Transition limit",          "Transition limit on searches");
-     make_int_option("Search",            "trace_limit",                           "Trace limit",               "Trace limit on searches");
+     make_int_option("Search",            "transition_limit",                      "Transition limit",          "Stop the search if the total number of transitions taken exceeds the limit");
+     make_int_option("Search",            "trace_limit",                           "Trace limit",               "Stop the search if the total number of final states exceeds the limit");
         make_toggler("Search",            "partial_order_reduction",               "Partial order reduction",   "Restrict searches according to the partial order reduction");
+        make_toggler("Search",            "priority_reduction",                    "Priority reduction",        "Take priority transitions preferentially (currently: exclusives and multi-successor fetches)");
         make_toggler("Search",            "compare_analyses",                      "Compare analyses",          "Compare the handwritten and exhaustive analyses");
         make_toggler("Search",            "eager_local_mem",                       "Eager local memory",        "Are memory access to local memory transitions considered eagerly takeable during search?");
 
