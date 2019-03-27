@@ -191,11 +191,10 @@ set:
   ;
 
 focus:
-  | FOCUS THREAD NUM { Base.FocusThread (Some $3) }
-  | FOCUS THREAD OFF { Base.FocusThread     None  }
-  | FOCUS INSTRUCTION NUM NUM       { Base.FocusInstruction (Some ($3, $4)) }
-  | FOCUS INSTRUCTION NUM COLON NUM { Base.FocusInstruction (Some ($3, $5)) }
-  | FOCUS INSTRUCTION OFF           { Base.FocusInstruction           None  }
+  | FOCUS THREAD NUM       { Base.FocusThread (Some $3)      }
+  | FOCUS THREAD OFF       { Base.FocusThread None           }
+  | FOCUS INSTRUCTION ioid { Base.FocusInstruction (Some $3) }
+  | FOCUS INSTRUCTION OFF  { Base.FocusInstruction None      }
   ;
 
 big_num:
@@ -204,12 +203,16 @@ big_num:
   ;
 
 stepi:
-  | STEPI               { Base.StepInstruction (   None,    None) }
-  | STEPI NUM           { Base.StepInstruction (Some $2,    None) }
-  | STEPI NUM NUM       { Base.StepInstruction (Some $2, Some $3) }
-  | STEPI NUM COLON NUM { Base.StepInstruction (Some $2, Some $4) }
+  | STEPI               { Base.StepInstruction (   None, None) }
+  | STEPI NUM           { Base.StepInstruction (Some $2, None) }
+  | STEPI ioid          { Base.StepInstruction (Some (fst $2), Some (snd $2)) }
   ;
 
 peeki:
-  | PEEKI NUM NUM { Base.PeekInstruction ($2, $3) }
+  | PEEKI ioid { Base.PeekInstruction (fst $2, snd $2) }
+  ;
+
+ioid:
+  | NUM NUM       { ($1, $2) }
+  | NUM COLON NUM { ($1, $3) }
   ;

@@ -87,6 +87,12 @@ module type S = sig
     ?filter:(trans -> bool) ->
     ui_state ->
     string
+  val pp_instruction :
+    Globals.ppmode ->
+    ui_state ->
+    Events.thread_id ->
+    Events.ioid ->
+    string
   val pretty_eiids :
     state ->
     (Events.eiid * string) list

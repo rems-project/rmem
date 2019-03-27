@@ -66,57 +66,82 @@ let otConcatWith sep = function
       |> List.rev
       |> otConcat
 
-let reset_color = "\x1b[0m"
-let string_of_color color =
-  let br = 0 in
-  let fg =
-    match color with
-    | "black"     -> 0
-    | "red"       -> 1
-    | "green"     -> 2
-    | "yellow"    -> 3
-    | "blue"      -> 4
-    | "magenta"   -> 5
-    | "cyan"      -> 6
-    | "white"     -> 7
-    | "dark_gray" -> 60
-    | _ -> failwith ("unknown color: " ^ color)
-  in
-  Printf.sprintf "\x1b[%u;%um" br (fg + 30)
+let reset_graphics  = 0
+let bold_attr       = 1
+let underscore_attr = 4
+let blink_attr      = 5
+let reverse_attr    = 7
+let concealed_attr  = 8
+let fg_color_graphics_mode = function
+  | "black"         -> 30
+  | "red"           -> 31
+  | "green"         -> 32
+  | "yellow"        -> 33
+  | "blue"          -> 34
+  | "magenta"       -> 35
+  | "cyan"          -> 36
+  | "white"         -> 37
+  (** I think the 90s/100s are not in the standard **)
+  | "dark_gray"     -> 90
+  | "light_red"     -> 91
+  | "light_green"   -> 92
+  | "light_yellow"  -> 93
+  | "light_blue"    -> 94
+  | "light_magenta" -> 95
+  | "light_cyan"    -> 96
+  | "light_white"   -> 97
+  | color -> failwith ("unknown color: " ^ color)
+let bg_color_graphics_mode c = (fg_color_graphics_mode c) + 10
+let graphics_mode_seq reset mode : string =
+  (* the head of mode is applied last *)
+  List.rev mode
+  |> (fun l -> if reset then reset_graphics :: l else l)
+  |> List.map string_of_int
+  |> String.concat ";"
+  |> Printf.sprintf "\x1b[%sm"
 
-let rec string_of_output_tree ppmode tree : string =
-  match tree with
+let string_of_output_tree ppmode tree : string =
+  let rec helper graphics = function
   | OTEmpty -> ""
   | OTString str -> str
-  | OTEncoded str -> str
-  | OTLine tree -> (string_of_output_tree ppmode tree) ^ "\n"
+  | OTEncoded str ->
+      (graphics_mode_seq true []) ^
+      str ^
+      (graphics_mode_seq true graphics)
+  | OTLine tree -> (helper graphics tree) ^ "\n"
   | OTEmph tree ->
       if ppmode.Globals.pp_colours then
-        "\x1b[1m" ^ (string_of_output_tree ppmode tree) ^ reset_color
+        (graphics_mode_seq false [bold_attr]) ^ (helper (bold_attr :: graphics) tree) ^
+        (graphics_mode_seq true graphics)
       else
-        string_of_output_tree ppmode tree
+        helper graphics tree
   | OTColor (color, tree) ->
       if ppmode.Globals.pp_colours then
-        (string_of_color color) ^ (string_of_output_tree ppmode tree) ^ reset_color
+        let color = fg_color_graphics_mode color in
+        (graphics_mode_seq false [color]) ^
+        (helper (color :: graphics) tree) ^
+        (graphics_mode_seq true graphics)
       else
-        string_of_output_tree ppmode tree
-  | OTCenter tree -> string_of_output_tree ppmode tree
-  | OTClass (cls, tree) -> string_of_calss_output_tree ppmode cls tree
+        helper graphics tree
+  | OTCenter tree -> helper graphics tree
+  | OTClass (cls, tree) -> class_helper cls graphics tree
   | OTVerbose (verb, treec) ->
-      if Globals.is_verbosity_at_least verb then string_of_output_tree ppmode (treec ())
+      if Globals.is_verbosity_at_least verb then helper graphics (treec ())
       else ""
-  | OTConcat trees -> String.concat "" (List.map (string_of_output_tree ppmode) trees)
+  | OTConcat trees -> String.concat "" (List.map (helper graphics) trees)
   | OTHorLine ->
       OTString "----------------------------------------------------------------------------"
       |> otLine
-      |> string_of_output_tree ppmode
-and string_of_calss_output_tree ppmode cls tree : string =
-  match cls with
-  | OTCInfo    -> OTColor ("cyan", tree) |> string_of_output_tree ppmode
-  | OTCWarning -> OTColor ("yellow", tree) |> string_of_output_tree ppmode
-  | OTCFinal
-  | OTCFollowList
-      -> string_of_output_tree ppmode tree
+      |> helper graphics
+  and class_helper cls graphics tree : string =
+    match cls with
+    | OTCInfo    -> OTColor ("cyan", tree)   |> helper graphics
+    | OTCWarning -> OTColor ("yellow", tree) |> helper graphics
+    | OTCFinal
+    | OTCFollowList
+        -> helper graphics tree
+  in
+  helper [] tree
 
 
 let ascii_to_html = [

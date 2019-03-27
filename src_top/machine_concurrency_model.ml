@@ -244,6 +244,8 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   let pp_cand = Pp.pp_cand
   let pp_trans = Pp.pp_trans
   let pp_ui_state = Pp.pp_ui_system_state
+  let pp_instruction = Pp.pp_ui_instruction
+
   let set_model_params model s = sst_of_state {s.sst_state with model = model}
 
 
