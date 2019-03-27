@@ -502,7 +502,19 @@ let stop_promising_priority : trans 'ts 'ss -> bool = function
 end
 
 
-(* TODO: maybe Shaked can add a small explanation of how this is used? *)
+(* Consider an AArch64 STXR instruction, right after fetching it. At this
+state (after some internal transitions) we have two enabled transitions
+for the instruction: T_failed_store_excl and T_successful_store_excl.
+It is safe to nondeterministically take one of them eagerly. That is,
+the exhaustive search need to explore both of these transitions, but it
+can take each one of them eagerly (before any of the other transitions
+currently avilable). Note that these transitions are not "eager"
+transitions, as we need to make non-deterministic choice between the two,
+but the choice can be done eagerly.
+'priority_transitions' returns a list of transition predicates. Each
+predicate identifies a set of transitions from which we can
+nondeterministically chose one eagerly. The additional bool, when true,
+indicates that the transitions should be further subdivided by ioid. *)
 let priority_transitions params (ss_final_state : bool) (_: eager_mode) :
       list ((trans 'ts 'ss -> bool) * bool) =
   match params.t.thread_model with
