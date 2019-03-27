@@ -1145,10 +1145,19 @@ let handle_search_outcome interact_state search_outcome : interact_state =
       end
 
   | Runner.Interrupted (search_state', reason) ->
-      otStrLine "Interrupted: %s" reason
+      let interact_state = update_bt_and_sm search_state' interact_state in
+
+      Screen_base.otClass OTCFinal @@ Screen_base.OTConcat [
+        print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
+        print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
+        print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
+      ]
       |> Screen.show_message interact_state.ppmode;
-      update_bt_and_sm search_state' interact_state
-      |> set_follow_list_from_search_trace (Runner.choices_so_far search_state')
+
+      otStrLine "Interrupted: %s" reason;
+      |> Screen.show_warning interact_state.ppmode;
+
+      set_follow_list_from_observations search_state'.Runner.observed_filterred_finals interact_state
 
   | Runner.OcamlExn (search_state', msg) ->
       Screen_base.otClass OTCFinal @@ Screen_base.OTConcat [
