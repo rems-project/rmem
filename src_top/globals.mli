@@ -116,6 +116,7 @@ type run_dot = (* generate execution graph... *)
   | RD_final_not_ok (* when reaching a final state that does not sat.
                     the condition (and stop) *)
 val run_dot:                   (run_dot option) ref
+val print_cexs:                bool ref
 val generateddir:              (string option) ref
 val print_hex:                 bool ref
 

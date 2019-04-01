@@ -179,6 +179,8 @@ type run_dot = (* generate execution graph... *)
   | RD_final_not_ok (* when reaching a final state that does not sat.
                     the condition (and stop) *)
 let run_dot                    = ref None
+(* print out the candidate executions of all final states *)
+let print_cexs                 = ref false
 let generateddir               = ref None
 let print_hex                  = ref false
 

@@ -25,7 +25,7 @@ open Params
 
 module Make (ConcModel: Concurrency_model.S) = struct
 
-
+type hash = string
 module StateHashSet = Set.Make(String)
 
 module TidMap = Map.Make(struct
@@ -156,6 +156,12 @@ type search_state =
     ppmode:        Globals.ppmode;
 }
 
+
+let hash_of_system_state system_state = 
+  ConcModel.make_ui_state Globals.ppmode_for_hashing None system_state []
+  |> snd
+  |> ConcModel.pp_ui_state Globals.ppmode_for_hashing
+  |> Digest.string
 
 (* retrun a trace leading to the head of search_state.search_nodes;
 head is the last transition *)
@@ -779,13 +785,7 @@ let rec search search_state : search_outcome =
              search_state.options.hash_prune 
              && not (ConcModel.stopped_promising search_node.system_state)
         then
-          let hash =
-            ConcModel.make_ui_state Globals.ppmode_for_hashing
-              None search_node.system_state []
-            |> snd
-            |> ConcModel.pp_ui_state Globals.ppmode_for_hashing
-            |> Digest.string
-          in
+          let hash = hash_of_system_state search_node.system_state in
 
           if StateHashSet.mem hash search_state.state_hashes then
             (* we have already seen this state *)

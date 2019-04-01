@@ -2570,6 +2570,13 @@ let run_search
     | _ -> []
   in
 
+  let targets = 
+    if !Globals.print_cexs then
+      let print_cex_pred state = (ConcModel.transitions state) = [] in
+      [print_cex_pred]
+    else []
+  in
+
   let run_search_from interact_state : unit =
     let print_results partial = fun search_state ->
       if partial then
@@ -2586,6 +2593,35 @@ let run_search
         (Sys.time ())
     in
 
+    (* let print_cexs search_state : unit = 
+     *   let (_,acexs) =
+     *     List.fold_left
+     *       (fun (hashes, acexs) (_,s) -> 
+     *         let hash = Runner.hash_of_system_state s in
+     *         if Pset.mem hash hashes then (hashes,acexs)
+     *         else
+     *           let cex = ConcModel.make_cex_candidate s in
+     *           let acex = CandidateExecution.acex_of_cex cex in
+     *           (Pset.add hash hashes, acex :: acexs)
+     *       )
+     *       (Pset.empty String.compare, [])
+     *       search_state.Runner.observed_targets 
+     *   in
+     *   Json_candidate_execution.print_acexs search_state.test_info acexs
+     * in *)
+
+    let print_cexs search_state : unit = 
+      let acexs =
+        List.map
+          (fun (_,s) -> 
+            let cex = ConcModel.make_cex_candidate s in
+            CandidateExecution.acex_of_cex cex
+          )
+          search_state.Runner.observed_targets 
+      in
+      Json_candidate_execution.print_distinct_acexs search_state.test_info acexs
+    in
+
     match
       Runner.search_from_state
         ppmode
@@ -2594,11 +2630,13 @@ let run_search
         (List.hd interact_state.interact_nodes).system_state
         (List.map fst breakpoints)
         [] (* bounds *)
-        [] (* targets *)
+        targets (* targets *)
         [] (* filters *)
         (print_results true)
     with
-    | Runner.Complete search_state' -> print_results false search_state'
+    | Runner.Complete search_state' -> 
+       (if !Globals.print_cexs then print_cexs search_state' else ());
+       print_results false search_state'
 
     | Runner.Breakpoints ({Runner.search_nodes = {Runner.system_state = sst} :: _}, bps) ->
         (* a breakpoint was triggered *)

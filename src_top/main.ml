@@ -338,6 +338,11 @@ let opts = [
       | true  -> Globals.run_dot := Some Globals.RD_final_not_ok
       | false -> Globals.run_dot := None),
     (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_not_ok)));
+("-print_cexs",
+    Arg.Bool (function
+      | true  -> Globals.print_cexs := true
+      | false -> Globals.print_cexs := false),
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first complete execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final)));
 ("-dot_dir",
     Arg.String (fun dir -> Globals.generateddir := Some dir),
     (Printf.sprintf "<dir> directory for generated graphs (%s)" (match !Globals.generateddir with None -> "\"\"" | Some s -> s)));
