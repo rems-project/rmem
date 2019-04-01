@@ -605,6 +605,7 @@ function check_hover (button, dropdown, which) {
         window.setTimeout(function () {
             if (button.filter(".hover:not(:disabled):not(.ui-state-disabled)").length > 0
                 || dropdown.filter(".hover:not(:disabled):not(.ui-state-disabled)").length > 0
+                || dropdown.find("*:hover").length > 0
                 /* for debugging purposes */
                 || button.filter(".force_hover").length > 0
                 || dropdown.filter(".force_hover").length > 0) {
@@ -624,7 +625,7 @@ function check_hover (button, dropdown, which) {
                 dropdown.hide();
                 button.removeClass("active");
             }
-        }, 5);
+        }, 100);
     }
 }
 
