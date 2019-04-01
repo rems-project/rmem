@@ -32,11 +32,11 @@ let mycommand ppmode command input_file output_file =
       done with
       | End_of_file ->
           close_in err;
-          Screen_base.otConcat @@
-            Screen_base.otStrLine "Error executing:" ::
-            Screen_base.otStrLine "%s" command_line ::
-            Screen_base.OTLine Screen_base.OTEmpty ::
-            (List.map (Screen_base.otStrLine "%s") !err_lines |> List.rev)
+          Structured_output.concat @@
+            Structured_output.strLine "Error executing:" ::
+            Structured_output.strLine "%s" command_line ::
+            Structured_output.Line Structured_output.Empty ::
+            (List.map (Structured_output.strLine "%s") !err_lines |> List.rev)
           |> Screen.show_warning ppmode;
           exit exitcode;
     end
@@ -92,7 +92,7 @@ module Make (ConcModel: Concurrency_model.S)
     mycommand ppmode ("neato -Tfig") (graph ^ ".dot") (graph ^ ".fig");
 
     (* TODO: make filename configurable and more DRY *)
-    Screen_base.otStrLine "wrote %s.pdf" graph
+    Structured_output.strLine "wrote %s.pdf" graph
     |> Screen.show_message ppmode
 
 

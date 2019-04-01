@@ -185,25 +185,6 @@ hr {
 /*   font-family:"Courier New",Courier,monospace; */
 /* } */
 
-.trans {
-    text-decoration: underline;
-    color: blue;
-}
-
-.trans.default {
-    font-weight: bold;
-    background: yellow;
-}
-
-.trans:hover {
-  cursor: pointer;
-}
-
-.flowingstorage {
-  font-family: monospace;
-  word-spacing: 0px;
-}
-
 .window hr, .dialog hr {
   border: none;
 }
@@ -238,43 +219,6 @@ hr {
 
 .window input[type=button]:last-child, .dialog input[type=button]:last-child {
   margin-right: auto
-}
-
-span.tran_id {
-    color: blue;
-}
-
-span.memory_action {
-    color: darkcyan;
-}
-
-span.warning {
-    color: darkgoldenrod;
-    font-weight: bold;
-}
-
-span.info {
-    color: darkcyan;
-}
-
-span.final {
-    color: darkgreen;
-}
-
-span.sail {
-    color: darkgreen;
-}
-
-span.changed_gone {
-    color: gray;
-}
-
-span.changed_new {
-    color: red;
-}
-
-span.dwarf_source_lines {
-    color: darkgoldenrod;
 }
 
 .interact_prompt {

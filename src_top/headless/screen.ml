@@ -14,6 +14,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+let isa_defs_path = ref None
+
 type output_chan =
   | NoOutput
   | FileName of string
@@ -34,7 +36,8 @@ let set_trace_output str =
 
 let clear_screen_to_chan chan =
   output_string chan "\027[;H\027[J";
-  output_string chan "============================================================================\n"
+  output_string chan (String.make 80 '=');
+  output_string chan "\n"
 
 
 module TextPrinters : Screen_base.Printers = struct
@@ -47,7 +50,7 @@ module TextPrinters : Screen_base.Printers = struct
       raise (Screen_base.Isa_defs_unmarshal_error (basename, s))
     in
     let filename =
-      match !Globals.isa_defs_path with
+      match !isa_defs_path with
       | Some path -> Filename.concat path basename
       | None -> raise (Screen_base.Isa_defs_unmarshal_error (basename, "have no valid ISA defs path!"))
     in
@@ -66,7 +69,7 @@ module TextPrinters : Screen_base.Printers = struct
     (try close_in f with Sys_error s -> bail s);
     str
 
-  let of_output_tree = Screen_base.string_of_output_tree
+  let of_structured_output = Structured_output.to_string
 
   let update_transition_history trace choice_summary =
     let to_chan chan =
@@ -120,7 +123,7 @@ include (Screen_base.Make (TextPrinters))
 let quit = fun () -> (exit 0 |> ignore)
 
 let rec prompt ppmode maybe_options prompt_ot _hist (cont: string -> unit) =
-  Screen_base.string_of_output_tree ppmode prompt_ot
+  Structured_output.to_string ppmode.Globals.pp_colours prompt_ot
   |> Printf.printf "%s: %!";
   let str =
     try read_line () with

@@ -36,54 +36,6 @@ open Params
 
 (** output options **************************************************)
 
-type verbosity_level =
-  | Quiet                  (* -q, minimal output and things important for herd-tools *)
-  | Normal                 (* default, things normal users would like to see *)
-  | ThrottledInformation   (* -v, normal mode for informed users, no more than one line
-                           every 5 seconds or so *)
-  | UnthrottledInformation (* -v -v, even more information, might render the output unusable *)
-  | Debug                  (* -debug, cryptic information *)
-
-let verbosity_levels = [
- Quiet                  ;
- Normal                 ;
- ThrottledInformation   ;
- UnthrottledInformation ;
- Debug                  ]
-
-let pp_verbosity_level v =
-  match v with
-  | Quiet                  -> "Quiet"
-  | Normal                 -> "Normal"
-  | ThrottledInformation   -> "ThrottledInformation"
-  | UnthrottledInformation -> "UnthrottledInformation"
-  | Debug                  -> "Debug"
-
-
-
-let verbosity = ref Normal
-
-let increment_verbosity = fun () ->
-  verbosity :=
-    begin match !verbosity with
-    | Quiet                  -> Normal
-    | Normal                 -> ThrottledInformation
-    | ThrottledInformation   -> UnthrottledInformation
-    | UnthrottledInformation -> Debug
-    | Debug                  -> Debug
-    end
-
-let is_verbosity_at_least (verb: verbosity_level) : bool =
-  let int_of_verbosity_level v =
-    match v with
-    | Quiet                  -> 0
-    | Normal                 -> 1
-    | ThrottledInformation   -> 2
-    | UnthrottledInformation -> 3
-    | Debug                  -> 4
-  in
-  int_of_verbosity_level !verbosity >= int_of_verbosity_level verb
-
 let logdir = ref None
 
 let dont_tool = ref false (* "Dont" output *)
@@ -163,7 +115,6 @@ let auto_follow       = ref false
 let random_seed       = ref (None : int option)
 let interactive_auto  = ref false
 let auto_internal     = ref false
-let dumb_terminal     = ref false
 
 let follow = ref ([] : Interact_parser_base.ast list)
 
@@ -172,8 +123,6 @@ let ui_commands = ref None
 let use_dwarf = ref false
 let dwarf_source_dir = ref ""
 let dwarf_show_all_variable_locations = ref false (* later will probably refactor into ppmode *)
-
-let isa_defs_path = ref None
 
 (** PP options ******************************************************)
 

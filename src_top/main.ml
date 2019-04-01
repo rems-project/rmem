@@ -25,6 +25,7 @@
 open Params;;
 open RunOptions;;
 
+module SO = Structured_output;;
 
 (* FIXME: (SF) does this have any effect on performance? when needed
 OCAMLRUNPARAM=b can be used instead *)
@@ -247,21 +248,21 @@ let opts = [
 
 (** verbosity and output ********************************************)
 ("-v",
-    Arg.Unit Globals.increment_verbosity,
-    (Printf.sprintf " increase the level of verbosity (repeatable) (levels: %s) (default: %s)" (String.concat "," (List.map Globals.pp_verbosity_level Globals.verbosity_levels)) (Globals.pp_verbosity_level !Globals.verbosity)));
+    Arg.Unit SO.increment_verbosity,
+    Printf.sprintf " increase the level of verbosity (repeatable)");
 ("-q",
     Arg.Set quiet,
-    (Printf.sprintf " set the level of verbosity to %s" (Globals.pp_verbosity_level (List.hd Globals.verbosity_levels))));
+    Printf.sprintf " set the level of verbosity to quiet");
 ("-debug",
     Arg.Unit (fun () -> Debug.enable_debug ();
-                        Globals.verbosity := Globals.Debug),
+                        SO.verbosity := SO.Debug),
     " highest level of verbosity (for debugging)");
 ("-debug_sail_interp",
     Arg.Bool (fun b -> Globals.debug_sail_interp := b), (Printf.sprintf " enable Sail interpreter debug AST printing (%b)" !Globals.debug_sail_interp));
 ("-perfdebug",
     Arg.Unit (fun () -> Debug.enable_perfdebug ();
                         (* FIXME: (SF) high verbosity will affect performance *)
-                        Globals.verbosity := Globals.Debug),
+                        SO.verbosity := SO.Debug),
     " turn on performance debug");
 ("-dont",
     Arg.Unit (fun () -> quiet := true;
@@ -298,9 +299,6 @@ let opts = [
 ("-colours",
     Arg.Bool (fun b -> Globals.pp_colours := b),
     (Printf.sprintf "<bool> colours in interactive terminal output (turned on by -interactive true) (%b)" !Globals.pp_colours));
-("-dumb_terminal",
- Arg.Bool (fun b -> Globals.dumb_terminal := b),
- (Printf.sprintf "<bool> disable readline, cursor movement, etc for dumb terminal or testing (%b)" !Globals.dumb_terminal));
 
 ("-pp_style",
     Arg.String (fun s -> match s with
@@ -367,7 +365,7 @@ let opts = [
     Printf.sprintf "<string> directory containing source files, for DWARF debug output (%s)" !Globals.dwarf_source_dir);
 
 ("-isa_defs_path",
- Arg.String (fun s -> Globals.isa_defs_path := Some s),
+ Arg.String (fun s -> Screen.isa_defs_path := Some s),
  Printf.sprintf "<string> directory containing ISA .defs files previously marshalled out (default: autodetect)");
 
 
@@ -381,7 +379,10 @@ let opts = [
     " list the supported ISA models");
 
 ("-print_console_help",
-    Arg.Unit (fun () -> Printf.printf "%s" Console_help.help_message; exit 0),
+    Arg.Unit (fun () ->
+        Console_help.help_message (Some 35)
+        |> Screen.show_message (Globals.get_ppmode ());
+        exit 0),
     " print the help message for the console and then exit");
 
 (** deprecated ******************************************************)
@@ -399,6 +400,9 @@ let opts = [
     "");
 ("-suppress_internal",
     Arg.Unit (fun () -> fatal_error "-suppress_internal was deprecated. The interactive mode command 'set eaget_pseudocode_internal true' has a simmilar effect to '-suppress_internal true'."),
+    "");
+("-dumb_terminal",
+    Arg.Unit (fun () -> fatal_error "-dumb_terminal was deprecated (try building with 'UI=headless')"),
     "");
 (*
 ("-test_syscall",
@@ -433,50 +437,50 @@ let main = fun () ->
   (* this ppmode is just for printing some messages, don't use it for anything else *)
   let ppmode = Globals.get_ppmode () in
 
-  (fun () -> Screen_base.otStrLine "*** BEGIN ISA DEFS PATH AUTODETECTION")
+  (fun () -> SO.strLine "*** BEGIN ISA DEFS PATH AUTODETECTION")
   |> Screen.show_debug ppmode;
 
   let check_isa_path path =
     List.for_all
       (fun isa ->
         let module Isa = (val isa : Isa_model.ISADefs) in
-        let old_val = !Globals.isa_defs_path in
-        Globals.isa_defs_path := Some path;
+        let old_val = !Screen.isa_defs_path in
+        Screen.isa_defs_path := Some path;
         try
           Isa.isa_defs_thunk ~no_memo:true () |> ignore;
-          Globals.isa_defs_path := old_val;
+          Screen.isa_defs_path := old_val;
           true
         with
         | Screen_base.Isa_defs_unmarshal_error (basename, msg) ->
-            (fun () -> Screen_base.otStrLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename)
+            (fun () -> SO.strLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename)
             |> Screen.show_debug ppmode;
-            Globals.isa_defs_path := old_val;
+            Screen.isa_defs_path := old_val;
             false)
       Isa_model.all_isa_defs
   in
 
   let try_isa_path_candidate path_thunk =
-    if !Globals.isa_defs_path = None then begin
+    if !Screen.isa_defs_path = None then begin
         match path_thunk () with
         | Some path ->
-            (fun () -> Screen_base.otStrLine "trying candidate %s for ISA defs path" path)
+            (fun () -> SO.strLine "trying candidate %s for ISA defs path" path)
             |> Screen.show_debug ppmode;
             if check_isa_path path then
-                Globals.isa_defs_path := Some path
+                Screen.isa_defs_path := Some path
         | None -> ()
     end;
     ()
   in
 
-  if !Globals.isa_defs_path <> None then
-    (fun () -> Screen_base.otStrLine "have ISA defs path from command line")
+  if !Screen.isa_defs_path <> None then
+    (fun () -> SO.strLine "have ISA defs path from command line")
     |> Screen.show_debug ppmode;
 
   let isa_path_candidates = [
       (fun () ->
         try
           let path = Sys.getenv "ISA_DEFS_PATH" in
-          (fun () -> Screen_base.otStrLine "have ISA defs path from ISA_DEFS_PATH env var")
+          (fun () -> SO.strLine "have ISA defs path from ISA_DEFS_PATH env var")
           |> Screen.show_debug ppmode;
           Some path
         with
@@ -502,16 +506,16 @@ let main = fun () ->
 
   List.iter try_isa_path_candidate isa_path_candidates;
 
-  begin match !Globals.isa_defs_path with
+  begin match !Screen.isa_defs_path with
   | Some path ->
-      (fun () -> Screen_base.otStrLine "found ISA defs in %s" path)
+      (fun () -> SO.strLine "found ISA defs in %s" path)
       |> Screen.show_debug ppmode
   | None ->
-      Screen_base.otStrLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
+      SO.strLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
       |> Screen.show_warning ppmode
   end;
 
-  (fun () -> Screen_base.otStrLine "*** ISA DEFS PATH AUTODETECTION COMPLETE")
+  (fun () -> SO.strLine "*** ISA DEFS PATH AUTODETECTION COMPLETE")
   |> Screen.show_debug ppmode;
 
   if !should_list_isas then
@@ -540,7 +544,7 @@ let main = fun () ->
   if not Screen.interactive && !run_options.RunOptions.interactive then
     fatal_error "the tool was built without interactive support, '-interactive true' is not allowed";
 
-  if !quiet then Globals.verbosity := Globals.Quiet;
+  if !quiet then SO.verbosity := SO.Quiet;
 
   if !Globals.model_params.ss.ss_model = Flowing_storage_model
     && !Globals.flowing_topologies = []
@@ -551,19 +555,19 @@ let main = fun () ->
   if not !run_options.RunOptions.interactive
       && !Globals.run_dot = Some Globals.RD_step
   then
-    Screen_base.otStrLine "'-dot true' is ignored in non-interactive mode"
+    SO.strLine "'-dot true' is ignored in non-interactive mode"
     |> Screen.show_warning ppmode;
 
   if !run_options.RunOptions.interactive then
     begin match !Globals.run_dot with
     | Some Globals.RD_final ->
-        Screen_base.otStrLine "'-dot_final true' is ignored in interactive mode"
+        SO.strLine "'-dot_final true' is ignored in interactive mode"
         |> Screen.show_warning ppmode;
     | Some Globals.RD_final_ok ->
-        Screen_base.otStrLine "'-dot_final_ok true' is ignored in interactive mode"
+        SO.strLine "'-dot_final_ok true' is ignored in interactive mode"
         |> Screen.show_warning ppmode;
     | Some Globals.RD_final_not_ok ->
-        Screen_base.otStrLine "'-dot_final_not_ok true' is ignored in interactive mode"
+        SO.strLine "'-dot_final_not_ok true' is ignored in interactive mode"
         |> Screen.show_warning ppmode;
     | Some Globals.RD_step
     | None -> ()
@@ -585,13 +589,13 @@ let main = fun () ->
 
   Pp.linebreak_init();
 
-  if !Globals.verbosity <> Globals.Normal (* specially important for quiet mode as Luc's tools rely on this *)
+  if !SO.verbosity <> SO.Normal (* specially important for quiet mode as Luc's tools rely on this *)
       && not !Globals.dont_tool
   then
-    Screen_base.OTConcat [
-      Screen_base.otStrLine "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
-      Screen_base.otStrLine "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
-      Screen_base.otStrLine "#Model: %s" (Model_aux.pp_model !Globals.model_params);
+    SO.Concat [
+      SO.strLine "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
+      SO.strLine "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
+      SO.strLine "#Model: %s" (Model_aux.pp_model !Globals.model_params);
     ]
     |> Screen.show_message ppmode;
 

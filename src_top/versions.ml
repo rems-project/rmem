@@ -87,7 +87,7 @@ module Linksem = Make_git(Linksem_version)
 let print : unit -> unit = fun () ->
   Printf.printf "Version: %s\n" Rmem.describe;
 
-  if Globals.is_verbosity_at_least Globals.ThrottledInformation then begin
+  if Structured_output.is_verbosity_at_least Structured_output.ThrottledInformation then begin
     Printf.printf "\nOCaml: %s\n\n" Version.ocaml;
     Printf.printf "** RMEM: ***********************************\n";
     Printf.printf "%s\n" Rmem.str;

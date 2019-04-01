@@ -32,21 +32,6 @@
 
 (** output options **************************************************)
 
-type verbosity_level =
-  | Quiet                  (* -q, minimal output and things important for herd-tools *)
-  | Normal                 (* default, things normal users would like to see *)
-  | ThrottledInformation   (* -v, normal mode for informed users, no more than one line
-                           every 5 seconds or so *)
-  | UnthrottledInformation (* -v -v, even more information, might render the output unusable *)
-  | Debug                  (* -debug, cryptic information *)
-
-val verbosity_levels: verbosity_level list
-val pp_verbosity_level: verbosity_level -> string
-
-val verbosity:             verbosity_level ref
-val increment_verbosity:   unit -> unit
-val is_verbosity_at_least: verbosity_level -> bool
-
 val logdir: (string option) ref
 
 val dont_tool: bool ref (* "Dont" output *)
@@ -81,7 +66,6 @@ val add_bt_and_sm_to_model_params: ((Sail_impl_base.address * int) * string) lis
 val auto_follow:       bool ref
 val interactive_auto:  bool ref
 val auto_internal:     bool ref
-val dumb_terminal:     bool ref
 
 val random_seed: int option ref   (* per ppcmem invocation seed: None for fresh, or Some n for seed n *)
 
@@ -92,8 +76,6 @@ val ui_commands: (string option) ref
 val use_dwarf: bool ref
 val dwarf_source_dir: string ref
 val dwarf_show_all_variable_locations: bool ref
-
-val isa_defs_path: (string option) ref
 
 (** PP stuff ********************************************************)
 

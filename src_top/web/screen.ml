@@ -62,7 +62,7 @@ module WebPrinters : Screen_base.Printers = struct
   let read_filename basename = Js.to_bytestring (Js.Unsafe.fun_call (Js.Unsafe.js_expr "read_filename")
                                                                 [|Js.Unsafe.inject (Js.string basename)|])
 
-  let of_output_tree = Screen_base.html_of_output_tree
+  let of_structured_output = Structured_output.to_html
 end
 
 include (Screen_base.Make (WebPrinters))
@@ -70,8 +70,7 @@ include (Screen_base.Make (WebPrinters))
 let quit : unit -> unit = fun () ->
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "quit") [||] |> ignore
 
-let current_options (options : Screen_base.options_state) =
-  let open Screen_base in
+let current_options (options : options_state) =
   let open RunOptions in
   let open Globals in
   let run_options = options.run_options in
@@ -120,11 +119,11 @@ let current_options (options : Screen_base.options_state) =
       | None -> Js.null
     val verbosity_ =
       Js.string (match options.verbosity with
-      | Globals.Quiet -> "quiet"
-      | Globals.Normal -> "normal"
-      | Globals.ThrottledInformation -> "verbose"
-      | Globals.UnthrottledInformation -> "very"
-      | Globals.Debug -> "debug")
+      | Structured_output.Quiet -> "quiet"
+      | Structured_output.Normal -> "normal"
+      | Structured_output.ThrottledInformation -> "verbose"
+      | Structured_output.UnthrottledInformation -> "very"
+      | Structured_output.Debug -> "debug")
     val pp_style_ = Js.string (Globals.pp_ppstyle ppmode.pp_style)
     val choice_history_limit_ =
       match ppmode.pp_choice_history_limit with
@@ -150,7 +149,7 @@ let current_options (options : Screen_base.options_state) =
 
 let prompt ppmode maybe_options prompt_ot history cont =
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt") [|
-    Js.Unsafe.inject (Js.string (Screen_base.html_of_output_tree ppmode prompt_ot))
+    Js.Unsafe.inject (Js.string (Structured_output.to_html ppmode.Globals.pp_colours prompt_ot))
   |] |> ignore;
   begin match maybe_options with
   | Some options -> Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_options")

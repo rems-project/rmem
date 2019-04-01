@@ -471,7 +471,7 @@ let pp_html_node_of_instruction  m pi pw render_edges positions thread_node (i:c
             match i.cex_reg_reads with
             | [] -> ""
             | _ -> begin
-                if Globals.is_verbosity_at_least Globals.Debug then
+                if Structured_output.is_verbosity_at_least Structured_output.Debug then
                   printf "* Graph constructing reg-rfs for instruction with ioid %s, cex_regs_in = [%s], cex_regs_out = [%s], cex_reg_reads = [%s], cex_reg_writes = [%s]\n"
                          (Pp.pp_pretty_ioid i.cex_instance_ioid)
                          (String.concat "," (List.map (Pp.pp_reg m) (Pset.elements i.cex_regs_in)))
