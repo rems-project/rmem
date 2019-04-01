@@ -191,6 +191,39 @@ function make_dropdown (group, option_id, name, desc, choices, data_bind, disabl
     };
 }
 
+function make_virtual_dropdown (group, option_id, name, desc, choices, data_bind, disabled_msg) {
+    options[option_id] = {
+        id: option_id,
+        name: name,
+        desc: desc,
+        group: group,
+        cls: "dropdown",
+        choices: choices,
+        disabled_msg: disabled_msg,
+        create_func: function (opt) {
+            var div = $('<div class="top"'
+                        + (opt.data_bind ? ' data-bind="' + opt.data_bind + '"' : '')
+                        + "></div>");
+            var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
+            if (opt.disabled_msg) {
+                $('<span class="disabled_msg" title="' + opt.desc + '">&nbsp;(' + opt.disabled_msg + ")</span>").appendTo(label);
+            }
+            label.appendTo(div);
+
+            var select = $('<select id="' + opt.id + '-select"></select>');
+            for (var key in opt.choices) {
+                $('<option value="' + key + '">' + opt.choices[key] + "</option>")
+                    .appendTo(select);
+            }
+            select.appendTo(div);
+
+            return div;
+        },
+        update_func: function (opt, value) { },
+        data_bind: data_bind
+    };
+}
+
 function make_model_dropdown (group, option_id, name, desc, choices, accessor, data_bind, disabled_msg) {
     options[option_id] = {
         id: option_id,
@@ -438,7 +471,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
      make_button_row("Search", "search_buttons_random", {
          "Random": function (e) {
              var n = $("#random_trials-button").text();
-             do_command("search random " + n, true);
+             do_command("search random " + n + " " + $("#search_break-select")[0].value, true);
              e.preventDefault();
              return false;
          }
@@ -449,7 +482,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
                             + "unless your browser has tail call optimisation. Continue?",
                             function () {
                                 console.log("Exhaustive search started: " + new Date().toString());
-                                do_command("search exhaustive", true);
+                                do_command("search exhaustive " + $("#search_break-select")[0].value, true);
                                 console.log("Exhaustive search finished: " + new Date().toString());
                             });
              e.preventDefault();
@@ -457,6 +490,12 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
          }
      });
       make_separator("Search",            "search_header",                         "Search options");
+make_virtual_dropdown("Search",           "search_break",                          "Break on",                  "Terminate the search at the first state of the given type", {
+    "": "(none)",
+    "final": "Final",
+    "final_ok": "Final ok",
+    "final_not_ok": "Final not ok"
+});
         make_toggler("Search",            "hash_prune",                            "Hash prune",                "Avoid visiting subtrees more than once by hashing states");
         make_toggler("Search",            "prune_restarts",                        "Prune restarts",            "Prune traces with instruction restarts");
         make_toggler("Search",            "prune_discards",                        "Prune discards",            "Prune traces with instruction discards (requires forbid_tree_speculation)", "css: { disabled: tree_speculation() !== 'forbid' }", "requires forbid_tree_speculation");
