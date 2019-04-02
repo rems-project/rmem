@@ -30,31 +30,71 @@ open CandidateExecution
 open Events
 open Printf
    
-let spaces (n : int) : string = String.init n (fun _ -> ' ')
+let spaces (n : int) : string = String.make n ' '
 let enclose (c : string) (s : string) = c ^ s ^ c
 let enquote = enclose "\""
 
 
-let print_list (indent : int) (sameline : bool)
+let print_header (indent : int) test_info =
+  spaces indent ^ sprintf "{\n" ^
+  spaces indent ^ sprintf "  \"auto generated\": \"by rmem\",\n" ^
+  spaces indent ^ sprintf "  \"Revision\": \"%s\",\n" Versions.Rmem.describe ^
+  spaces indent ^ sprintf "  \"Command line\": \"%s\",\n" (String.concat " " @@ Array.to_list Sys.argv) ^
+  spaces indent ^ sprintf "  \"Model\": \"%s\",\n" (Model_aux.pp_model !Globals.model_params) ^
+  spaces indent ^ sprintf "  \"Litmus hash\": \"%s\",\n" (try List.assoc "Hash" test_info.Test.info with Not_found -> "???") ^
+  spaces indent ^ sprintf "}\n"
+
+
+let print_list_body (indent : int)
+      (f : int -> 'x -> string) (xs : 'x list) : string list = 
+  List.map (f indent) xs
+
+let print_set_body (indent : int)
+      (f : int -> 'x -> string) (xs : 'x list) : string list = 
+  let (_,pps) =
+    List.fold_left
+      (fun (hashes,pps) x ->
+        let pp = f indent x in
+        let hash = Digest.string pp in
+        if Pset.mem hash hashes
+        then (hashes,pps)
+        else (Pset.add hash hashes, pp :: pps)
+      )
+      (Pset.empty String.compare,[])
+      xs in
+  List.rev pps
+
+let print_list_or_set (set : bool) (indent : int) (sameline : bool)
       (f : int -> 'x -> string) (xs : 'x list) : string = 
-  if xs = [] then
-    "[]"
-  else if sameline then
-    spaces indent ^ "[" ^ (String.concat ", " (List.map (f 0) xs)) ^ "]"
+  let body indent =
+    if set
+    then print_set_body indent f xs
+    else print_list_body indent f xs in
+  if sameline || xs = [] then
+    spaces indent ^ "[" ^ (String.concat ", " (body 0)) ^ "]"
   else
     spaces indent ^ "[\n" ^ 
-      String.concat ",\n" (List.map (f (indent+1)) xs) ^ "\n" ^ 
-        spaces indent ^ "]"
+    String.concat ",\n" (body (indent+1)) ^ "\n" ^ 
+    spaces indent ^ "]"
   
+let print_list (indent : int) (sameline : bool)
+      (f : int -> 'x -> string) (xs : 'x list) : string = 
+  print_list_or_set false indent sameline f xs
 
+let print_set (indent : int) (sameline : bool)
+      (f : int -> 'x -> string) (xs : 'x list) : string = 
+  print_list_or_set true indent sameline f xs
 
-let print_eiid (indent : int) ((tid,ioid),eid) =
+let print_eiid (indent : int) (eiid : Events.eiid) : string =
+  let ((tid,ioid),eid) = eiid in
   spaces indent ^ sprintf "[%d,%d,%d]" tid ioid eid
 
-let print_id_rel (indent : int) rel =
-  let rel = Pset.elements rel in
-  print_list indent false
-    (fun indent (e,e') -> print_list indent true print_eiid [e; e']) rel
+let print_eiid_tuple (indent : int) ((e,e') : (eiid * eiid)) : string =
+  print_list indent true print_eiid [e; e']
+
+let print_id_rel (indent : int) (rel : (eiid*eiid) Pset.set) : string = 
+  let rel : (eiid*eiid) list = Pset.elements rel in
+  print_list indent false print_eiid_tuple rel
 
 let print_event_type indent e =
   let etype = match e with
@@ -99,17 +139,24 @@ let print_rf indent rf =
   print_list indent false print_rf_edge rf
 
 
-let print_acex (acex : acex) : string = 
+let print_acex (indent : int) (acex : acex) : string = 
+  spaces indent ^ "{\n" ^ 
+  spaces indent ^ "  \"events\":\n" ^ print_events (indent+4) acex.acex_events ^ ",\n" ^
+  spaces indent ^ "  \"po\":\n" ^ print_id_rel (indent+4) acex.acex_po ^ ",\n" ^
+  spaces indent ^ "  \"same-thread\":\n" ^ print_id_rel (indent+4) acex.acex_same_thread ^ ",\n" ^
+  spaces indent ^ "  \"same-instr\":\n" ^ print_id_rel (indent+4) acex.acex_same_instr ^ ",\n" ^
+  spaces indent ^ "  \"addr\":\n" ^ print_id_rel (indent+4) acex.acex_addr ^ ",\n" ^
+  spaces indent ^ "  \"data\":\n" ^ print_id_rel (indent+4) acex.acex_data ^ ",\n" ^
+  spaces indent ^ "  \"ctrl\":\n" ^ print_id_rel (indent+4) acex.acex_ctrl ^ ",\n" ^
+  spaces indent ^ "  \"rf\":\n" ^ print_rf (indent+4) acex.acex_rf ^ ",\n" ^
+  spaces indent ^ "  \"co\":\n" ^ print_id_rel (indent+4) acex.acex_co ^ "\n" ^ 
+  spaces indent ^ "}"
+
+
+let print_top test_info (acexs : acex list) : string = 
   "{\n" ^ 
-  "  \"events\":\n" ^ print_events 4 acex.acex_events ^ ",\n" ^
-  "  \"po\":\n" ^ print_id_rel 4 acex.acex_po ^ ",\n" ^
-  "  \"same-thread\":\n" ^ print_id_rel 4 acex.acex_same_thread ^ ",\n" ^
-  "  \"same-instr\":\n" ^ print_id_rel 4 acex.acex_same_instr ^ ",\n" ^
-  "  \"addr\":\n" ^ print_id_rel 4 acex.acex_addr ^ ",\n" ^
-  "  \"data\":\n" ^ print_id_rel 4 acex.acex_data ^ ",\n" ^
-  "  \"ctrl\":\n" ^ print_id_rel 4 acex.acex_ctrl ^ ",\n" ^
-  "  \"rf\":\n" ^ print_rf 4 acex.acex_rf ^ ",\n" ^
-  "  \"co\":\n" ^ print_id_rel 4 acex.acex_co ^ "\n" ^ 
+  "  \"meta\":\n" ^ print_header 4 test_info ^ ",\n" ^
+  "  \"executions\":\n" ^ print_set 4 false print_acex acexs ^ "\n" ^
   "}"
   
 
@@ -128,22 +175,8 @@ let basename_in_dir (name: string) : string =
  *   close_out tikz_out *)
 
 let print_distinct_acexs (test_info : Test.info) (acexs : acex list) : unit = 
-  let tikz_out = open_out ((basename_in_dir test_info.Test.name) ^ ".json") in
-
-  let _ =
-    List.fold_left
-      (fun hashes acex ->
-        let acex_printed = print_acex acex in
-        let hash = Digest.string acex_printed in
-        if Pset.mem hash hashes
-        then hashes
-        else (fprintf tikz_out "%s\n\n" acex_printed; 
-              Pset.add hash hashes)
-      )
-      (Pset.empty String.compare)
-      acexs
-  in
-
-  close_out tikz_out
+  let json_out = open_out ((basename_in_dir test_info.Test.name) ^ ".json") in
+  fprintf json_out "%s\n\n" (print_top test_info acexs); 
+  close_out json_out
 
 

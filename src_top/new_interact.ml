@@ -18,6 +18,7 @@
 (*===============================================================================*)
 
 open RunOptions
+open Params
 
 module SO = Structured_output
 
@@ -1579,7 +1580,7 @@ let do_peek_instruction (tid : int) (inst_n : int)  interact_state : interact_st
         match outcome with
         | Runner.Complete search_state' ->
             let node = List.hd interact_state.interact_nodes in
-            let traces = Hashtbl.create (List.length search_state'.observed_targets) in
+            let traces = Hashtbl.create (List.length search_state'.Runner.observed_targets) in
             List.iter
               (fun (trace, state) ->
                 let trace =
@@ -1608,7 +1609,7 @@ let do_peek_instruction (tid : int) (inst_n : int)  interact_state : interact_st
                 | exception Not_found ->
                     Hashtbl.add traces inst trace
               )
-              search_state'.observed_targets;
+              search_state'.Runner.observed_targets;
             Hashtbl.fold
               (fun inst trace acc ->
                 (SO.Concat [
@@ -2619,7 +2620,8 @@ let run_search
           )
           search_state.Runner.observed_targets 
       in
-      Json_candidate_execution.print_distinct_acexs search_state.test_info acexs
+      Json_candidate_execution.print_distinct_acexs
+        search_state.Runner.test_info acexs
     in
 
     match
@@ -2635,8 +2637,8 @@ let run_search
         (print_results true)
     with
     | Runner.Complete search_state' -> 
-       (if !Globals.print_cexs then print_cexs search_state' else ());
-       print_results false search_state'
+       if !Globals.print_cexs then print_cexs search_state'
+       else print_results false search_state'
 
     | Runner.Breakpoints ({Runner.search_nodes = {Runner.system_state = sst} :: _}, bps) ->
         (* a breakpoint was triggered *)
