@@ -55,3 +55,7 @@ let enable_dirty_update () = false
 let enable_misaligned_access () = true
 
 let mtval_has_illegal_inst_bits () = false
+
+let enable_writable_misa () = true
+
+let enable_rvc () = true
