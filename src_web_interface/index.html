@@ -295,7 +295,7 @@
                 <input type="radio" id="model_tso" name="model" value="tso">
                 TSO
             </label>
-            <label data-bind="visible: isa_name() === 'AArch64'">
+            <label data-bind="visible: isa_name() === 'AArch64' || isa_name() === 'RISCV'">
                 <input type="radio" id="model_promising" name="model" value="promising">
                 Promising
             </label>
