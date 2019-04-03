@@ -22,7 +22,7 @@
 
 html, body {
   background-color: #A0A0A0;
-  margin: 0px;
+  margin: 0;
   font-family: "Liberation Sans",Arial,Helvetica,sans-serif;
   font-size: 10pt;
   height: 100%;
@@ -33,79 +33,49 @@ html, body {
 #main_container {
   background-color: #FFFFFF;
   margin: 0;
-  overflow: hidden;
   height: 100%;
   position: relative;
   padding: 0;
 }
 
-.dot_container {
-    position: relative;
-    overflow: hidden;
+#interact_page, .input_cmd, #interact_vsplit {
+  flex: 1 0 0;
 }
 
-#interact_page, .input_cmd, #interact_vsplit, .dot {
-    flex: 1 0 0;
-}
-
-#interact_hsplit {
-    flex: 5 0 0;
-}
-
-#main_container, #interact_view, #interact_vsplit, #dot_container {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.split, #split_root {
-    display: flex;
-    overflow: hidden;
-    flex: 1 0 0;
-    position: relative;
-}
-
-.pane {
-    display: flex;
-    overflow: hidden;
-    flex-direction: column;
-    flex: 1 0 0;
-    position: relative;
-    border: 1px solid #333;
-}
-
-.split.vertical {
-    flex-direction: column;
-}
-
-.split.horizontal {
-    flex-direction: row;
-}
-
-.interact_prompt_line, #interact_hsplit, #interact_page {
-    display: flex;
-    flex-direction: row;
-    overflow: hidden;
-}
-
-#interact_hsplit, .main_fieldset {
-    overflow: hidden;
-}
-
-.main_fieldset, .dot_fieldset {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-}
-
-.main {
+#main_container, #interact_vsplit {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
-hr {
-  border: #EEEEEE 2px solid;
-  margin-top: 20px;
-  margin-bottom: 20px;
+.split, #split_root {
+  display: flex;
+  overflow: hidden;
+  flex: 1 0 0;
+  position: relative;
+}
+
+.pane {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  flex: 1 0 0;
+  position: relative;
+  border: 1px solid #333;
+}
+
+.split.vertical {
+  flex-direction: column;
+}
+
+.split.horizontal {
+  flex-direction: row;
+}
+
+#interact_page {
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
 }
 
 .justify > * {
@@ -118,12 +88,12 @@ hr {
   width: auto;
 }
 
-.main_fieldset {
-    background: white;
-    position: relative;
+.trace {
+  background: white;
 }
 
-.system_state, .interact_prompt_line, .trace_prompt_lines {
+/* containers of rmem output: */
+.rmem_output_scroll, .interact_prompt_line, .trace_prompt_lines {
   padding: 5px;
   font-family: monospace;
   font-size: 0.9em;
@@ -131,62 +101,22 @@ hr {
   background: white;
 }
 
-.trace {
-    background: white;
-}
-
-.trace_prompt_lines {
-    margin: 10px;
-    border-top: 1px solid dimgray;
-    padding-top: 10px;
-}
-
-.system_state {
+.rmem_output_scroll {
   overflow-y: scroll;
   flex: 1 1 0;
   position: relative;
 }
 
-.main_fieldset hr {
-    height: 1px;
-    width: 98%;
-    display: block;
-    padding: 0;
-    border: 0;
-    margin: 5px;
-    background: white;
-    align-self: center;
+.interact_prompt_line {
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
 }
 
-.warnings {
-  display: none;
+.trace_prompt_lines {
   margin: 10px;
-  color: red;
-}
-
-.messages {
-  display: none;
-  margin: 10px;
-
-  white-space: pre-wrap;
-  font-family: monospace;
-
-  max-height: 100px;
-  overflow-y: auto; /* show scrollbar when needed */
-}
-
-/* #litmus_test { */
-/*   overflow: auto; */
-/*   padding: 15px; */
-/*   box-shadow: 3px 3px 15px #555555; */
-/*   border: 1px black none; */
-/*   border-radius: 10px; */
-/*   max-width: 90%; */
-/*   font-family:"Courier New",Courier,monospace; */
-/* } */
-
-.window hr, .dialog hr {
-  border: none;
+  border-top: 1px solid dimgray;
+  padding-top: 10px;
 }
 
 #options input[type='number'] {
@@ -194,7 +124,7 @@ hr {
   margin-left: 5px;
 }
 
-.window h1, .dialog h1 {
+.dialog h1 {
   font-size: 1em;
   text-align: center;
   margin-top: 1.5em;
@@ -202,22 +132,22 @@ hr {
   border-bottom: #BBBBBB 1px solid;
 }
 
-.window h1:first-child, .dialog h1:first-child {
+.dialog h1:first-child {
   margin-top: 0;
 }
 
-.window h2, .dialog h2 {
+.dialog h2 {
   font-size: 1em;
   font-weight: normal;
   margin-bottom: 0;
 }
 
-.window input[type=button], .dialog input[type=button] {
+.dialog input[type=button] {
   min-width: 100px;
   margin-right: 50px;
 }
 
-.window input[type=button]:last-child, .dialog input[type=button]:last-child {
+.dialog input[type=button]:last-child {
   margin-right: auto
 }
 
@@ -234,14 +164,9 @@ hr {
     display: block;
 }
 
-.system_state_lines, .trace_prompt_lines {
+.rmem_output {
     white-space: pre-wrap;
     word-wrap: break-word;
-}
-
-.system_state_lines p, .trace_prompt_lines p {
-    margin: 0;
-    padding: 0;
 }
 
 .gutter {
@@ -376,7 +301,7 @@ hr {
     overflow: hidden;
 }
 
-.dot_inner_container, .dot_fieldset, .dot {
+.dot_inner_container, .dot {
     display: flex;
     flex: 1;
     position: relative;
@@ -552,11 +477,6 @@ button {
     overflow: auto;
 }
 
-#load_litmus_dialog > button, #load_litmus_dialog > div.file {
-    width: 80%;
-    margin-left: 10%;
-}
-
 #load_litmus_dialog > * {
     margin-top: 10px;
     margin-bottom: 10px;
@@ -565,6 +485,10 @@ button {
 #load_litmus_dialog .editor {
     flex: 1;
     background: white;
+}
+
+#load_litmus_dialog button:not(:last-child), #load_elf_dialog button:not(:last-child) {
+    margin-right: 20px;
 }
 
 /* fixes for interaction between jQuery UI and codeflask */
@@ -590,10 +514,6 @@ p.ui-state-highlight .ui-icon {
 
 template {
     display: none;
-}
-
-#search_random_trials {
-    width: 40px;
 }
 
 span.top_bar {
@@ -642,10 +562,6 @@ select[multiple="multiple"] {
     margin-bottom: 10px;
 }
 
-#load_litmus_dialog button:not(:last-child), #load_elf_dialog button:not(:last-child) {
-    margin-right: 20px;
-}
-
 .interact_loading, .dot_loading {
     position: absolute;
     top: 20px;
@@ -672,8 +588,8 @@ select[multiple="multiple"] {
 
 .dot_outdated p {
     position: absolute;
-    top: 0px;
-    right: 0px;
+    top: 0;
+    right: 0;
     margin: 0;
     padding: 3px;
     color: red;
@@ -723,7 +639,7 @@ select[multiple="multiple"] {
     margin-right: -1px;
     /*    margin-top: 1px;*/
     padding-top: 2px;
-    margin-bottom: 0px;
+    margin-bottom: 0;
 }
 
 .toolbutton:not(.disabled):not(:last-child):hover, .toolbutton:not(.disabled):not(:last-child).hover, .toolbutton:not(.disabled):not(:last-child):active, .toolbutton:not(.disabled):not(:last-child).active {
@@ -873,11 +789,15 @@ span.follow_list {
     cursor: pointer;
 }
 
+.rmem_cmd {
+  cursor: pointer;
+}
+
 .option_group .line_separator {
-    margin-top: 0px;
-    height: 0px;
+    margin-top: 0;
+    height: 0;
     padding-top: 5px;
-    padding-bottom: 0px;
+    padding-bottom: 0;
 }
 
 .button_row a {

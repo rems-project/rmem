@@ -368,7 +368,7 @@ $(document).ready(function () {
     });
 
 
-    $("#load_litmus_button").click(function(e) {
+    $(document).on("click", ".load_litmus_button", function () {
         load_litmus_dialog.dialog("open");
     });
 

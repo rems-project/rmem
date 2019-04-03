@@ -31,7 +31,7 @@ function print (s) {
     STATE.console_lines(STATE.console_lines() + s);
     $(document).ready(function() {
       ko.tasks.schedule(function () {
-          $(".console > .system_state > .system_state_lines > :last-child").each(function () {
+          $(".console > .rmem_output_scroll > .rmem_output > :last-child").each(function () {
               this.scrollIntoView(false);
           });
       });
@@ -43,7 +43,7 @@ function update_system_state (state) {
     $(document).ready(function() {
 // Do we want the system-state window to scroll to the bottom?
 //       ko.tasks.schedule(function () {
-//           $(".state > .system_state > .system_state_lines > :last-child").each(function () {
+//           $(".state > .rmem_output_scroll > .rmem_output > :last-child").each(function () {
 //               this.scrollIntoView(false);
 //           });
 //       });
@@ -55,7 +55,7 @@ function update_transition_history (history, available) {
     STATE.trace_available_transitions(available);
     $(document).ready(function() {
       ko.tasks.schedule(function () {
-          $(".trace > .system_state > .system_state_lines > :last-child").each(function () {
+          $(".trace > .rmem_output_scroll > .rmem_output > :last-child").each(function () {
               this.scrollIntoView(false);
           });
       });

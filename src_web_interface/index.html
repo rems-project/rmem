@@ -43,23 +43,23 @@
 
 <body>
     <div id="main_container">
-        <div id="interact_page" class="main">
+        <div id="interact_page">
             <div id="interact_vsplit">
                 <div id="top_bar" class="ko">
                     <div id="top_bar_title" data-bind="attr: { title: 'Version: ' + version() + '\n' + build_date() + '\n' + 'Current ISA: ' + isa_name() }">RMEM</div>
                     <span class="sys_state_title" data-bind="text: test_name"></span>
                     <span class="vertical_separator"></span>
                     <div class="top_bar_section menubar" id="load_buttons">
-                        <a class="toolbutton" href="#" id="load_litmus_button">Load litmus</a>
+                        <a class="toolbutton load_litmus_button" href="#">Load litmus</a>
                         <a class="toolbutton" href="#" id="load_test_button">Load ELF</a>
                         <a class="toolbutton" href="#" id="select_options">Model</a>
                     </div>
                     <span class="vertical_separator"></span>
                     <div class="top_bar_section menubar">
-                        <a href="#" id="next" class="toolbutton cmdbutton disabled when_started" cmd="">Next</a>
-                        <a href="#" id="undo"  class="toolbutton cmdbutton disabled when_started" cmd="undo">Undo</a>
-                        <a href="#" class="toolbutton restart disabled when_started">Restart</a>
-                        <a href="#" class="toolbutton disabled when_started" id="search_button">Search&nbsp;<span class="ui-icon ui-icon-triangle-1-s"></span></a>
+                        <a href="#" class="toolbutton disabled when_started cmdbutton" cmd="step">Next</a>
+                        <a href="#" class="toolbutton disabled when_started cmdbutton" cmd="back">Back</a>
+                        <a href="#" id="restart"       class="toolbutton disabled when_started">Restart</a>
+                        <a href="#" id="search_button" class="toolbutton disabled when_started">Search&nbsp;<span class="ui-icon ui-icon-triangle-1-s"></span></a>
                     </div>
                     <span class="vertical_separator"></span>
                     <div class="top_bar_section">
@@ -257,7 +257,7 @@
 
         <h1>Out-of-order mode</h1>
 
-        <h2 class="justify" class="ko">
+        <h2 class="justify ko">
             <label>
                 <input type="radio" id="force_sc_false" value="false" name="force_sc" data-bind="checked: force_sc">
                 Relaxed
@@ -316,7 +316,7 @@
 
         <h1>Tree speculation</h1>
 
-        <h2 class="justify" class="ko">
+        <h2 class="justify ko">
             <label>
                 <input type="radio" id="allow_tree_speculation" value="allow" name="tree_speculation" data-bind="checked: tree_speculation">
                 allow
@@ -329,7 +329,7 @@
 
         <h1>(Promising) Restrict promises</h1>
         <div id="restrict_promises">
-        <h2 class="justify" class="ko">
+        <h2 class="justify ko">
             <label>
                 <input type="radio" id="promiseFirst" value="allow" name="promise_first" data-bind="checked: promise_first">
                 Promise first
@@ -389,11 +389,11 @@
                 <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
             </div>
         </div>
-        <div class="system_state adjust_font_size">
+        <div class="rmem_output_scroll adjust_font_size">
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <div class="system_state_lines" data-bind="html: console_lines"></div>
+            <div class="rmem_output" data-bind="html: console_lines"></div>
         </div>
         <div class="interact_prompt_line">
             <div class="interact_prompt" data-bind="html: prompt" style="display: inline-block"></div>
@@ -417,11 +417,11 @@
                 <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
             </div>
         </div>
-        <div class="system_state adjust_font_size">
+        <div class="rmem_output_scroll adjust_font_size">
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <div class="system_state_lines" data-bind="html: state_lines"></div>
+            <div class="rmem_output" data-bind="html: state_lines"></div>
         </div>
     </template>
 
@@ -441,54 +441,58 @@
                 <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
             </div>
         </div>
-        <div class="system_state adjust_font_size">
+        <div class="rmem_output_scroll adjust_font_size">
             <div class="interact_loading">
                 <img src="images/hourglass.gif" width="48" height="48" alt="working...">
             </div>
-            <div class="system_state_lines" data-bind="html: trace_lines"></div>
+            <div class="rmem_output" data-bind="html: trace_lines"></div>
         </div>
-        <div class="trace_prompt_lines" data-bind="html: trace_available_transitions">
+        <div class="rmem_output trace_prompt_lines" data-bind="html: trace_available_transitions">
         </div>
     </template>
 
     <template id="graph_template">
-        <div class="dot_fieldset">
-            <div class="mid_bar">
-                <select data-bind="switcher: 'graph'"></select>
-                <span class="flex_spacer"></span>
-                <div class="menubar">
-                    <a class="dot_refresh toolbutton" href="#">Refresh</a>
-                    <a class="dot_download_link toolbutton follow" data-bind="css: { disabled: graph_html() === '' }" href="#" target="_blank">Download .dot</a>
-                </div>
-                <span class="vertical_separator"></span>
-                <div class="menubar">
-                    <a class="dot_pan_centre toolbutton" href="#">centre</a>
-                    <a class="dot_zoom_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
-                    <a class="dot_zoom_100 toolbutton" href="#">100%</a>
-                    <a class="dot_zoom_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
-                </div>
-                <span class="vertical_separator"></span>
-                <div class="menubar">
-                    <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
-                    <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
-                    <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
-                </div>
+        <div class="mid_bar">
+            <select data-bind="switcher: 'graph'"></select>
+            <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="dot_refresh toolbutton" href="#">Refresh</a>
+                <a class="dot_download_link toolbutton follow" data-bind="css: { disabled: graph_html() === '' }" href="#" target="_blank">Download .dot</a>
             </div>
-            <div class="dot_inner_container">
-                <div class="dot_loading">
-                    <img src="images/hourglass.gif" width="48" height="48" alt="working...">
-                </div>
-                <div class="dot_outdated">
-                    <p>warning: graph of outdated state</p>
-                </div>
-                <div class="dot" data-bind="html: graph_html"></div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="dot_pan_centre toolbutton" href="#">centre</a>
+                <a class="dot_zoom_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
+                <a class="dot_zoom_100 toolbutton" href="#">100%</a>
+                <a class="dot_zoom_plus toolbutton" href="#"><span class="ui-icon ui-icon-plus"></span></a>
             </div>
+            <span class="vertical_separator"></span>
+            <div class="menubar">
+                <a class="split_horizontal_button toolbutton"><span class="ui-icon ui-icon-caret-2-e-w"></span></a>
+                <a class="split_vertical_button toolbutton"><span class="ui-icon ui-icon-caret-2-n-s"></span></a>
+                <a class="split_close_button toolbutton"><span class="ui-icon ui-icon-close"></span></a>
+            </div>
+        </div>
+        <div class="dot_inner_container">
+            <div class="dot_loading">
+                <img src="images/hourglass.gif" width="48" height="48" alt="working...">
+            </div>
+            <div class="dot_outdated">
+                <p>warning: graph of outdated state</p>
+            </div>
+            <div class="dot" data-bind="html: graph_html"></div>
+        </div>
     </template>
 
     <template id="sources_template">
         <div class="mid_bar">
             <select data-bind="switcher: 'sources'"></select>
             <span class="flex_spacer"></span>
+            <div class="menubar">
+                <a class="litmus_download_file toolbutton follow" data-bind="css: { disabled: test_type() !== 'litmus' }">Download</a>
+                <a class="load_litmus_button toolbutton follow" data-bind="css: { disabled: test_type() !== 'litmus' }">Edit</a>
+            </div>
+            <span class="vertical_separator"></span>
             <div class="menubar">
                 <a class="font_size_minus toolbutton" href="#"><span class="ui-icon ui-icon-minus"></span></a>
                 <a class="font_size_reset toolbutton" href="#">100%</a>
