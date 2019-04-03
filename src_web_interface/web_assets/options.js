@@ -50,6 +50,16 @@ function show_hide_select_topology () {
     }
 }
 
+function show_hide_restrict_promises () {
+    if ($("#model_promising").is(":checked")) {
+        $("#restrict_promises").show();
+        $("#restrict_promises_na").hide();
+    } else {
+        $("#restrict_promises").hide();
+        $("#restrict_promises_na").show();
+    }
+}
+
 var options_updated = false;
 var options = {}
 
@@ -563,6 +573,7 @@ $(document).ready(function () {
     $("#options input[type=radio][name=model]").on("change", function() {
         // only the checked radio is triggered
         show_hide_select_topology();
+        show_hide_restrict_promises();
     });
 });
 

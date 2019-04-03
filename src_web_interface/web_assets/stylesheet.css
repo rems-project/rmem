@@ -420,6 +420,11 @@ html, body {
     text-align: center;
 }
 
+#restrict_promises_na {
+    text-style: italic;
+    text-align: center;
+}
+
 button {
     z-index: 99;
 }

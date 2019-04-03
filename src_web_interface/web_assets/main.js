@@ -144,6 +144,7 @@ function hash_changed () {
         $("input[type='radio'][name='embedding'][value='" + obj.model_options.embedding + "']").prop("checked", true);
         $("input[type='radio'][name='force_sc'][value='" + obj.model_options.force_sc + "']").prop("checked", true);
         $("input[type='radio'][name='tree_speculation'][value='" + obj.model_options.tree_speculation + "']").prop("checked", true);
+        $("input[type='radio'][name='promise_first'][value='" + obj.model_options.promise_first + "']").prop("checked", true);
         $("input[type='radio'][name='flowing_topology_2'][value='" + obj.model_options.flowing_topology_2 + "']").prop("checked", true);
         $("input[type='radio'][name='flowing_topology_3'][value='" + obj.model_options.flowing_topology_3 + "']").prop("checked", true);
         $("input[type='radio'][name='flowing_topology_4'][value='" + obj.model_options.flowing_topology_4 + "']").prop("checked", true);

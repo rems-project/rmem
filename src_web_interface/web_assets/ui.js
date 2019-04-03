@@ -131,6 +131,7 @@ $(document).ready(function () {
                     embedding: $("input[type='radio'][name='semantics']:checked").val(),
                     force_sc: $("input[type='radio'][name='force_sc']:checked").val(),
                     tree_speculation: $("input[type='radio'][name='tree_speculation']:checked").val(),
+                    promise_first: $("input[type='radio'][name='promise_first']:checked").val(),
                     flowing_topology_2: $("input[type='radio'][name='topology_2']:checked").val(),
                     flowing_topology_3: $("input[type='radio'][name='topology_3']:checked").val(),
                     flowing_topology_4: $("input[type='radio'][name='topology_4']:checked").val()
