@@ -58,6 +58,9 @@ val aarch64gen: bool ref
 val final_cond: string option ref (* 'Some s': change the final condition to 's' *)
 
 val branch_targets: Branch_targets_parser_base.ast list option ref
+val litmus_test_base_address: int ref
+val litmus_test_minimum_width: int ref
+
 val shared_memory: Shared_memory_parser_base.footprint list option ref
 val add_bt_and_sm_to_model_params: ((Sail_impl_base.address * int) * string) list -> unit
 

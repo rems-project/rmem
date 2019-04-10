@@ -24,12 +24,15 @@
 (** Find a good place for these misc functions, which are technically
     arch-dependent *)
 
-let address_base = 0x00001000
+(* let address_base = 0x00001000 *)
+(* moved this to globals, to make switchable *)
 let address_placement base sz align =
   let nbase = if base mod align = 0 then base else align * ((base + align) / align )
   in
-  (nbase, nbase + (*sz*) 0x100) (* to make all variables maximally aligned we
-                                add 0x100 (256) bytes, instead of 'sz' *)
+  (nbase, nbase + max sz !Globals.litmus_test_minimum_width) 
+(* we make all variables aligned with
+   !Globals.litmus_test_minimum_width, the default is 0x100 (256)
+   bytes *)
 
 
 let ptr_size = 8 (** in bytes *)
@@ -157,7 +160,7 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
             let sz, align = calc_size_alignment ty in
             let addr, next = address_placement next_addr sz align in
             next, LocationMap.add l (addr, sz) k)
-          (address_base, LocationMap.empty)
+          (!Globals.litmus_test_base_address, LocationMap.empty)
           loc_types
           (* symbolic_values *) in
       let lookup_constant c =

@@ -119,6 +119,20 @@ let opts = [
     ),
     (Printf.sprintf "<string> same as -branch_targets, but read the targets from the string"));
 
+
+
+
+("-litmus_test_base_address",
+    Arg.Int (fun i -> if i > 0 then raise (Failure "-litmus_test_base_address must be at least 0");
+                      Globals.litmus_test_base_address := i ),
+    (Printf.sprintf "<n> the first memory address to use for the litmus test variables (%d)" !Globals.litmus_test_base_address));
+
+("-litmus_test_minimum_width",
+    Arg.Int (fun i -> if i > 0 then raise (Failure "-litmus_test_minimum_width must be at least 0");
+                      Globals.litmus_test_minimum_width := i ),
+    (Printf.sprintf "<n> the minimum width to use for the litmus test variables (%d)" !Globals.litmus_test_minimum_width));
+
+
 (** run modes *******************************************************)
 ("-interactive",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.interactive = b}),

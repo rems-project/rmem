@@ -95,6 +95,9 @@ let final_cond = ref None
 
 let branch_targets = ref None
 
+let litmus_test_base_address = ref 0x00001000
+let litmus_test_minimum_width = ref 0x100
+
 let shared_memory = ref None
 
 let add_bt_and_sm_to_model_params symbol_table =
