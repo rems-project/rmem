@@ -196,7 +196,7 @@ function ml_z_to_int32(z1) {
 function ml_z_to_int64(z1) {
     var z = bigInt(z1);
     
-    return [255, z.and(0xffff), z.shiftRight(24).and(bigInt(0xffff)), z.shiftRight(48).and(bigInt(0xffff))];
+    return [255, z.and(0xffffff), z.shiftRight(24).and(bigInt(0xffffff)), z.shiftRight(48).and(bigInt(0xffff))];
 }
 
 // external to_nativeint: t -> nativeint = "ml_z_to_nativeint"
