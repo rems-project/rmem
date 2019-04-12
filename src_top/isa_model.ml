@@ -470,6 +470,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       let open Sail_impl_base in
       match v with
       | V_vector bs -> List.map byte_lifted_of_byte (bits_to_bytes (List.map bit_to_bitc bs))
+      | _ -> failwith "invalid interpreter value in interp2__bitlist_to_memval"
     in
 
     let interp2__memval_to_bitlist mv =
