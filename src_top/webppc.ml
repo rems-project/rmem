@@ -110,7 +110,7 @@ let default_options : unit -> RunOptions.t = fun () ->
 
   { RunOptions.default_options with
       RunOptions.interactive         = true;
-      RunOptions.suppress_internal   = true;
+      RunOptions.suppress_internal   = false;
       RunOptions.pseudorandom        = false;
       RunOptions.pseudorandom_traces = 1;
       RunOptions.always_print        = false;
