@@ -383,8 +383,10 @@ function ml_z_extract(z, from_end, length) {
     z = bigInt(z);
     var obj = z.toArray(2);
     if (obj.isNegative) { throw new Exception("negative numbers not supported yet in ml_z_extract"); }
-    var start = obj.value.length - from_end - length; 
+    var start = obj.value.length - from_end - length;
+    if (start < 0) start = 0;
     var end = obj.value.length - from_end;
+    if (end < 0) end = 0;
     return bigInt.fromArray(obj.value.slice(start, end), 2, false);
 }
 
