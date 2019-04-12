@@ -84,6 +84,8 @@ type cex_instruction_instance =
     cex_address_dependencies: set ioid;
     cex_data_dependencies:    set ioid;
     cex_control_dependencies: set ioid;
+
+    cex_paired_atomic_load : maybe ioid;
   |>
 
 
@@ -226,6 +228,7 @@ type acex =
      acex_ctrl : set (eiid * eiid);
      acex_rf : set (footprint * eiid * eiid); 
      acex_co : set (eiid * eiid);
+     acex_rmw : set (eiid * eiid);
   |>
 
 
@@ -239,6 +242,7 @@ let empty_acex =
      acex_addr = Set.empty;
      acex_data = Set.empty;
      acex_ctrl = Set.empty;
+     acex_rmw = Set.empty;
   |>
 
 let acex_union acex1 acex2 =
@@ -251,6 +255,7 @@ let acex_union acex1 acex2 =
      acex_ctrl = acex1.acex_ctrl union acex2.acex_ctrl;
      acex_rf = acex1.acex_rf union acex2.acex_rf;
      acex_co = acex1.acex_co union acex2.acex_co;
+     acex_rmw = acex1.acex_rmw union acex2.acex_rmw;
   |>
 
 
@@ -273,6 +278,7 @@ let rec thread_local_acex_data_of_instructions
      let old_ids = Set.map eiid_of_acex_event old_events in
      let new_events = events_of_instruction_instance ii in
      let new_ids = Set.map eiid_of_acex_event new_events in
+     let events = old_events union new_events in
      let addr_deps = 
        {eiid_of_acex_event e 
           | forall (e IN old_events) 
@@ -285,14 +291,27 @@ let rec thread_local_acex_data_of_instructions
        {eiid_of_acex_event e 
           | forall (e IN old_events) 
           | ioid_of_acex_event e IN ii.cex_control_dependencies} in
+     let new_rmw = 
+       let paired_ioids =
+         match ii.cex_paired_atomic_load with
+         | Just ioid -> {ioid}
+         | Nothing -> {}
+         end
+       in
+       cross {eiid_of_acex_event e
+                | forall (e IN events)
+                |  ioid_of_acex_event e IN paired_ioids}
+         new_ids in
      let acex = 
        <| acex_so_far with 
-            acex_events = old_events union new_events;
+            acex_events = events;
             acex_po   = acex_so_far.acex_po union (cross old_ids new_ids);
             acex_same_instr = acex_so_far.acex_same_instr union (cross new_ids new_ids);
             acex_addr = acex_so_far.acex_addr union (cross addr_deps new_ids);
             acex_data = acex_so_far.acex_data union (cross data_deps new_ids);
-            acex_ctrl = acex_so_far.acex_ctrl union (cross ctrl_deps new_ids); |>
+            acex_ctrl = acex_so_far.acex_ctrl union (cross ctrl_deps new_ids);
+            acex_rmw  = acex_so_far.acex_rmw union new_rmw;
+       |>
      in
      thread_local_acex_data_of_instructions acex iis
    end

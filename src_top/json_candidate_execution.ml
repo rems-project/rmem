@@ -110,18 +110,14 @@ let print_fp (indent : int) (a,sz) =
     (sprintf "{\"addr\": %s, \"size\": %d}"
        (Nat_big_num.to_string (integer_of_address a)) sz)
 
-let print_fp_of_event indent e =
-  spaces indent ^ 
-  match fp_of_event e with
-  | Some fp -> sprintf "[ %s ]" (print_fp 0 fp)
-  | None -> "[]"
-
 let print_event indent e = 
   spaces indent ^
-    (sprintf "{ \"id\": %s, \"type\": %s, \"fp\": %s }"
+    (sprintf "{ \"id\": %s, \"type\": %s%s }"
       (print_eiid 0 (eiid_of_acex_event e))
       (print_event_type 0 e)
-      (print_fp_of_event 0 e)
+      (match fp_of_event e with
+       | Some fp -> sprintf ", \"fp\": %s" (print_fp 0 fp)
+       | None -> "")
     )
 
 let print_events indent events = 
@@ -150,6 +146,7 @@ let print_acex (indent : int) (acex : acex) : string =
   spaces indent ^ "  \"ctrl\":\n" ^ print_id_rel (indent+4) acex.acex_ctrl ^ ",\n" ^
   spaces indent ^ "  \"rf\":\n" ^ print_rf (indent+4) acex.acex_rf ^ ",\n" ^
   spaces indent ^ "  \"co\":\n" ^ print_id_rel (indent+4) acex.acex_co ^ "\n" ^ 
+  spaces indent ^ "  \"rmw\":\n" ^ print_id_rel (indent+4) acex.acex_rmw ^ "\n" ^ 
   spaces indent ^ "}"
 
 
