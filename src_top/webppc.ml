@@ -135,6 +135,7 @@ let model_to_html : unit -> unit = fun () ->
               (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "promising");
 
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_hide_select_topology") [||] |> ignore;
+  Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_hide_restrict_promises") [||] |> ignore;
 
   check_radio "allow_tree_speculation"
               (!Globals.model_params).t.thread_allow_tree_speculation;

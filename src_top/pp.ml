@@ -455,6 +455,15 @@ let pp_rightbrace m =
   | Ascii | Html | Hash -> "}"
   | Latex -> "\\myrb{}"
 
+let pp_lt m =
+  match m.Globals.pp_kind with
+  | Ascii | Hash | Latex -> "<"
+  | Html -> "&lt;"
+
+let pp_gt m =
+  match m.Globals.pp_kind with
+  | Ascii | Hash | Latex -> ">"
+  | Html -> "&gt;"
 
 let pp_arrow m =
   match m.Globals.pp_kind with
@@ -1152,7 +1161,7 @@ let pp_read_with_slices_uncoloured m r unsat_slices =
   else " " ^ (pp_list m (pp_slice' m) unsat_slices)
 
 let pp_read_with_slices_and_view_uncoloured m r unsat_slices view =
-  pp_read_uncoloured m r ^ "(view>=" ^ pp_view m view ^ ")" ^ 
+  pp_read_uncoloured m r ^ "(view" ^ pp_gt m ^ "=" ^ pp_view m view ^ ")" ^
   if unsat_slices = [Fragments.complete_slice r.r_addr] then ""
   else " " ^ (pp_list m (pp_slice' m) unsat_slices)
 
