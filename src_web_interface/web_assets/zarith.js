@@ -279,7 +279,7 @@ function ml_z_compare(z1, z2) {
 //Provides: ml_z_equal const
 //Requires: bigInt
 function ml_z_equal(z1, z2) {
-    return bigInt(z1).equals(bigInt(z2));
+    return bigInt(z1).equals(bigInt(z2)) ? 1 : 0;
 }
 
 // external sign: t -> int = "ml_z_sign" @NOALLOC
