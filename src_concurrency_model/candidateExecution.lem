@@ -332,6 +332,22 @@ let acex_rf_of_cex_rf cex_rf =
 let acex_co_of_cex_co cex_co = 
   Set.map (fun (w,w') -> (w.weiid,w'.weiid)) cex_co
 
+let fixup acex = 
+  let all_eiids = Set.map eiid_of_acex_event acex.acex_events in
+  <| acex_events = acex.acex_events;
+     acex_po = Relation.transitiveClosure acex.acex_po;
+     acex_same_thread =
+       Relation.reflexiveTransitiveClosureOn acex.acex_same_thread all_eiids;
+     acex_same_instr =
+       Relation.reflexiveTransitiveClosureOn acex.acex_po all_eiids;
+     acex_rf = acex.acex_rf;
+     acex_co = Relation.transitiveClosure acex.acex_co;
+     acex_addr = acex.acex_addr;
+     acex_data = acex.acex_data;
+     acex_ctrl = acex.acex_ctrl;
+     acex_rmw = acex.acex_rmw;
+  |>
+
 (* only call for final states/finished traces *)
 val acex_of_cex : cex_candidate -> acex
 let acex_of_cex cex = 
@@ -340,10 +356,11 @@ let acex_of_cex cex =
     List.map thread_local_acex_data_of_thread_state thread_states in
   let acex = List.foldl acex_union empty_acex thread_local_acex_data in
   let initial_writes = {ACEX_write w | forall (w MEM cex.cex_initial_writes) | true} in
-  <| acex with acex_events = acex.acex_events union initial_writes;
-               acex_rf = acex_rf_of_cex_rf cex.cex_rf;
-               acex_co = acex_co_of_cex_co cex.cex_co;
-  |>
+  fixup
+    <| acex with acex_events = acex.acex_events union initial_writes;
+                 acex_rf = acex_rf_of_cex_rf cex.cex_rf;
+                 acex_co = acex_co_of_cex_co cex.cex_co;
+    |>
                  
 
 (* val distinct_acexs_of_cexs : list cex_candidate -> list acex
