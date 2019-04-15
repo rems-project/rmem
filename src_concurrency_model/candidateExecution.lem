@@ -339,7 +339,7 @@ let fixup acex =
      acex_same_thread =
        Relation.reflexiveTransitiveClosureOn acex.acex_same_thread all_eiids;
      acex_same_instr =
-       Relation.reflexiveTransitiveClosureOn acex.acex_po all_eiids;
+       Relation.reflexiveTransitiveClosureOn acex.acex_same_instr all_eiids;
      acex_rf = acex.acex_rf;
      acex_co = Relation.transitiveClosure acex.acex_co;
      acex_addr = acex.acex_addr;
