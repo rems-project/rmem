@@ -25,6 +25,7 @@
 open Params;;
 open RunOptions;;
 
+module SO = Structured_output;;
 
 (* FIXME: (SF) does this have any effect on performance? when needed
 OCAMLRUNPARAM=b can be used instead *)
@@ -118,6 +119,20 @@ let opts = [
     ),
     (Printf.sprintf "<string> same as -branch_targets, but read the targets from the string"));
 
+
+
+
+("-litmus_test_base_address",
+    Arg.Int (fun i -> if i > 0 then raise (Failure "-litmus_test_base_address must be at least 0");
+                      Globals.litmus_test_base_address := i ),
+    (Printf.sprintf "<n> the first memory address to use for the litmus test variables (%d)" !Globals.litmus_test_base_address));
+
+("-litmus_test_minimum_width",
+    Arg.Int (fun i -> if i > 0 then raise (Failure "-litmus_test_minimum_width must be at least 0");
+                      Globals.litmus_test_minimum_width := i ),
+    (Printf.sprintf "<n> the minimum width to use for the litmus test variables (%d)" !Globals.litmus_test_minimum_width));
+
+
 (** run modes *******************************************************)
 ("-interactive",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.interactive = b}),
@@ -160,18 +175,15 @@ let opts = [
 
 ("-auto_internal",
     Arg.Bool (fun b -> Globals.auto_internal := b),
-    (Printf.sprintf "<bool> for interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
+    (Printf.sprintf "<bool> in interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
 
 (** optimizations ***************************************************)
-("-suppress_internal",
-    Arg.Bool (fun b -> run_options := {!run_options with RunOptions.suppress_internal = b}),
-    (Printf.sprintf "<bool> suppress visibility of internal transitions, doing them within the Sail interpreter (%b)" !run_options.RunOptions.suppress_internal));
 ("-shallow_embedding",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.interpreter = not b}),
-    (Printf.sprintf "<bool> Run shallow embedding instruction semantics (%b)" !run_options.RunOptions.suppress_internal));
+    (Printf.sprintf "<bool> Run shallow embedding instruction semantics (%b)" (not !run_options.RunOptions.interpreter)));
 ("-compare_analyses",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.compare_analyses = b}),
-    (Printf.sprintf "<bool> Compare the exhaustive and the handwritten analysis (%b)" !run_options.RunOptions.suppress_internal));
+    (Printf.sprintf "<bool> Compare the exhaustive and the handwritten analysis (%b)" !run_options.RunOptions.compare_analyses));
 ("-eager",
     Arg.Bool (fun b -> run_options :=
         {!run_options with RunOptions.eager_mode =
@@ -250,21 +262,21 @@ let opts = [
 
 (** verbosity and output ********************************************)
 ("-v",
-    Arg.Unit Globals.increment_verbosity,
-    (Printf.sprintf " increase the level of verbosity (repeatable) (levels: %s) (default: %s)" (String.concat "," (List.map Globals.pp_verbosity_level Globals.verbosity_levels)) (Globals.pp_verbosity_level !Globals.verbosity)));
+    Arg.Unit SO.increment_verbosity,
+    Printf.sprintf " increase the level of verbosity (repeatable)");
 ("-q",
     Arg.Set quiet,
-    (Printf.sprintf " set the level of verbosity to %s" (Globals.pp_verbosity_level (List.hd Globals.verbosity_levels))));
+    Printf.sprintf " set the level of verbosity to quiet");
 ("-debug",
     Arg.Unit (fun () -> Debug.enable_debug ();
-                        Globals.verbosity := Globals.Debug),
+                        SO.verbosity := SO.Debug),
     " highest level of verbosity (for debugging)");
 ("-debug_sail_interp",
     Arg.Bool (fun b -> Globals.debug_sail_interp := b), (Printf.sprintf " enable Sail interpreter debug AST printing (%b)" !Globals.debug_sail_interp));
 ("-perfdebug",
     Arg.Unit (fun () -> Debug.enable_perfdebug ();
                         (* FIXME: (SF) high verbosity will affect performance *)
-                        Globals.verbosity := Globals.Debug),
+                        SO.verbosity := SO.Debug),
     " turn on performance debug");
 ("-dont",
     Arg.Unit (fun () -> quiet := true;
@@ -292,18 +304,15 @@ let opts = [
 (** UI options ******************************************************)
 ("-state_output",
     Arg.String Screen.set_state_output,
-    "<file> for interactive mode, print the current state to <file>");
+    "<file> in interactive mode, print the current state to <file>");
 
 ("-trace_output",
     Arg.String Screen.set_trace_output,
-    "<file> for interactive mode, print the current trace to <file>");
+    "<file> in interactive mode, print the current trace to <file>");
 
 ("-colours",
     Arg.Bool (fun b -> Globals.pp_colours := b),
     (Printf.sprintf "<bool> colours in interactive terminal output (turned on by -interactive true) (%b)" !Globals.pp_colours));
-("-dumb_terminal",
- Arg.Bool (fun b -> Globals.dumb_terminal := b),
- (Printf.sprintf "<bool> disable readline, cursor movement, etc for dumb terminal or testing (%b)" !Globals.dumb_terminal));
 
 ("-pp_style",
     Arg.String (fun s -> match s with
@@ -327,22 +336,25 @@ let opts = [
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_step
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf at every step (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_step)));
+    (Printf.sprintf "<bool> in interactive mode, generate execution graph out.pdf at every step (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_step)));
 ("-dot_final",
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_final
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf for first complete execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final)));
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first complete execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final)));
 ("-dot_final_ok",
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_final_ok
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_ok)));
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_ok)));
 ("-dot_final_not_ok",
     Arg.Bool (function
       | true  -> Globals.run_dot := Some Globals.RD_final_not_ok
       | false -> Globals.run_dot := None),
-    (Printf.sprintf "<bool> generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_not_ok)));
+    (Printf.sprintf "<bool> in non-interactive mode, generate execution graph out.pdf for first final-constraint-satisfying execution (using graphviz via out.dot or tikz) (%b)" (!Globals.run_dot = Some Globals.RD_final_not_ok)));
+("-print_cexs",
+    Arg.Bool (fun b -> Globals.print_cexs := b),
+    (Printf.sprintf "<bool> in non-interactive mode, produce a file containing the candidate execution data of the allowed executions, in json format) (%b)" (!Globals.run_dot = Some Globals.RD_final)));
 ("-dot_dir",
     Arg.String (fun dir -> Globals.generateddir := Some dir),
     (Printf.sprintf "<dir> directory for generated graphs (%s)" (match !Globals.generateddir with None -> "\"\"" | Some s -> s)));
@@ -370,7 +382,7 @@ let opts = [
     Printf.sprintf "<string> directory containing source files, for DWARF debug output (%s)" !Globals.dwarf_source_dir);
 
 ("-isa_defs_path",
- Arg.String (fun s -> Globals.isa_defs_path := Some s),
+ Arg.String (fun s -> Screen.isa_defs_path := Some s),
  Printf.sprintf "<string> directory containing ISA .defs files previously marshalled out (default: autodetect)");
 
 
@@ -384,7 +396,10 @@ let opts = [
     " list the supported ISA models");
 
 ("-print_console_help",
-    Arg.Unit (fun () -> Printf.printf "%s" Console_help.help_message; exit 0),
+    Arg.Unit (fun () ->
+        Console_help.help_message (Some 35)
+        |> Screen.show_message (Globals.get_ppmode ());
+        exit 0),
     " print the help message for the console and then exit");
 
 (** deprecated ******************************************************)
@@ -392,16 +407,21 @@ let opts = [
     Arg.Unit (fun () -> fatal_error "-auto was renamed to -dont"),
     "");
 ("-follow_to",
-    Arg.Int (fun n -> fatal_error "-follow_to was deprecated"),
+    Arg.Unit (fun () -> fatal_error "-follow_to was deprecated"),
     "");
 ("-breakpoint_actual",
-    Arg.Int (fun n -> fatal_error "-breakpoint_actual was deprecated"),
+    Arg.Unit (fun () -> fatal_error "-breakpoint_actual was deprecated"),
     "");
 ("-sequential",
     Arg.Unit (fun () -> fatal_error "-sequential was deprecated"),
     "");
+("-suppress_internal",
+    Arg.Unit (fun () -> fatal_error "-suppress_internal was deprecated. The interactive mode command 'set eaget_pseudocode_internal true' has a simmilar effect to '-suppress_internal true'."),
+    "");
+("-dumb_terminal",
+    Arg.Unit (fun () -> fatal_error "-dumb_terminal was deprecated (try building with 'UI=headless')"),
+    "");
 (*
-
 ("-test_syscall",
     Arg.Unit (fun () -> ignore (Syscalls.load_footprints_from_file "src_syscall_libs/syscall-introspect-tools/submodules/libfootprints-ocaml/spec.idl")),
     " test syscall machinery");
@@ -434,50 +454,50 @@ let main = fun () ->
   (* this ppmode is just for printing some messages, don't use it for anything else *)
   let ppmode = Globals.get_ppmode () in
 
-  Screen_base.otStrLine "*** BEGIN ISA DEFS PATH AUTODETECTION"
+  (fun () -> SO.strLine "*** BEGIN ISA DEFS PATH AUTODETECTION")
   |> Screen.show_debug ppmode;
 
   let check_isa_path path =
     List.for_all
       (fun isa ->
         let module Isa = (val isa : Isa_model.ISADefs) in
-        let old_val = !Globals.isa_defs_path in
-        Globals.isa_defs_path := Some path;
+        let old_val = !Screen.isa_defs_path in
+        Screen.isa_defs_path := Some path;
         try
           Isa.isa_defs_thunk ~no_memo:true () |> ignore;
-          Globals.isa_defs_path := old_val;
+          Screen.isa_defs_path := old_val;
           true
         with
         | Screen_base.Isa_defs_unmarshal_error (basename, msg) ->
-            Screen_base.otStrLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename
+            (fun () -> SO.strLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename)
             |> Screen.show_debug ppmode;
-            Globals.isa_defs_path := old_val;
+            Screen.isa_defs_path := old_val;
             false)
       Isa_model.all_isa_defs
   in
 
   let try_isa_path_candidate path_thunk =
-    if !Globals.isa_defs_path = None then begin
+    if !Screen.isa_defs_path = None then begin
         match path_thunk () with
         | Some path ->
-            Screen_base.otStrLine "trying candidate %s for ISA defs path" path
+            (fun () -> SO.strLine "trying candidate %s for ISA defs path" path)
             |> Screen.show_debug ppmode;
             if check_isa_path path then
-                Globals.isa_defs_path := Some path
+                Screen.isa_defs_path := Some path
         | None -> ()
     end;
     ()
   in
 
-  if !Globals.isa_defs_path <> None then
-    Screen_base.otStrLine "have ISA defs path from command line"
+  if !Screen.isa_defs_path <> None then
+    (fun () -> SO.strLine "have ISA defs path from command line")
     |> Screen.show_debug ppmode;
 
   let isa_path_candidates = [
       (fun () ->
         try
           let path = Sys.getenv "ISA_DEFS_PATH" in
-          Screen_base.otStrLine "have ISA defs path from ISA_DEFS_PATH env var"
+          (fun () -> SO.strLine "have ISA defs path from ISA_DEFS_PATH env var")
           |> Screen.show_debug ppmode;
           Some path
         with
@@ -503,16 +523,16 @@ let main = fun () ->
 
   List.iter try_isa_path_candidate isa_path_candidates;
 
-  begin match !Globals.isa_defs_path with
+  begin match !Screen.isa_defs_path with
   | Some path ->
-      Screen_base.otStrLine "found ISA defs in %s" path
+      (fun () -> SO.strLine "found ISA defs in %s" path)
       |> Screen.show_debug ppmode
   | None ->
-      Screen_base.otStrLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
+      SO.strLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
       |> Screen.show_warning ppmode
   end;
 
-  Screen_base.otStrLine "*** ISA DEFS PATH AUTODETECTION COMPLETE"
+  (fun () -> SO.strLine "*** ISA DEFS PATH AUTODETECTION COMPLETE")
   |> Screen.show_debug ppmode;
 
   if !should_list_isas then
@@ -541,7 +561,7 @@ let main = fun () ->
   if not Screen.interactive && !run_options.RunOptions.interactive then
     fatal_error "the tool was built without interactive support, '-interactive true' is not allowed";
 
-  if !quiet then Globals.verbosity := Globals.Quiet;
+  if !quiet then SO.verbosity := SO.Quiet;
 
   if !Globals.model_params.ss.ss_model = Flowing_storage_model
     && !Globals.flowing_topologies = []
@@ -549,22 +569,50 @@ let main = fun () ->
   then
       fatal_error "'-model flowing' requires a topology ('-topauto true' or '-top <topology-list>')";
 
+  if not !run_options.RunOptions.interactive
+      && !Globals.run_dot = Some Globals.RD_step
+  then
+    SO.strLine "'-dot true' is ignored in non-interactive mode"
+    |> Screen.show_warning ppmode;
+
+  if !run_options.RunOptions.interactive then
+    begin match !Globals.run_dot with
+    | Some Globals.RD_final ->
+        SO.strLine "'-dot_final true' is ignored in interactive mode"
+        |> Screen.show_warning ppmode;
+    | Some Globals.RD_final_ok ->
+        SO.strLine "'-dot_final_ok true' is ignored in interactive mode"
+        |> Screen.show_warning ppmode;
+    | Some Globals.RD_final_not_ok ->
+        SO.strLine "'-dot_final_not_ok true' is ignored in interactive mode"
+        |> Screen.show_warning ppmode;
+    | Some Globals.RD_step
+    | None -> ()
+    end;
+
   let files =
     List.map
-      (fun s -> if Filename.check_suffix s ".litmus" then (Types.Litmus_file, s)
-                else (Types.Binary_file, s))
+      (fun s ->
+          if not (Sys.file_exists s) then
+            (* It is important to check that the file exists at this point
+            as it is harder to catch this error later (e.g. linksem will just crash) *)
+            Printf.sprintf "%s: No such file" s
+            |> fatal_error;
+          if Filename.check_suffix s ".litmus" then (Types.Litmus_file, s)
+          else (Types.Binary_file, s)
+      )
       (Misc.expand_argv !sources)
   in
 
   Pp.linebreak_init();
 
-  if !Globals.verbosity <> Globals.Normal (* specially important for quiet mode as Luc's tools rely on this *)
+  if !SO.verbosity <> SO.Normal (* specially important for quiet mode as Luc's tools rely on this *)
       && not !Globals.dont_tool
   then
-    Screen_base.OTConcat [
-      Screen_base.otStrLine "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
-      Screen_base.otStrLine "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
-      Screen_base.otStrLine "#Model: %s" (Model_aux.pp_model !Globals.model_params);
+    SO.Concat [
+      SO.strLine "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)
+      SO.strLine "#Command line: %s" (String.concat " " @@ Array.to_list Sys.argv);
+      SO.strLine "#Model: %s" (Model_aux.pp_model !Globals.model_params);
     ]
     |> Screen.show_message ppmode;
 

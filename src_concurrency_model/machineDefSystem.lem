@@ -52,16 +52,15 @@ open import MachineDefPromisingARM
 
 (* the initial writes should be a list of one write for each address that the program will use *)
 let initial_system_state
-    (instruction_semantics:   instruction_semantics_p)
+    (instruction_semantics:   instruction_semantics)
     (thread_model:            threadSubsystem 'ts)
     (storage_model:           storageSubsystem 'ss)
     (system_model:            system 'ts 'ss)
-    (is_option:               instruction_semantics_option)
     (register_data:           registerdata)
     (state_record:            initial_state_record)
     : system_state 'ts 'ss
   =
-  let prog = state_record.isr_program (instruction_semantics is_option) in
+  let prog = state_record.isr_program instruction_semantics in
 
   let initial_thread_states = 
     let init tid =
@@ -240,7 +239,6 @@ let storage_trans_to_trans model threads ss_trans : trans thread_state 'ss =
    for thread tid *)
 let enumerate_transitions_of_system
     (s_model:             machineStorageSubsystem thread_state 'ss)
-    (is_option:           instruction_semantics_option)
     (* current system state *)
     (state:               system_state thread_state 'ss)
     (* cached transitions *)
@@ -251,8 +249,6 @@ let enumerate_transitions_of_system
         (map thread_id (list (thread_trans thread_state))) *
           (map thread_id (list (trans 'ts 'ss * bool)))
   =
-  let isem = state.instruction_semantics is_option in
-
   let ss_transitions =
     match cached_ss_trans with
     | Just ts -> ts
@@ -265,7 +261,7 @@ let enumerate_transitions_of_system
       match Map.lookup (state.t_model.ts_tid thread_state) cached_thread_trans with
       | Just ts -> ts
       | Nothing -> 
-         enumerate_transitions_of_thread state.model.t isem thread_state
+         enumerate_transitions_of_thread state.model.t state.instruction_semantics thread_state
       end
     in
     Map.map enumerate_transitions state.thread_states
@@ -504,7 +500,6 @@ let clean_cached_sys_thread_trans
 
 
 let sst_after_transition
-    (is_option: instruction_semantics_option)
     (s:         system_state_and_transitions 'ts 'ss)
     (t:         trans 'ts 'ss)
     : transition_outcome (system_state_and_transitions 'ts 'ss)
@@ -514,7 +509,6 @@ let sst_after_transition
                      discarded, write_after_stop_promising) ->
       let (system_trans, ss_trans, thread_trans, sys_thread_trans) =
         system_state'.system_model.s_enumerate_transitions_of_system 
-          is_option 
           system_state'
           (clean_cached_ss_trans s.sst_storage_transitions changed_storage)
           (clean_cached_thread_trans s.sst_thread_transitions changed_threads)
@@ -537,13 +531,12 @@ let sst_after_transition
   end
 
 let sst_of_state
-    (is_option:     instruction_semantics_option)
     (system_state:  system_state 'ts 'ss)
     : system_state_and_transitions 'ts 'ss
   =
   let (system_trans, ss_trans, thread_trans, thread_sys_trans) =
     system_state.system_model.s_enumerate_transitions_of_system
-      is_option system_state Nothing Map.empty Map.empty
+        system_state Nothing Map.empty Map.empty
   in
 
   <| sst_state               = system_state;

@@ -57,6 +57,8 @@
 
 <src_top/webppc.{d.byte,byte}> : package(unix), package(js_of_ocaml), package(lem), package(linksem), package(base64), package(sail)
 
+<src_top/console_help_printer.{d.byte,byte,native,p.native}> : package(lem), package(base64)
+
 <src_top/litmus2xml.{d.byte,byte,native,p.native}> : package(unix), package(str), package(linksem), package(base64)
 
 <**/*.d.byte> : debug

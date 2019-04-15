@@ -16,28 +16,16 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-
 open Printf
 
-open Interp_interface
-open Sail_impl_base
-open Utils
 open Fragments
 open Events
 open BasicTypes
-open UiTypes
 open CandidateExecution
-
-open Types
-open Model_aux
 
 open Globals
 
-
-module Make (ConcModel: Concurrency_model.S) (* : GraphBackend.S 
-        * with type state = ConcModel.state
-        * and type trans = ConcModel.trans
-        * and type ui_trans = ConcModel.ui_trans *)
+module Make (ConcModel: Concurrency_model.S)
   = struct
 
 (** ******************** pp of graphs **************** *)
@@ -362,8 +350,7 @@ let trans_rows m ?colspan (trans : ConcModel.ui_trans list) =
     let body =
       table_body ~border:0
         (List.mapi
-           (function n' -> 
-              function (n,t) ->
+           (fun i (n, t) ->
                 let (bold, unbold, colour, background, padding) = highlight n in
                 let label =
                   sprintf "%s%i:%s%s"
@@ -374,7 +361,7 @@ let trans_rows m ?colspan (trans : ConcModel.ui_trans list) =
                    ?background
                    ~colour
                    ~align:"left"
-                   ~portid:(sprintf "\"tr%i\"" n')
+                   ~portid:(sprintf "\"tr%i\"" i)
                    label])
            
            trans)
@@ -484,7 +471,7 @@ let pp_html_node_of_instruction  m pi pw render_edges positions thread_node (i:c
             match i.cex_reg_reads with
             | [] -> ""
             | _ -> begin
-                if Globals.is_verbosity_at_least Globals.Debug then
+                if Structured_output.is_verbosity_at_least Structured_output.Debug then
                   printf "* Graph constructing reg-rfs for instruction with ioid %s, cex_regs_in = [%s], cex_regs_out = [%s], cex_reg_reads = [%s], cex_reg_writes = [%s]\n"
                          (Pp.pp_pretty_ioid i.cex_instance_ioid)
                          (String.concat "," (List.map (Pp.pp_reg m) (Pset.elements i.cex_regs_in)))
@@ -645,26 +632,6 @@ let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_ca
   ^ (postamble legend_opt)
 
 
-let pp_candidate_execution = pp_html_candidate_execution
-
-
-(*let mycommand_errors = ref ([]:string list)*)
-
-let mycommand command input_file output_file =
-  let error_file = output_file ^ ".err" in
-  let command_line = (command ^ " " ^ input_file ^ " -o " ^ output_file ^ " 2> " ^ error_file) in
-  let exitcode = Sys.command command_line in
-  if exitcode = 0 then
-    ignore @@ Sys.command ("rm " ^ error_file)
-  else
-    begin
-      (* mycommand_errors := !mycommand_errors @ [command_line];*)
-      printf "Error executing:\n%s\n\n" command_line;
-      ignore @@ Sys.command ("cat " ^ error_file);
-      exit exitcode;
-    end
-
-
 let parse_dot_positions lines =
   let parse_line ss =
     begin match Pp.split " " ss with
@@ -675,92 +642,15 @@ let parse_dot_positions lines =
   in
   Misc.option_map parse_line lines
 
-let make_dot_graph m legend_opt cex basename_in_dir ioid_trans_lookup =
-  let layout = basename_in_dir ^ ".layout.tmp" in
-  let graph = basename_in_dir in
-
-  (* first render graph without any edges, to get the positions  *)
-  (*     let c = open_out_gen [Open_creat; ] 0o644 "out.dot" in*)
-  let c = open_out (layout ^ ".dot") in
-  (* Open_append *)
-  let ppd_cex = pp_candidate_execution m legend_opt false [] cex ioid_trans_lookup in
-  fprintf c "%s" ppd_cex;
-  let _ = close_out c in
-
-  mycommand ("dot -Tplain") (layout ^ ".dot") (layout ^ ".txt");
-  mycommand ("dot -Tpdf")   (layout ^ ".dot") (layout ^ ".pdf");
-
-  (* now pull out the positions from the graphviz output *)
-  let c = open_in (layout ^ ".txt") in
-  let lines  : string  list =
-    let rec f acc =
-      try
-        let s = input_line c in
-        f (s :: acc)
-      with
-        End_of_file -> close_in c; List.rev acc in
-    f [] in
-  let positions = parse_dot_positions lines in
-
-  (* now re-render the graph with those node positions *)
-  let c = open_out (graph ^ ".dot") in
-  let ppd_cex = pp_candidate_execution m legend_opt true positions cex ioid_trans_lookup in
-  fprintf c "%s" ppd_cex;
-  let _ = close_out c in
-
-  mycommand ("neato -Tpdf") (graph ^ ".dot") (graph ^ ".pdf");
-  mycommand ("neato -Tfig") (graph ^ ".dot") (graph ^ ".fig")
-
-
-module S : GraphBackend.S 
-       with type state = ConcModel.state
-       with type trans = ConcModel.trans
-       with type ui_trans = ConcModel.ui_trans
-  = struct
-
-  type state = ConcModel.state
-  type trans = ConcModel.trans
-  type ui_trans = ConcModel.ui_trans
-
-  let make_graph m test_info s cex (nc: (ConcModel.ui_trans) list) =
-    let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s;
-                     pp_kind=Ascii;
-                     pp_colours=false;
-                     pp_trans_prefix=false } in
-
-    let (ioid_trans_lookup_data  : (Events.ioid * (ConcModel.ui_trans)) list) =
-      List.map (fun (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
-
-    let ioid_trans_lookup (ioid: Events.ioid) : (ConcModel.ui_trans) list =
-      Misc.option_map (fun (ioid',n) -> if ioid=ioid' then Some n else None)
-        ioid_trans_lookup_data in
-
-
-    (* if generated_dir is set, create files there with filename based on the test name, otherwise create files here based on "out" *)
-    let basename_in_dir = match !Globals.generateddir with None -> "out" | Some dir -> Filename.concat dir (Filename.basename test_info.Test.name) in
-
-    make_dot_graph m (Some test_info.Test.name) cex basename_in_dir ioid_trans_lookup;
-
-    (* hack to terminate after finding the first "final" graph *)
-    begin match !Globals.run_dot with
-    | Some RD_final
-    | Some RD_final_ok
-    | Some RD_final_not_ok
-      -> exit 0
-    | None
-    | Some RD_step
-      -> ()
-    end
-  end
-
-
-let pp_raw_dot m legend_opt render_edges positions (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) =
-  let m = { m with pp_pretty_eiid_table = ConcModel.pretty_eiids s; pp_kind=Ascii; pp_colours=false; pp_trans_prefix=false } in
-  let (ioid_trans_lookup_data  : (Events.ioid * ConcModel.ui_trans) list) =
-    List.map (function (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc in
-  let ioid_trans_lookup (ioid: Events.ioid) : ConcModel.ui_trans list =
-    Misc.option_map (function (ioid',n) -> if ioid=ioid' then Some n else None) ioid_trans_lookup_data in
-
-  pp_candidate_execution m legend_opt render_edges positions cex ioid_trans_lookup
+let ioid_trans_lookup (nc: (ConcModel.ui_trans) list)
+    : Events.ioid -> (ConcModel.ui_trans) list
+  =
+  let ioid_trans_lookup_data  : (Events.ioid * (ConcModel.ui_trans)) list =
+    List.map (fun (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc
+  in
+  fun (ioid: Events.ioid) ->
+    Misc.option_map
+      (fun (ioid',n) -> if ioid=ioid' then Some n else None)
+      ioid_trans_lookup_data
 
 end (* Make *)

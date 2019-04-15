@@ -123,16 +123,6 @@ type instruction_semantics =
   |>
 
 
-type instruction_semantics_option =
-  | Interp of bool (* true for eager, false for non-eager *)
-  | Shallow_embedding
-
-type instruction_semantics_p =
-  instruction_semantics_option ->
-  instruction_semantics
-
-
-
 let sail_bit_1to2 b =
   match b with
   | Sail_values.B0 -> Sail2_values.B0

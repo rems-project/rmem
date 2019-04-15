@@ -53,18 +53,17 @@ module Base = Interact_parser_base
 %token SEARCH
 %token RANDOM
 %token EXHAUSTIVE
+%token <Interact_parser_base.ast_search_final> FINAL
 
 %token BREAK
 %token FETCH
 %token SYMBOL
 %token LINE
-%token WATCH_READ
-%token WATCH_WRITE
-%token WATCH_EITHER
+%token <Interact_parser_base.ast_watchpoint_type> WATCH
 %token SHARED
 
 %token SET
-%token <string> SETARG
+%token <string> ARG
 
 %token FOCUS
 %token THREAD
@@ -96,7 +95,7 @@ rev_commands:
   ;
 
 command:
-  |             { Base.Default       }
+  |             { Base.Default }
   | QUIT        { Base.Quit          }
   | help        { $1                 }
   | OPTIONS     { Base.ShowOptions   }
@@ -129,15 +128,18 @@ transition:
   ;
 
 help:
-  | HELP     { Base.Help None }
-  | QUESTION { Base.Help None }
+  | HELP          { Base.Help [] }
+  | QUESTION      { Base.Help [] }
+  | HELP rev_args { Base.Help (List.rev $2) }
   ;
 
 info:
+  | INFO { raise (Base.Parse_error "'info' takes arguments (see 'help info')") }
   | INFO BREAK { Base.InfoBreakpoints }
   ;
 
 delete:
+  | DELETE { raise (Base.Parse_error "'delete' takes arguments (see 'help delete')") }
   | DELETE BREAK NUM     { Base.DeleteBreakpoint $3 }
   | DELETE NUM           { Base.DeleteBreakpoint $2 }
   ;
@@ -165,34 +167,42 @@ breakpoint_target:
   ;
 
 breakpoint:
+  | BREAK { raise (Base.Parse_error "'break' takes arguments (see 'help break')") }
   | BREAK breakpoint_target { Base.BreakpointFetch $2      }
   | BREAK IDENT COLON NUM   { Base.BreakpointLine ($2, $4) }
   ;
 
 watchpoint:
-  | WATCH_READ   breakpoint_target { Base.Watchpoint (Base.Read,   $2) }
-  | WATCH_WRITE  breakpoint_target { Base.Watchpoint (Base.Write,  $2) }
-  | WATCH_EITHER breakpoint_target { Base.Watchpoint (Base.Either, $2) }
-  | WATCH_READ   SHARED            { Base.SharedWatchpoint Base.Read     }
-  | WATCH_WRITE  SHARED            { Base.SharedWatchpoint Base.Write    }
-  | WATCH_EITHER SHARED            { Base.SharedWatchpoint Base.Either   }
+  | WATCH { raise (Base.Parse_error "'watch' takes arguments (see 'help watch')") }
+  | WATCH breakpoint_target { Base.Watchpoint ($1, $2) }
+  | WATCH SHARED            { Base.SharedWatchpoint $1 }
   ;
 
 search:
-  | SEARCH EXHAUSTIVE { Base.Search Base.Exhaustive  }
-  | SEARCH RANDOM NUM { Base.Search (Base.Random $3) }
+  | SEARCH { raise (Base.Parse_error "'search' takes arguments (see 'help search')") }
+  | SEARCH EXHAUSTIVE       { Base.Search (Base.Exhaustive, None)    }
+  | SEARCH EXHAUSTIVE FINAL { Base.Search (Base.Exhaustive, Some $3) }
+  | SEARCH RANDOM NUM       { Base.Search (Base.Random $3, None)     }
+  | SEARCH RANDOM NUM FINAL { Base.Search (Base.Random $3, Some $4)  }
   ;
 
 set:
-  | SET SETARG SETARG { Base.SetOption ($2, $3) }
+  | SET { raise (Base.Parse_error "'set' takes arguments (see 'help set')") }
+  | SET ARG          { Base.SetOption ($2, []) }
+  | SET ARG rev_args { Base.SetOption ($2, List.rev $3) }
+  ;
+
+rev_args:
+  | ARG          { $1 :: [] }
+  | rev_args ARG { $2 :: $1 }
   ;
 
 focus:
-  | FOCUS THREAD NUM { Base.FocusThread (Some $3) }
-  | FOCUS THREAD OFF { Base.FocusThread     None  }
-  | FOCUS INSTRUCTION NUM NUM       { Base.FocusInstruction (Some ($3, $4)) }
-  | FOCUS INSTRUCTION NUM COLON NUM { Base.FocusInstruction (Some ($3, $5)) }
-  | FOCUS INSTRUCTION OFF           { Base.FocusInstruction           None  }
+  | FOCUS { raise (Base.Parse_error "'focus' takes arguments (see 'help focus')") }
+  | FOCUS THREAD NUM       { Base.FocusThread (Some $3)      }
+  | FOCUS THREAD OFF       { Base.FocusThread None           }
+  | FOCUS INSTRUCTION ioid { Base.FocusInstruction (Some $3) }
+  | FOCUS INSTRUCTION OFF  { Base.FocusInstruction None      }
   ;
 
 big_num:
@@ -201,12 +211,17 @@ big_num:
   ;
 
 stepi:
-  | STEPI               { Base.StepInstruction (   None,    None) }
-  | STEPI NUM           { Base.StepInstruction (Some $2,    None) }
-  | STEPI NUM NUM       { Base.StepInstruction (Some $2, Some $3) }
-  | STEPI NUM COLON NUM { Base.StepInstruction (Some $2, Some $4) }
+  | STEPI               { Base.StepInstruction (   None, None) }
+  | STEPI NUM           { Base.StepInstruction (Some $2, None) }
+  | STEPI ioid          { Base.StepInstruction (Some (fst $2), Some (snd $2)) }
   ;
 
 peeki:
-  | PEEKI NUM NUM { Base.PeekInstruction ($2, $3) }
+  | PEEKI { raise (Base.Parse_error "'peeki' takes arguments (see 'help peeki')") }
+  | PEEKI ioid { Base.PeekInstruction (fst $2, snd $2) }
+  ;
+
+ioid:
+  | NUM NUM       { ($1, $2) }
+  | NUM COLON NUM { ($1, $3) }
   ;

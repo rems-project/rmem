@@ -62,7 +62,7 @@ module WebPrinters : Screen_base.Printers = struct
   let read_filename basename = Js.to_bytestring (Js.Unsafe.fun_call (Js.Unsafe.js_expr "read_filename")
                                                                 [|Js.Unsafe.inject (Js.string basename)|])
 
-  let of_output_tree = Screen_base.html_of_output_tree
+  let of_structured_output = Structured_output.to_html
 end
 
 include (Screen_base.Make (WebPrinters))
@@ -70,33 +70,7 @@ include (Screen_base.Make (WebPrinters))
 let quit : unit -> unit = fun () ->
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "quit") [||] |> ignore
 
-module Dot (ConcModel: Concurrency_model.S) = struct
-  module Graphviz = Graphviz.Make(ConcModel)
-
-  let render_dot ppmode legend_opt (s : ConcModel.state) cex (nc: ConcModel.ui_trans list) = fun layout_dot ->
-    (* Pp.split doesn't like this for some reason --
-       I believe because of its 'skip beginning and end' behaviour *)
-    let lines = (Js.string layout_dot)##split (Js.string "\n") |>
-                  Js.str_array |> Js.to_array |> Array.map Js.to_string |> Array.to_list in
-    let positions = Graphviz.parse_dot_positions lines in
-    let dot = Graphviz.pp_raw_dot ppmode legend_opt true positions s cex nc in
-    Js.Unsafe.fun_call (Js.Unsafe.js_expr "display_dot")
-                       [|Js.Unsafe.inject (Js.string dot)|]
-    |> ignore
-
-  let display_dot ppmode legend_opt s cex (nc: ConcModel.ui_trans list) =
-    let layout_dot = Graphviz.pp_raw_dot ppmode legend_opt false [] s cex nc in
-    Js.Unsafe.fun_call (Js.Unsafe.js_expr "layout_dot")
-                       [|
-                         Js.Unsafe.inject (Js.string layout_dot);
-                         Js.Unsafe.inject (Js.wrap_callback
-                                             (render_dot ppmode legend_opt s cex nc))
-                       |]
-    |> ignore
-end
-
-let current_options (options : Screen_base.options_state) =
-  let open Screen_base in
+let current_options (options : options_state) =
   let open RunOptions in
   let open Globals in
   let run_options = options.run_options in
@@ -114,11 +88,6 @@ let current_options (options : Screen_base.options_state) =
     val eager_fp_recalc_ = run_options.eager_mode.eager_fp_recalc
     val eager_thread_start_ = run_options.eager_mode.eager_thread_start
     val eager_local_mem_ = run_options.eager_mode.eager_local_mem
-    val suppress_internal_ = run_options.suppress_internal
-    val always_print_ = run_options.always_print
-    val always_graph_ = options.always_graph
-    val dot_final_ok_ = options.dot_final_ok
-    val dot_final_not_ok_ = options.dot_final_not_ok
     val random_ = run_options.pseudorandom
     val storage_first_ = run_options.storage_first
     val priority_reduction_ = run_options.priority_reduction
@@ -150,11 +119,11 @@ let current_options (options : Screen_base.options_state) =
       | None -> Js.null
     val verbosity_ =
       Js.string (match options.verbosity with
-      | Globals.Quiet -> "quiet"
-      | Globals.Normal -> "normal"
-      | Globals.ThrottledInformation -> "verbose"
-      | Globals.UnthrottledInformation -> "very"
-      | Globals.Debug -> "debug")
+      | Structured_output.Quiet -> "quiet"
+      | Structured_output.Normal -> "normal"
+      | Structured_output.ThrottledInformation -> "verbose"
+      | Structured_output.UnthrottledInformation -> "very"
+      | Structured_output.Debug -> "debug")
     val pp_style_ = Js.string (Globals.pp_ppstyle ppmode.pp_style)
     val choice_history_limit_ =
       match ppmode.pp_choice_history_limit with
@@ -180,7 +149,7 @@ let current_options (options : Screen_base.options_state) =
 
 let prompt ppmode maybe_options prompt_ot history cont =
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_prompt") [|
-    Js.Unsafe.inject (Js.string (Screen_base.html_of_output_tree ppmode prompt_ot))
+    Js.Unsafe.inject (Js.string (Structured_output.to_html ppmode.Globals.pp_colours prompt_ot))
   |] |> ignore;
   begin match maybe_options with
   | Some options -> Js.Unsafe.fun_call (Js.Unsafe.js_expr "update_options")

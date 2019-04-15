@@ -45,7 +45,7 @@ function do_display_dot(html) {
                 $(this).css("text-decoration", "underline")
                     .css("cursor", "pointer")
                     .click(function(event) {
-                        do_command($(this).text().split(":")[0]);
+                        do_command($(this).text().split(":")[0], true);
                         event.stopPropagation();
                         return false;
                     });
@@ -133,7 +133,7 @@ function display_dot(str) {
 $(document).ready(function () {
     $(document).on("click", ".dot_refresh", function () {
         $("#dot").css("min-width", 0);
-        do_command("graph");
+        do_command("graph", true);
     });
 
     $(document).on("click", ".dot_zoom_plus", function () {
@@ -169,9 +169,9 @@ $(document).ready(function () {
 });
 
 STATE.graph_position_engine.subscribe(function () {
-    do_command("graph");
+    do_command("graph", true);
 });
 
 STATE.graph_edge_engine.subscribe(function () {
-    do_command("graph");
+    do_command("graph", true);
 });

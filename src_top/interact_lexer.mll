@@ -21,7 +21,7 @@ open Interact_parser
 
 exception SyntaxError of string
 
-type state = LS_Token | LS_Set_args
+type state = LS_Token | LS_Arg
 let state = ref LS_Token
 
 let create_hashtable keywords =
@@ -33,7 +33,6 @@ let create_hashtable keywords =
 let keywords =
   create_hashtable [
     (["x"; "exit"; "q"; "quit"], QUIT);
-    (["h"; "help"],              HELP);
     (["o"; "options"],           OPTIONS);
 
     (["s"; "step"], STEP);
@@ -46,6 +45,9 @@ let keywords =
     (["search"],            SEARCH);
     (["ran"; "random"],     RANDOM);
     (["exh"; "exhaustive"], EXHAUSTIVE);
+    (["final"],             FINAL Interact_parser_base.Any_final);
+    (["final_ok"],          FINAL Interact_parser_base.Final_ok);
+    (["final_not_ok"],      FINAL Interact_parser_base.Final_not_ok);
 
     (["typeset"], TYPESET);
     (["graph"],   GRAPH);
@@ -59,9 +61,9 @@ let keywords =
     (["fetch"],               FETCH);
     (["symbol"; "sym"],       SYMBOL);
     (["line"],                LINE);
-    (["rwatch"],              WATCH_READ);
-    (["watch"],               WATCH_WRITE);
-    (["awatch"],              WATCH_EITHER);
+    (["watch"],               WATCH Interact_parser_base.Write);
+    (["rwatch"],              WATCH Interact_parser_base.Read);
+    (["awatch"],              WATCH Interact_parser_base.Either);
     (["shared"],              SHARED);
 
     (["on";  "true";  "t"; "yes"; "y"], ON);
@@ -98,8 +100,7 @@ let name  = (alpha | '_') (alpha | digit | '_' | '/' | '.' | '-')*
 let white = [' ' '\t']+
 let newline = '\r' | '\n' | "\r\n"
 
-rule token =
-  parse
+rule token = parse
   | white    { token lexbuf }
   | newline  { next_line lexbuf; token lexbuf }
 
@@ -122,7 +123,8 @@ rule token =
   | (num as n1) 'e' (num as n2)
               { NUMENUM (int_of_string n1, int_of_string n2) }
 
-  | "set" { state := LS_Set_args; SET }
+  | "set"        { state := LS_Arg; SET }
+  | "help" | "h" { state := LS_Arg; HELP }
 
   | name as s {
       try Hashtbl.find keywords s with
@@ -132,23 +134,23 @@ rule token =
   | _        { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof      { EOF }
 
-and read_set_args =
-  parse
-  | white     { read_set_args lexbuf }
-  | newline   { next_line lexbuf; read_set_args lexbuf }
+and read_arg = parse
+  | white     { read_arg lexbuf }
+  | newline   { next_line lexbuf; read_arg lexbuf }
 
   | ';'       { state := LS_Token; SEMICOLON }
 
-  | '"'       { SETARG (read_string (Buffer.create 50) lexbuf) }
+  | '"'       { ARG (read_string (Buffer.create 50) lexbuf) }
 
-  | (alpha | digit | '_' | '/' | '.' | '-')+ as s
-              { SETARG s }
+  | (alpha | digit | '_' | '/' | '.' | '-' |
+      '?' | '{' | '}' | '[' | ']' |
+      ':' | ',' | '/' | '+')+ as s
+              { ARG s }
 
   | _         { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }
   | eof       { state := LS_Token; EOF }
 
-and read_string buf =
-  parse
+and read_string buf = parse
   | '"'           { Scanf.unescaped (Buffer.contents buf) }
   | '\\' _        { Buffer.add_string buf (Lexing.lexeme lexbuf); read_string buf lexbuf }
   | [^ '"' '\\']+ { Buffer.add_string buf (Lexing.lexeme lexbuf); read_string buf lexbuf }
@@ -158,8 +160,8 @@ and read_string buf =
 {
   let internal_lexer = fun lb ->
     match !state with
-    | LS_Token    -> token lb
-    | LS_Set_args -> read_set_args lb
+    | LS_Token -> token lb
+    | LS_Arg   -> read_arg lb
 
   let get_lexer = fun () ->
     state := LS_Token;

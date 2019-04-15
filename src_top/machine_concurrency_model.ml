@@ -100,18 +100,34 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   type thread_subsystem_state = Sys.ts
   type storage_subsystem_state = Sys.ss
   type system_state = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.system_state
-  type state = system_state
   type ui_state = (thread_subsystem_state,storage_subsystem_state) ui_system_state
-  type system_state_and_transitions =
-    (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.system_state_and_transitions
-  type sst = system_state_and_transitions
 
+  (* For efficiency, 'state' also includes all the enabled transitions *)
+  type state = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.system_state_and_transitions
   type trans = (thread_subsystem_state,storage_subsystem_state) MachineDefTypes.trans
+
   type ui_trans = int * trans
 
   let final_ss_state s = Sys.dict_ss.ss_is_final_state
                            s.model.Params.ss
                            s.storage_subsystem
+
+  let sst_of_state state =
+    begin try MachineDefSystem.sst_of_state state with
+    | Debug.Thread_failure (tid, ioid, s, bt) ->
+        let ui_state = Sys.dict_sys.s_make_ui_system_state
+            None state [] in
+        Printf.eprintf "Failure in the thread subsystem while enumerating the transitions of:\n";
+        Printf.eprintf "%s\n" (Pp.pp_ui_instruction (Globals.get_ppmode ()) ui_state tid ioid);
+        Printf.eprintf "%s\n\n" s;
+        Printf.eprintf "%s\n" bt;
+        exit 1
+
+    | (Failure s) as e ->
+        Printf.eprintf "Failure while enumerating transitions:\n";
+        Printf.eprintf "%s\n\n" s;
+        raise e (* changing this line to anything else will destroy the backtrace *)
+    end
 
   let initial_state ism run_options initial_state_record =
     MachineDefSystem.initial_system_state
@@ -119,9 +135,9 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
       (Sys.dict_ts)
       (Sys.dict_ss)
       (Sys.dict_sys)
-      (ISAModel.is_option run_options)
       ISAModel.ISADefs.reg_data
       initial_state_record
+    |> sst_of_state
 
   let update_dwarf (state: system_state) (ppmode: Globals.ppmode) : Globals.ppmode =
     let pp_dwarf_dynamic =
@@ -155,48 +171,23 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
     {ppmode with Globals.pp_dwarf_dynamic = Some pp_dwarf_dynamic}
 
   let make_ui_state ppmode prev_state state ncands =
-    let ppmode' = update_dwarf state ppmode in
+    let ppmode' = update_dwarf state.sst_state ppmode in
     let ui_state =
       match (prev_state,ppmode.Globals.pp_kind) with
       | (None,_)
       | (_,Globals.Hash) ->
           Sys.dict_sys.s_make_ui_system_state
-            None state ncands
+            None state.sst_state ncands
       | (Some prev_state,_) ->
           Sys.dict_sys.s_make_ui_system_state
-            (Some prev_state) state ncands
+            (Some prev_state.sst_state) state.sst_state ncands
     in
     (ppmode', ui_state)
 
-  let sst_of_state run_options state =
-    begin try
-      MachineDefSystem.sst_of_state
-        (ISAModel.is_option run_options)
-        state
-    with
-    | Debug.Thread_failure (tid, ioid, s, bt) ->
-        let (ppmode', ui_state) = make_ui_state (Globals.get_ppmode ()) None state [] in
-        Printf.eprintf "Failure in the thread subsystem while enumerating the transitions of:\n";
-        Printf.eprintf "%s\n" (Pp.pp_ui_instruction ppmode' ui_state tid ioid);
-        Printf.eprintf "%s\n\n" s;
-        Printf.eprintf "%s\n" bt;
-        exit 1
-
+  let state_after_trans sst trans =
+    begin try MachineDefSystem.sst_after_transition sst trans with
     | (Failure s) as e ->
-        Printf.eprintf "Failure while enumerating transitions:\n";
-        Printf.eprintf "%s\n\n" s;
-        raise e (* changing this line to anything else will destroy the backtrace *)
-    end
-
-  let sst_after_trans run_options sst trans =
-    begin try
-      MachineDefSystem.sst_after_transition
-        (ISAModel.is_option run_options)
-        sst
-        trans
-    with
-    | (Failure s) as e ->
-        let (ppmode', ui_state) = make_ui_state (Globals.get_ppmode ()) None sst.sst_state [] in
+        let (ppmode', ui_state) = make_ui_state (Globals.get_ppmode ()) None sst [] in
         Printf.eprintf "\n*** system state before taking the transition (see failure below) ***\n\n";
         Printf.eprintf "%s\n" (Pp.pp_ui_system_state ppmode' ui_state);
         Printf.eprintf "Failure while taking transition (from the state above):\n";
@@ -205,15 +196,18 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
         raise e (* changing this line to anything else will destroy the backtrace *)
     end
 
-  let is_final_state = MachineDefSystem.is_final_state
-  let branch_targets_of_state = MachineDefSystem.branch_targets_of_state
-  let shared_memory_of_state = MachineDefSystem.shared_memory_of_state
-  let memory_value_of_footprints = MachineDefSystem.memory_value_of_footprints
-  let make_cex_candidate = MachineDefSystem.make_cex_candidate
+  let is_final_state s =
+    s.sst_system_transitions = [] &&
+    MachineDefSystem.is_final_state s.sst_state
 
-  let is_eager_trans state eager_mode trans = 
+  let branch_targets_of_state s = MachineDefSystem.branch_targets_of_state s.sst_state
+  let shared_memory_of_state s = MachineDefSystem.shared_memory_of_state s.sst_state
+  let memory_value_of_footprints s = MachineDefSystem.memory_value_of_footprints s.sst_state
+  let make_cex_candidate s = MachineDefSystem.make_cex_candidate s.sst_state
+
+  let is_eager_trans s eager_mode trans =
     MachineDefTransitionUtils.is_eager_transition
-      state.model eager_mode trans
+      s.sst_state.model eager_mode trans
 
   let is_loop_limit_trans =
     MachineDefTransitionUtils.is_loop_limit_exception_transition
@@ -236,10 +230,10 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   let trans_reads_fp = MachineDefTransitionUtils.trans_reads_footprint
   let trans_writes_fp = MachineDefTransitionUtils.trans_writes_footprint
 
-  let pretty_eiids = Pp.pretty_eiids
+  let pretty_eiids s = Pp.pretty_eiids s.sst_state
 
-  let number_finished_instructions = MachineDefSystem.count_instruction_instances_finished
-  let number_constructed_instructions = MachineDefSystem.count_instruction_instances_constructed
+  let number_finished_instructions s = MachineDefSystem.count_instruction_instances_finished s.sst_state
+  let number_constructed_instructions s = MachineDefSystem.count_instruction_instances_constructed s.sst_state
 
   let principal_ioid_of_trans = MachineDefTypes.principal_ioid_of_trans
   let is_ioid_finished = MachineDefTransitionUtils.is_ioid_finished
@@ -250,32 +244,35 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   let pp_cand = Pp.pp_cand
   let pp_trans = Pp.pp_trans
   let pp_ui_state = Pp.pp_ui_system_state
-  let set_model_params s model = {s with model = model}
-  let model_params s = s.model
+  let pp_instruction = Pp.pp_ui_instruction
+
+  let set_model_params model s = sst_of_state {s.sst_state with model = model}
+
+
+  let model_params s = s.sst_state.model
   let final_reg_states s = 
-    Pmap.bindings_list s.thread_states
-    |> List.map (fun (tid, state) -> (tid, (s.t_model.ts_final_reg_state state)))
-  let sst_trans s = s.sst_system_transitions
-  let sst_stopped_promising s =
+    Pmap.bindings_list s.sst_state.thread_states
+    |> List.map (fun (tid, state) -> (tid, (s.sst_state.t_model.ts_final_reg_state state)))
+  let transitions s = s.sst_system_transitions
+  let stopped_promising s =
     s.sst_state.s_model.ss_stopped_promising
       s.sst_state.storage_subsystem
-  let sst_write_after_stop_promising s = 
+  let write_after_stop_promising s =
     s.sst_write_after_stop_promising
-  let sst_inst_discarded s = s.sst_inst_discarded
-  let sst_inst_restarted s = s.sst_inst_restarted
-  let sst_state s = s.sst_state
+  let inst_discarded s = s.sst_inst_discarded
+  let inst_restarted s = s.sst_inst_restarted
 end
 
 (********************************************************************)
 
 
 
-let make (isaModel: (module Isa_model.S))
-      (ts : Params.thread_model)
-      (ss : Params.storage_model) :
-      (module Concurrency_model.S) = 
-
-
+let make
+    (isaModel: (module Isa_model.S))
+    (ts:       Params.thread_model)
+    (ss:       Params.storage_model)
+    : (module Concurrency_model.S)
+  =
   let (module Sys : SYS) = match (ts,ss) with
     | (Params.Promising_thread_model,_)  -> (module PromisingSYS)
     | (_,Params.Promising_storage_model) -> (module PromisingSYS)

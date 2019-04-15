@@ -1751,7 +1751,6 @@ type system 'ts 'ss =
        ui_system_state 'ts 'ss; 
   
      s_enumerate_transitions_of_system :
-       instruction_semantics_option ->
        system_state 'ts 'ss ->
        maybe (list (ss_trans 'ss)) ->
        map thread_id (list (thread_trans 'ts)) ->
@@ -1763,19 +1762,19 @@ type system 'ts 'ss =
   |>
 
 and system_state 'ts 'ss =
-  <| program_memory: (address -> fetch_and_decode_outcome);
-     initial_writes: list write;
-     thread_states: map thread_id 'ts;
-     storage_subsystem: 'ss;
-     model: model_params;
-     instruction_semantics : instruction_semantics_p;
-     t_model : threadSubsystem 'ts;
-     s_model : storageSubsystem 'ss;
-     system_model : system 'ts 'ss;
-     transition_history : list (trans 'ts 'ss);    (* most recent first *)
+  <| program_memory:        (address -> fetch_and_decode_outcome);
+     initial_writes:        list write;
+     thread_states:         map thread_id 'ts;
+     storage_subsystem:     'ss;
+     model:                 model_params;
+     instruction_semantics: instruction_semantics;
+     t_model:               threadSubsystem 'ts;
+     s_model:               storageSubsystem 'ss;
+     system_model:          system 'ts 'ss;
+     transition_history:    list (trans 'ts 'ss);    (* most recent first *)
       (* recording the transition history might have a bad effect on performance; we'll see *)
 
-     riscv_AMO_lock: maybe ioid;
+     riscv_AMO_lock:        maybe ioid;
   |>
 
 

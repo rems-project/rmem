@@ -15,12 +15,11 @@
 /*                                                                               */
 /*===============================================================================*/
 
-function do_command (cmd, el) {
-    print("<p>" + STATE.prompt() + "&nbsp;<b>" + escape_html(cmd) + "</b></p>");
-    STATE.prompt("(...)");
-    if (el) {
-        $(el).val("");
+function do_command (cmd, log) {
+    if (log) {
+      print("<p class=rmem>" + STATE.prompt() + "&nbsp;<b class=rmem_cmd>" + escape_html(cmd) + "</b></p>");
     }
+    STATE.prompt("(...)");
     $(".interact_loading").show();
     graph_outdated();
     interact_lib.input_str(cmd);
@@ -35,10 +34,10 @@ function create_ui (root) {
 
 $(document).ready(function () {
     $(document).on("click", ".cmdbutton:not(.disabled)", function (e) {
-        do_command($(this).attr("cmd"));
+        do_command($(this).attr("cmd"), true);
     });
 
-    $(document).on("click", ".restart", function (e) {
+    $(document).on("click", "#restart", function (e) {
         restart();
     });
 
@@ -85,7 +84,13 @@ $(document).ready(function () {
     });
 
     $(document).on("click", "span.follow_list", function (e) {
-        do_command("set follow_list " + $(this).text());
+        do_command("set follow_list " + $(this).text(), true);
+        e.preventDefault();
+        return false;
+    });
+
+    $(document).on("click", ".rmem_cmd", function (e) {
+        do_command($(this).text(), true);
         e.preventDefault();
         return false;
     });
@@ -126,6 +131,7 @@ $(document).ready(function () {
                     embedding: $("input[type='radio'][name='semantics']:checked").val(),
                     force_sc: $("input[type='radio'][name='force_sc']:checked").val(),
                     tree_speculation: $("input[type='radio'][name='tree_speculation']:checked").val(),
+                    promise_first: $("input[type='radio'][name='promise_first']:checked").val(),
                     flowing_topology_2: $("input[type='radio'][name='topology_2']:checked").val(),
                     flowing_topology_3: $("input[type='radio'][name='topology_3']:checked").val(),
                     flowing_topology_4: $("input[type='radio'][name='topology_4']:checked").val()
@@ -208,13 +214,14 @@ $(document).ready(function () {
     });
 
     $(document).on("click", ".trans", function () {
-        do_command($(this).attr("id"));
+        do_command($(this).attr("id"), true);
     });
 
 
     $(document).on("keypress", ".input_cmd", function (e) {
         if (e.keyCode === 13) { // enter/newline
-            do_command($(this).val(), this);
+            do_command($(this).val(), true);
+            $(this).val("");
             e.preventDefault();
             return false;
         } else {
@@ -259,6 +266,27 @@ $(document).ready(function () {
         var el = $(this).closest(".mid_bar").parent().find(".adjust_font_size, .CodeMirror");
         el.css("font-size", parseFloat(el.eq(0).css("font-size").slice(0, -2)) * 0.9);
         update_editors($(this).closest(".pane"));
+    });
+
+    $(document).on("click", ".litmus_download_file", function () {
+        var test = STATE.sources()[0].content.trim();
+        if (test.length > 0) {
+            var blob = new Blob([test + "\n"], {type:'text/plain'});
+
+            var downloadLink = document.createElement("a");
+            var name = STATE.sources()[0].name.split(/\s+/)[1];
+            downloadLink.download = name + ".litmus";
+            var url = window.URL.createObjectURL(blob);
+            downloadLink.href = url;
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            setTimeout(function() {
+              document.body.removeChild(downloadLink);
+              window.URL.revokeObjectURL(url);
+            }, 0);
+        } else {
+            error_dialog("Please enter a litmus test.");
+        }
     });
 });
 

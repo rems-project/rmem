@@ -16,42 +16,36 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+(* Abstraction of operational concurrency model *)
 module type S = sig
 
-  type sst (* state and transitions *)
   type state
   type trans
   type ui_state
   type ui_trans = int * trans
-
-
-  val sst_of_state :
-    RunOptions.t -> state -> sst
-  val sst_state :
-    sst -> state
-  val sst_inst_restarted :
-    sst -> bool
-  val sst_inst_discarded :
-    sst -> bool
-  val sst_write_after_stop_promising :
-    sst -> bool
-  val sst_stopped_promising :
-    sst -> bool
-  val sst_trans :
-    sst -> trans list
-  val sst_after_trans :
-    RunOptions.t ->
-    sst ->
-    trans ->
-    (sst BasicTypes.transition_outcome)
 
   val initial_state :
     InstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
     Params.initial_state_record ->
     state
-  val is_final_state :
-    state -> bool
+
+  val transitions : state -> trans list
+  val state_after_trans :
+    state -> trans -> (state BasicTypes.transition_outcome)
+
+  val model_params     : state -> Params.model_params
+  val set_model_params : Params.model_params -> state -> state
+
+  (* state predicates *)
+  val is_final_state    : state -> bool
+  val inst_restarted    : state -> bool
+  val inst_discarded    : state -> bool
+  val write_after_stop_promising
+                        : state -> bool
+  val stopped_promising : state -> bool
+
+
   val branch_targets_of_state :
     state -> Params.branch_targets_map
   val shared_memory_of_state :
@@ -59,17 +53,14 @@ module type S = sig
   val memory_value_of_footprints :
     state -> Sail_impl_base.footprint list ->
     (Sail_impl_base.footprint * Sail_impl_base.memory_value) list
+  val final_reg_states :
+    state -> (Events.thread_id * (Sail_impl_base.reg_base_name * Sail_impl_base.register_value option) list) list
+
   val make_cex_candidate :
     state ->
     CandidateExecution.cex_candidate
-  val final_reg_states :
-    state -> (Events.thread_id * (Sail_impl_base.reg_base_name * Sail_impl_base.register_value option) list) list
-  val model_params :
-    state -> Params.model_params
-  val set_model_params :
-    state -> Params.model_params -> state
 
-  val number_finished_instructions : state -> int
+  val number_finished_instructions    : state -> int
   val number_constructed_instructions : state -> int
 
   val make_ui_state :
@@ -91,10 +82,16 @@ module type S = sig
     Globals.ppmode ->
     (int * trans) ->
     string
-  val pp_transition_history :           
+  val pp_transition_history :
     Globals.ppmode ->
     ?filter:(trans -> bool) ->
     ui_state ->
+    string
+  val pp_instruction :
+    Globals.ppmode ->
+    ui_state ->
+    Events.thread_id ->
+    Events.ioid ->
     string
   val pretty_eiids :
     state ->
@@ -105,7 +102,7 @@ module type S = sig
   val is_storage_trans :
     trans -> bool
   val priority_trans :
-    sst -> Params.eager_mode -> ((trans -> bool) * bool) list 
+    state -> Params.eager_mode -> ((trans -> bool) * bool) list
   val is_loop_limit_trans :
     trans ->  bool
   val is_eager_trans :
@@ -117,15 +114,15 @@ module type S = sig
   val trans_fetch_addr :
     trans -> Sail_impl_base.address option
   val trans_reads_fp :
-    Sail_impl_base.footprint -> sst -> trans -> bool
+    Sail_impl_base.footprint -> state -> trans -> bool
   val trans_writes_fp :
-    Sail_impl_base.footprint -> sst -> trans -> bool
+    Sail_impl_base.footprint -> state -> trans -> bool
   val ioid_of_thread_trans :
     trans -> Events.ioid option
   val threadid_of_thread_trans :
     trans -> Events.thread_id option
   val is_ioid_finished :
-    Events.ioid -> sst -> bool
+    Events.ioid -> state -> bool
   val principal_ioid_of_trans :
     trans -> Events.ioid
   val fuzzy_compare_transitions :

@@ -56,16 +56,15 @@ module Linux : S = struct
 end
 
 let find_self () =
-  let open Globals in
   let pid = Unix.getpid () in
   try
     let path = Linux.pidpath pid in
-    if is_verbosity_at_least Debug then
+    if Structured_output.is_verbosity_at_least Structured_output.Debug then
       Printf.printf "found pidpath %s using Linux /proc method (for ISA defs)\n" path;
     path
   with
   | Unix.Unix_error (errno, func, msg) -> begin
-      if is_verbosity_at_least Debug then
+      if Structured_output.is_verbosity_at_least Structured_output.Debug then
         Printf.printf "couldn't get pidpath using Linux /proc method (for ISA defs), error was: %s %s %s\n" (Unix.error_message errno) func msg;
       failwith "find_self"
       (* try *)

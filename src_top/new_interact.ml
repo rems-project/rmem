@@ -17,11 +17,10 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open Lexing
-open Params
 open RunOptions
+open Params
 
-open Screen_base
+module SO = Structured_output
 
 (** Parser **********************************************************)
 
@@ -30,6 +29,7 @@ type parser_outcome =
   | ParserError of string
 
 let parse (str: string) : parser_outcome =
+  let open Lexing in
   let print_position lexbuf : string =
     let pos = lexbuf.lex_curr_p in
     Printf.sprintf "%s:%d:%d" pos.pos_fname
@@ -44,16 +44,19 @@ let parse (str: string) : parser_outcome =
       ParserError (Printf.sprintf "%s: %s" (print_position lexbuf) msg)
   | Parsing.Parse_error ->
       ParserError (Printf.sprintf "%s: syntax error" (print_position lexbuf))
+  | Interact_parser_base.Parse_error msg ->
+      ParserError (Printf.sprintf "error: %s: %s" (print_position lexbuf) msg)
 
 (********************************************************************)
 
 module Make (ConcModel: Concurrency_model.S) = struct
   module Runner = New_run.Make (ConcModel)
-  module Dot = Screen.Dot (ConcModel)
+  module GraphvizBackend = Graphviz.Make (ConcModel)
+  module TikzBackend = Tikz.Make (ConcModel)
 
 type interact_node =
   {
-    system_state:         ConcModel.sst;
+    system_state:         ConcModel.state;
     (* open_transition: Tail is always a number from filtered_transitions that
     was taken as a non-eager transition. The following numbers are eager
     transitions that were taken in a sequence leading to the next interact_node
@@ -108,22 +111,10 @@ let filtered_out_transitions node =
   |> List.split
   |> snd
 
-module Graphviz = Graphviz.Make (ConcModel)
-module Tikz = Tikz.Make (ConcModel)
-
-let get_graph_backend () =
-  begin match !Globals.graph_backend with
-  | Globals.Dot  -> 
-     (module Graphviz.S : GraphBackend.S 
-             with type state = ConcModel.state
-              and type trans = ConcModel.trans
-              and type ui_trans = ConcModel.ui_trans)
-  | Globals.Tikz -> 
-     (module Tikz.S : GraphBackend.S 
-             with type state = ConcModel.state
-              and type trans = ConcModel.trans
-              and type ui_trans = ConcModel.ui_trans)
-  end
+let get_graph_backend () : (module GraphBackend.S with type ui_trans = ConcModel.ui_trans) =
+  match !Globals.graph_backend with
+  | Globals.Dot  -> (module GraphvizBackend)
+  | Globals.Tikz -> (module TikzBackend)
 
 
 let number_transitions
@@ -231,7 +222,7 @@ let default_cmd interact_state : Interact_parser_base.ast option =
   | Interact_parser_base.Step (Some i) :: _ when i >= 1 -> cmd
   | Interact_parser_base.Follow :: _ ->
       Interact_parser_base.pp Interact_parser_base.Follow
-      |> otStrLine "Cannot follow the '%s' command"
+      |> SO.strLine "Cannot follow the '%s' command"
       |> Screen.show_warning interact_state.ppmode;
       None
   | ast :: _ -> Some ast
@@ -272,7 +263,7 @@ let is_eager interact_state transition : bool =
   | exception Failure _ -> assert false
   | node ->
       ConcModel.is_eager_trans
-        (ConcModel.sst_state node.system_state)
+        node.system_state
         (* eager_local_mem is sound only in a fixed-point *)
         {interact_state.options.eager_mode with eager_local_mem = false}
         transition
@@ -329,144 +320,143 @@ let show_options interact_state : unit =
     | Some (tid, iid) -> Printf.sprintf "(%d:%d)%s" tid iid suffix
   in
 
-  OTConcat [
-    otStrLine "Global options:";
-    otStrLine "  suppress_internal = %b"
-      interact_state.options.suppress_internal;
-    otStrLine "  embedding = %s"
+  SO.Concat [
+    SO.strLine "Global options:";
+    SO.strLine "  embedding = %s"
       (if interact_state.options.interpreter then "interpreter" else "shallow");
-    otStrLine "  loop_limit = %s"
+    SO.strLine "  loop_limit = %s"
       (pp_maybe_int "" (!Globals.model_params).t.thread_loop_unroll_limit);
   ]
   |> Screen.show_message ppmode;
 
-  OTConcat [
-    otStrLine "Eager mode:";
-    otStrLine "  fetch (single successor) = %b"
+  SO.Concat [
+    SO.strLine "Eager mode:";
+    SO.strLine "  fetch (single successor) = %b"
       interact_state.options.eager_mode.eager_fetch_single;
-    otStrLine "  fetch_new_branch = %b"
+    SO.strLine "  fetch_new_branch = %b"
       interact_state.options.eager_mode.eager_fetch_multi;
-    otStrLine "  pseudocode_internal = %b"
+    SO.strLine "  pseudocode_internal = %b"
       interact_state.options.eager_mode.eager_pseudocode_internal;
-    otStrLine "  constant_reg_read = %b"
+    SO.strLine "  constant_reg_read = %b"
       interact_state.options.eager_mode.eager_constant_reg_read;
-    otStrLine "  reg_rw = %b"
+    SO.strLine "  reg_rw = %b"
       interact_state.options.eager_mode.eager_reg_rw;
-    otStrLine "  memory_aux = %b"
+    SO.strLine "  memory_aux = %b"
       interact_state.options.eager_mode.eager_memory_aux;
-    otStrLine "  local_mem = %b"
+    SO.strLine "  local_mem = %b"
       interact_state.options.eager_mode.eager_local_mem;
-    otStrLine "  finish = %b"
+    SO.strLine "  finish = %b"
       interact_state.options.eager_mode.eager_finish;
-    otStrLine "  fp_recalc = %b"
+    SO.strLine "  fp_recalc = %b"
       interact_state.options.eager_mode.eager_fp_recalc;
   ]
   |> Screen.show_message ppmode;
 
-  OTConcat [
-    otStrLine "Shared-memory (approximation for eager_local_mem):";
-    otLine @@ otEncoded @@
+  SO.Concat [
+    SO.strLine "Shared-memory (approximation for eager_local_mem):";
+    SO.line @@ SO.encoded @@
       Pp.pp_shared_memory interact_state.ppmode interact_state.options.eager_mode.em_shared_memory;
   ]
   |> Screen.show_message ppmode;
 
-  OTConcat [
-    otStrLine "Stepping options:";
-    otStrLine "  random = %b" interact_state.options.pseudorandom;
-    otStrLine "  storage_first = %b" interact_state.options.storage_first;
-    otStrLine "  focused-thread = %s"
+  SO.Concat [
+    SO.strLine "Stepping options:";
+    SO.strLine "  random = %b" interact_state.options.pseudorandom;
+    SO.strLine "  storage_first = %b" interact_state.options.storage_first;
+    SO.strLine "  focused-thread = %s"
       (pp_maybe_int "" interact_state.options.focused_thread);
-    otStrLine "  focused-instruction = %s"
+    SO.strLine "  focused-instruction = %s"
       (pp_maybe_ioid "" interact_state.options.focused_ioid);
   ]
   |> Screen.show_message ppmode;
 
 
-  OTConcat [
-    otStrLine "Interface options:";
-    otStrLine "  verbosity = %s"
-      (Globals.pp_verbosity_level !Globals.verbosity);
-    otStrLine "  pp_style = %s"
+  SO.Concat [
+    SO.strLine "Interface options:";
+    SO.strLine "  verbosity = %s"
+      begin match !SO.verbosity with
+      | SO.Quiet                  -> "quiet"
+      | SO.Normal                 -> "normal"
+      | SO.ThrottledInformation   -> "verbose"
+      | SO.UnthrottledInformation -> "very"
+      | SO.Debug                  -> "debug"
+      end;
+    SO.strLine "  pp_style = %s"
       (Globals.pp_ppstyle ppmode.Globals.pp_style);
-    otStrLine "  choice_history_limit = %s"
+    SO.strLine "  choice_history_limit = %s"
       (pp_maybe_int "" ppmode.Globals.pp_choice_history_limit);
-    otStrLine "  always_print = %b"
+    SO.strLine "  always_print = %b"
       interact_state.options.always_print;
-    otStrLine "  prefer_symbolic_values = %b"
+    SO.strLine "  prefer_symbolic_values = %b"
       ppmode.Globals.pp_prefer_symbolic_values;
-    otStrLine "  pp_hide_pseudoregister_reads = %b"
+    SO.strLine "  pp_hide_pseudoregister_reads = %b"
       ppmode.Globals.pp_hide_pseudoregister_reads;
-    otStrLine "  pp_colours = %b" ppmode.Globals.pp_colours;
-    otStrLine "  condense_finished_instructions = %b"
+    SO.strLine "  pp_colours = %b" ppmode.Globals.pp_colours;
+    SO.strLine "  condense_finished_instructions = %b"
       ppmode.Globals.pp_condense_finished_instructions;
-    otStrLine "  max_finished = %s"
+    SO.strLine "  max_finished = %s"
       (pp_maybe_int "" ppmode.Globals.pp_max_finished);
-    otStrLine "  pp_hex = %b" !Globals.print_hex;
-    otStrLine "  dwarf_show_all_variable_locations = %b"
+    SO.strLine "  pp_hex = %b" !Globals.print_hex;
+    SO.strLine "  dwarf_show_all_variable_locations = %b"
       !Globals.dwarf_show_all_variable_locations;
-    otStrLine "  pp_sail = %b" ppmode.Globals.pp_sail;
-    otStrLine "  dumb_terminal = %b" !Globals.dumb_terminal;
+    SO.strLine "  pp_sail = %b" ppmode.Globals.pp_sail;
   ]
   |> Screen.show_message ppmode;
 
-  OTConcat [
-    otStrLine "Graph options:";
-    otStrLine "  always_graph = %b" (!Globals.run_dot = Some Globals.RD_step);
-    otStrLine "  dot_final_ok = %b"
-      (!Globals.run_dot = Some Globals.RD_final_ok);
-    otStrLine "  dot_final_not_ok = %b"
-      (!Globals.run_dot = Some Globals.RD_final_not_ok);
-    otStrLine "  ppg_shared = %b" ppmode.Globals.ppg_shared;
-    otStrLine "  ppg_rf = %b" ppmode.Globals.ppg_rf;
-    otStrLine "  ppg_fr = %b" ppmode.Globals.ppg_fr;
-    otStrLine "  ppg_co = %b" ppmode.Globals.ppg_co;
-    otStrLine "  ppg_addr = %b" ppmode.Globals.ppg_addr;
-    otStrLine "  ppg_data = %b" ppmode.Globals.ppg_data;
-    otStrLine "  ppg_ctrl = %b" ppmode.Globals.ppg_ctrl;
-    otStrLine "  ppg_ppg_regs = %b" ppmode.Globals.ppg_regs;
-    otStrLine "  ppg_reg_rf = %b" ppmode.Globals.ppg_reg_rf;
-    otStrLine "  ppg_trans = %b" ppmode.Globals.ppg_trans;
-    otStrLine "  graph_backend = %s"
+  SO.Concat [
+    SO.strLine "Graph options:";
+    SO.strLine "  always_graph = %b" (!Globals.run_dot = Some Globals.RD_step);
+    SO.strLine "  ppg_shared = %b" ppmode.Globals.ppg_shared;
+    SO.strLine "  ppg_rf = %b" ppmode.Globals.ppg_rf;
+    SO.strLine "  ppg_fr = %b" ppmode.Globals.ppg_fr;
+    SO.strLine "  ppg_co = %b" ppmode.Globals.ppg_co;
+    SO.strLine "  ppg_addr = %b" ppmode.Globals.ppg_addr;
+    SO.strLine "  ppg_data = %b" ppmode.Globals.ppg_data;
+    SO.strLine "  ppg_ctrl = %b" ppmode.Globals.ppg_ctrl;
+    SO.strLine "  ppg_ppg_regs = %b" ppmode.Globals.ppg_regs;
+    SO.strLine "  ppg_reg_rf = %b" ppmode.Globals.ppg_reg_rf;
+    SO.strLine "  ppg_trans = %b" ppmode.Globals.ppg_trans;
+    SO.strLine "  graph_backend = %s"
       (Globals.pp_graph_backend !Globals.graph_backend);
   ]
   |> Screen.show_message ppmode;
 
 
-  OTConcat [
-    otStrLine "Search options:";
-    otStrLine "  hash_prune = %b" interact_state.options.hash_prune;
-    otStrLine "  partial_order_reduction = %b"
+  SO.Concat [
+    SO.strLine "Search options:";
+    SO.strLine "  hash_prune = %b" interact_state.options.hash_prune;
+    SO.strLine "  partial_order_reduction = %b"
       interact_state.options.partial_order_reduction;
-    otStrLine "  priority_reduction = %b"
+    SO.strLine "  priority_reduction = %b"
       interact_state.options.priority_reduction;
-    otStrLine "  allow_partial = %b" interact_state.options.allow_partial;
-    otStrLine "  transition-limit = %s"
+    SO.strLine "  allow_partial = %b" interact_state.options.allow_partial;
+    SO.strLine "  transition-limit = %s"
       (pp_maybe_int "" interact_state.options.transition_limit);
-    otStrLine "  trace-limit = %s"
+    SO.strLine "  trace-limit = %s"
       (pp_maybe_int "" interact_state.options.trace_limit);
-    otStrLine "  time-limit = %s"
+    SO.strLine "  time-limit = %s"
       (pp_maybe_int "s" interact_state.options.time_limit);
   ]
   |> Screen.show_message ppmode;
 
-  OTConcat [
-    otStrLine "Branch-targets:";
-    otLine @@ otEncoded @@ begin
-      (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets
+  SO.Concat [
+    SO.strLine "Branch-targets:";
+    SO.line @@ SO.encoded @@ begin
+      (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets
       |> Params.branch_targets_to_list
       |> Pp.pp_branch_targets interact_state.ppmode
       end
   ]
   |> Screen.show_message ppmode;
 
-  OTConcat [
-    otStrLine "Model options:";
-    otStrLine "  %s"
-      (Model_aux.pp_model (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state));
+  SO.Concat [
+    SO.strLine "Model options:";
+    SO.strLine "  %s"
+      (Model_aux.pp_model (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state));
   ]
   |> Screen.show_message ppmode;
 
-  otStrLine "Version: %s" Versions.Rmem.describe
+  SO.strLine "Version: %s" Versions.Rmem.describe
   |> Screen.show_message ppmode
 
 
@@ -477,7 +467,7 @@ let choice_summary
     numbered_cands
     disabled_trans
     verbose
-    : output_tree
+    : SO.t
   =
   let n_choices = List.length choices_so_far in
   let limited_choices =
@@ -486,43 +476,43 @@ let choice_summary
     | None -> choices_so_far
   in
 
-  OTConcat [
-    otLine @@ OTConcat [
-      otString "Choices so far (%n): " n_choices;
-      otIfTrue ((List.length limited_choices) < n_choices) @@
-        OTString "...";
-      OTString (Interact_parser_base.history_to_string limited_choices);
-      otIfTrue (follow_suffix <> []) @@ begin
+  SO.Concat [
+    SO.line @@ SO.Concat [
+      SO.str "Choices so far (%n): " n_choices;
+      SO.ifTrue ((List.length limited_choices) < n_choices) @@
+        SO.String "...";
+      SO.String (Interact_parser_base.history_to_string limited_choices);
+      SO.ifTrue (follow_suffix <> []) @@ begin
         List.rev follow_suffix
         |> Interact_parser_base.history_to_string
-        |> otString " remaining follow-spec: [%s]"
+        |> SO.str " remaining follow-spec: [%s]"
         end;
     ];
 
     begin if numbered_cands = [] then
-      otStrLine "No enabled transitions"
+      SO.strLine "No enabled transitions"
     else if verbose then
-      OTConcat [
-        otLine @@ otStrEmph "Enabled transitions:";
-        otConcat @@ List.map
-          (fun cand -> otLine @@ otEncoded @@ ConcModel.pp_cand ppmode cand)
+      SO.Concat [
+        SO.line @@ SO.strEmph "Enabled transitions:";
+        SO.concat @@ List.map
+          (fun cand -> SO.line @@ SO.encoded @@ ConcModel.pp_cand ppmode cand)
           numbered_cands;
       ]
     else
-      otStrLine "%d enabled transitions" (List.length numbered_cands)
+      SO.strLine "%d enabled transitions" (List.length numbered_cands)
     end;
 
     begin if disabled_trans = [] then
-      otStrLine "No disabled transitions"
+      SO.strLine "No disabled transitions"
     else if verbose then
-      OTConcat [
-        otLine @@ otStrEmph "Disabled transitions:";
-        otConcat @@ List.map
-          (fun t -> otLine @@ otEncoded @@ ConcModel.pp_trans ppmode t)
+      SO.Concat [
+        SO.line @@ SO.strEmph "Disabled transitions:";
+        SO.concat @@ List.map
+          (fun t -> SO.line @@ SO.encoded @@ ConcModel.pp_trans ppmode t)
           disabled_trans;
       ]
     else
-      otStrLine "%d disabled transitions" (List.length disabled_trans)
+      SO.strLine "%d disabled transitions" (List.length disabled_trans)
     end;
   ]
 
@@ -531,7 +521,7 @@ let show_last_state inline interact_state : unit =
   let ppmode = interact_state.ppmode in
   begin match interact_state.interact_nodes with
   | [] ->
-     otStrLine "no state"
+     SO.strLine "no state"
      |> Screen.show_message interact_state.ppmode
 
   | node :: ns ->
@@ -539,20 +529,18 @@ let show_last_state inline interact_state : unit =
      let (ppmode, ui_state) =
        match ns with
        | [] ->
-          ConcModel.make_ui_state ppmode None (ConcModel.sst_state node.system_state) ts
+          ConcModel.make_ui_state ppmode None node.system_state ts
        | node' :: _ ->
-          ConcModel.make_ui_state ppmode (Some (ConcModel.sst_state node'.system_state))
-            (ConcModel.sst_state node.system_state) ts
+          ConcModel.make_ui_state ppmode (Some node'.system_state)
+            node.system_state ts
      in
      let ppmode = {ppmode with Globals.pp_default_cmd = interact_state.default_cmd} in
 
-     (*let cand_ex = ConcModel.make_cex_candidate node.system_state.sst_state in*)
-
      let trace = fun () ->
-       OTEncoded (ConcModel.pp_transition_history ppmode ui_state)
+       SO.Encoded (ConcModel.pp_transition_history ppmode ui_state)
      in
 
-     let choice_summary verbose : output_tree =
+     let choice_summary verbose : SO.t =
        choice_summary
          ppmode
          (choices_so_far interact_state)
@@ -563,12 +551,12 @@ let show_last_state inline interact_state : unit =
      in
 
      let state = fun () ->
-       OTConcat [
-           otIfTrue inline @@
-             OTConcat [OTLine OTEmpty; OTHorLine];
-           OTEncoded (ConcModel.pp_ui_state ppmode ui_state);
-           otIfTrue (ppmode.Globals.pp_style <> Globals.Ppstyle_compact) @@
-             OTConcat [OTLine OTEmpty; OTHorLine];
+       SO.Concat [
+           SO.ifTrue inline @@
+             SO.Concat [SO.Line SO.Empty; SO.HorLine SO.Normal];
+           SO.Encoded (ConcModel.pp_ui_state ppmode ui_state);
+           SO.ifTrue (ppmode.Globals.pp_style <> Globals.Ppstyle_compact) @@
+             SO.Concat [SO.Line SO.Empty; SO.HorLine SO.Normal];
            choice_summary (ppmode.Globals.pp_style <> Globals.Ppstyle_compact);
          ]
      in
@@ -605,7 +593,7 @@ let filter_transitions options transitions =
 let generate_transitions interact_state system_state =
   let transitions = filter_transitions
                       interact_state.options
-                      (ConcModel.sst_trans system_state) in
+                      (ConcModel.transitions system_state) in
   (* add numbers to the transitions; try to use the same number
   for transitions that were present in the previous state *)
   match interact_state.interact_nodes with
@@ -640,21 +628,86 @@ let add_interact_node interact_state system_state : interact_state =
   } |> update_default_cmd
 
 
+let change_model update_model interact_state : interact_state =
+  Globals.model_params := update_model !Globals.model_params;
+  match interact_state.interact_nodes with
+  | []            -> interact_state (* nothing to change *)
+  | node :: nodes ->
+      let node' =
+        {node with system_state = ConcModel.set_model_params !Globals.model_params node.system_state}
+      in
+      {interact_state with interact_nodes = node' :: nodes}
+      |> regenerate_transitions
+
+
+let update_branch_targets interact_state =
+  change_model
+    (fun model ->
+      let branch_targets =
+        (List.hd interact_state.interact_nodes).system_state
+        |> ConcModel.branch_targets_of_state
+        |> Params.union_and_diff_branch_targets model.t.branch_targets
+        |> fst
+      in
+      {model with t = {model.t with branch_targets = branch_targets}}
+    )
+    interact_state
+
+
+let update_shared_memory interact_state =
+  let system_state = (List.hd interact_state.interact_nodes).system_state in
+  let shared_memory =
+    Params.union_and_diff_shared_memory
+      (ConcModel.shared_memory_of_state system_state)
+      interact_state.options.eager_mode.em_shared_memory
+    |> fst
+  in
+  { interact_state with
+    options =
+      { interact_state.options with
+        eager_mode =
+          { interact_state.options.eager_mode with
+            em_shared_memory = shared_memory;
+          };
+      };
+  }
+
+(* make sure to call update_shared_memory before calling check_breakpoints
+if there is a SharedBreakpoint *)
+let check_breakpoints interact_state =
+  let node = List.hd interact_state.interact_nodes in
+  let transitions = sorted_filtered_transitions node |> List.split |> snd in
+  let shared_mem = interact_state.options.eager_mode.em_shared_memory in
+  List.filter (function
+    | (_, Runner.StateBreakpoint pred, _) ->
+        pred node.system_state
+    | (_, Runner.TransitionBreakpoint pred, _) ->
+        List.exists (pred node.system_state) transitions
+    | (_, Runner.SharedBreakpoint pred, _) ->
+        List.exists (pred shared_mem node.system_state) transitions
+    )
+    interact_state.breakpoints
+
+
 exception NoSuchTransition
 
-let try_single_transition (eager: bool) (n: int) interact_state : interact_state option =
+let try_single_transition
+    (eager:          bool)
+    (n:              int)
+    (interact_state: interact_state)
+    : interact_state option
+  =
   match interact_state.interact_nodes with
   | [] -> assert false
   | interact_node :: interact_nodes ->
       begin match List.find (function (Some n', _) -> n' = n | _ -> false) interact_node.filtered_transitions with
       | (_, transition) ->
-          begin match ConcModel.sst_after_trans
-                  interact_state.options
+          begin match ConcModel.state_after_trans
                   interact_node.system_state
                   transition
           with
           | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
-              otStrLine "the transition leads to exception"
+              SO.strLine "the transition leads to exception"
               |> Screen.show_message interact_state.ppmode;
               (* TODO: pp the exception *)
               None
@@ -683,12 +736,16 @@ let try_single_transition (eager: bool) (n: int) interact_state : interact_state
       | exception Not_found -> raise NoSuchTransition
       end
 
-
 type eager_constraints =
   | NoConstraints (* take all the followig eager transitions *)
   | Sequence of int list (* take following eager transitions as long as they match the list *)
   | Bound of int (* take 'n' following eager transitions *)
 
+exception BreakpointHit of interact_state * (Runner.breakpoint list)
+
+(* do_transition raises a BreakpointHit exception when a breakpoint
+is reached. This allows us to stop sequences of transition (e.g. the
+'auto' command) *)
 let rec do_transition
     (eager:             bool) (* true iff the transition is eager *)
     (n:                 int)  (* the UI number of the transition *)
@@ -697,7 +754,17 @@ let rec do_transition
     : eager_constraints * interact_state
   =
   match try_single_transition eager n interact_state with
-  | Some interact_state' -> check_eager eager_constraints interact_state'
+  | Some interact_state ->
+      let interact_state =
+        if List.exists (function (_,Runner.SharedBreakpoint _, _) -> true | _ -> false) interact_state.breakpoints then
+          update_shared_memory interact_state
+        else
+          interact_state
+      in
+      begin match check_breakpoints interact_state with
+      | [] -> check_eager eager_constraints interact_state
+      | bps -> raise (BreakpointHit (interact_state, bps))
+      end
   | None ->
       assert (eager_constraints = NoConstraints);
       (eager_constraints, interact_state)
@@ -713,11 +780,10 @@ and check_eager
       begin match find_eager_transition interact_state with
       | Some (n, i, t) ->
           let take_transition eager_constraints =
-            if Globals.is_verbosity_at_least Globals.Debug then
-              otStrLine "+ check_eager taking [%d] %s"
-                  i
-                  (ConcModel.pp_trans interact_state.ppmode t)
-              |> Screen.show_message interact_state.ppmode;
+            Screen.show_debug interact_state.ppmode (fun () ->
+              ConcModel.pp_trans interact_state.ppmode t
+              |> SO.strLine "+ check_eager taking [%d] %s" i
+            );
             do_transition true i eager_constraints interact_state
           in
           begin match eager_constraints with
@@ -735,47 +801,34 @@ and check_eager
       end
 
 
-let change_model update_model interact_state : interact_state =
-  Globals.model_params := update_model !Globals.model_params;
-  match interact_state.interact_nodes with
-  | []            -> interact_state (* nothing to change *)
-  | node :: nodes ->
-      let node' =
-        let state = ConcModel.sst_state node.system_state in
-        let state' = ConcModel.set_model_params state !Globals.model_params in
-        { node with system_state = ConcModel.sst_of_state interact_state.options state';}
-      in
-      {interact_state with interact_nodes = node' :: nodes}
-      |> regenerate_transitions
-
-
 let rec do_fetch_all interact_state : interact_state =
-  match List.hd interact_state.interact_nodes with
-  | exception Failure _ -> interact_state
-  | node ->
-      begin match List.find
-                    (fun (f, transition) ->
-                        f <> None &&
-                        (ConcModel.is_fetch_single_trans transition ||
-                           ((Runner.sst_model_params node.system_state).t.thread_allow_tree_speculation &&
-                              ConcModel.is_fetch_multi_trans transition)))
-                    node.filtered_transitions
-      with
-      | (Some i, _)         -> do_transition false i NoConstraints interact_state |> snd |> do_fetch_all
-      | (None,   _)         -> assert false
-      | exception Not_found -> interact_state
-      end
+  let node = List.hd interact_state.interact_nodes in
+  match
+    List.find
+      (fun (f, transition) ->
+          f <> None &&
+          (ConcModel.is_fetch_single_trans transition ||
+              ((ConcModel.model_params node.system_state).t.thread_allow_tree_speculation &&
+                ConcModel.is_fetch_multi_trans transition)))
+      node.filtered_transitions
+  with
+  | (Some i, _) ->
+      do_transition false i NoConstraints interact_state
+      |> snd
+      |> do_fetch_all
+  | (None,   _) -> assert false
+  | exception Not_found -> interact_state
 
 
 let rec do_back count interact_state : interact_state =
   if count <= 0 then interact_state else
   match interact_state.interact_nodes with
   | [] ->
-      otStrLine "no state"
+      SO.strLine "no state"
       |> Screen.show_warning interact_state.ppmode;
       interact_state
   | n :: [] ->
-      otStrLine "can't go back from the initial state"
+      SO.strLine "can't go back from the initial state"
       |> Screen.show_warning interact_state.ppmode;
       interact_state
   | n :: n' :: ns ->
@@ -796,7 +849,7 @@ let rec do_back count interact_state : interact_state =
       }
       (* change_model also refilters the transitions, which we need
       because options might have changed. *)
-      |> change_model (fun _ -> Runner.sst_model_params n.system_state)
+      |> change_model (fun _ -> ConcModel.model_params n.system_state)
       |> update_default_cmd
       |> do_back (count - 1)
 
@@ -806,9 +859,8 @@ exception TraceRecon of string
 (* follow_search_trace: we assume an interactive eager transition
 must also be a search eager transition *)
 let follow_search_trace
-    (print_transitions: bool)
-    (search_trace:      Runner.trace) (* head is the last transition *)
-    (interact_state:    interact_state)
+    (search_trace:   Runner.trace) (* head is the last transition *)
+    (interact_state: interact_state)
     : interact_state
   =
   let rec follow interact_state = function
@@ -817,10 +869,6 @@ let follow_search_trace
       let node = List.hd interact_state.interact_nodes in
       begin match List.nth node.filtered_transitions i with
       | (Some i', t) ->
-          if print_transitions then
-            otStrLine "taking [%d] %s" i' (ConcModel.pp_trans interact_state.ppmode t)
-            |> Screen.show_message interact_state.ppmode;
-
           begin match do_transition false i' (Sequence flat_trace) interact_state with
           | (NoConstraints, _) -> assert false
           | (Bound _, _) -> assert false
@@ -840,26 +888,31 @@ let follow_search_trace
   |> List.concat
   |> follow interact_state
 
+
 let ui_choices_of_search_trace
     (interact_state: interact_state)
     (search_trace:   Runner.trace) (* head is the last transition *)
     : Interact_parser_base.ast list (* head is the last cmd *)
   =
-  { interact_state with
-    interact_nodes = [List.hd interact_state.interact_nodes];
-  }
-  |> follow_search_trace false search_trace
-  |> choices_so_far
+  let choices =
+    choices_so_far interact_state
+    |> List.length
+  in
+  let choices' =
+    follow_search_trace search_trace interact_state
+    |> choices_so_far
+  in
+  Lem_list.take ((List.length choices') - choices) choices'
 
 
-let print_observed_finals interact_state observed_finals : Screen_base.output_tree =
+let print_observed_finals interact_state observed_finals : SO.t =
   let symtab =
     List.map
       (fun ((addr, _), s) -> (Test.C.interp_address_to_address addr, s))
       interact_state.ppmode.Globals.pp_symbol_table
   in
 
-  let states_count_output = otStrLine "States %i" (Runner.StateMap.cardinal observed_finals) in
+  let states_count_output = SO.strLine "States %i" (Runner.StateMap.cardinal observed_finals) in
 
   let states_output =
     let check_prop =
@@ -869,7 +922,7 @@ let print_observed_finals interact_state observed_finals : Screen_base.output_tr
       | ConstrGen.NotExistsState p -> Test.C.check_prop p
     in
 
-    OTConcat
+    SO.Concat
       (List.map
         (fun (state, (choices, count)) ->
           let ui_choices =
@@ -878,48 +931,47 @@ let print_observed_finals interact_state observed_finals : Screen_base.output_tr
             | exception (TraceRecon s) ->
                 Printf.sprintf "could not reconstruct trace (%s)" s
           in
-          OTLine (OTConcat [
-            otStrVerbose Globals.Normal "%-6d%s>" count (if check_prop state then "*" else ":");
-            OTString (Test.C.pp_state symtab state);
-            OTVerbose (Globals.Normal, OTConcat [
-              OTString " via ";
-              otStrClass OTCFollowList "%S" ui_choices;
+          SO.Line (SO.Concat [
+            SO.strVerbose SO.Normal "%-6d%s>" count (if check_prop state then "*" else ":");
+            SO.String (Test.C.pp_state symtab state);
+            SO.verbose SO.Normal (fun () -> SO.Concat [
+              SO.String " via ";
+              SO.strClass SO.FollowList "%S" ui_choices;
             ]);
           ])
         )
         (Runner.StateMap.bindings observed_finals))
   in
 
-  OTConcat [states_count_output; states_output]
+  SO.Concat [states_count_output; states_output]
 
-let print_observed_deadlocks interact_state observed_deadlocks : Screen_base.output_tree =
+let print_observed_deadlocks interact_state observed_deadlocks : SO.t =
   match observed_deadlocks with
   | Some (deadlock_choices, deadlock_count) ->
       let via =
         match ui_choices_of_search_trace interact_state deadlock_choices with
         | choices ->
-            OTConcat [
-              OTString " via ";
-              otStrClass OTCFollowList "%S" (Interact_parser_base.history_to_string choices);
+            SO.Concat [
+              SO.String " via ";
+              SO.strClass SO.FollowList "%S" (Interact_parser_base.history_to_string choices);
             ]
         | exception (TraceRecon s) ->
-            otString "(could not reconstruct trace (%s))" s
+            SO.str "(could not reconstruct trace (%s))" s
       in
 
-      otVerbose Globals.Normal @@ otLine @@
-        OTConcat [
-          otString "Deadlock states %i" deadlock_count;
-          OTString " ";
+      SO.verbose SO.Normal @@ fun () -> SO.line @@
+        SO.Concat [
+          SO.str "Deadlock states %i" deadlock_count;
+          SO.String " ";
           via;
         ]
-  | None -> OTEmpty
+  | None -> SO.Empty
 
-let print_observed_exceptions interact_state observed_exceptions : Screen_base.output_tree =
-  let exceptions_count_output = otVerbose Globals.Normal @@ otStrLine "Unhandled exceptions %i" (Runner.ExceptionMap.cardinal observed_exceptions) in
+let print_observed_exceptions interact_state observed_exceptions : SO.t =
+  let exceptions_count_output = SO.verbose SO.Normal @@ fun () -> SO.strLine "Unhandled exceptions %i" (Runner.ExceptionMap.cardinal observed_exceptions) in
 
   let exceptions_output =
-    otVerbose Globals.Normal @@
-    OTConcat
+    SO.verbose SO.Normal @@ fun () -> SO.Concat
       (List.map
         (fun ((tid, ioid, exception_type), (choices, count)) ->
           let ui_choices =
@@ -928,18 +980,18 @@ let print_observed_exceptions interact_state observed_exceptions : Screen_base.o
             | exception (TraceRecon s) ->
                 Printf.sprintf "could not reconstruct trace (%s)" s
           in
-          otLine @@ OTConcat [otString "%-6d:>" count;
-                              otString "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception interact_state.ppmode ioid exception_type);
-                              OTConcat [
-                                  OTString " via ";
-                                  otStrClass OTCFollowList "%S" ui_choices;
+          SO.line @@ SO.Concat [SO.str "%-6d:>" count;
+                              SO.str "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception interact_state.ppmode ioid exception_type);
+                              SO.Concat [
+                                  SO.String " via ";
+                                  SO.strClass SO.FollowList "%S" ui_choices;
                                 ]
                              ]
         )
         (Runner.ExceptionMap.bindings observed_exceptions))
   in
 
-  OTConcat [exceptions_count_output; exceptions_output]
+  SO.Concat [exceptions_count_output; exceptions_output]
 
 (* TODO FIXME: this should by all rights be in Pp but that's a circular dependency... *)
 let pp_breakpoint ppmode (id, pred, desc) =
@@ -962,12 +1014,12 @@ let set_follow_list_from_search_trace
   =
   match ui_choices_of_search_trace interact_state search_trace with
   | choices ->
-      otStrLine "Follow-list was set"
+      SO.strLine "Follow-list was set"
       |> Screen.show_message interact_state.ppmode;
       {interact_state with follow_suffix = List.rev choices}
       |> update_default_cmd
   | exception (TraceRecon s) ->
-      otStrLine "could not reconstruct trace (%s)" s
+      SO.strLine "could not reconstruct trace (%s)" s
       |> Screen.show_warning interact_state.ppmode;
       interact_state
 
@@ -1015,41 +1067,11 @@ let update_bt_and_sm search_state interact_state : interact_state =
       {model with t = {model.t with branch_targets = bt_union}}
   )
 
-let do_search mode interact_state breakpoints bounds targets filters : interact_state =
-  (* update the observed branch targets based on the current state *)
-  let interact_state =
-    change_model
-      (fun model ->
-        let branch_targets =
-          (ConcModel.sst_state (List.hd interact_state.interact_nodes).system_state)
-          |> ConcModel.branch_targets_of_state
-          |> Params.union_and_diff_branch_targets model.t.branch_targets
-          |> fst
-        in
-        {model with t = {model.t with branch_targets = branch_targets}}
-      )
-      interact_state
-  in
-
-  (* update the observed shared memory based on the current state *)
+let run_interactive_search mode interact_state breakpoints bounds targets filters handle_search_outcome : interact_state =
+  let interact_state = update_branch_targets interact_state in
   let interact_state =
     if interact_state.options.eager_mode.eager_local_mem then
-      let system_state = (ConcModel.sst_state (List.hd interact_state.interact_nodes).system_state) in
-      let shared_memory =
-        Params.union_and_diff_shared_memory
-          (ConcModel.shared_memory_of_state system_state)
-          interact_state.options.eager_mode.em_shared_memory
-        |> fst
-      in
-      { interact_state with
-        options =
-          { interact_state.options with
-            eager_mode =
-              { interact_state.options.eager_mode with
-                em_shared_memory = shared_memory;
-              };
-          };
-      }
+      update_shared_memory interact_state
     else interact_state
   in
 
@@ -1095,11 +1117,18 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
       (filters @ interact_filters)
       (fun _ -> ()) (* TODO: print_partial_results? *)
   with
+  | outcome -> handle_search_outcome interact_state outcome
+  | exception (Runner.BadSearchOptions msg) ->
+      Screen.show_warning interact_state.ppmode (SO.strLine "%s" msg);
+      interact_state
+
+let handle_search_outcome interact_state search_outcome : interact_state =
+  match search_outcome with
   | Runner.Complete search_state' ->
       (* search terminated after exploring all reachable states *)
       let interact_state = update_bt_and_sm search_state' interact_state in
 
-      Screen_base.otClass OTCFinal @@ Screen_base.OTConcat [
+      SO.aclass SO.Final @@ SO.Concat [
         print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
         print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
         print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
@@ -1108,43 +1137,47 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
 
       set_follow_list_from_observations search_state'.Runner.observed_filterred_finals interact_state
 
-  | Runner.Breakpoints (search_state', bps) ->
-      List.iter
-        (fun bp ->
-          otStrLine "Breakpoint hit: %s"
-              (pp_breakpoint interact_state.ppmode bp)
-          |> Screen.show_message interact_state.ppmode
-        )
-        bps;
-
+  | Runner.Breakpoints (search_state', _) ->
       let interact_state = update_bt_and_sm search_state' interact_state in
       let search_trace = Runner.choices_so_far search_state' in
-      begin try follow_search_trace true search_trace interact_state with
+      (* We expect follow_search_trace to raise BreakpointHit, if it does not
+      then it is because the breakpoint the search hit is one that was added
+      just for this search (i.e. it is not from interact_state.breakpoints) *)
+      begin try follow_search_trace search_trace {interact_state with follow_suffix = []} with
       | TraceRecon s ->
-          otStrLine "Problem reconstructing trace: %s" s
+          SO.strLine "Problem reconstructing trace: %s" s
           |> Screen.show_warning interact_state.ppmode;
           interact_state
       end
 
   | Runner.Interrupted (search_state', reason) ->
-      otStrLine "Interrupted: %s" reason
+      let interact_state = update_bt_and_sm search_state' interact_state in
+
+      SO.aclass SO.Final @@ SO.Concat [
+        print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
+        print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
+        print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
+      ]
       |> Screen.show_message interact_state.ppmode;
-      update_bt_and_sm search_state' interact_state
-      |> set_follow_list_from_search_trace (Runner.choices_so_far search_state')
+
+      SO.strLine "Interrupted: %s" reason;
+      |> Screen.show_warning interact_state.ppmode;
+
+      set_follow_list_from_observations search_state'.Runner.observed_filterred_finals interact_state
 
   | Runner.OcamlExn (search_state', msg) ->
-      Screen_base.otClass OTCFinal @@ Screen_base.OTConcat [
-        otClass OTCWarning @@ OTConcat [
-          otStrLine "%s" msg;
-          OTLine OTEmpty;
-          otStrLine "***********************";
-          otStrLine "*** PARTIAL RESULTS ***";
-          otStrLine "***********************";
+      SO.aclass SO.Final @@ SO.Concat [
+        SO.aclass SO.Warning @@ SO.Concat [
+          SO.strLine "%s" msg;
+          SO.Line SO.Empty;
+          SO.strLine "***********************";
+          SO.strLine "*** PARTIAL RESULTS ***";
+          SO.strLine "***********************";
         ];
         print_observed_finals interact_state search_state'.Runner.observed_filterred_finals;
         print_observed_deadlocks interact_state search_state'.Runner.observed_deadlocks;
         print_observed_exceptions interact_state search_state'.Runner.observed_exceptions;
-        otLine @@ otClass OTCWarning @@ otStrLine "*** Error ***";
+        SO.line @@ SO.aclass SO.Warning @@ SO.strLine "*** Error ***";
       ]
       |> Screen.show_message interact_state.ppmode;
 
@@ -1153,10 +1186,62 @@ let do_search mode interact_state breakpoints bounds targets filters : interact_
       interact_state
       |> set_follow_list_from_search_trace (Runner.choices_so_far search_state')
 
-  | exception (Runner.BadSearchOptions msg) ->
-      Screen.show_warning interact_state.ppmode (otStrLine "%s" msg);
-      interact_state
+let do_search_final final mode interact_state : interact_state =
+  let final_pred = fun state ->
+    let test_info = interact_state.test_info in
+    (ConcModel.transitions state) = [] &&
+    begin match test_info.Test.filter with
+    | None -> true
+    | Some filter ->
+        Runner.reduced_final_state test_info.Test.filter_regs
+          test_info.Test.filter_mem state
+        |> Test.C.check_filter filter
+    end &&
+    let final_state =
+      Runner.reduced_final_state
+        test_info.Test.show_regs
+        test_info.Test.show_mem state in
+    match final with
+    | Interact_parser_base.Any_final -> true
+    | Interact_parser_base.Final_ok ->
+        Test.C.check_constr test_info.Test.constr [final_state]
+    | Interact_parser_base.Final_not_ok ->
+        not (Test.C.check_constr test_info.Test.constr [final_state])
+  in
 
+  let final_desc =
+    match final with
+    | Interact_parser_base.Any_final    -> "final state"
+    | Interact_parser_base.Final_ok     -> "final state ok"
+    | Interact_parser_base.Final_not_ok -> "final state not ok"
+  in
+
+  run_interactive_search mode interact_state
+    [(Runner.Numbered (-1), Runner.StateBreakpoint final_pred, final_desc)]
+    [] [] []
+    (fun interact_state outcome ->
+        match outcome with
+        | Runner.Complete search_state' ->
+            (* search terminated after exploring all reachable states *)
+            let interact_state = update_bt_and_sm search_state' interact_state in
+
+            begin match final with
+            | Interact_parser_base.Any_final ->
+                SO.strLine "Did not find a final state"
+            | Interact_parser_base.Final_ok ->
+                SO.strLine "Did not find a final state where the assertion holds"
+            | Interact_parser_base.Final_not_ok ->
+                SO.strLine "Did not find a final state where the assertion does not hold"
+            end
+            |> Screen.show_message interact_state.ppmode;
+
+            interact_state
+
+        | outcome -> handle_search_outcome interact_state outcome
+    )
+
+let do_search mode interact_state : interact_state =
+  run_interactive_search mode interact_state [] [] [] [] handle_search_outcome
 
 let fresh_bp_id bps' =
   let numbers =
@@ -1222,7 +1307,7 @@ let do_add_breakpoint_fetch target state : interact_state =
               (Nat_big_num.add addr (Nat_big_num.of_int offset))
               size
       | exception Not_found ->
-          otStrLine "no such symbol"
+          SO.strLine "no such symbol"
           |> Screen.show_warning state.ppmode;
           state
       end
@@ -1269,7 +1354,7 @@ let do_add_watchpoint typ target state : interact_state =
             (Nat_big_num.add addr (Nat_big_num.of_int offset))
             (Nat_big_num.to_int size)
       | exception Not_found ->
-          otStrLine "no such symbol"
+          SO.strLine "no such symbol"
           |> Screen.show_warning state.ppmode;
           state
       end
@@ -1299,52 +1384,38 @@ let do_add_shared_watchpoint typ state : interact_state =
 
 
 let make_graph interact_state =
-  match List.hd interact_state.interact_nodes with
-  | node ->
-      match interact_state.ppmode.Globals.pp_kind with
-      | Globals.Html ->
-        Dot.display_dot { interact_state.ppmode with Globals.pp_default_cmd = interact_state.default_cmd }
-                            (Some interact_state.test_info.Test.name)
-                            (ConcModel.sst_state node.system_state)
-                            (ConcModel.make_cex_candidate (ConcModel.sst_state node.system_state))
-                            (sorted_filtered_transitions node)
-      | _ ->
-        let module G = (val get_graph_backend ()) in
-        G.make_graph
-          interact_state.ppmode
-          interact_state.test_info
-          (ConcModel.sst_state node.system_state)
-          (ConcModel.make_cex_candidate (ConcModel.sst_state node.system_state))
-          (sorted_filtered_transitions node);
-        (* TODO: make filename configurable and more DRY *)
-        otStrLine "wrote out.dot"
-        |> Screen.show_message interact_state.ppmode
-  | exception Failure _ ->
-      otStrLine "could not generate graph from no state"
-      |> Screen.show_warning interact_state.ppmode
+  let node = List.hd interact_state.interact_nodes in
+  let module G = (val get_graph_backend ()) in
+  G.make_graph
+    { interact_state.ppmode with
+      Globals.pp_default_cmd = interact_state.default_cmd;
+      Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids node.system_state;
+    }
+    interact_state.test_info
+    (ConcModel.make_cex_candidate node.system_state)
+    (sorted_filtered_transitions node)
 
 let typeset interact_state filename =
   match interact_state.interact_nodes with
   | node :: _ ->
-      let state = ConcModel.sst_state node.system_state in
       let ppmode' = {interact_state.ppmode with Globals.pp_kind = Globals.Latex} in
       let prev_state =
         match interact_state.interact_nodes with
-        | _ :: node' :: _ -> Some (ConcModel.sst_state node'.system_state)
+        | _ :: node' :: _ -> Some node'.system_state
         | _ -> None
       in
 
       let (ppmode', ui_state) =
-        ConcModel.make_ui_state ppmode' prev_state state (sorted_filtered_transitions node)
+        ConcModel.make_ui_state ppmode' prev_state node.system_state (sorted_filtered_transitions node)
       in
       let fd = open_out filename in
       Printf.fprintf fd "%s\n" (ConcModel.pp_ui_state ppmode' ui_state);
       close_out fd;
-      otStrLine "wrote %s" filename
+      SO.strLine "wrote %s" filename
       |> Screen.show_message interact_state.ppmode
 
   | [] ->
-      otStrLine "could not typeset from no state"
+      SO.strLine "could not typeset from no state"
       |> Screen.show_warning interact_state.ppmode
 
 
@@ -1370,7 +1441,7 @@ let do_add_breakpoint_line filename line interact_state : interact_state =
      add_breakpoint (Runner.TransitionBreakpoint pred) desc interact_state
 
   | None ->
-      otStrLine "No DWARF static information available, cannot break on line numbers."
+      SO.strLine "No DWARF static information available, cannot break on line numbers."
       |> Screen.show_warning interact_state.ppmode;
       interact_state
 
@@ -1382,12 +1453,12 @@ let compare_breakpoints (id1, _, _) (id2, _, _) =
 let do_info_breakpoints interact_state : interact_state =
   begin match interact_state.breakpoints with
   | [] ->
-      otStrLine "No breakpoints defined."
+      SO.strLine "No breakpoints defined."
       |> Screen.show_warning interact_state.ppmode
   | bps ->
       List.iter
         (fun bp ->
-            otStrLine "%s" (pp_breakpoint interact_state.ppmode bp)
+            SO.strLine "%s" (pp_breakpoint interact_state.ppmode bp)
             |> Screen.show_message interact_state.ppmode
         )
         (List.sort compare_breakpoints bps)
@@ -1404,111 +1475,242 @@ let do_delete_breakpoint n interact_state : interact_state =
         breakpoints = List.filter (fun (id', _, _) -> id' <> id) interact_state.breakpoints
       }
   | exception Not_found ->
-      otStrLine "no such breakpoint %d" n
+      SO.strLine "no such breakpoint %d" n
       |> Screen.show_warning interact_state.ppmode;
       interact_state
 
 
-let rec filter_map f l =
-  match l with
-  | [] -> []
-  | x :: xs -> match (f x) with
-               | None -> filter_map f xs
-               | Some y -> y :: filter_map f xs
-
-let rec do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int option) interact_state : interact_state =
-  let m = interact_state.ppmode in
+let do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int option) interact_state : interact_state =
   (* TODO FIXME: should we know about the internal structure of an ioid? *)
-  let step ioid =
-    (* slight HACK *)
-    let new_breakpoints =
-      [(Runner.Numbered (-1), Runner.StateBreakpoint (ConcModel.is_ioid_finished ioid), "instruction finished")]
-    in
-    let new_filters = [fun t -> ConcModel.ioid_of_thread_trans t = Some ioid] in
-    let (tid, iid) = ioid in
-    otStrLine "stepping instruction (%d:%d)" tid iid
-    |> Screen.show_message m;
-    do_search Interact_parser_base.Exhaustive interact_state new_breakpoints [] [] new_filters
+  let rec step ioid interact_state =
+    let node = List.hd interact_state.interact_nodes in
+    if ConcModel.is_ioid_finished ioid node.system_state then interact_state else
+      begin match
+        sorted_filtered_transitions node
+        |> List.filter (fun (_, t) -> ConcModel.ioid_of_thread_trans t = Some ioid)
+        |> List.hd
+      with
+      | (i, t) ->
+          do_transition false i NoConstraints interact_state
+          |> snd
+          |> step ioid
+      | exception (Failure _) -> (* List.hd *)
+          SO.strLine "No more enabled transitions"
+          |> Screen.show_warning interact_state.ppmode;
+          interact_state
+      end
   in
 
   let node = List.hd interact_state.interact_nodes in
+  let transitions =
+    sorted_filtered_transitions node
+    |> List.map snd
+  in
   match (maybe_thread_n, maybe_inst_n) with
   | (None, Some _) ->
       (* makes no sense *)
       assert false
   | (None, None) ->
       (* bare stepi, find lowest-numbered unfinished instruction from lowest-numbered thread *)
-      let transitions =
-        sorted_filtered_transitions node
-        |> List.map snd
+      let sorted_ioids =
+        List.map ConcModel.ioid_of_thread_trans transitions
+        |> List.filter (function Some _ -> true | _ -> false)
+        |> List.map (function Some x -> x | _ -> assert false)
+        |> List.sort compare
       in
-      let sorted_transitions = 
-        (List.sort compare
-           (filter_map ConcModel.ioid_of_thread_trans transitions))
-      in
-      begin match List.hd sorted_transitions with
-      | ioid -> step ioid
+      begin match List.hd sorted_ioids with
+      | ioid ->
+          SO.strLine "Stepping transitions of instruction %s" (Pp.pp_pretty_ioid ioid)
+          |> Screen.show_message interact_state.ppmode;
+          step ioid interact_state
       | exception (Failure _) ->
-          otStrLine "no available instructions to step"
-          |> Screen.show_warning m;
+          SO.strLine "no available instructions to step"
+          |> Screen.show_warning interact_state.ppmode;
           interact_state
       end
-    | (Some tid, None) ->
+  | (Some tid, None) ->
       (* step thread, find lowest-numbered unfinished instruction in that thread *)
-      let transitions =
-        sorted_filtered_transitions node
-        |> List.map snd
-      in
-      let thread_transitions =
-        (List.filter
+      let sorted_ioids =
+        List.filter
            (fun t -> ConcModel.threadid_of_thread_trans t = Some tid)
-           transitions) in
-      let sorted_thread_transitions =
-        (List.sort compare
-           (filter_map ConcModel.ioid_of_thread_trans thread_transitions))
+           transitions
+        |> List.map ConcModel.ioid_of_thread_trans
+        |> List.filter (function Some _ -> true | _ -> false)
+        |> List.map (function Some x -> x | _ -> assert false)
+        |> List.sort compare
       in
-      begin match List.hd sorted_thread_transitions with
-      | ioid -> step ioid
+      begin match List.hd sorted_ioids with
+      | ioid ->
+          SO.strLine "Stepping transitions of instruction %s" (Pp.pp_pretty_ioid ioid)
+          |> Screen.show_message interact_state.ppmode;
+          step ioid interact_state
       | exception (Failure _) ->
-          otStrLine "thread %d has no available instructions to step" tid
-          |> Screen.show_warning m;
+          SO.strLine "thread %d has no available instructions to step" tid
+          |> Screen.show_warning interact_state.ppmode;
           interact_state
       end
   | (Some tid, Some iid) ->
       (* step specific instruction *)
-      let transitions =
-        sorted_filtered_transitions node
-        |> List.map snd
-      in
       if (List.exists
             (fun t -> ConcModel.ioid_of_thread_trans t = Some (tid, iid))
             transitions)
       then
-        step (tid, iid)
+        step (tid, iid) interact_state
       else begin
-        otStrLine "no such instruction (%d:%d) to step" tid iid
-        |> Screen.show_warning m;
+        SO.strLine "instruction (%d:%d) has no transitions to step" tid iid
+        |> Screen.show_warning interact_state.ppmode;
         interact_state
       end
 
 
-let rec do_peek_instruction (thread_n : int) (inst_n : int)  interact_state : interact_state =
-  match interact_state.interact_nodes with
-  | [] -> assert false
-  | interact_node :: _ ->
-      (* TODO FIXME: should we know about the internal structure of an ioid? *)
-      let ioid = (thread_n, inst_n) in
-      let new_targets = [ConcModel.is_ioid_finished ioid] in
-      let new_filters = [fun t -> ConcModel.ioid_of_thread_trans t = Some ioid] in
-      do_search Interact_parser_base.Exhaustive interact_state [] [] new_targets new_filters
+let do_peek_instruction (tid : int) (inst_n : int)  interact_state : interact_state =
+  (* TODO FIXME: should we know about the internal structure of an ioid? *)
+  let ioid = (tid, inst_n) in
+  let filter = fun t -> ConcModel.ioid_of_thread_trans t = Some ioid in
+  let target = fun state ->
+    ConcModel.transitions state
+    |> List.filter filter
+    |> (function [] -> true | _ -> false)
+  in
+  run_interactive_search
+    Interact_parser_base.Exhaustive
+    interact_state
+    [] [] [target] [filter]
+    (fun interact_state outcome ->
+        match outcome with
+        | Runner.Complete search_state' ->
+            let node = List.hd interact_state.interact_nodes in
+            let traces = Hashtbl.create (List.length search_state'.Runner.observed_targets) in
+            List.iter
+              (fun (trace, state) ->
+                let trace =
+                  match ui_choices_of_search_trace interact_state trace with
+                  | trace -> Some trace
+                  | exception (TraceRecon s) ->
+                      SO.strLine "could not reconstruct trace (%s)" s
+                      |> Screen.show_warning interact_state.ppmode;
+                      None
+                in
+                let (ppmode, ui_state) =
+                  ConcModel.make_ui_state
+                    interact_state.ppmode
+                    (Some node.system_state)
+                    state
+                    []
+                in
+                let inst = ConcModel.pp_instruction ppmode ui_state tid ioid in
+                match (trace, Hashtbl.find traces inst) with
+                | (Some trace, Some trace') when
+                  List.length trace < List.length trace' ->
+                    Hashtbl.replace traces inst (Some trace)
+                | (Some _, None) ->
+                    Hashtbl.replace traces inst trace
+                | _ -> ()
+                | exception Not_found ->
+                    Hashtbl.add traces inst trace
+              )
+              search_state'.Runner.observed_targets;
+            Hashtbl.fold
+              (fun inst trace acc ->
+                (SO.Concat [
+                  SO.Line (SO.Encoded inst);
+                  begin match trace with
+                  | Some trace ->
+                      SO.line @@ SO.Concat [
+                        SO.String "via ";
+                        SO.strClass SO.FollowList "%S" @@
+                          Interact_parser_base.history_to_string trace;
+                      ]
+                  | None ->
+                      SO.strLine "(could not reconstruct trace)"
+                  end
+                ]) :: acc
+              )
+              traces
+              []
+            |> SO.concatWith (SO.HorLine SO.Normal)
+            |> Screen.show_message interact_state.ppmode;
+
+          update_bt_and_sm search_state' interact_state
+
+        | outcome -> handle_search_outcome interact_state outcome
+    )
+
+let do_help ppmode (args: string list) : unit =
+  if args = [] then
+    Console_help.help_message (Some 35)
+    |> Screen.show_message ppmode
+  else
+
+  match parse (String.concat " " args) with
+  | ParserASTs asts ->
+      List.iter (fun ast ->
+        Console_help.help_cmd ast
+        |> Screen.show_message ppmode
+      ) asts
+  | ParserError _ ->
+      (* The above does not work for 'help break' and any other command
+      with mandatory arguments. Below we handle those cases *)
+      begin match args with
+      | "peeki" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.PeekInstruction (0, 0))
+      | "debug" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.Debug "")
+      | "break" :: _
+      | "breakpoint" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.BreakpointLine ("", 0))
+      | "watch" :: _
+      | "rwatch" :: _
+      | "awatch" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.Watchpoint (Interact_parser_base.Write, Interact_parser_base.Symbol ("", 0)))
+      | "set" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.SetOption ("", []))
+      | "search" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.Search (Interact_parser_base.Exhaustive, None))
+      | "info" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.InfoBreakpoints)
+      | "delete" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.DeleteBreakpoint 0)
+      | "focus" :: _ ->
+          Console_help.help_cmd (Interact_parser_base.FocusThread None)
+
+      (* Categories *)
+      | "stepping" :: _ ->
+          Console_help.help_stepping None
+      | "searching" :: _ ->
+          Console_help.help_searching None
+      | "breakpoints" :: _ ->
+          Console_help.help_breakpoints None
+      | "eager" :: _ ->
+          Console_help.help_eager None
+      | "interface" :: _ ->
+          Console_help.help_interface None
+      | "graphs" :: _ ->
+          Console_help.help_graphs None
+      | "misc" :: _ ->
+          Console_help.help_misc None
+
+      | _ ->
+          SO.strLine "this command is not recognised"
+      end
+      |> Screen.show_message ppmode
+
 
 exception InvalidKey
-exception InvalidValue
+exception InvalidNumberOfArgs of int (* the int is the expected number *)
+exception InvalidValue of string
 
-let do_set key value interact_state =
+
+let do_set key args interact_state =
+  let ensure_one_arg () =
+    match args with
+    | a :: [] -> a
+    | _ -> raise (InvalidNumberOfArgs 1)
+  in
+
   let value_parser values = fun s ->
     try List.assoc s values with
-    | Not_found -> raise InvalidValue
+    | Not_found -> raise (InvalidValue s)
   in
 
   let parse_bool s =
@@ -1520,12 +1722,12 @@ let do_set key value interact_state =
 
   let parse_int s =
     try int_of_string s with
-    | Failure _ -> raise InvalidValue
+    | Failure _ -> raise (InvalidValue s)
   in
 
   let parse_int_option s =
     if s = "none" then None
-    else try Some (int_of_string s) with Failure _ -> raise InvalidValue
+    else try Some (int_of_string s) with Failure _ -> raise (InvalidValue s)
   in
 
   let open Lens.Infix in
@@ -1548,12 +1750,14 @@ let do_set key value interact_state =
         | "local_mem"           -> eager_local_mem_lens
         | _                     -> raise InvalidKey
       in
+      let value = ensure_one_arg () in
       interact_state
       |> (run_options_lens |-- eager_mode_lens |-- lens) ^= (parse_bool value)
       |> check_eager NoConstraints
       |> snd
 
   | "eager" ->
+      let value = ensure_one_arg () in
       let eager_mode =
         if parse_bool value then
           RunOptions.eager_mode_all_on interact_state.options.eager_mode
@@ -1565,49 +1769,49 @@ let do_set key value interact_state =
       |> check_eager NoConstraints
       |> snd
 
-  | "suppress_internal" ->
-      interact_state
-      |> (run_options_lens |-- suppress_internal_lens) ^= (parse_bool value)
-
   | "random" ->
+      let value = ensure_one_arg () in
       interact_state
       |> (run_options_lens |-- pseudorandom_lens) ^= (parse_bool value)
       |> update_default_cmd
 
   | "storage_first" ->
+      let value = ensure_one_arg () in
       interact_state
       |> (run_options_lens |-- storage_first_lens) ^= (parse_bool value)
       |> update_default_cmd
 
-  | "always_print"                   -> ((run_options_lens |-- always_print_lens)                      ^= (parse_bool value))       interact_state
-  | "compare_analyses"               -> ((run_options_lens |-- compare_analyses_lens)                  ^= (parse_bool value))       interact_state
-  | "hash_prune"                     -> ((run_options_lens |-- hash_prune_lens)                        ^= (parse_bool value))       interact_state
-  | "partial_order_reduction"        -> ((run_options_lens |-- partial_order_reduction_lens)           ^= (parse_bool value))       interact_state
-  | "allow_partial"                  -> ((run_options_lens |-- allow_partial_lens)                     ^= (parse_bool value))       interact_state
-  | "priority_reduction"             -> ((run_options_lens |-- priority_reduction_lens)                ^= (parse_bool value))       interact_state
-  | "prune_restarts"                 -> ((run_options_lens |-- prune_restarts_lens)                    ^= (parse_bool value))       interact_state
-  | "prune_discards"                 -> ((run_options_lens |-- prune_discards_lens)                    ^= (parse_bool value))       interact_state
-  | "transition_limit"               -> ((run_options_lens |-- transition_limit_lens)                  ^= (parse_int_option value)) interact_state
-  | "trace_limit"                    -> ((run_options_lens |-- trace_limit_lens)                       ^= (parse_int_option value)) interact_state
-  | "time_limit"                     -> ((run_options_lens |-- time_limit_lens)                        ^= (parse_int_option value)) interact_state
+  | "always_print"            -> ((run_options_lens |-- always_print_lens)            ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "compare_analyses"        -> ((run_options_lens |-- compare_analyses_lens)        ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "hash_prune"              -> ((run_options_lens |-- hash_prune_lens)              ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "partial_order_reduction" -> ((run_options_lens |-- partial_order_reduction_lens) ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "allow_partial"           -> ((run_options_lens |-- allow_partial_lens)           ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "priority_reduction"      -> ((run_options_lens |-- priority_reduction_lens)      ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "prune_restarts"          -> ((run_options_lens |-- prune_restarts_lens)          ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "prune_discards"          -> ((run_options_lens |-- prune_discards_lens)          ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "transition_limit"        -> ((run_options_lens |-- transition_limit_lens)        ^= (parse_int_option (ensure_one_arg ()))) interact_state
+  | "trace_limit"             -> ((run_options_lens |-- trace_limit_lens)             ^= (parse_int_option (ensure_one_arg ()))) interact_state
+  | "time_limit"              -> ((run_options_lens |-- time_limit_lens)              ^= (parse_int_option (ensure_one_arg ()))) interact_state
 
-  | "ppg_shared"                     -> ((ppmode_lens      |-- ppg_shared_lens)                        ^= (parse_bool value))       interact_state
-  | "ppg_rf"                         -> ((ppmode_lens      |-- ppg_rf_lens)                            ^= (parse_bool value))       interact_state
-  | "ppg_fr"                         -> ((ppmode_lens      |-- ppg_fr_lens)                            ^= (parse_bool value))       interact_state
-  | "ppg_co"                         -> ((ppmode_lens      |-- ppg_co_lens)                            ^= (parse_bool value))       interact_state
-  | "ppg_addr"                       -> ((ppmode_lens      |-- ppg_addr_lens)                          ^= (parse_bool value))       interact_state
-  | "ppg_data"                       -> ((ppmode_lens      |-- ppg_data_lens)                          ^= (parse_bool value))       interact_state
-  | "ppg_ctrl"                       -> ((ppmode_lens      |-- ppg_ctrl_lens)                          ^= (parse_bool value))       interact_state
-  | "ppg_regs"                       -> ((ppmode_lens      |-- ppg_regs_lens)                          ^= (parse_bool value))       interact_state
-  | "ppg_reg_rf"                     -> ((ppmode_lens      |-- ppg_reg_rf_lens)                        ^= (parse_bool value))       interact_state
-  | "ppg_trans"                      -> ((ppmode_lens      |-- ppg_trans_lens)                         ^= (parse_bool value))       interact_state
-  | "prefer_symbolic_values"         -> ((ppmode_lens      |-- pp_prefer_symbolic_values_lens)         ^= (parse_bool value))       interact_state
-  | "hide_pseudoregister_reads"      -> ((ppmode_lens      |-- pp_hide_pseudoregister_reads_lens)      ^= (parse_bool value))       interact_state
-  | "max_finished"                   -> ((ppmode_lens      |-- pp_max_finished_lens)                   ^= (parse_int_option value)) interact_state
-  | "choice_history_limit"           -> ((ppmode_lens      |-- pp_choice_history_limit_lens)           ^= (parse_int_option value)) interact_state
-  | "condense_finished_instructions" -> ((ppmode_lens      |-- pp_condense_finished_instructions_lens) ^= (parse_bool value))       interact_state
-  | "pp_sail"                        -> ((ppmode_lens      |-- pp_sail_lens)                           ^= (parse_bool value))       interact_state
+  | "ppg_shared"                     -> ((ppmode_lens |-- ppg_shared_lens) ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_rf"                         -> ((ppmode_lens |-- ppg_rf_lens)     ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_fr"                         -> ((ppmode_lens |-- ppg_fr_lens)     ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_co"                         -> ((ppmode_lens |-- ppg_co_lens)     ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_addr"                       -> ((ppmode_lens |-- ppg_addr_lens)   ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_data"                       -> ((ppmode_lens |-- ppg_data_lens)   ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_ctrl"                       -> ((ppmode_lens |-- ppg_ctrl_lens)   ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_regs"                       -> ((ppmode_lens |-- ppg_regs_lens)   ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_reg_rf"                     -> ((ppmode_lens |-- ppg_reg_rf_lens) ^= (parse_bool (ensure_one_arg ()))) interact_state
+  | "ppg_trans"                      -> ((ppmode_lens |-- ppg_trans_lens)  ^= (parse_bool (ensure_one_arg ()))) interact_state
+
+  | "prefer_symbolic_values"         -> ((ppmode_lens |-- pp_prefer_symbolic_values_lens)         ^= (parse_bool (ensure_one_arg ())))       interact_state
+  | "hide_pseudoregister_reads"      -> ((ppmode_lens |-- pp_hide_pseudoregister_reads_lens)      ^= (parse_bool (ensure_one_arg ())))       interact_state
+  | "max_finished"                   -> ((ppmode_lens |-- pp_max_finished_lens)                   ^= (parse_int_option (ensure_one_arg ()))) interact_state
+  | "choice_history_limit"           -> ((ppmode_lens |-- pp_choice_history_limit_lens)           ^= (parse_int_option (ensure_one_arg ()))) interact_state
+  | "condense_finished_instructions" -> ((ppmode_lens |-- pp_condense_finished_instructions_lens) ^= (parse_bool (ensure_one_arg ())))       interact_state
+  | "pp_sail"                        -> ((ppmode_lens |-- pp_sail_lens)                           ^= (parse_bool (ensure_one_arg ())))       interact_state
   | "pp_style" ->
+      let value = ensure_one_arg () in
       let value =
         value_parser [
           ("full",       Ppstyle_full);
@@ -1618,111 +1822,94 @@ let do_set key value interact_state =
       ((ppmode_lens |-- pp_style_lens) ^= value) interact_state
 
   | "verbosity" ->
-    Globals.verbosity := value_parser [
-      ("quiet",   Quiet);
-      ("normal",  Normal);
-      ("verbose", ThrottledInformation);
-      ("very",    UnthrottledInformation);
-      ("debug",   Debug);
-    ] value;
-    interact_state
-
-  | "pp_hex" ->
-    Globals.print_hex := parse_bool value;
-    interact_state
-
-  | "dwarf_show_all_variable_locations" ->
-    Globals.dwarf_show_all_variable_locations := parse_bool value;
-    interact_state
-
-  | "graph_backend" ->
-    value_parser [("dot", ()); ("tikz", ())] value; (* this is just to check that 'value' is a valid value *)
-    Globals.set_graph_backend value;
-    interact_state
-
-  | "dumb_terminal" ->
-    Globals.dumb_terminal := parse_bool value;
-    interact_state
-
-  | "random_seed" ->
-    Random.init (parse_int value);
-    interact_state
-
-  | "loop_limit" ->
-    change_model
-      (fun model ->
-        { model with
-          t =
-            { model.t with
-              thread_loop_unroll_limit =
-                parse_int_option value;
-            };
-        }
-      )
+      let value = ensure_one_arg () in
+      SO.verbosity := value_parser [
+        ("quiet",   SO.Quiet);
+        ("normal",  SO.Normal);
+        ("verbose", SO.ThrottledInformation);
+        ("very",    SO.UnthrottledInformation);
+        ("debug",   SO.Debug);
+      ] value;
       interact_state
 
-  (* always_graph and dot_final_ok are mutually exclusive
-    because always_graph would overwrite the final graph  *)
+  | "pp_hex" ->
+      let value = ensure_one_arg () in
+      Globals.print_hex := parse_bool value;
+      interact_state
+
+  | "dwarf_show_all_variable_locations" ->
+      let value = ensure_one_arg () in
+      Globals.dwarf_show_all_variable_locations := parse_bool value;
+      interact_state
+
+  | "graph_backend" ->
+      let value = ensure_one_arg () in
+      value_parser [("dot", ()); ("tikz", ())] value; (* this is just to check that 'value' is a valid value *)
+      Globals.set_graph_backend value;
+      interact_state
+
+  | "random_seed" ->
+      let value = ensure_one_arg () in
+      Random.init (parse_int value);
+      interact_state
+
+  | "loop_limit" ->
+      let value = ensure_one_arg () in
+      change_model
+        (fun model ->
+          { model with
+            t =
+              { model.t with
+                thread_loop_unroll_limit =
+                  parse_int_option value;
+              };
+          }
+        )
+        interact_state
 
   | "always_graph" ->
-    begin
+      let value = ensure_one_arg () in
       if parse_bool value then
         Globals.run_dot := Some RD_step
       else
         Globals.run_dot := None;
       interact_state
-    end
 
-  | "dot_final_ok" ->
-    begin
-      if parse_bool value then
-        Globals.run_dot := Some RD_final_ok
-      else
-        Globals.run_dot := None;
-      interact_state
-    end
-
-  | "dot_final_not_ok" ->
-    begin
-      if parse_bool value then
-        Globals.run_dot := Some RD_final_not_ok
-      else
-        Globals.run_dot := None;
-      interact_state
-    end
-
-  | "pp_colours" -> begin
+  | "pp_colours" ->
+      let value = ensure_one_arg () in
       let b = parse_bool value in
       Printing_functions.set_color_enabled b; (* propagate to sail interpreter pp *)
       ((ppmode_lens |-- pp_colours_lens) ^= b) interact_state
-    end
 
   | "follow_list" ->
+      let value = ensure_one_arg () in
       if value = "" then
         update_default_cmd {interact_state with follow_suffix = []}
       else
         begin match parse value with
         | ParserError msg ->
-            otStrLine "bad follow list: %s" msg
+            SO.strLine "bad follow list: %s" msg
             |> Screen.show_warning interact_state.ppmode;
-            raise InvalidValue
+            raise (InvalidValue value)
         | ParserASTs asts ->
             update_default_cmd {interact_state with follow_suffix = asts}
         end
 
   | "branch-targets" | "Branch-targets" ->
+      let value = ensure_one_arg () in
       begin match Model_aux.branch_targets_parse_from_string value with
       | branch_targets ->
           change_model
             (Model_aux.set_branch_targets interact_state.test_info.Test.symbol_table branch_targets)
             interact_state
       | exception (Model_aux.BranchTargetsParsingError msg) ->
-          otStrLine "bad branch targets: %s" msg
+          SO.strLine "bad branch targets: %s" msg
           |> Screen.show_warning interact_state.ppmode;
-          raise InvalidValue
+          raise (InvalidValue value)
       end
 
   | "shared-memory" | "Shared-memory" ->
+      let value = ensure_one_arg () in
       begin match Model_aux.shared_memory_parse_from_string value with
       | shared_memory ->
           let interact_state =
@@ -1731,7 +1918,7 @@ let do_set key value interact_state =
               interact_state
           in
           let shared_memory =
-            match (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).shared_memory with
+            match (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state).shared_memory with
             | Some shared_memory -> shared_memory
             | None -> assert false
           in
@@ -1745,17 +1932,19 @@ let do_set key value interact_state =
               };
           }
       | exception (Model_aux.SharedMemoryParsingError msg) ->
-          otStrLine "bad shared memory: %s" msg
+          SO.strLine "bad shared memory: %s" msg
           |> Screen.show_warning interact_state.ppmode;
-          raise InvalidValue
+          raise (InvalidValue value)
       end
 
   | "state_output" ->
-      Screen.set_state_output value;
+      ensure_one_arg ()
+      |> Screen.set_state_output;
       interact_state
 
   | "trace_output" ->
-      Screen.set_trace_output value;
+      ensure_one_arg ()
+      |> Screen.set_trace_output;
       interact_state
 
   | _ -> raise InvalidKey
@@ -1798,15 +1987,8 @@ let rec do_cmd
       Screen.quit ();
       assert false
 
-  | Interact_parser_base.Help None ->
-      otStrLine "%s" Console_help.help_message
-      |> Screen.show_message ppmode;
-      interact_state
-
-  | Interact_parser_base.Help (Some cmd) ->
-      (* TODO: show help message for cmd *)
-      otStrLine "TODO: show help for %s (in the meantime try just 'help')" cmd
-      |> Screen.show_message ppmode;
+  | Interact_parser_base.Help args ->
+      do_help ppmode args;
       interact_state
 
   | Interact_parser_base.ShowOptions ->
@@ -1818,13 +2000,13 @@ let rec do_cmd
      | "transition_history" ->
         begin match interact_state.interact_nodes with
         | [] ->
-            otStrLine "(no interact_nodes)"
+            SO.strLine "(no interact_nodes)"
             |> Screen.show_message ppmode
         | nodes ->
            let n_places = List.length nodes |> float |> log10 |> truncate in
            List.iteri
             (fun i n ->
-                otStrLine "%*d: [%s]"
+                SO.strLine "%*d: [%s]"
                     n_places i
                     (String.concat ", " (List.map string_of_int n.open_transition))
                 |> Screen.show_message ppmode
@@ -1833,12 +2015,12 @@ let rec do_cmd
         end
      | "follow_list" ->
         begin match interact_state.follow_suffix with
-        | [] -> Screen.show_message ppmode (otStrLine "(no follow list)")
+        | [] -> Screen.show_message ppmode (SO.strLine "(no follow list)")
         | fl ->
            let n_places = List.length fl |> float |> log10 |> truncate in
            List.iteri
               (fun i ast ->
-                  otStrLine "%*d: %s"
+                  SO.strLine "%*d: %s"
                       n_places i
                       (Interact_parser_base.pp ast)
                   |> Screen.show_message ppmode
@@ -1846,36 +2028,42 @@ let rec do_cmd
               fl
         end
      | _ ->
-        otStrLine "unknown debug command '%s'" s
+        SO.strLine "unknown debug command '%s'" s
         |> Screen.show_warning ppmode;
      end;
      interact_state
 
   | Interact_parser_base.Transition t ->
+      let update_follow_suffix interact_state =
+        match interact_state.follow_suffix with
+        | [] -> interact_state
+        | ast' :: follow_suffix when ast' = ast ->
+            {interact_state with follow_suffix = follow_suffix}
+            |> update_default_cmd
+        | _ ->
+            SO.strLine "Transition does not match the follow-list, removing the rest of the transitions from the follow-list"
+            |> Screen.show_warning ppmode;
+            {interact_state with follow_suffix = []}
+            |> update_default_cmd
+      in
+
       let (n, eager_constraints) =
         match t with
         | Interact_parser_base.WithEager n             -> (n, NoConstraints)
         | Interact_parser_base.WithBoundedEager (n, b) -> (n, Bound b)
       in
-      let (_, interact_state) =
-        try do_transition false n eager_constraints interact_state with
-        | NoSuchTransition ->
-            let msg =
-              Printf.sprintf "current state does not have transition %d" n
-            in
-            raise (DoCmdError (interact_state, msg))
-      in
-      begin match interact_state.follow_suffix with
-      | [] -> interact_state
-      | ast' :: follow_suffix when ast' = ast ->
-          {interact_state with follow_suffix = follow_suffix}
-          |> update_default_cmd
-      | _ ->
-          otStrLine "Transition does not match the follow-list, removing the rest of the transitions from the follow-list"
-          |> Screen.show_warning ppmode;
-          {interact_state with follow_suffix = []}
-          |> update_default_cmd
+
+      begin try do_transition false n eager_constraints interact_state with
+      | BreakpointHit (interact_state, bps) ->
+          raise (BreakpointHit (update_follow_suffix interact_state, bps))
+      | NoSuchTransition ->
+          let msg =
+            Printf.sprintf "current state does not have transition %d" n
+          in
+          raise (DoCmdError (interact_state, msg))
       end
+      |> snd
+      |> update_follow_suffix
 
   | Interact_parser_base.Default ->
       (* Currently the same as Step. *)
@@ -1892,7 +2080,7 @@ let rec do_cmd
         if i <= 0 then interact_state else
         begin match interact_state.default_cmd with
         | None   ->
-            otStrLine "can't step any more"
+            SO.strLine "can't step any more"
             |> Screen.show_warning ppmode;
             interact_state
         | Some ast ->
@@ -1919,7 +2107,7 @@ let rec do_cmd
 
   | Interact_parser_base.Follow ->
       if interact_state.follow_suffix = [] then
-        otStrLine "the follow-list is empty"
+        SO.strLine "the follow-list is empty"
         |> Screen.show_warning ppmode;
       List.fold_left
         (fun interact_state ast -> do_cmd false ast interact_state)
@@ -1928,7 +2116,7 @@ let rec do_cmd
 
   | Interact_parser_base.Auto ->
       if interact_state.default_cmd = None then begin
-          otStrLine "there are no enabled transitions to auto-take"
+          SO.strLine "there are no enabled transitions to auto-take"
           |> Screen.show_warning ppmode;
           interact_state
       end else
@@ -1941,11 +2129,14 @@ let rec do_cmd
         in
         do_auto interact_state
 
-  | Interact_parser_base.Search (Interact_parser_base.Random i) when i < 1 ->
+  | Interact_parser_base.Search (Interact_parser_base.Random i, _) when i < 1 ->
       raise (DoCmdError (interact_state, "the number of traces must be greater than 0"))
 
-  | Interact_parser_base.Search mode ->
-      do_search mode interact_state [] [] [] []
+  | Interact_parser_base.Search (mode, None) ->
+      do_search mode interact_state
+
+  | Interact_parser_base.Search (mode, Some final) ->
+      do_search_final final mode interact_state
 
   | Interact_parser_base.Typeset ->
       typeset interact_state "ui_snapshot.tex";
@@ -1961,12 +2152,15 @@ let rec do_cmd
 
   | Interact_parser_base.History ->
       Interact_parser_base.history_to_string interact_state.cmd_history
-      |> otStrLine "%s"
+      |> SO.strLine "%s"
       |> Screen.show_message ppmode;
       interact_state
 
   | Interact_parser_base.FetchAll ->
       do_fetch_all interact_state
+
+  | Interact_parser_base.BreakpointLine (filename, line) ->
+      do_add_breakpoint_line filename line interact_state
 
   | Interact_parser_base.BreakpointFetch target ->
       do_add_breakpoint_fetch target interact_state
@@ -1977,19 +2171,23 @@ let rec do_cmd
   | Interact_parser_base.SharedWatchpoint typ ->
       do_add_shared_watchpoint typ interact_state
 
-  | Interact_parser_base.BreakpointLine (filename, line) ->
-      do_add_breakpoint_line filename line interact_state
-
-  | Interact_parser_base.SetOption (key, value) ->
-      begin try do_set key value interact_state with
+  | Interact_parser_base.SetOption (key, values) ->
+      begin try do_set key values interact_state with
       | InvalidKey ->
-          let msg = Printf.sprintf "unknown set option '%s' (try 'help' command)" key in
+          let msg = Printf.sprintf "unknown set option '%s' (see 'help')" key in
           raise (DoCmdError (interact_state, msg))
-      | InvalidValue ->
+      | InvalidNumberOfArgs n ->
+          let msg =
+            Printf.sprintf "'%s' takes %d arguments (see 'help')"
+              (Interact_parser_base.pp (Interact_parser_base.SetOption (key, [])))
+              n
+          in
+          raise (DoCmdError (interact_state, msg))
+      | InvalidValue value ->
           let msg =
             Printf.sprintf "'%s' is not a valid value for '%s'"
-              (Interact_parser_base.pp_string value)
-              key
+              (Interact_parser_base.pp_args [value])
+              (Interact_parser_base.pp_args [key])
           in
           raise (DoCmdError (interact_state, msg))
       end
@@ -2019,59 +2217,56 @@ let rec do_cmd
       do_delete_breakpoint n interact_state
 
 
-let make_prompt interact_state : output_tree =
+let make_prompt interact_state : SO.t =
   begin match interact_state.interact_nodes with
-  | [] -> OTEmpty
+  | [] -> SO.Empty
   | node :: _ ->
       let options =
-        [ otIfTrue interact_state.options.pseudorandom @@
-            OTString "random";
-          otIfTrue interact_state.options.storage_first @@
-            OTString "storage-first";
+        [ SO.ifTrue interact_state.options.pseudorandom @@
+            SO.String "random";
+          SO.ifTrue interact_state.options.storage_first @@
+            SO.String "storage-first";
           begin match interact_state.options.focused_thread with
-          | Some i -> otString "focused on thread %d" i
-          | None   -> OTEmpty
+          | Some i -> SO.str "focused on thread %d" i
+          | None   -> SO.Empty
           end;
           begin match interact_state.options.focused_ioid with
-          | Some (tid, iid) -> otString "focused on ioid (%d:%d)" tid iid
-          | None            -> OTEmpty
+          | Some (tid, iid) -> SO.str "focused on ioid (%d:%d)" tid iid
+          | None            -> SO.Empty
           end;
         ]
-        |> List.filter (function OTEmpty -> false | _ -> true)
-        |> otConcatWith (OTString ", ")
+        |> List.filter (function SO.Empty -> false | _ -> true)
+        |> SO.concatWith (SO.String ", ")
       in
 
-      OTConcat [
-        otString "Step %d (%d/%d finished, %d trns)"
+      SO.Concat [
+        SO.str "Step %d (%d/%d finished, %d trns)"
           (List.length interact_state.interact_nodes)
-          (ConcModel.number_finished_instructions (ConcModel.sst_state node.system_state))
-          (ConcModel.number_constructed_instructions (ConcModel. sst_state node.system_state))
+          (ConcModel.number_finished_instructions node.system_state)
+          (ConcModel.number_constructed_instructions node.system_state)
           (List.fold_left (+) 0 (List.map (fun n -> List.length n.open_transition) interact_state.interact_nodes));
 
         begin match interact_state.default_cmd with
-        | None     -> OTEmpty
-        | Some ast -> otString " Choose [%s]" (Interact_parser_base.pp ast)
+        | None     -> SO.Empty
+        | Some ast -> SO.str " Choose [%s]" (Interact_parser_base.pp ast)
         end;
 
-        otIfTrue (options <> OTEmpty) @@ OTConcat [
-          OTString " (";
+        SO.ifTrue (options <> SO.Empty) @@ SO.Concat [
+          SO.String " (";
           options;
-          OTString ")";
+          SO.String ")";
         ];
       ]
   end
 
-let extract_options interact_state : Screen_base.options_state =
-  let open Globals in {
-      run_options = interact_state.options;
-      model_params = !Globals.model_params;
-      ppmode = interact_state.ppmode;
-      always_graph = (!Globals.run_dot = Some RD_step);
-      dot_final_ok = (!Globals.run_dot = Some RD_final_ok);
-      dot_final_not_ok = (!Globals.run_dot = Some RD_final_not_ok);
-      pp_hex = !Globals.print_hex;
-      dwarf_show_all_variable_locations = !Globals.dwarf_show_all_variable_locations;
-      verbosity = !Globals.verbosity;
+let extract_options interact_state : Screen.options_state =
+  { run_options  = interact_state.options;
+    model_params = !Globals.model_params;
+    ppmode       = interact_state.ppmode;
+    pp_hex       = !Globals.print_hex;
+    dwarf_show_all_variable_locations
+                 = !Globals.dwarf_show_all_variable_locations;
+    verbosity    = !SO.verbosity;
   }
 
 let rec main_loop interact_state : unit =
@@ -2090,7 +2285,7 @@ let rec main_loop interact_state : unit =
 and parse_and_loop interact_state = fun cmd ->
     match parse cmd with
     | ParserError s ->
-        otStrLine "%s" s
+        SO.strLine "%s" s
         |> Screen.show_warning interact_state.ppmode;
         main_loop interact_state
     | ParserASTs input_asts ->
@@ -2100,9 +2295,15 @@ and parse_and_loop interact_state = fun cmd ->
             interact_state
             input_asts
         with
-        | DoCmdError (interact_state, msg)->
-            otStrLine "%s" msg
+        | DoCmdError (interact_state, msg) ->
+            SO.strLine "%s" msg
             |> Screen.show_warning interact_state.ppmode;
+            interact_state
+        | BreakpointHit (interact_state, bps) ->
+            List.map (pp_breakpoint interact_state.ppmode) bps
+            |> List.map (SO.strLine "Breakpoint hit: %s")
+            |> SO.concat
+            |> Screen.show_message interact_state.ppmode;
             interact_state
         end
         |> main_loop
@@ -2126,8 +2327,7 @@ let initial_interact_state
       breakpoints    = [];
     }
   in
-  ConcModel.sst_of_state options initial_state
-  |> add_interact_node interact_state
+  add_interact_node interact_state initial_state
   |> check_eager NoConstraints
   |> snd
 
@@ -2144,7 +2344,7 @@ let run_interactive
     | []      -> failwith "no initial state"
     | s :: [] -> s
     | s :: _  ->
-        otStrLine "given multiple initial states, using only the first one"
+        SO.strLine "given multiple initial states, using only the first one"
         |> Screen.show_warning ppmode;
         s
     end
@@ -2168,10 +2368,10 @@ let run_interactive
 let print_observations interact_state search_state =
   (* These are the branch targets as they were assumed before the search *)
   let branch_targets_output =
-    let branch_targets = (Runner.sst_model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets in
-    otIfTrue (not (Pmap.is_empty branch_targets)) @@
-      otVerbose Globals.Normal @@
-        otStrLine "Branch-targets=%s"
+    let branch_targets = (ConcModel.model_params (List.hd interact_state.interact_nodes).system_state).t.branch_targets in
+    SO.ifTrue (not (Pmap.is_empty branch_targets)) @@
+      SO.verbose SO.Normal @@ fun () ->
+        SO.strLine "Branch-targets=%s"
           (Params.branch_targets_to_list branch_targets
           |> Pp.pp_branch_targets interact_state.ppmode)
   in
@@ -2179,9 +2379,9 @@ let print_observations interact_state search_state =
   (* This is the shared memory as it was approximated before the search *)
   let shared_memory_output =
     let shared_memory = interact_state.options.eager_mode.em_shared_memory in
-    otIfTrue (not (Pset.is_empty shared_memory)) @@
-      otVerbose Globals.Normal @@
-        otStrLine "Shared-memory=%s"
+    SO.ifTrue (not (Pset.is_empty shared_memory)) @@
+      SO.verbose SO.Normal @@ fun () ->
+        SO.strLine "Shared-memory=%s"
           (Pp.pp_shared_memory interact_state.ppmode shared_memory)
   in
 
@@ -2189,7 +2389,7 @@ let print_observations interact_state search_state =
   let deadlock_states_output = print_observed_deadlocks interact_state search_state.Runner.observed_deadlocks in
   let exceptions_output = print_observed_exceptions interact_state search_state.Runner.observed_exceptions in
 
-  OTConcat
+  SO.Concat
     [ branch_targets_output;
       shared_memory_output;
       states_output;
@@ -2198,11 +2398,11 @@ let print_observations interact_state search_state =
     ]
 
 let print_search_results interact_state search_state runtime : unit =
-  if Globals.is_verbosity_at_least Globals.ThrottledInformation then
+  if SO.is_verbosity_at_least SO.ThrottledInformation then
     Runner.print_search_counters true search_state;
 
   let test_name_output =
-    otLine @@ otStrEmph "Test %s %s"
+    SO.line @@ SO.strEmph "Test %s %s"
         interact_state.test_info.Test.name
         (ConstrGen.pp_kind (ConstrGen.kind_of interact_state.test_info.Test.constr))
   in
@@ -2214,13 +2414,13 @@ let print_search_results interact_state search_state runtime : unit =
       |> fst
       |> Test.C.check_constr interact_state.test_info.Test.constr
     in
-    if holds then (true, otStrLine "Ok")
+    if holds then (true, SO.strLine "Ok")
     else if ConstrGen.is_existential interact_state.test_info.Test.constr then
-      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ otStrClass OTCWarning "%s: Existential constraint not satisfied!" interact_state.test_info.Test.name;
-                otStrLine "No (allowed not found)"])
+      (false, SO.Concat [SO.line @@ SO.verbose SO.ThrottledInformation @@ (fun () -> SO.strClass SO.Warning "%s: Existential constraint not satisfied!" interact_state.test_info.Test.name);
+                SO.strLine "No (allowed not found)"])
     else (* universal failed *)
-      (false, OTConcat [otLine @@ otVerbose Globals.ThrottledInformation @@ otStrClass OTCWarning "%s: Universal constraint invalidated!" interact_state.test_info.Test.name;
-                otStrLine "No (forbidden found)"])
+      (false, SO.Concat [SO.line @@ SO.verbose SO.ThrottledInformation @@ (fun () -> SO.strClass SO.Warning "%s: Universal constraint invalidated!" interact_state.test_info.Test.name);
+                SO.strLine "No (forbidden found)"])
   in
 
   let symtab =
@@ -2230,29 +2430,29 @@ let print_search_results interact_state search_state runtime : unit =
   in
 
   let condition_output =
-    otStrLine "Condition %s"
+    SO.strLine "Condition %s"
       (ConstrGen.constraints_to_string (Test.C.pp_atom symtab) interact_state.test_info.Test.constr)
   in
 
   let test_info_output =
     if !Globals.dont_tool then
     begin
-      OTConcat
+      SO.Concat
         (List.map
           (fun (k, v) ->
             if Misc.string_eq k "Relax" then
-              otStrLine "Relax %s %s %s" interact_state.test_info.Test.name (if constraint_holds then "Ok" else "No") v
+              SO.strLine "Relax %s %s %s" interact_state.test_info.Test.name (if constraint_holds then "Ok" else "No") v
             else
-              otStrLine "%s=%s" k v)
+              SO.strLine "%s=%s" k v)
           interact_state.test_info.Test.info)
     end
     else
     begin
-      OTConcat
+      SO.Concat
         (Lem_list.mapMaybe
           (fun (k, v) ->
             if Misc.string_eq k "Hash" then
-              Some (otStrLine "%s=%s" k v)
+              Some (SO.strLine "%s=%s" k v)
             else None)
           interact_state.test_info.Test.info)
     end
@@ -2269,7 +2469,7 @@ let print_search_results interact_state search_state runtime : unit =
       Runner.StateMap.bindings search_state.Runner.observed_filterred_finals |> List.split |> fst |> List.partition (Test.C.check_prop prop)
     in
 
-    otStrLine "Observation %s %s %d %d%s%s"
+    SO.strLine "Observation %s %s %d %d%s%s"
       interact_state.test_info.Test.name
       (if matches = [] then "Never"
       else if non_matches = [] then "Always"
@@ -2280,9 +2480,9 @@ let print_search_results interact_state search_state runtime : unit =
       (if not (Runner.ExceptionMap.is_empty search_state.Runner.observed_exceptions) then " with unhandled exceptions" else "")
   in
 
-  let runtime_output = otStrLine "Runtime: %f sec" runtime in
+  let runtime_output = SO.strLine "Runtime: %f sec" runtime in
 
-  Screen_base.otClass OTCFinal @@ OTConcat [
+  SO.aclass SO.Final @@ SO.Concat [
     test_name_output;
     print_observations interact_state search_state;
     constraint_output;
@@ -2303,73 +2503,125 @@ let run_search
   =
   (* breakpoint predicates and handlers *)
   let breakpoints =
-    let run_dot_final_pred negate = fun sst ->
-      (ConcModel.sst_trans sst) = [] &&
+    let run_dot_final_pred = fun state ->
+      (ConcModel.transitions state) = [] &&
       begin match test_info.Test.filter with
       | None -> true
       | Some filter ->
          Runner.reduced_final_state test_info.Test.filter_regs
-           test_info.Test.filter_mem (ConcModel.sst_state sst)
+           test_info.Test.filter_mem state
           |> Test.C.check_filter filter
       end &&
-        let final_state =
-          Runner.reduced_final_state
-            test_info.Test.show_regs
-            test_info.Test.show_mem (ConcModel.sst_state sst) in
-      (Test.C.check_constr test_info.Test.constr [final_state]) <> negate
+      let final_state =
+        Runner.reduced_final_state
+          test_info.Test.show_regs
+          test_info.Test.show_mem state in
+      match !Globals.run_dot with
+      | Some Globals.RD_final -> true
+      | Some Globals.RD_final_ok ->
+          Test.C.check_constr test_info.Test.constr [final_state]
+      | Some Globals.RD_final_not_ok ->
+          not (Test.C.check_constr test_info.Test.constr [final_state])
+
+      | Some Globals.RD_step
+      | None -> assert false
     in
 
-    let run_dot_final = fun sst ->
+    let run_dot_final = fun state ->
       match ppmode.Globals.pp_kind with
-      | Globals.Html ->
-         Dot.display_dot ppmode
-                            (Some test_info.Test.name)
-                            (ConcModel.sst_state sst)
-                            (ConcModel.make_cex_candidate (ConcModel.sst_state sst))
-                            []
+      | Globals.Html -> assert false
       | _ ->
-         if !Globals.graph_backend = Globals.Tikz then begin
-          let symtab =
-            List.map
-              (fun ((a,sz),s) ->
-                (Nat_big_num.to_int64 (Sail_impl_base.integer_of_address a), s))
-              ppmode.Globals.pp_symbol_table
-          in
-          let final_state = Runner.reduced_final_state test_info.Test.show_regs
-                              test_info.Test.show_mem (ConcModel.sst_state sst) in
-          Tikz.make_final_state test_info (Test.C.pp_state symtab final_state)
-         end;
+          if !Globals.graph_backend = Globals.Tikz then begin
+            let symtab =
+              List.map
+                (fun ((a, sz), s) ->
+                  (Nat_big_num.to_int64 (Sail_impl_base.integer_of_address a), s))
+                ppmode.Globals.pp_symbol_table
+            in
+            let final_state = Runner.reduced_final_state test_info.Test.show_regs
+              test_info.Test.show_mem state
+            in
+            Test.C.pp_state symtab final_state
+            |> Tikz.make_final_state test_info
+          end;
 
-         let module G = (val get_graph_backend ()) in
-         G.make_graph ppmode test_info (ConcModel.sst_state sst)
-                       (ConcModel.make_cex_candidate (ConcModel.sst_state sst)) []
+          let module G = (val get_graph_backend ()) in
+          G.make_graph
+            { ppmode with
+              Globals.pp_default_cmd = None;
+              Globals.pp_pretty_eiid_table = ConcModel.pretty_eiids state;
+            }
+            test_info
+            (ConcModel.make_cex_candidate state)
+            []
     in
 
     match !Globals.run_dot with
-    (* FIXME: handle RD_final *)
+    | Some Globals.RD_final ->
+        [ ((Runner.Numbered 0, Runner.StateBreakpoint run_dot_final_pred, "final (run dot)"), run_dot_final);
+        ]
     | Some Globals.RD_final_ok ->
-        [ ((Runner.Numbered 0, Runner.StateBreakpoint (run_dot_final_pred false), "final ok (run dot)"), run_dot_final);
+        [ ((Runner.Numbered 0, Runner.StateBreakpoint run_dot_final_pred, "final ok (run dot)"), run_dot_final);
         ]
     | Some Globals.RD_final_not_ok ->
-        [ ((Runner.Numbered 0, Runner.StateBreakpoint (run_dot_final_pred true), "final not ok (run dot)"), run_dot_final);
+        [ ((Runner.Numbered 0, Runner.StateBreakpoint run_dot_final_pred, "final not ok (run dot)"), run_dot_final);
         ]
+
+    | Some Globals.RD_step
     | _ -> []
+  in
+
+  let targets = 
+    if !Globals.print_cexs then
+      let print_cex_pred state = (ConcModel.transitions state) = [] in
+      [print_cex_pred]
+    else []
   in
 
   let run_search_from interact_state : unit =
     let print_results partial = fun search_state ->
       if partial then
-        OTConcat [
-          OTLine OTEmpty;
-          otStrLine "***********************";
-          otStrLine "*** PARTIAL RESULTS ***";
-          otStrLine "***********************";
+        SO.Concat [
+          SO.Line SO.Empty;
+          SO.strLine "***********************";
+          SO.strLine "*** PARTIAL RESULTS ***";
+          SO.strLine "***********************";
         ]
         |> Screen.show_warning ppmode;
       print_search_results
         (update_bt_and_sm search_state interact_state)
         search_state
         (Sys.time ())
+    in
+
+    (* let print_cexs search_state : unit = 
+     *   let (_,acexs) =
+     *     List.fold_left
+     *       (fun (hashes, acexs) (_,s) -> 
+     *         let hash = Runner.hash_of_system_state s in
+     *         if Pset.mem hash hashes then (hashes,acexs)
+     *         else
+     *           let cex = ConcModel.make_cex_candidate s in
+     *           let acex = CandidateExecution.acex_of_cex cex in
+     *           (Pset.add hash hashes, acex :: acexs)
+     *       )
+     *       (Pset.empty String.compare, [])
+     *       search_state.Runner.observed_targets 
+     *   in
+     *   Json_candidate_execution.print_acexs search_state.test_info acexs
+     * in *)
+
+    let print_cexs search_state : unit = 
+      let acexs =
+        List.map
+          (fun (_,s) -> 
+            let cex = ConcModel.make_cex_candidate s in
+            CandidateExecution.acex_of_cex cex
+          )
+          search_state.Runner.observed_targets 
+      in
+      Json_candidate_execution.print_distinct_acexs
+        search_state.Runner.test_info acexs
     in
 
     match
@@ -2380,11 +2632,13 @@ let run_search
         (List.hd interact_state.interact_nodes).system_state
         (List.map fst breakpoints)
         [] (* bounds *)
-        [] (* targets *)
+        targets (* targets *)
         [] (* filters *)
         (print_results true)
     with
-    | Runner.Complete search_state' -> print_results false search_state'
+    | Runner.Complete search_state' -> 
+       if !Globals.print_cexs then print_cexs search_state'
+       else print_results false search_state'
 
     | Runner.Breakpoints ({Runner.search_nodes = {Runner.system_state = sst} :: _}, bps) ->
         (* a breakpoint was triggered *)
@@ -2399,20 +2653,20 @@ let run_search
     | Runner.Breakpoints _ (* search_nodes = [] *) -> assert false
 
     | Runner.Interrupted (search_state, reason) ->
-        otStrLine "Interrupted: %s" reason
+        SO.strLine "Interrupted: %s" reason
         |> Screen.show_warning ppmode;
         print_results true search_state
 
     | Runner.OcamlExn (search_state, msg) ->
-        otStrLine "%s" msg
+        SO.strLine "%s" msg
         |> Screen.show_warning ppmode;
         print_results true search_state;
-        otStrLine "*** Error ***"
+        SO.strLine "*** Error ***"
         |> Screen.show_warning ppmode;
         exit 1
 
     | exception (Runner.BadSearchOptions msg) ->
-        otStrLine "%s" msg
+        SO.strLine "%s" msg
         |> Screen.show_warning ppmode;
         exit 1
   in

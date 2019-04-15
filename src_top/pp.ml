@@ -382,7 +382,7 @@ let colour_changed3 m (cs:string changed3) =
         match m.Globals.pp_kind with
         | Hash  -> s
         | Ascii -> col_dark_gray s
-        | Html  -> "<span class='changed_gone'>"^ s ^"</span>"
+        | Html  -> "<span class='rmem changed_gone'>"^ s ^"</span>"
         | Latex -> "\\mydarkgray{" ^ s ^"}"
       else s
   | C3_unchanged s -> s
@@ -391,7 +391,7 @@ let colour_changed3 m (cs:string changed3) =
         match m.Globals.pp_kind with
         | Hash  -> s
         | Ascii -> col_red s
-        | Html  -> "<span class='changed_new'>"^ s ^"</span>"
+        | Html  -> "<span class='rmem changed_new'>"^ s ^"</span>"
         | Latex -> "\\myred{" ^ s ^"}"
       else s
 
@@ -455,6 +455,15 @@ let pp_rightbrace m =
   | Ascii | Html | Hash -> "}"
   | Latex -> "\\myrb{}"
 
+let pp_lt m =
+  match m.Globals.pp_kind with
+  | Ascii | Hash | Latex -> "<"
+  | Html -> "&lt;"
+
+let pp_gt m =
+  match m.Globals.pp_kind with
+  | Ascii | Hash | Latex -> ">"
+  | Html -> "&gt;"
 
 let pp_arrow m =
   match m.Globals.pp_kind with
@@ -529,7 +538,7 @@ let colour_tran_id m s =
     match m.Globals.pp_kind with
     | Hash  -> s
     | Ascii -> col_green s
-    | Html  -> "<span class='tran_id'>"^ s ^"</span>"
+    | Html  -> "<span class='rmem tran_id'>"^ s ^"</span>"
     | Latex -> "\\mygreen{" ^ s ^"}"
   else s
 
@@ -538,7 +547,7 @@ let colour_memory_action m s =
     match m.Globals.pp_kind with
     | Hash  -> s
     | Ascii -> col_cyan s
-    | Html  -> "<span class='memory_action'>"^ s ^"</span>"
+    | Html  -> "<span class='rmem memory_action'>"^ s ^"</span>"
     | Latex -> "\\mycyan{" ^ s ^"}"
   else s
 
@@ -558,7 +567,7 @@ let colour_unfinished_instruction m s =
     match m.Globals.pp_kind with
     | Hash  -> s
     | Ascii -> col_bold (col_yellow s)
-    | Html  -> "<span class='warning'>" ^ s ^ "</span>"
+    | Html  -> "<span class='rmem warning'>" ^ s ^ "</span>"
     | Latex -> "\\myyellow{" ^ s ^ "}"
   else s
 
@@ -586,7 +595,7 @@ let colour_sail m s =
         | Not_found -> s) in
         pp_string s ^ "\n" ^ *)
         col_cyan s
-    | Html  -> "<span class='sail'>"^ s ^"</span>"
+    | Html  -> "<span class='rmem sail'>"^ s ^"</span>"
     | Latex -> "\\myblue{" ^ s ^"}"
   else s
 
@@ -1152,7 +1161,7 @@ let pp_read_with_slices_uncoloured m r unsat_slices =
   else " " ^ (pp_list m (pp_slice' m) unsat_slices)
 
 let pp_read_with_slices_and_view_uncoloured m r unsat_slices view =
-  pp_read_uncoloured m r ^ "(view>=" ^ pp_view m view ^ ")" ^ 
+  pp_read_uncoloured m r ^ "(view" ^ pp_gt m ^ "=" ^ pp_view m view ^ ")" ^
   if unsat_slices = [Fragments.complete_slice r.r_addr] then ""
   else " " ^ (pp_list m (pp_slice' m) unsat_slices)
 
@@ -1885,7 +1894,7 @@ let enlink m n s =
     | _ -> ""
   in
   match m.Globals.pp_kind with
-  | Html -> sprintf "<span class=\"trans%s\" id=\"%d\">%s</span>" active_str n s
+  | Html -> sprintf "<span class=\"rmem trans%s\" id=\"%d\">%s</span>" active_str n s
   | _ -> s
 
 let pp_cand m (n,t) =
@@ -2447,7 +2456,7 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
            (match m.Globals.pp_kind with
             | Hash  -> s
             | Ascii -> indent ^ col_yellow s ^ "\n"
-            | Html  -> "<span class='dwarf_source_lines'>" ^ indent ^ s ^ "</span><br/>"
+            | Html  -> "<span class='rmem dwarf_source_lines'>" ^ indent ^ s ^ "</span><br/>"
             | Latex -> "\\myyellow{" ^ indent ^ s ^ "}\n"
            )
            | None ->
@@ -2825,7 +2834,7 @@ let pp_ui_machine_thread_state m (tid,ts) =
 
    let t_instructions =
      match m.Globals.pp_kind with
-     | Html -> sprintf "<div class='state_instructions'>%s</div>" ppd_instructions
+     | Html -> sprintf "<div class='rmem state_instructions'>%s</div>" ppd_instructions
      | _ -> sprintf "%s" (*"  committed [| |] and in-flight <| |> instructions:\n%s"*) ppd_instructions in
 
    let t_unacknowledged_syncs =
@@ -2936,7 +2945,7 @@ let pp_ui_promising_thread_state m (tid,ts) =
 
   let t_instructions =
     match m.Globals.pp_kind with
-    | Html -> sprintf "<div class='state_instructions'>%s</div>" ppd_instructions
+    | Html -> sprintf "<div class='rmem state_instructions'>%s</div>" ppd_instructions
     | _ -> sprintf "%s" (*"  committed [| |] and in-flight <| |> instructions:\n%s"*) ppd_instructions in
 
   t_state ^ (if m.pp_style = Globals.Ppstyle_compact then "    " else
@@ -3032,7 +3041,7 @@ let pp_transition_history_trans m s j trans =
   in
   match !Globals.pp_kind with
   | Ascii | Latex | Hash -> res ^ !linebreak
-  | Html -> "<p>" ^ res ^ "</p>" (* this (instead of <br>) is needed to make JS scrollIntoView work *)
+  | Html -> "<p class=rmem>" ^ res ^ "</p>" (* this (instead of <br>) is needed to make JS scrollIntoView work *)
 
 let pp_transition_history m ?(filter = fun _ -> true) s =
   transition_history_loc_max_width := 0;

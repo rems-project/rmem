@@ -178,3 +178,166 @@ let rec filter_instruction_tree (pi: cex_instruction_instance -> bool) (it: cex_
            ) 
            iits)
   end
+
+
+
+(* more abstract notion of candidate execution *)
+
+let rec cex_instruction_tree_to_list (CEX_T iits: cex_instruction_tree) :
+          list cex_instruction_instance =
+  match iits with
+  | [] -> []
+  | [(i,it)] -> i :: cex_instruction_tree_to_list it
+  | _ -> failwith "cex_instruction_tree_to_list: instruction tree is not linear"
+  end
+
+
+type acex_event =
+  | ACEX_read of read_request
+  | ACEX_write of write
+  | ACEX_barrier of barrier
+
+let ioid_of_acex_event = function
+  | ACEX_read r -> r.r_ioid
+  | ACEX_write w -> w.w_ioid
+  | ACEX_barrier b -> b.b_ioid
+  end
+
+let eiid_of_acex_event = function
+  | ACEX_read r -> r.reiid
+  | ACEX_write w -> w.weiid
+  | ACEX_barrier b -> b.beiid
+  end
+
+let fp_of_event = function
+  | ACEX_read r -> Just r.r_addr
+  | ACEX_write w -> Just w.w_addr
+  | ACEX_barrier _b -> Nothing
+  end
+
+
+type acex =
+  <| acex_events : set acex_event;
+     acex_po : set (eiid * eiid);
+     acex_same_thread : set (eiid * eiid);
+     acex_same_instr : set (eiid * eiid);
+     acex_addr : set (eiid * eiid);
+     acex_data : set (eiid * eiid);
+     acex_ctrl : set (eiid * eiid);
+     acex_rf : set (footprint * eiid * eiid); 
+     acex_co : set (eiid * eiid);
+  |>
+
+
+let empty_acex =
+  <| acex_events = Set.empty;
+     acex_po = Set.empty;
+     acex_same_thread = Set.empty;
+     acex_same_instr = Set.empty;
+     acex_rf = Set.empty;
+     acex_co = Set.empty;
+     acex_addr = Set.empty;
+     acex_data = Set.empty;
+     acex_ctrl = Set.empty;
+  |>
+
+let acex_union acex1 acex2 =
+  <| acex_events = acex1.acex_events union acex2.acex_events;
+     acex_po = acex1.acex_po union acex2.acex_po;
+     acex_same_thread = acex1.acex_same_thread union acex2.acex_same_thread;
+     acex_same_instr = acex1.acex_same_instr union acex2.acex_same_instr;
+     acex_addr = acex1.acex_addr union acex2.acex_addr;
+     acex_data = acex1.acex_data union acex2.acex_data;
+     acex_ctrl = acex1.acex_ctrl union acex2.acex_ctrl;
+     acex_rf = acex1.acex_rf union acex2.acex_rf;
+     acex_co = acex1.acex_co union acex2.acex_co;
+  |>
+
+
+let events_of_instruction_instance (ii : cex_instruction_instance) : set acex_event = 
+  { ACEX_read r | forall ((r,_) MEM ii.cex_satisfied_reads) | true } union
+  { ACEX_write w | forall (w MEM ii.cex_propagated_writes) | true } union
+  { ACEX_barrier b | forall (b MEM ii.cex_committed_barriers) | true }
+
+  
+let rec thread_local_acex_data_of_instructions 
+      (acex_so_far : acex)
+      (iis : list cex_instruction_instance) : acex =
+  match iis with
+  | [] ->
+     let ids = Set.map eiid_of_acex_event acex_so_far.acex_events in
+     let same_thread = cross ids ids in
+     <| acex_so_far with acex_same_thread = same_thread |> 
+  | ii :: iis ->
+     let old_events = acex_so_far.acex_events in
+     let old_ids = Set.map eiid_of_acex_event old_events in
+     let new_events = events_of_instruction_instance ii in
+     let new_ids = Set.map eiid_of_acex_event new_events in
+     let addr_deps = 
+       {eiid_of_acex_event e 
+          | forall (e IN old_events) 
+          | ioid_of_acex_event e IN ii.cex_address_dependencies} in
+     let data_deps = 
+       {eiid_of_acex_event e 
+          | forall (e IN old_events) 
+          | ioid_of_acex_event e IN ii.cex_data_dependencies} in
+     let ctrl_deps = 
+       {eiid_of_acex_event e 
+          | forall (e IN old_events) 
+          | ioid_of_acex_event e IN ii.cex_control_dependencies} in
+     let acex = 
+       <| acex_so_far with 
+            acex_events = old_events union new_events;
+            acex_po   = acex_so_far.acex_po union (cross old_ids new_ids);
+            acex_same_instr = acex_so_far.acex_same_instr union (cross new_ids new_ids);
+            acex_addr = acex_so_far.acex_addr union (cross addr_deps new_ids);
+            acex_data = acex_so_far.acex_data union (cross data_deps new_ids);
+            acex_ctrl = acex_so_far.acex_ctrl union (cross ctrl_deps new_ids); |>
+     in
+     thread_local_acex_data_of_instructions acex iis
+   end
+
+let thread_local_acex_data_of_thread_state
+      ((_tid : thread_id), (thread : cex_thread_state)) : acex = 
+  let instructions = cex_instruction_tree_to_list thread.cex_instruction_tree in
+  thread_local_acex_data_of_instructions empty_acex instructions
+
+let acex_rf_of_cex_rf cex_rf = 
+  Set.bigunionMap 
+    (fun ((write,slices),r) -> 
+      {(footprint_of_write_slice write slice, write.weiid, r.reiid)
+         | forall (slice MEM slices)
+         | true}
+    ) cex_rf
+
+let acex_co_of_cex_co cex_co = 
+  Set.map (fun (w,w') -> (w.weiid,w'.weiid)) cex_co
+
+(* only call for final states/finished traces *)
+val acex_of_cex : cex_candidate -> acex
+let acex_of_cex cex = 
+  let thread_states = Map_extra.toList cex.cex_threads in
+  let thread_local_acex_data =
+    List.map thread_local_acex_data_of_thread_state thread_states in
+  let acex = List.foldl acex_union empty_acex thread_local_acex_data in
+  let initial_writes = {ACEX_write w | forall (w MEM cex.cex_initial_writes) | true} in
+  <| acex with acex_events = acex.acex_events union initial_writes;
+               acex_rf = acex_rf_of_cex_rf cex.cex_rf;
+               acex_co = acex_co_of_cex_co cex.cex_co;
+  |>
+                 
+
+(* val distinct_acexs_of_cexs : list cex_candidate -> list acex
+ * let distinct_acexs_of_cexs cexs =
+ *   let (_,acexs) = 
+ *     List.foldl
+ *       (fun (acexs_set,acexs) cex -> 
+ *         let acex = acex_of_cex cex in
+ *         if acex IN acexs_set
+ *         then (acexs_set,acexs)
+ *         else (Set.insert acex acexs_set, acex :: acexs)
+ *       )
+ *       (Set.empty,[])
+ *       cexs
+ *   in
+ *   acexs *)

@@ -21,6 +21,11 @@ type ast_search =
   | Random of int
   | Exhaustive
 
+type ast_search_final =
+  | Any_final
+  | Final_ok
+  | Final_not_ok
+
 type ast_breakpoint_target =
   | Address of Nat_big_num.num
   | Footprint of Nat_big_num.num * int
@@ -38,7 +43,7 @@ type transition_choice =
 
 type ast =
   | Quit
-  | Help of string option
+  | Help of string list
   | ShowOptions
   | Debug of string
   | Default
@@ -59,16 +64,21 @@ type ast =
   | Watchpoint of (ast_watchpoint_type * ast_breakpoint_target)
   | SharedWatchpoint of ast_watchpoint_type
   | BreakpointLine of string * int
-  | SetOption of string * string
+  | SetOption of string * string list
   | FocusThread of int option
   | FocusInstruction of Events.ioid option
-  | Search of ast_search
+  | Search of ast_search * (ast_search_final option)
   | InfoBreakpoints
   | DeleteBreakpoint of int
 
 let pp_ast_search : ast_search -> string = function
   | Random i   -> Printf.sprintf "random %d" i
   | Exhaustive -> "exhaustive"
+
+let pp_ast_search_final : ast_search_final -> string = function
+  | Any_final    -> "final"
+  | Final_ok     -> "final_ok"
+  | Final_not_ok -> "final_not_ok"
 
 let pp_on_off : bool -> string = function
   | true  -> "on"
@@ -93,19 +103,22 @@ let pp_transition_choice : transition_choice -> string = function
   | WithEager t             -> string_of_int t
   | WithBoundedEager (t, e) -> Printf.sprintf "%de%d" t e
 
-(* PP the second argument of 'set' *)
-let pp_string str =
-  if String.contains str ';'
-  || String.contains str ' '
-  || String.escaped str <> str (* we only really care about double quote and backslash *)
-  then
-    Printf.sprintf "%S" str (* '%S' adds double quotes and escapes *)
-  else str
+let pp_args args =
+  let pp_string str =
+    if String.contains str ';'
+    || String.contains str ' '
+    || String.escaped str <> str (* we only really care about double quote and backslash *)
+    then
+      Printf.sprintf "%S" str (* '%S' adds double quotes and escapes *)
+    else str
+  in
+  List.map pp_string args
+  |> String.concat " "
 
 let pp : ast -> string = function
   | Quit              -> "quit"
-  | Help None         -> "help"
-  | Help (Some s)     -> Printf.sprintf "help %s" s
+  | Help []           -> "help"
+  | Help args         -> Printf.sprintf "help %s" (pp_args args)
   | ShowOptions       -> "options"
   | Debug s           -> "debug " ^ s
   | Default           -> ""
@@ -148,14 +161,15 @@ let pp : ast -> string = function
                   ) in
      Printf.sprintf "%swatch shared" prefix
   | BreakpointLine (filename, line) -> Printf.sprintf "break %s:%d" filename line
-  | SetOption (key, value) -> Printf.sprintf "set %s %s" key (pp_string value)
+  | SetOption (key, args)   -> Printf.sprintf "set %s" (pp_args (key :: args))
   | FocusThread maybe_thread -> (match maybe_thread with
                                  | None -> "focus thread off"
                                  | Some thread -> (Printf.sprintf "focus thread %d" thread))
   | FocusInstruction maybe_ioid -> (match maybe_ioid with
                                     | None -> "focus instruction off"
                                     | Some (tid, iid) -> (Printf.sprintf "focus instruction (%d:%d)" tid iid))
-  | Search s          -> Printf.sprintf "search %s" (pp_ast_search s)
+  | Search (s, None)   -> Printf.sprintf "search %s" (pp_ast_search s)
+  | Search (s, Some f) -> Printf.sprintf "search %s %s" (pp_ast_search s) (pp_ast_search_final f)
   | InfoBreakpoints    -> "info break"
   | DeleteBreakpoint n -> Printf.sprintf "delete break %d" n
 

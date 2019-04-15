@@ -215,9 +215,7 @@ module type S = sig
   module ISADefs : ISADefs
 
   val instruction_semantics : instruction_semantics_mode ->
-      RunOptions.t -> instruction_semantics_p
-
-  val is_option : RunOptions.t -> instruction_semantics_option
+      RunOptions.t -> instruction_semantics
 end
 
 
@@ -690,94 +688,67 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       }
     )
 
-  let instruction_semantics ism run_options : instruction_semantics_p =
+  let instruction_semantics ism run_options : instruction_semantics =
     let endianness = Globals.get_endianness () in
 
-    let shallow_semantics =
-      initialise_shallow_embedding_semantics endianness ism
-    in
-
-    begin match ism with
-    | RISCV_ism ->
-       begin match ISADefs.interp2_isa_defs_thunk () with
-       | Ast.Defs [], _ ->
-          begin function
-            | Interp eager -> failwith "Empty new-interpreter ISA defs"
-            | Shallow_embedding -> shallow_semantics
-          end
-       | defs, env ->
-          let open Value in
-          let primops = StringMap.add "Platform.dram_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-          let primops = StringMap.add "Platform.dram_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "00000000ffffffff")) primops in
-          let primops = StringMap.add "Platform.rom_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-          let primops = StringMap.add "Platform.rom_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-          let primops = StringMap.add "Platform.clint_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-          let primops = StringMap.add "Platform.clint_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-          let primops = StringMap.add "Platform.enable_dirty_update" (fun _ -> V_bool false) primops in
-          let primops = StringMap.add "Platform.enable_misaligned_access" (fun _ -> V_bool false) primops in
-          let primops = StringMap.add "Platform.mtval_has_illegal_inst_bits" (fun _ -> V_bool false) primops in
-          let primops = StringMap.add "Platform.insns_per_tick" (fun _ -> V_int (Nat_big_num.of_string "100")) primops in
-          let primops = StringMap.add "Platform.load_reservation" (fun _ -> V_unit) primops in
-          let primops = StringMap.add "Platform.match_reservation" (fun _ -> V_bool true) primops in
-          let primops = StringMap.add "Platform.cancel_reservation" (fun _ -> V_unit) primops in
-          let interp_state =
-            (* try *)
+    if run_options.RunOptions.interpreter then
+      match ism with
+      | RISCV_ism ->
+         begin match ISADefs.interp2_isa_defs_thunk () with
+         | Ast.Defs [], _ -> raise (Misc.Fatal "Empty ISA defs (use '-shallow_embedding true')")
+         | defs, env ->
+            let open Value in
+            let primops = StringMap.add "Platform.dram_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
+            let primops = StringMap.add "Platform.dram_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "00000000ffffffff")) primops in
+            let primops = StringMap.add "Platform.rom_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
+            let primops = StringMap.add "Platform.rom_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
+            let primops = StringMap.add "Platform.clint_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
+            let primops = StringMap.add "Platform.clint_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
+            let primops = StringMap.add "Platform.enable_dirty_update" (fun _ -> V_bool false) primops in
+            let primops = StringMap.add "Platform.enable_misaligned_access" (fun _ -> V_bool false) primops in
+            let primops = StringMap.add "Platform.mtval_has_illegal_inst_bits" (fun _ -> V_bool false) primops in
+            let primops = StringMap.add "Platform.insns_per_tick" (fun _ -> V_int (Nat_big_num.of_string "100")) primops in
+            let primops = StringMap.add "Platform.load_reservation" (fun _ -> V_unit) primops in
+            let primops = StringMap.add "Platform.match_reservation" (fun _ -> V_bool true) primops in
+            let primops = StringMap.add "Platform.cancel_reservation" (fun _ -> V_unit) primops in
+            let interp_state =
+              (* try *)
               Interpreter.initial_state defs env primops
-            (* with (Reporting.Fatal_error e) as exn ->
-             *   begin
-             *     prerr_endline "Error constructing new-interpreter initial state:";
-             *     Reporting.print_error e;
-             *     Pretty_print_sail.pp_defs stdout defs;
-             *     raise exn
-             *   end *)
-          in
-          let interp_semantics = initialise_interp2_semantics
-                                   run_options.RunOptions.compare_analyses
-                                   ism interp_state endianness
-          in
-          begin function
-            | Interp eager -> interp_semantics eager
-            | Shallow_embedding -> shallow_semantics
-          end
-       end
-    | _ ->
-       begin match ISADefs.isa_defs_thunk () with
-       | Interp_ast.Defs [] ->
-          begin function
-            | Interp eager -> failwith "Empty ISA defs"
-            | Shallow_embedding -> shallow_semantics
-          end
-
-       | _ ->
-          let interp_context =
-            let defs = ISADefs.isa_defs_thunk () in
-            let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
-              ISADefs.isa_memory_access in
-            let externs = ISADefs.isa_externs in
-
-            Interp_inter_imp.build_context
-              !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs
-          in
-
-
-          let interp_semantics =
+              (* with (Reporting.Fatal_error e) as exn ->
+               *   begin
+               *     prerr_endline "Error constructing new-interpreter initial state:";
+               *     Reporting.print_error e;
+               *     Pretty_print_sail.pp_defs stdout defs;
+               *     raise exn
+               *   end *)
+            in
+            initialise_interp2_semantics
+              run_options.RunOptions.compare_analyses
+              ism interp_state endianness
+              false (* suppress internal *)
+         end
+      | _ ->
+         begin match ISADefs.isa_defs_thunk () with
+         | Interp_ast.Defs [] ->
+            raise (Misc.Fatal "Empty ISA defs (use '-shallow_embedding true')")
+         | _ ->
+            let interp_context =
+              let defs = ISADefs.isa_defs_thunk () in
+              let (read_functions,read_taggeds,mem_writes,mem_eas,mem_vals,write_vals_tagged,barrier_functions,excl_res) =
+                ISADefs.isa_memory_access in
+              let externs = ISADefs.isa_externs in
+              
+              Interp_inter_imp.build_context
+                !Globals.debug_sail_interp defs read_functions read_taggeds mem_writes mem_eas mem_vals write_vals_tagged barrier_functions excl_res externs
+            in
             initialise_interp_semantics
               run_options.RunOptions.compare_analyses
               ism
-              interp_context endianness
-          in
-          begin function
-            | Interp eager -> interp_semantics eager
-            | Shallow_embedding -> shallow_semantics
-          end
-       end
-    end
-
-  let is_option run_options =
-    if run_options.RunOptions.interpreter then
-      let eager = run_options.RunOptions.suppress_internal in
-      Interp eager
-    else Shallow_embedding
+              interp_context
+              endianness
+              false (* suppress internal *)
+         end
+    else initialise_shallow_embedding_semantics endianness ism
 end
 
 let make = function
@@ -785,5 +756,5 @@ let make = function
   | AARCH64_ism AArch64HandSail -> (module (Make (AArch64ISADefs)    (AArch64HGenTransSail)): S)
   | AARCH64_ism AArch64GenSail  -> (module (Make (AArch64GenISADefs) (AArch64GenTransSail)) : S)
   | MIPS_ism                    -> (module (Make (MIPS64ISADefs)     (MIPSHGenTransSail))   : S)
-  | RISCV_ism                   -> (module (Make (RISCVISADefs)      (RiscvTransSail))  : S)
+  | RISCV_ism                   -> (module (Make (RISCVISADefs)      (RiscvTransSail))      : S)
   | X86_ism                     -> (module (Make (X86ISADefs)        (X86HGenTransSail))    : S)

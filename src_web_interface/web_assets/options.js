@@ -50,6 +50,16 @@ function show_hide_select_topology () {
     }
 }
 
+function show_hide_restrict_promises () {
+    if ($("#model_promising").is(":checked")) {
+        $("#restrict_promises").show();
+        $("#restrict_promises_na").hide();
+    } else {
+        $("#restrict_promises").hide();
+        $("#restrict_promises_na").show();
+    }
+}
+
 var options_updated = false;
 var options = {}
 
@@ -70,7 +80,7 @@ function make_toggler (group, option_id, name, desc, data_bind, disabled_msg) {
               + '>')
                 .on("change", function (e) {
                     var cmd = "set " + opt.id + " " + ($(this).prop("checked") ? "on" : "off");
-                    do_command(cmd);
+                    do_command(cmd, true);
                 }).appendTo(div);
             var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
             if (opt.disabled_msg) {
@@ -105,7 +115,7 @@ function make_custom_toggler (group, option_id, name, desc, values, data_bind, d
               + '>')
                 .on("change", function (e) {
                     var cmd = "set " + opt.id + " " + ($(this).prop("checked") ? opt.values[0] : opt.values[1]);
-                    do_command(cmd);
+                    do_command(cmd, true);
                 }).appendTo(div);
             var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
             if (opt.disabled_msg) {
@@ -178,7 +188,7 @@ function make_dropdown (group, option_id, name, desc, choices, data_bind, disabl
             select.appendTo(div);
             select.on("change", function (e) {
                 var cmd = "set " + opt.id + " " + select.val();
-                do_command(cmd);
+                do_command(cmd, true);
             });
 
             return div;
@@ -187,6 +197,39 @@ function make_dropdown (group, option_id, name, desc, choices, data_bind, disabl
             var dropdown = $("#" + opt.id + "-select");
             dropdown.val(value);
         },
+        data_bind: data_bind
+    };
+}
+
+function make_virtual_dropdown (group, option_id, name, desc, choices, data_bind, disabled_msg) {
+    options[option_id] = {
+        id: option_id,
+        name: name,
+        desc: desc,
+        group: group,
+        cls: "dropdown",
+        choices: choices,
+        disabled_msg: disabled_msg,
+        create_func: function (opt) {
+            var div = $('<div class="top"'
+                        + (opt.data_bind ? ' data-bind="' + opt.data_bind + '"' : '')
+                        + "></div>");
+            var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
+            if (opt.disabled_msg) {
+                $('<span class="disabled_msg" title="' + opt.desc + '">&nbsp;(' + opt.disabled_msg + ")</span>").appendTo(label);
+            }
+            label.appendTo(div);
+
+            var select = $('<select id="' + opt.id + '-select"></select>');
+            for (var key in opt.choices) {
+                $('<option value="' + key + '">' + opt.choices[key] + "</option>")
+                    .appendTo(select);
+            }
+            select.appendTo(div);
+
+            return div;
+        },
+        update_func: function (opt, value) { },
         data_bind: data_bind
     };
 }
@@ -256,7 +299,7 @@ function make_int_option (group, option_id, name, desc, data_bind, disabled_msg,
                     } else {
                         cmd = "set " + opt.id + " " + $("#" + opt.id + "-button").text();
                     }
-                    do_command(cmd);
+                    do_command(cmd, true);
                 }).appendTo(div);
             var label = $('<span class="option-name" title="' + opt.desc + '">' + opt.name + "</span>");
             if (opt.disabled_msg) {
@@ -268,7 +311,7 @@ function make_int_option (group, option_id, name, desc, data_bind, disabled_msg,
                     var value = window.prompt("Enter new value for '" + opt.name + "'", $(this).text());
                     if (value != null) {
                         var cmd = "set " + opt.id + " " + value;
-                        do_command(cmd);
+                        do_command(cmd, true);
                     }
                 }).appendTo(div);
             if (suffix) {
@@ -377,21 +420,20 @@ function make_line (group, option_id) {
 
 //                    group                id                                       name                         desc
         make_toggler("Execution",         "random",                                "Random",                    "Choose the default transition pseudorandomly");
-        make_toggler("Execution",         "suppress_internal",                     "Suppress pseudocode internal", "Automatically take internal Sail transitions", "css: { disabled: embedding() !== 'interpreter' }", "N/A to shallow embedding");
         make_toggler("Execution",         "storage_first",                         "Storage first",             "Take storage transitions preferentially when stepping", "css: { disabled: model_name() === 'flat' }", "N/A to flat model");
      make_int_option("Execution",         "loop_limit",                            "Loop unroll limit (EXPERIMENTAL)", "Limit loops to N repeats: i.e. limit = N -> (N+1) unrolled iterations through loop");
       make_separator("Execution",         "execution_eager",                       "Eager modes");
 
 make_button_row("Execution", "eager_shortcut_buttons_all", {
     "All eager": function (e) {
-        do_command("set eager on");
+        do_command("set eager on", true);
         e.preventDefault();
         return false;
     }
 });
 make_button_row("Execution", "eager_shortcut_buttons_none", {
     "None eager": function (e) {
-        do_command("set eager off");
+        do_command("set eager off", true);
         e.preventDefault();
         return false;
     }
@@ -407,8 +449,8 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
         make_toggler("Execution",         "eager_fp_recalc",                       "Eager footprint recalc",    "Are footprint calculations considered eagerly takeable?");
         make_toggler("Execution",         "eager_thread_start",                    "Eager thread start",        "Are thread starts considered eagerly takeable?");
 
-      make_separator("Execution",         "execution_advanced",                    "Advanced execution options");
-        make_toggler("Execution",         "priority_reduction",                    "Priority reduction",        "Take priority transitions preferentially (currently: exclusives and multi-successor fetches)");
+//       make_separator("Execution",         "execution_advanced",                    "Advanced execution options");
+
 
  make_custom_toggler("Interface",         "pp_style",                              "Show instruction metadata", "Show or hide instruction bookkeeping/metadata in state printing, e.g. register read/writes", ["full", "compact"]);
         make_toggler("Interface",         "pp_sail",                               "Show Sail state and code",  "Show the Sail interpreter state and code for each in-flight instruction. Note: " +
@@ -425,9 +467,6 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
      make_int_option("Interface",         "choice_history_limit",                  "Choice history limit",      "Maximum number of 'choices so far' printed with states");
         make_toggler("Interface",         "dwarf_show_all_variable_locations",     "Show all DWARF var locations", "Show all DWARF variable location data in output");
 
-        make_toggler("Graph",             "always_graph",                          "Update every step",         "Update the graph before each prompt");
-        make_toggler("Graph",             "dot_final_ok",                          "Final OK graph",            "Update the graph for the first final-constraint-satisfying execution of searches");
-        make_toggler("Graph",             "dot_final_not_ok",                      "Final not OK graph",        "Update the graph for the first final-constraint-not-satisfying execution of searches");
         make_toggler("Graph",             "ppg_shared",                            "Only show shared instructions", "Only graph shared-memory instructions");
         make_toggler("Graph",             "ppg_rf",                                "Show read-from (rf) edges", "Display read-from (rf) edges in the graph");
         make_toggler("Graph",             "ppg_fr",                                "Show from-read (fr) edges", "Display from-read (fr) edges in the graph. These indicate writes co-after the write which satisfied a read.");
@@ -442,7 +481,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
      make_button_row("Search", "search_buttons_random", {
          "Random": function (e) {
              var n = $("#random_trials-button").text();
-             do_command("search random " + n);
+             do_command("search random " + n + " " + $("#search_break-select")[0].value, true);
              e.preventDefault();
              return false;
          }
@@ -453,7 +492,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
                             + "unless your browser has tail call optimisation. Continue?",
                             function () {
                                 console.log("Exhaustive search started: " + new Date().toString());
-                                do_command("search exhaustive");
+                                do_command("search exhaustive " + $("#search_break-select")[0].value, true);
                                 console.log("Exhaustive search finished: " + new Date().toString());
                             });
              e.preventDefault();
@@ -461,6 +500,12 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
          }
      });
       make_separator("Search",            "search_header",                         "Search options");
+make_virtual_dropdown("Search",           "search_break",                          "Break on",                  "Terminate the search at the first state of the given type", {
+    "": "(none)",
+    "final": "Final",
+    "final_ok": "Final ok",
+    "final_not_ok": "Final not ok"
+});
         make_toggler("Search",            "hash_prune",                            "Hash prune",                "Avoid visiting subtrees more than once by hashing states");
         make_toggler("Search",            "prune_restarts",                        "Prune restarts",            "Prune traces with instruction restarts");
         make_toggler("Search",            "prune_discards",                        "Prune discards",            "Prune traces with instruction discards (requires forbid_tree_speculation)", "css: { disabled: tree_speculation() !== 'forbid' }", "requires forbid_tree_speculation");
@@ -468,9 +513,10 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
       make_separator("Search",            "search_random_options",                 "Random search options");
     make_virtual_int("Search",            "random_trials",                         "Number of trials",          "The number of times to randomly search for a final state");
       make_separator("Search",            "search_advanced",                       "Advanced search options");
-     make_int_option("Search",            "transition_limit",                      "Transition limit",          "Transition limit on searches");
-     make_int_option("Search",            "trace_limit",                           "Trace limit",               "Trace limit on searches");
+     make_int_option("Search",            "transition_limit",                      "Transition limit",          "Stop the search if the total number of transitions taken exceeds the limit");
+     make_int_option("Search",            "trace_limit",                           "Trace limit",               "Stop the search if the total number of final states exceeds the limit");
         make_toggler("Search",            "partial_order_reduction",               "Partial order reduction",   "Restrict searches according to the partial order reduction");
+        make_toggler("Search",            "priority_reduction",                    "Priority reduction",        "Take priority transitions preferentially (currently: exclusives and multi-successor fetches)");
         make_toggler("Search",            "compare_analyses",                      "Compare analyses",          "Compare the handwritten and exhaustive analyses");
         make_toggler("Search",            "eager_local_mem",                       "Eager local memory",        "Are memory access to local memory transitions considered eagerly takeable during search?");
 
@@ -511,12 +557,11 @@ function update_options (updates) {
 
 function set_all_options(options) {
     if (options !== null) {
-        do_command("silence;" +
-                   Object.keys(options).map(function (option_id) {
+        do_command(Object.keys(options).map(function (option_id) {
                        var value = options[option_id];
                        var option_str = (value === null ? "none" : value.toString());
                        return "set " + option_id + " " + option_str;
-                   }).join(";"));
+                   }).join(";"), false);
     }
 }
 
@@ -528,6 +573,7 @@ $(document).ready(function () {
     $("#options input[type=radio][name=model]").on("change", function() {
         // only the checked radio is triggered
         show_hide_select_topology();
+        show_hide_restrict_promises();
     });
 });
 
@@ -570,6 +616,7 @@ function check_hover (button, dropdown, which) {
         window.setTimeout(function () {
             if (button.filter(".hover:not(:disabled):not(.ui-state-disabled)").length > 0
                 || dropdown.filter(".hover:not(:disabled):not(.ui-state-disabled)").length > 0
+                || dropdown.find("*:hover").length > 0
                 /* for debugging purposes */
                 || button.filter(".force_hover").length > 0
                 || dropdown.filter(".force_hover").length > 0) {
@@ -589,7 +636,7 @@ function check_hover (button, dropdown, which) {
                 dropdown.hide();
                 button.removeClass("active");
             }
-        }, 5);
+        }, 100);
     }
 }
 

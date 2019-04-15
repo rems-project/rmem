@@ -54,8 +54,8 @@ To use the web version:
     Sail state.
 
   * There are further execution options and commands to control which
-    transitions are taken (to take some kinds of transition eagerly, to suppress
-    the interpreter-internal transitions, to focus on a single thread or
+    transitions are taken (to take some kinds of transition eagerly,
+    to focus on a single thread or
     instruction, and to insert breakpoints and watchpoints), and display and
     graph options to control what is output.  For interactive exploration, one
     usually wants to make some transition kinds eager.
@@ -331,10 +331,6 @@ in general taking one such transition may exclude some other behaviour.  For
 code with loops, making instruction fetch eager will not terminate, otherwise it
 can be eager. The console `fetch` command will also fetch all the instruction
 instances.
-
-Additionally, if using the Sail interpreter, the "Suppress internal" option
-makes pseudocode internal steps be taken by the interpreter rather than be
-exposed as transitions.
 
 In the web interface version, browsers without tail-call optimisation may hit
 stack overflow issues.

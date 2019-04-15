@@ -32,21 +32,6 @@
 
 (** output options **************************************************)
 
-type verbosity_level =
-  | Quiet                  (* -q, minimal output and things important for herd-tools *)
-  | Normal                 (* default, things normal users would like to see *)
-  | ThrottledInformation   (* -v, normal mode for informed users, no more than one line
-                           every 5 seconds or so *)
-  | UnthrottledInformation (* -v -v, even more information, might render the output unusable *)
-  | Debug                  (* -debug, cryptic information *)
-
-val verbosity_levels: verbosity_level list
-val pp_verbosity_level: verbosity_level -> string
-
-val verbosity:             verbosity_level ref
-val increment_verbosity:   unit -> unit
-val is_verbosity_at_least: verbosity_level -> bool
-
 val logdir: (string option) ref
 
 val dont_tool: bool ref (* "Dont" output *)
@@ -73,6 +58,9 @@ val aarch64gen: bool ref
 val final_cond: string option ref (* 'Some s': change the final condition to 's' *)
 
 val branch_targets: Branch_targets_parser_base.ast list option ref
+val litmus_test_base_address: int ref
+val litmus_test_minimum_width: int ref
+
 val shared_memory: Shared_memory_parser_base.footprint list option ref
 val add_bt_and_sm_to_model_params: ((Sail_impl_base.address * int) * string) list -> unit
 
@@ -81,7 +69,6 @@ val add_bt_and_sm_to_model_params: ((Sail_impl_base.address * int) * string) lis
 val auto_follow:       bool ref
 val interactive_auto:  bool ref
 val auto_internal:     bool ref
-val dumb_terminal:     bool ref
 
 val random_seed: int option ref   (* per ppcmem invocation seed: None for fresh, or Some n for seed n *)
 
@@ -92,8 +79,6 @@ val ui_commands: (string option) ref
 val use_dwarf: bool ref
 val dwarf_source_dir: string ref
 val dwarf_show_all_variable_locations: bool ref
-
-val isa_defs_path: (string option) ref
 
 (** PP stuff ********************************************************)
 
@@ -134,6 +119,7 @@ type run_dot = (* generate execution graph... *)
   | RD_final_not_ok (* when reaching a final state that does not sat.
                     the condition (and stop) *)
 val run_dot:                   (run_dot option) ref
+val print_cexs:                bool ref
 val generateddir:              (string option) ref
 val print_hex:                 bool ref
 

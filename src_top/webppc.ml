@@ -102,6 +102,7 @@ let default_options : unit -> RunOptions.t = fun () ->
   Globals.model_params := Params.default_model_params;
 
   Globals.model_params := Model_aux.parse_and_update_model "allow_tree_speculation" !Globals.model_params;
+  Globals.model_params := Model_aux.parse_and_update_model "promise_anytime" !Globals.model_params;
 
   Globals.auto_follow := false;
   Globals.interactive_auto := false;
@@ -110,7 +111,6 @@ let default_options : unit -> RunOptions.t = fun () ->
 
   { RunOptions.default_options with
       RunOptions.interactive         = true;
-      RunOptions.suppress_internal   = false;
       RunOptions.pseudorandom        = false;
       RunOptions.pseudorandom_traces = 1;
       RunOptions.always_print        = false;
@@ -131,13 +131,21 @@ let model_to_html : unit -> unit = fun () ->
               (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "flat");
   check_radio "model_tso"
               (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "tso");
+  check_radio "model_promising"
+              (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "promising");
 
   Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_hide_select_topology") [||] |> ignore;
+  Js.Unsafe.fun_call (Js.Unsafe.js_expr "show_hide_restrict_promises") [||] |> ignore;
 
   check_radio "allow_tree_speculation"
               (!Globals.model_params).t.thread_allow_tree_speculation;
   check_radio "forbid_tree_speculation"
               (not (!Globals.model_params).t.thread_allow_tree_speculation);
+
+  check_radio "promiseFirst"
+              (!Globals.model_params).ss.promise_first;
+  check_radio "promiseAnytime"
+              (not (!Globals.model_params).ss.promise_first);
 
   check_radio "force_sc_true"
               ((!Globals.model_params).t.thread_restriction = RestrictionSC && (!Globals.model_params).ss.ss_sc);
@@ -172,11 +180,18 @@ let options_of_html : unit -> RunOptions.t = fun () ->
     Globals.model_params := Model_aux.parse_and_update_model "flat" !Globals.model_params;
   if is_checked_radio "model_tso" then
     Globals.model_params := Model_aux.parse_and_update_model "tso" !Globals.model_params;
+  if is_checked_radio "model_promising" then
+    Globals.model_params := Model_aux.parse_and_update_model "promising" !Globals.model_params;
 
   if is_checked_radio "allow_tree_speculation" then
     Globals.model_params := Model_aux.parse_and_update_model "allow_tree_speculation" !Globals.model_params
   else (*if is_checked_radio "forbid_tree_speculation" then*)
     Globals.model_params := Model_aux.parse_and_update_model "forbid_tree_speculation" !Globals.model_params;
+
+  if is_checked_radio "promiseFirst" then
+    Globals.model_params := Model_aux.parse_and_update_model "promise_first" !Globals.model_params
+  else (*if is_checked_radio "forbid_tree_speculation" then*)
+    Globals.model_params := Model_aux.parse_and_update_model "promise_anytime" !Globals.model_params;
 
   if is_checked_radio "force_sc_true" then
     Globals.model_params := Model_aux.parse_and_update_model "sc" !Globals.model_params

@@ -15,4 +15,6 @@
 (*===============================================================================*)
 
 (* a tiny program that prints the console help message *)
-Printf.printf "%s" Console_help.help_message
+Console_help.help_message (Some 35)
+|> Structured_output.to_html false
+|> Printf.printf "%s"

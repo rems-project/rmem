@@ -71,7 +71,9 @@ module Run_test (Test_file: Test_file.S) = struct
     let module ConcModel  =
       (val (Machine_concurrency_model.make
               (module ISAModel)
-              !Globals.model_params.t.thread_model !Globals.model_params.ss.ss_model)) in
+              !Globals.model_params.t.thread_model
+              !Globals.model_params.ss.ss_model))
+    in
 
     (* calculate list of initial states (paired with their topology options) *)
     let initial_state_records =
@@ -94,10 +96,10 @@ module Run_test (Test_file: Test_file.S) = struct
     in
 
     (* specially important for quiet mode as Luc's tools rely on this *)
-    if !Globals.verbosity <> Globals.Normal
+    if !Structured_output.verbosity <> Structured_output.Normal
       && not !Globals.dont_tool then
     begin
-      Screen_base.otStrLine "#Endianness: %s" (Globals.pp_endianness ())
+      Structured_output.strLine "#Endianness: %s" (Globals.pp_endianness ())
       |> Screen.show_message (Globals.get_ppmode ());
     end;
 
