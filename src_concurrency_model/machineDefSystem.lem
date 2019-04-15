@@ -800,6 +800,13 @@ let make_cex_instruction_instance
       $> ioids_influencing_reg_reads prefix;
 
     cex_control_dependencies = find_control_dependencies prefix;
+
+    cex_paired_atomic_load =
+      if is_memory_rmw i || is_atomic_store i
+      then Maybe.map
+             (fun ii -> ii.instance_ioid)
+             (paired_atomic_load_aux i prefix)
+      else Nothing;
   |>
 
 

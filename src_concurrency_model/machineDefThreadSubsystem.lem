@@ -107,14 +107,22 @@ let current_reg_write_dependencies
   | Just _  -> RWD_mem_read :: reg_deps
   end
 
-
-let paired_atomic_load (iic: instruction_in_context) : maybe instruction_instance =
-  if is_memory_rmw iic.iic_instance then Just iic.iic_instance 
+(* iic_prefix is active_prefix ++ old_prefix *)
+let paired_atomic_load_aux
+      (iic_instance : instruction_instance)
+      prefix : maybe instruction_instance =
+  if is_memory_rmw iic_instance then Just iic_instance 
   else
-    let prefix = iic.active_prefix ++ iic.old_prefix in
+    (* let prefix = iic.active_prefix ++ iic.old_prefix in *)
     let atomic i = (is_atomic_load i || is_atomic_store i) && not (is_memory_rmw i) in
     Maybe.bind (List.find atomic prefix) $ fun inst ->
     if is_atomic_load inst then Just inst else Nothing
+
+let paired_atomic_load (iic: instruction_in_context) : maybe instruction_instance =
+  paired_atomic_load_aux
+    iic.iic_instance
+    (iic.active_prefix ++ iic.old_prefix)
+
 
 let rec paired_atomic_stores_helper (T its: instruction_tree) : list instruction_instance =
   its >>= fun (i, it) ->
