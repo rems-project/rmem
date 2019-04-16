@@ -38,7 +38,10 @@ rmem relies on the following dependencies:
   tool](https://github.com/ott-lang/ott).
 - For reading ELF binaries and their DWARF debug information, rmem uses the [Linksem model](https://github.com/rems-project/linksem).
 
-rmem also depends on OCaml (version greater than 4.02.*), ocamlbuild, ocamlfind, opam, and the following opam packages: `omd`, `base64`, `num`, `zarith`, and `lambda-term`. 
+rmem also depends on OCaml (version greater than 4.02.*, we are
+testing rmem with versions 4.05 and 4.07 daily), ocamlbuild,
+ocamlfind, opam, and the following opam packages: `omd`, `base64`,
+`num`, `zarith`, and `lambda-term`.
 
 Most dependencies can be installed automatically as part of the rmem build process, as detailed below.
 
