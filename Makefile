@@ -389,8 +389,10 @@ define _require_package
   endif
 endef
 
-# Sail2 requires omd:
+# Sail2 requires:
 $(call require_package,omd)
+$(call require_package,linenoise )
+$(call require_package,yojson)
 
 ifneq ($(UI),isabelle)
   $(call require_package,base64)
@@ -472,12 +474,14 @@ export PATH = $(realpath $(lemdir)/bin):$(realpath $(ottdir)/bin):$(_PATH)
 export LEMLIB = $(realpath $(lemdir)/library)
 
 # clone/update and build (git) dependencies:
-fetch_lem:     MAKEOVERRIDES := $(filter-out INSTALLDIR=%,$(MAKEOVERRIDES))
-fetch_lem:     POSTFETCH = $(MAKE) -C $(lemdir)/ocaml-lib install
-fetch_linksem: MAKEOVERRIDES := $(filter-out INSTALLDIR=%,$(MAKEOVERRIDES))
-fetch_linksem: POSTFETCH = $(MAKE) -C $(linksemdir) install
-fetch_sail:    BRANCH = master
-fetch_sail2:   BRANCH = sail2
+fetch_lem:     private MAKEOVERRIDES := $(filter-out INSTALLDIR=%,$(MAKEOVERRIDES))
+fetch_lem:     private POSTFETCH = $(MAKE) -C $(lemdir)/ocaml-lib install
+fetch_linksem: private MAKEOVERRIDES := $(filter-out INSTALLDIR=%,$(MAKEOVERRIDES))
+fetch_linksem: private POSTFETCH = $(MAKE) -C $(linksemdir) install
+fetch_sail:    private BRANCH = master
+fetch_sail2:   private BRANCH = sail2
+fetch_sail2:   private TARGETS = isail
+fetch_sail2:   private POSTFETCH = $(MAKE) -C $(sail2dir) install_libsail
 fetch_lem fetch_linksem fetch_ott fetch_sail fetch_sail2: fetch_%:
 	if [ -d "$($*dir)" ]; then\
 	  cd "$($*dir)" && { git pull || true; };\
@@ -486,7 +490,7 @@ fetch_lem fetch_linksem fetch_ott fetch_sail fetch_sail2: fetch_%:
 	  git clone $(if $(BRANCH),-b $(BRANCH)) $($*git) "$($*dir)";\
 	fi
 	$(if $(call equal,$(CLEANDEPS),true),$(MAKE) -C $($*dir) clean)
-	$(MAKE) -C $($*dir) LEM="$(abspath $(lemdir)/lem)"
+	$(MAKE) -C $($*dir) LEM="$(abspath $(lemdir)/lem)" $(TARGETS)
 	$(POSTFETCH)
 .PHONY: fetch_lem fetch_linksem fetch_ott fetch_sail fetch_sail2
 .PHONY: CLEANDEPS
