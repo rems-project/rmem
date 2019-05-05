@@ -1,0 +1,52 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*  Copyright Shaked Flur, University of Cambridge            2017               *)
+(*  Copyright Jon French, University of Cambridge             2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Pervasives
+open import Events
+
+type t = nat
+
+
+class (View 'v) 
+  val join : 'v -> 'v -> 'v
+  val bot : 'v
+  val le : 'v -> 'v -> bool
+  val add_write : write -> 'v -> 'v
+end
+
+instance (View nat)
+  let join = max
+  let bot = 0
+  let le = (<=)
+  let add_write = fun _ -> (+) 1
+end 
+
+
+val joinS : forall 'v. View 'v => list 'v -> 'v
+let joinS = List.foldl join bot
+
+val ifV : forall 'v. View 'v => bool -> 'v -> 'v
+let inline ifV c v = if c then v else bot
+
+val mV : forall 'v. View 'v => maybe 'v -> 'v
+let inline mV = function
+  | Nothing -> bot
+  | Just v -> v
+end
+
+let findBot x m = Map.findWithDefault x bot m

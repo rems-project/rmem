@@ -124,7 +124,7 @@ module type S = sig
   val is_ioid_finished :
     Events.ioid -> state -> bool
   val principal_ioid_of_trans :
-    trans -> Events.ioid
+    trans -> Events.ioid option
   val fuzzy_compare_transitions :
     trans -> trans -> int
 

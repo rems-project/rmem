@@ -1,0 +1,94 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*  Copyright Shaked Flur, University of Cambridge            2017               *)
+(*  Copyright Jon French, University of Cambridge             2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Relation
+open import Pervasives_extra
+open import Sail_impl_base
+open import FreshIds
+open import Utils
+open import Params
+open import Events
+open import BasicTypes
+open import RegUtils
+     import Map
+open import DwarfTypes
+open import PromisingTransitions
+open import PromisingThread
+open import PromisingStorage
+open import Promising
+
+
+
+(** Dwarf support ***************************************************)
+
+
+(* copying and adapting the one in machineDefSystem *)
+
+let p_get_dwarf_evaluation_context
+    (endianness: end_flag)
+    (state:      pstate pts pss)
+    (tid:        thread_id)
+    (ioid:       ioid)
+    : maybe (natural (* the ioid address*) * dwarf_evaluation_context)
+  =
+  match Map.lookup tid state.p_thread_states with
+  | Nothing ->
+      (* the requested thread does not exist *)
+      Nothing
+
+  | Just thread_state ->
+
+      (* given the po-before (prefix) and the instruction (i), return dwarf_evaluation_context *)
+      let context i =
+        let reg_data = state.p_model.t.thread_isa_info.register_data_info in
+        let dec_read_register (reg: natural) : dwarf_register_read_result =
+          match reg_name_of_dwarf state.p_model.t.thread_isa_info.ism reg_data reg with
+          | Nothing       -> DRRR_bad_register_number
+          | Just reg_name ->
+             let register_value = reg_value reg_name thread_state in
+             let v = ensure_just (integer_of_register_value register_value) "fail" in
+             DRRR_result (naturalFromInteger v)
+          end
+        in
+
+        let dec_read_memory (addr: natural) (size: natural) : dwarf_memory_read_result =
+          let address = address_of_integer (integerFromNatural addr) in
+          let fp = (address, natFromNatural size) in
+
+          (* if check_memory_access state fp then *)
+            (* TODO: DMRR_not_currently_available *)
+            let memory_value = 
+              pss_memory_value_of_footprint state.p_storage_state fp in
+            let v = ensure_just (integer_of_memory_value endianness memory_value) "fail" in
+            DMRR_result (naturalFromInteger v)
+          (* else DMRR_bad_address *)
+        in
+        (naturalFromInteger (integer_of_address i.ii_program_loc),
+            <| dec_read_register = dec_read_register;
+               dec_read_memory   = dec_read_memory;
+            |>)
+      in
+
+      (* look for instruction with matching ioid *)
+       match promising_find_instruction (fun _ i -> i.ii_ioid = ioid) thread_state with
+       (* the instruction was found in the insruction tree *)
+       | Just (_, i) -> Just (context i)
+       (* could not find the instruction *)
+       | Nothing             -> Nothing
+       end
+  end

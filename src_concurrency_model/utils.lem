@@ -203,3 +203,100 @@ declare ocaml    target_rep function print_integer = `Debug.print_integer`
 declare isabelle target_rep function print_integer = `nothing1`
 
 
+(** relon is a relation over a set (useful when the domain of the
+relation does not cover the set, e.g., coherence when there is only one
+write) *)
+type relon 'a =
+  <| relon_set: set 'a;
+     relon_rel: Relation.rel 'a 'a;
+  |>
+
+let relonEmpty = <| relon_set = {};
+                    relon_rel = Relation.relEmpty;
+                 |>
+
+let relonFromSetAndRelation s r =
+  let () = ensure (Relation.relOver r s)
+      ("relonFromSetAndRelation: 'r' is not over 's' (" ^ (show ((Relation.relDefinedOn r) \ s)) ^ ")")
+  in
+  <| relon_set = s; relon_rel = r |>
+
+(* true iff e1,e2 are in the set and (e1,e2) in the relation *)
+let relonInRel e1 e2 r =
+  e1 IN r.relon_set &&
+  e2 IN r.relon_set &&
+  Relation.inRel e1 e2 r.relon_rel
+
+(* return the set of elements that are left of e in r *)
+let relonLeftOf e r =
+  { a | forall ((a, b) IN r.relon_rel) | b = e }
+
+(* return the set of elements that are right of e in r *)
+let relonRightOf e r =
+  { b | forall ((a, b) IN r.relon_rel) | a = e }
+
+let relonAddToSet e r = <| r with relon_set = Set.insert e r.relon_set; |>
+
+let relonAddToRel e1 e2 r =
+  <| relon_set = r.relon_set union {e1; e2};
+     relon_rel = Relation.relAdd e1 e2 r.relon_rel; |>
+
+(* add e to the relation to the right of all the elements for which pred is true *)
+let relonAddToTheRight pred e r =
+  let relon_rel' =
+    r.relon_rel
+    union
+    {(e', e) | forall (e' IN r.relon_set) | pred e'}
+  in
+  <| relon_set = Set.insert e r.relon_set;
+     relon_rel = relon_rel';
+  |>
+
+(* add e to the relation to the left of all the elements for which pred is true *)
+let relonAddToTheLeft e pred r =
+  let relon_rel' =
+    r.relon_rel
+    union
+    {(e, e') | forall (e' IN r.relon_set) | pred e'}
+  in
+  <| relon_set = Set.insert e r.relon_set;
+     relon_rel = relon_rel';
+  |>
+
+let relonRemoveElement e r =
+  <| relon_set = r.relon_set \ {e};
+     relon_rel = {(a, b) | forall ((a, b) IN r.relon_rel)
+                         | a <> e && b <> e};
+  |>
+
+let relonFilterSet f r =
+  let relon_set' = Set.filter f r.relon_set in
+  <| relon_set = relon_set';
+     relon_rel = Relation.relRestrict r.relon_rel relon_set';
+  |>
+
+let relonUnion r r' =
+  <| relon_set = r.relon_set union r'.relon_set;
+     relon_rel = r.relon_rel union r'.relon_rel;
+  |>
+
+let relonTransitiveClosure r =
+  <| r with relon_rel = Relation.transitiveClosure r.relon_rel |>
+
+let relonBigUnion relons =
+  <| relon_set = Set.bigunion (Set.map (fun r -> r.relon_set) relons);
+     relon_rel = Set.bigunion (Set.map (fun r -> r.relon_rel) relons) |>
+
+let rec list_to_rel_aux (acc : relon 'a) (xs : list 'a) : relon 'a =
+  match xs with
+  | [] -> acc
+  | x :: xs -> 
+     let acc = relonAddToTheRight (fun _ -> true) x acc in
+     list_to_rel_aux acc xs
+  end
+
+let list_to_rel (xs : list 'a) : Relation.rel 'a 'a =
+  (list_to_rel_aux relonEmpty xs).relon_rel
+
+
+(** relon end *)

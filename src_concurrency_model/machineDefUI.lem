@@ -311,12 +311,9 @@ let make_ui_system_state
   |>
 
 
-let lookup_ui_instruction_in_thread ioid = function
-  | UI_machine_thread_state t ->
-     lookup_ui_instruction_in_tree ioid t.ui_instruction_tree
-  | UI_promising_thread_state t ->
-     lookup_ui_instructions ioid t.ui_promising_instrs
-end
+let lookup_ui_instruction_in_thread ioid t = 
+  lookup_ui_instruction_in_tree ioid t.ui_instruction_tree
+
 
 let lookup_ui_instruction_in_system ioid s =
   lookup_ui_instruction_in_thread ioid (lookup_ui_thread ioid s)

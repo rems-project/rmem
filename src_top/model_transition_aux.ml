@@ -157,9 +157,9 @@ let fuzzy_compare_transitions trans1 trans2 =
 
 
 
-    | (SS_Promising_stop_promising, SS_Promising_stop_promising) -> 0
-    | (SS_Promising_stop_promising, _) -> 1
-    | (_, SS_Promising_stop_promising) -> -1
+    (* | (SS_Promising_stop_promising, SS_Promising_stop_promising) -> 0
+     * | (SS_Promising_stop_promising, _) -> 1
+     * | (_, SS_Promising_stop_promising) -> -1 *)
   in
 
   let cmp_ss_sync_trans l1 l2 =
@@ -392,35 +392,35 @@ let fuzzy_compare_transitions trans1 trans2 =
         let cmp (addr1, _) (addr2, _) = Sail_impl_base.addressCompare addr1 addr2 in
         cmp_tl cmp tl1 tl2
 
-    | (T_Promising_mem_satisfy_read tl1, T_Promising_mem_satisfy_read tl2) -> -1
-        (* let cmp (read1,_) (read2,_) = read_requestCompare read1 read2 in
-         * cmp_tl cmp tl1 tl2 *)
-    | (T_Promising_mem_satisfy_read _, _) -> 1
-    | (_, T_Promising_mem_satisfy_read _) -> -1
-
-    | (T_Promising_mem_satisfy_read_nonshared tl1, T_Promising_mem_satisfy_read_nonshared tl2) -> -1
-        (* let cmp (read1,_) (read2,_) = read_requestCompare read1 read2 in
-         * cmp_tl cmp tl1 tl2 *)
-    | (T_Promising_mem_satisfy_read_nonshared _, _) -> 1
-    | (_, T_Promising_mem_satisfy_read_nonshared _) -> -1
-
-    | (T_Promising_propagate_write tl1, T_Promising_propagate_write tl2) -> -1
-        (* let cmp (w1, _) (w2, _) = Pervasives.compare w1 w2 in
-         * cmp_tl cmp tl1 tl2 *)
-    | (T_Promising_propagate_write _, _) -> 1
-    | (_, T_Promising_propagate_write _) -> -1
-
-    | (T_Promising_fulfil_promise tl1, T_Promising_fulfil_promise tl2) -> -1
-        (* let cmp w1 w2 = Pervasives.compare w1 w2 in
-         * cmp_tl cmp tl1 tl2 *)
-    | (T_Promising_fulfil_promise _, _) -> 1
-    | (_, T_Promising_fulfil_promise _) -> -1
-
-    | (T_Promising_propagate_write_nonshared tl1, T_Promising_propagate_write_nonshared tl2) -> -1
-        (* let cmp w1 w2 = Pervasives.compare w1 w2 in
-         * cmp_tl cmp tl1 tl2 *)
-    | (T_Promising_propagate_write_nonshared _, _) -> 1
-    | (_, T_Promising_propagate_write_nonshared _) -> -1
+    (* | (T_Promising_mem_satisfy_read tl1, T_Promising_mem_satisfy_read tl2) -> -1
+     *     (\* let cmp (read1,_) (read2,_) = read_requestCompare read1 read2 in
+     *      * cmp_tl cmp tl1 tl2 *\)
+     * | (T_Promising_mem_satisfy_read _, _) -> 1
+     * | (_, T_Promising_mem_satisfy_read _) -> -1
+     * 
+     * | (T_Promising_mem_satisfy_read_nonshared tl1, T_Promising_mem_satisfy_read_nonshared tl2) -> -1
+     *     (\* let cmp (read1,_) (read2,_) = read_requestCompare read1 read2 in
+     *      * cmp_tl cmp tl1 tl2 *\)
+     * | (T_Promising_mem_satisfy_read_nonshared _, _) -> 1
+     * | (_, T_Promising_mem_satisfy_read_nonshared _) -> -1
+     * 
+     * | (T_Promising_propagate_write tl1, T_Promising_propagate_write tl2) -> -1
+     *     (\* let cmp (w1, _) (w2, _) = Pervasives.compare w1 w2 in
+     *      * cmp_tl cmp tl1 tl2 *\)
+     * | (T_Promising_propagate_write _, _) -> 1
+     * | (_, T_Promising_propagate_write _) -> -1
+     * 
+     * | (T_Promising_fulfil_promise tl1, T_Promising_fulfil_promise tl2) -> -1
+     *     (\* let cmp w1 w2 = Pervasives.compare w1 w2 in
+     *      * cmp_tl cmp tl1 tl2 *\)
+     * | (T_Promising_fulfil_promise _, _) -> 1
+     * | (_, T_Promising_fulfil_promise _) -> -1
+     * 
+     * | (T_Promising_propagate_write_nonshared tl1, T_Promising_propagate_write_nonshared tl2) -> -1
+     *     (\* let cmp w1 w2 = Pervasives.compare w1 w2 in
+     *      * cmp_tl cmp tl1 tl2 *\)
+     * | (T_Promising_propagate_write_nonshared _, _) -> 1
+     * | (_, T_Promising_propagate_write_nonshared _) -> -1 *)
 
     (* unused case (last):
     | (T_fetch _, _) -> 1

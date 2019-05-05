@@ -809,12 +809,19 @@ MACHINEFILES-PRE=\
   src_concurrency_model/machineDefPOPStorageSubsystem.lem\
   src_concurrency_model/machineDefNOPStorageSubsystem.lem\
   src_concurrency_model/machineDefTSOStorageSubsystem.lem\
-  src_concurrency_model/machineDefPromisingARM.lem\
   src_concurrency_model/machineDefInstructionPredicates.lem\
   src_concurrency_model/machineDefThreadSubsystemUtils.lem\
   src_concurrency_model/machineDefThreadSubsystem.lem\
   src_concurrency_model/machineDefSystem.lem\
-  src_concurrency_model/machineDefTransitionUtils.lem
+  src_concurrency_model/machineDefTransitionUtils.lem\
+  src_concurrency_model/promisingViews.lem\
+  src_concurrency_model/promisingTransitions.lem\
+  src_concurrency_model/promisingUtils.lem\
+  src_concurrency_model/promisingThread.lem\
+  src_concurrency_model/promisingStorage.lem\
+  src_concurrency_model/promising.lem\
+  src_concurrency_model/promisingDwarf.lem\
+  src_concurrency_model/promisingUI.lem
 
 MACHINEFILES=\
   $(wildcard build_sail_interp/*.lem)\

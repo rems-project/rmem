@@ -39,6 +39,32 @@ let rec range from until =
   else
     from :: (range (from + 1) until)
 
+let make_concurrency_model
+    (isaModel: (module Isa_model.S))
+    (ts:       Params.thread_model)
+    (ss:       Params.storage_model)
+    : (module Concurrency_model.S)
+  =
+  match (ts,ss) with
+    | (Params.Promising_thread_model,_)
+    | (_,Params.Promising_storage_model) ->
+       (module (Promising_concurrency_model.Make (val isaModel)))
+    | _ ->
+       let open Machine_concurrency_model in
+       let (module Sys : SYS) = match (ts,ss) with
+         | (_,Params.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
+         | (_,Params.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
+         | (_,Params.Flat_storage_model)      -> (module MachineSYS(FlatSS))
+         | (_,Params.POP_storage_model)       -> (module MachineSYS(POPSS))
+         | (_,Params.NOP_storage_model)       -> (module MachineSYS(NOPSS))
+         | (_,Params.TSO_storage_model)       -> (module MachineSYS(TSOSS))
+         | _ -> failwith "not possible"
+       in
+       
+       (module (Make ((val isaModel)) (Sys)) : Concurrency_model.S)
+
+
+
 (* run a litmus/ELF test from file/data *)
 module Run_test (Test_file: Test_file.S) = struct
   (* name is either a file name to read the test from or the name of
@@ -69,7 +95,7 @@ module Run_test (Test_file: Test_file.S) = struct
     if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] && run_options.RunOptions.interpreter then
       print_endline ("Warning: the interpreter ISA defs are missing");
     let module ConcModel  =
-      (val (Machine_concurrency_model.make
+      (val (make_concurrency_model
               (module ISAModel)
               !Globals.model_params.t.thread_model
               !Globals.model_params.ss.ss_model))

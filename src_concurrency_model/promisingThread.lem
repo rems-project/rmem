@@ -1,0 +1,710 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*  Copyright Shaked Flur, University of Cambridge            2017               *)
+(*  Copyright Jon French, University of Cambridge             2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Relation
+open import Pervasives_extra
+open import Sail_impl_base
+open import InstructionSemantics
+open import FreshIds
+open import Events
+open import Fragments
+open import Debug
+open import Utils
+open import Params
+open import BasicTypes
+open import RegUtils
+     import Map
+open import PromisingViews
+open import PromisingTransitions
+open import PromisingUtils
+     import ArmV8_embed_types
+open ListMonad
+
+
+
+
+
+
+(******************** Promising Thread Subsystem *******************)
+
+type addrNat = nat
+
+type instruction_info =
+  <| ii_ioid: ioid; (*: Chosen to make every instance unique :*)
+     ii_id_state: id_state ioid; (*: generating unique IDs for events :*)
+     ii_program_loc: address;  (*: record fetched address :*)
+     ii_program_opcode: maybe opcode;  (*: record fetched opcode :*)
+     ii_instruction: instruction_ast; (*:  assembly AST instruction,:*)
+
+     ii_kind: instruction_kind;
+     ii_regs_feeding_address: list reg_name;
+     ii_reg_reads: list (reg_name * register_value);
+     ii_reg_writes: list (reg_name * register_value);
+
+     ii_writes_read_from : list (read_request * (list (write * slices)));
+     ii_propagated_writes: list write;
+     (* ii_committed_barriers: list barrier; *)
+  |>
+
+let init_instruction_info ioid addr opcode ast =
+  <| ii_ioid = ioid;
+     ii_id_state = FreshIds.initial_id_state ioid;
+     ii_program_loc = addr;
+     ii_program_opcode = opcode;
+     ii_instruction = ast;
+
+     ii_kind = IK_simple;
+     ii_regs_feeding_address = [];
+     ii_reg_reads = [];
+     ii_reg_writes = [];
+
+     ii_writes_read_from = [];
+     ii_propagated_writes = [];
+     (* ii_committed_barriers = []; *)
+  |>
+
+
+
+type pts' 'v = 
+  <| reg : map reg_base_name register_value
+   ; vCoh : map address 'v
+   ; vReg : map reg_base_name 'v
+   ; vRm  : 'v
+   ; vRp  : 'v
+   ; vWm  : 'v
+   ; vWp  : 'v
+   ; vCAP : 'v
+   ; vRel : 'v
+   ; fwd_bank : map address (w_eiid * bool * 'v)
+   ; xcl_bank : maybe ((w_eiid * address) * 'v) (* v is read exclusive view, for RISCV *)
+   ; promises : set (w_eiid * 'v * address)
+   ; prog     : address -> fetch_and_decode_outcome
+   ; initAddr : maybe address
+   ; retAddr  : address
+   ; tid      : thread_id
+   ; ids      : id_state thread_id
+   ; wids     : Map.map addrNat nat
+   ; regdata  : registerdata
+   (* information for user-interface purposes only *)
+   ; instrs   : list instruction_info
+   ; initRegS : (reg_base_name -> register_value)
+  |>
+
+type pts = pts' t
+
+
+
+
+
+(** Thread Subsystem **********************************************************)
+(*  Auxiliaries ***************************************************************)
+
+
+let reg r s =
+  match Map.lookup r s.reg with
+  | Just v -> v
+  | Nothing -> register_state_zero s.regdata s.tid r
+  end
+let vReg r s = findBot r s.vReg
+let vCoh addr s = findBot addr s.vCoh
+let vRm s = s.vRm
+let vRp s = s.vRp
+let vWm s = s.vWm
+let vWp s = s.vWp
+let vCAP s = s.vCAP
+let vRel s = s.vRel
+let fwd_bank addr s = Map.lookup addr s.fwd_bank
+let xcl_bank s = s.xcl_bank
+let promises s = s.promises
+let empty_promises s = Set.null (promises s)
+let prog s     = s.prog
+let initAddr s = s.initAddr
+let retAddr s  = s.retAddr
+let tid s      = s.tid
+let ids s      = s.ids
+let regdata r s  = ensure_just (reg_from_data s.regdata r) (show r)
+let instrs s   = s.instrs
+let set_reg r x s = <| s with reg = Map.insert r x s.reg |>
+let set_vReg r t s = <| s with vReg = Map.insert r t s.vReg |>
+let inc_vCoh addr t s = 
+  let t' = Map.findWithDefault addr bot s.vCoh in
+  <| s with vCoh = Map.insert addr (join t t') s.vCoh |>
+let inc_vRm t s = <| s with vRm = join t s.vRm |>
+let inc_vRp t s = <| s with vRp = join t s.vRp |>
+let inc_vWm t s = <| s with vWm = join t s.vWm |>
+let inc_vWp t s = <| s with vWp = join t s.vWp |>
+let inc_vRel t s = <| s with vRel = join t s.vRel |>
+let inc_vCAP t s = <| s with vCAP = join t s.vCAP |>
+let set_fwd_bank addr (t,wx,fwdt) s = 
+  <| s with fwd_bank = Map.insert addr (t,wx,fwdt) s.fwd_bank |>
+let set_xcl_bank x s = <| s with xcl_bank = x |>
+let set_initAddr x s = <| s with initAddr = x |>
+let add_promise x s = <| s with promises = Set.insert x s.promises |>
+let remove_promise wid s =
+  <| s with promises = Set.filter (fun (w,_,_) -> w <> wid) s.promises |>
+let set_ids x s    = <| s with ids = x |>
+let set_instrs x s  = <| s with instrs = x |>
+
+let gen_fresh_wid addr s = 
+  let addr = natFromInteger (integer_of_address addr) in
+  let n = findWithDefault addr 0 s.wids in
+  let next = n+1 in
+  let id = ((s.tid,addr),n) in
+  let wids = Map.insert addr next s.wids in
+  let s = <| s with wids = wids |> in
+  (s,id)
+
+
+
+let inline ifA (c : bool) (a : 'x -> 'x) (s : 'x) = 
+  if c then a s else s
+
+
+let ensure_done_outcome (o,_) =
+  match o with Done a -> a | _ -> fail end
+let ensure_barrier_outcome (o,_) =
+  match o with Barrier bk o -> (bk,o) | _ -> fail end
+let ensure_write_ea_outcome (o,_) =
+  match o with Write_ea descr o -> (descr,o) | _ -> fail end
+let ensure_write_memv_outcome (o,_) =
+  match o with Write_memv memv c -> (memv,c) | _ -> fail end
+let ensure_read_mem_outcome (o,_) =
+  match o with Read_mem descr c -> (descr,c) | _ -> fail end
+let ensure_excl_res_outcome (o,_) =
+  match o with Excl_res c -> c | _ -> fail end
+let ensure_write_reg_outcome (o,_) =
+  match o with Write_reg descr o -> (descr,o) | _ -> fail end
+let ensure_read_reg_outcome (o,_) =
+  match o with Read_reg descr o -> (descr,o) | _ -> fail end
+
+
+
+(* let make_tc s = make_thread_cont_res Set.empty Set.empty (toPTS s)
+ * let make_tc' s = make_thread_cont_res Set.empty Set.empty s *)
+let addr_of_addr_lifted a = 
+  ensure_just (address_of_address_lifted a) "fail" 
+
+(*** Thread Subsystem **********************************************************)
+
+let promising_find_instruction
+    (p : list instruction_info -> instruction_info -> bool) 
+    (s : pts)
+  : maybe (list instruction_info * instruction_info) = 
+  let aux : list (maybe (list instruction_info * instruction_info)) =
+    mapWithContext
+      (fun prefix instr suffix ->
+        if p prefix instr then Just (prefix,instr) else Nothing)
+      (List.reverse (instrs s)) in
+  let aux = List.mapMaybe id aux in
+  index aux 0
+
+
+let p_registers_final_state s = 
+  List.map (fun (rbn,_) -> (rbn, Just (reg rbn s))) s.regdata
+
+let p_update_initial_register_state t updates = 
+  List.foldl (fun s (x,y) -> set_reg x y s) t updates
+
+let p_update_initial_fetch_address params (t : pts) addr = 
+  let cia_reg = params.thread_isa_info.cia_reg in
+  let rv = register_value_of_address addr (direction_of_reg_name cia_reg) in
+  t $> set_reg (register_base_name cia_reg) rv 
+    $> set_initAddr (Just addr) 
+
+
+let inline dummy_ioid tid : ioid = (tid,0)
+let inline dummy_eiid tid : eiid = (dummy_ioid tid,0)
+
+
+let error_make_readwrite_events ii ((addr,sz) : footprint) =
+  (show ii.ii_ioid) ^ ". addr=" ^ show addr ^  " size=" ^ show sz
+
+let make_write_events params s ii (wk,addr,sz,memv) =
+  let tid = tid s in
+  let (write_addresses, _) =
+    params.t.thread_isa_info.make_empty_write_events tid
+      ii.ii_instruction ii.ii_id_state ii.ii_ioid
+      (addr,sz) wk in
+  let (s,wid) = gen_fresh_wid addr s in
+  let writes = Events.set_write_values memv write_addresses [] in
+  let write = ensure_singleton writes
+                "no/multiple write events generated for store" in
+  let write = <| write with w_ioid = dummy_ioid tid; weiid = wid |> in
+  (s,write)
+
+let record_write ii w = 
+  <| ii with ii_propagated_writes = [w] |>
+
+
+let make_read_events params tid ii (rk,addr,sz) = 
+  let (read_requests, id_state') =
+    params.t.thread_isa_info.make_read_request_events tid 
+      ii.ii_instruction ii.ii_id_state ii.ii_ioid
+      (addr, sz) rk in
+  let rrs_and_unsat_slices =
+    [(rr, [complete_slice rr.r_addr]) | forall (rr MEM read_requests) | true] in
+  let (rr,unsat_slices) =
+    ensure_singleton rrs_and_unsat_slices
+      "no/multiple write events generated for load" in
+  let ii = <| ii with ii_id_state = id_state'|> in
+  (ii,rr)
+
+
+(* let record_barrier_event params tid ii bk = 
+ *   let (barrier, id_state') =
+ *     Events.make_barrier_event ii.ii_id_state tid ii.ii_ioid bk in
+ *   let ii = <| ii with ii_id_state = id_state'; 
+ *                       ii_committed_barrriers = [barrier] |> in
+ *   ii *)
+
+
+
+let do_read ii rr w =
+  let mrs = possible_mrs_for_read rr.r_addr [write_with_complete_slice w] in
+  let ii = <| ii with ii_writes_read_from = [(rr,mrs.mrs_writes_read_from)] |> in
+  (ii, mrs.mrs_value)
+
+
+let reg_value r s = 
+  let rbn = register_base_name r in
+  let (v,base_reg) = (reg rbn s, regdata rbn s) in 
+  let (left,found) =
+    match_maybe_value_fragment
+      [slice_of_reg_name r] (slice_of_reg_name base_reg, Just v.rv_bits) in
+  let () = ensure (null left) "fail" in
+  ensure_just (reassemble_register_value r found) "fail"
+
+let update_reg_value r v' s =
+  let rbn = register_base_name r in
+  let v = reg rbn s in
+  let base_reg = regdata rbn s in
+  let (left,found) = 
+    match_maybe_value_fragments
+      [slice_of_reg_name base_reg]
+      [(slice_of_reg_name r, Just v'.rv_bits);
+       (slice_of_reg_name base_reg, Just v.rv_bits)]
+      []
+  in
+  let () = ensure (null left) "fail" in
+  let v'' = ensure_just (reassemble_register_value base_reg found) "fail" in
+  set_reg rbn v'' s
+
+(* these do not handle mixed-size register accesses *)
+let read_reg (s,ii,view,o) r = 
+  let rbn = register_base_name r in
+  let (v,view') = (reg_value r s, vReg rbn s) in
+  let ii = <| ii with ii_reg_reads = (r,v) :: ii.ii_reg_reads |> in
+  (s,ii,join view view',o v)
+
+let write_reg (s,ii,view,o) (r,v,rview) = 
+  let rbn = register_base_name r in
+  let ii = <| ii with ii_reg_writes = (r,v) :: ii.ii_reg_writes |> in
+  let s = s $> update_reg_value r v
+            $> set_vReg rbn rview in
+  (s,ii,view,o)
+
+
+let p_initial_thread_state
+    (params : thread_params)
+    (tid : thread_id)
+    (prog : address -> fetch_and_decode_outcome)
+    (ret_addr : address)
+    (rd : registerdata)
+    (ird : list (reg_base_name * register_value))
+    (irv : reg_base_name -> register_value)
+    (addr : maybe address)
+    (iws : list write)
+  : (pts' 'v) =
+  (* replicating what promising_ss_initial_state does *)
+  let ws = List.map (fun w -> (fst w.w_addr,bot)) iws in
+  let vCoh = Map.fromList ws in
+  let reg = List.foldl (fun m (rbn,v) -> Map.insert rbn v m) Map.empty ird in
+  let reg = match addr with
+    | Just addr ->
+       let cia_reg = params.thread_isa_info.cia_reg in
+       let rv = register_value_of_address addr (direction_of_reg_name cia_reg) in
+       Map.insert (register_base_name cia_reg) rv reg
+    | Nothing -> reg
+    end in
+  let tReg = List.foldl (fun m (n,_) -> Map.insert n bot m) Map.empty ird in
+
+  let s = <| reg = reg
+           ; vCoh = vCoh
+           ; vReg = tReg
+           ; vRm  = bot
+           ; vRp  = bot
+           ; vWm  = bot
+           ; vWp  = bot
+           ; vCAP = bot
+           ; vRel = bot
+           ; fwd_bank = Map.empty
+           ; xcl_bank = Nothing
+           ; promises = Set.empty
+           ; prog     = prog
+           ; retAddr  = ret_addr
+           ; initAddr = addr
+           ; tid      = tid
+           ; ids      = FreshIds.initial_id_state tid
+           ; wids     = Map.empty
+           ; regdata  = rd
+           ; instrs   = []
+           ; initRegS = irv
+           |>
+  in
+  List.foldl (fun s (r,v) -> update_reg_value r v s)
+    s params.thread_isa_info.fixed_pseudo_registers
+
+
+
+let rec do_internal_steps (s,ii,view,o) = 
+  match fst o with
+  | Internal _ o -> do_internal_steps (s,ii,view,o)
+  | _ -> (s,ii,view,o)
+end
+
+let rec do_local_effs (s,ii,view,o) = 
+  match fst o with
+  | Done () ->           (s,ii,view,o)
+  | Read_mem _ _ ->      (s,ii,view,o)
+  | Write_ea _ _ ->      (s,ii,view,o)
+  | Write_memv _ _ ->    (s,ii,view,o)
+  | Barrier _ _ ->       (s,ii,view,o)
+  | Excl_res _ ->        (s,ii,view,o)
+  | Read_reg r o ->      do_local_effs (read_reg (s,ii,view,o) r)
+  | Write_reg (r,v) o -> do_local_effs (write_reg (s,ii,view,o) (r,v,view))
+  | Internal _ o ->      do_local_effs (s,ii,view,o)
+  | Escape Nothing ->    failwith ("escape Nothing")
+  | Escape (Just err) -> failwith ("escape " ^ err)
+  | Error err ->         failwith ("unhandled Error " ^ err)
+  | Fail (Just msg) ->   failwith ("Sail assertion: Fail '" ^ msg ^ "'")
+  | Fail Nothing ->      failwith ("Sail assertion: Fail")
+  | Footprint o ->       failwith "footprint recalculation not supported"
+end
+
+let write_nia_arm params (s,ii,view,o) = 
+  let nia_reg = params.t.thread_isa_info.nia_reg in
+  let nia_rbn = register_base_name nia_reg in
+  if isJust (List.lookup nia_reg ii.ii_reg_writes)
+  then (s,ii,view,o)
+  else
+    let nia_v = add_address_nat ii.ii_program_loc 4 in
+    let v = register_value_of_address nia_v (direction_of_reg_name nia_reg) in
+    let s = set_reg nia_rbn v s in
+    let s = set_vReg nia_rbn bot s in
+    (s,ii,view,o)
+
+let write_nia_riscv params (s,ii,view,o) = 
+  let cia_reg = params.t.thread_isa_info.cia_reg in
+  let cia_rbn = register_base_name cia_reg in
+  let nia_reg = params.t.thread_isa_info.nia_reg in
+  let nia_rbn = register_base_name nia_reg in
+  let s = 
+    if isJust (List.lookup nia_reg ii.ii_reg_writes) then s
+    else
+      let nia_v = add_address_nat ii.ii_program_loc 4 in
+      let v = register_value_of_address nia_v (direction_of_reg_name nia_reg) in
+      let s = set_reg nia_rbn v s in
+      let s = set_vReg nia_rbn bot s in
+      s
+  in
+  let nia_v = reg nia_rbn s in
+  let s = set_reg cia_rbn nia_v s in
+  let s = set_vReg cia_rbn bot s in
+  (s,ii,view,o)
+
+let write_nia params (s,ii,view,o) = 
+  match params.t.thread_isa_info.ism with
+  | AARCH64_ism _ -> write_nia_arm params (s,ii,view,o)
+  | RISCV_ism -> write_nia_riscv params (s,ii,view,o)
+  | _ -> fail
+  end
+
+let finish_instruction params (s,ii,view,o) = 
+  let () = ensure_done_outcome o in
+  let (s,ii,view,o) = write_nia params (s,ii,view,o) in
+  let s = set_instrs (ii :: (instrs s)) s in
+  (s,ii)
+
+val make_plain_transition :
+  forall 'v. View 'v => 
+  pts' 'v * instruction_info ->
+  list (pthread_trans (pts' 'v) 'v)
+let make_plain_transition (s,ii) =
+  let c () = s in
+  let tl = PT_finish ii.ii_program_loc ii.ii_instruction in
+  return (PT_only (make_plabel (tid s) ii.ii_ioid tl c))
+    
+type iie_state 'v = pts' 'v * instruction_info * 'v * outcome_S
+type instr_runner 'v = model_params -> iie_state 'v -> list (pthread_trans (pts' 'v) 'v)
+type instr_runner_s 'v = model_params -> iie_state 'v -> pthread_trans (pts' 'v) 'v
+
+val run_barrier_instruction : forall 'v. View 'v => instr_runner 'v
+let run_barrier_instruction params (s,ii,view,o) = 
+  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  let (bk,o) = ensure_barrier_outcome o in
+  (* let ii = record_barrier_event params s.tid ii bk in *)
+  let (Rp,Wp) = match bk with
+    | Barrier_DMB ->    ([vRm s;vWm s], [vRm s;vWm s])
+    | Barrier_DSB ->    ([vRm s;vWm s], [vRm s;vWm s])
+    | Barrier_DMB_LD -> ([vRm s]      , [vRm s])
+    | Barrier_DSB_LD -> ([vRm s]      , [vRm s])
+    | Barrier_DMB_ST -> ([]           , [vWm s])
+    | Barrier_DSB_ST -> ([]           , [vWm s])
+    | Barrier_ISB ->    ([vCAP s]     , [vCAP s])
+
+    | Barrier_RISCV_rw_rw -> ([vRm s;vWm s], [vRm s;vWm s])
+    | Barrier_RISCV_r_rw -> ([vRm s], [vRm s])
+    | Barrier_RISCV_w_rw -> ([vWm s], [vWm s])
+    | Barrier_RISCV_rw_r -> ([vRm s;vWm s], [])
+    | Barrier_RISCV_r_r -> ([vRm s], [])
+    | Barrier_RISCV_w_r -> ([vWm s], [])
+    | Barrier_RISCV_rw_w -> ([], [vRm s;vWm s])
+    | Barrier_RISCV_r_w -> ([], [vRm s])
+    | Barrier_RISCV_w_w -> ([], [vWm s])
+    | Barrier_RISCV_tso -> ([vRm s], [vRm s;vWm s])
+    | Barrier_RISCV_i -> ([]     , [])
+
+    | _ -> failwith ("cannot handle this barrier: " ^ show bk)
+    end in
+  let s = s $> inc_vRp (joinS Rp) $> inc_vWp (joinS Wp) in
+  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  make_plain_transition (finish_instruction params (s,ii,view,o))
+
+val run_branch_instruction : forall 'v. View 'v => instr_runner 'v
+let run_branch_instruction params (s,ii,view,o) = 
+  let ii = <| ii with ii_kind = IK_branch |> in
+  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  let s = inc_vCAP view s in
+  make_plain_transition (finish_instruction params (s,ii,view,o))
+
+val run_plain_instruction : forall 'v. View 'v => instr_runner 'v
+let run_plain_instruction params (s,ii,view,o) =
+  let ii = <| ii with ii_kind = IK_simple |> in
+  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  make_plain_transition (finish_instruction params (s,ii,view,o))
+
+val run_failed_store_exclusive_instruction : forall 'v. View 'v => instr_runner_s 'v
+let run_failed_store_exclusive_instruction params (s,ii,_view,o) = 
+  let view = bot in (* revisit to check if still good *)
+  let s = set_xcl_bank Nothing s in
+  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  let (s,ii) = finish_instruction params (s,ii,view,o) in
+  let c () = s in
+  let tl = PT_failed_store_excl in
+  PT_only (make_plabel (tid s) ii.ii_ioid tl c)
+
+val run_amo_instruction : forall 'v. View 'v => instr_runner 'v
+let run_amo_instruction params (s,ii,view,o) = 
+  failwith "AMO instruction not supported yet."
+
+let set_regs_feeding_address_regs_so_far ii = 
+  let regs_so_far = List.map fst ii.ii_reg_reads in
+  <| ii with ii_regs_feeding_address = regs_so_far |>
+
+val run_load_instruction : forall 'v. View 'v => instr_runner 'v
+let run_load_instruction params (s,ii,view,o) = 
+  let (s,ii,addr_view,o) = do_local_effs (s,ii,view,o) in
+  let ii = set_regs_feeding_address_regs_so_far ii in
+  let ((rk,addr,sz),c) = ensure_read_mem_outcome o in
+  let addr = addr_of_addr_lifted addr in
+  let (ii,rr) = make_read_events params (tid s) ii (rk,addr,sz) in
+  let pre_view =
+    joinS [addr_view;
+           vRp s;
+           ifV (is_strong_acquire_R rk) (vRel s);
+           ifV (is_release_R rk) (vRm s);
+           ifV (is_release_R rk) (vWm s)
+      ] in
+  let c m_wv = 
+    let (w,t) = ensure_just m_wv "fail" in
+    let (ii,mv) = do_read ii rr w in
+    let ii = <| ii with ii_kind = IK_mem_read rk |> in
+    let rf_view = match fwd_bank addr s with
+      | Nothing -> t
+      | Just (fwd_weiid,wx,fwd_view) -> 
+         if fwd_weiid = w.weiid && ((is_RISC params || is_acquire_R rk) --> not wx)
+         then fwd_view else t
+    end in 
+    let post_view = join pre_view rf_view in
+    let s = 
+      s $> inc_vCoh addr post_view
+        $> inc_vRm post_view
+        $> inc_vCAP addr_view
+        $> ifA (is_acquire_R rk) (inc_vRp post_view)
+        $> ifA (is_acquire_R rk) (inc_vWp post_view)
+        $> ifA (is_strong_release_R rk) (inc_vRel post_view)
+        $> ifA (is_exclusive_R rk) (set_xcl_bank (Just ((w.weiid,addr),post_view)))
+    in
+    let (s,ii,view,o) = do_local_effs (s,ii,post_view,c mv) in
+    fst (finish_instruction params (s,ii,view,o))
+  in
+  let tkind = if in_shared_memory params (addr,sz)
+              then PT_Read else PT_Read_nonshared in
+  let label = make_plabel (tid s) ii.ii_ioid (rr, join (vCoh addr s) pre_view) c in
+  return (PT_sync (tkind label) ())
+
+
+(* see also run_store_exclusive_instruction *)
+val run_store_instruction : 
+  forall 'v. View 'v, SetType 'v => 
+    (Maybe.maybe ((w_eiid * Sail_impl_base.address) * 'v)) ->
+    instr_runner 'v
+let run_store_instruction xinfo params (s,ii,view,o) = 
+  let (s,ii,addr_view,o) = do_local_effs (s,ii,view,o) in
+  let ii = set_regs_feeding_address_regs_so_far ii in
+  let ((wk,addr,sz),o) = ensure_write_ea_outcome o in
+  let addr = addr_of_addr_lifted addr in
+  let _ = natFromInteger (integer_of_address addr) in
+  let (s,ii,addr_data_view,o) = do_local_effs (s,ii,addr_view,o) in
+  let (mv,c) = ensure_write_memv_outcome o in
+  let (s,w) = make_write_events params s ii (wk,addr,sz,mv) in
+  let pre_view = 
+    joinS [addr_data_view; 
+           vCAP s; 
+           vWp s;
+           ifV (is_release_W wk) (vRm s);
+           ifV (is_release_W wk) (vWm s);
+           ifV (is_strong_acquire_W wk) (vRel s);
+           ifV (is_exclusive_W wk && is_RISC params) 
+             (mV (Maybe.map snd xinfo))]
+  in
+  let (req_view : 'v) = join pre_view (vCoh addr s) in
+  let wd = <| wd_w = w; wd_rexinfo = Maybe.map fst xinfo; 
+              wd_req_view = req_view |> in
+  let state' = fun m_v -> 
+    let post_view = ensure_just m_v "fail" in
+    let ii = <| ii with ii_kind = IK_mem_write wk |> in
+    let ii = record_write ii w in
+    let s = 
+      s $> inc_vCoh addr post_view
+        $> inc_vCAP addr_view
+        $> inc_vWm post_view
+        $> ifA (is_strong_release_W wk) (inc_vRel post_view)
+        $> ifA (is_acquire_W wk) (inc_vRp post_view)
+        $> ifA (is_acquire_W wk) (inc_vWp post_view)
+        $> ifA (is_exclusive_W wk) (set_xcl_bank Nothing)
+        $> set_fwd_bank addr (w.weiid,is_exclusive_W wk, addr_data_view)
+        $> remove_promise w.weiid
+    in
+    let (s,ii,view,o) = do_local_effs (s,ii,post_view,c true) in
+    fst (finish_instruction params (s,ii,view,o))
+  in
+  if exists ((p,_,_) IN (promises s)). p = w.weiid then
+    let tl = make_plabel (tid s) ii.ii_ioid wd state' in
+    return (PT_sync (PT_Fulfil tl) ())
+  else if in_shared_memory params (addr,sz) then
+    let tl = make_plabel (tid s) ii.ii_ioid (wd,false) state' in
+    return (PT_sync (PT_Write tl) ())
+  else 
+    let tl = make_plabel (tid s) ii.ii_ioid wd state' in
+    return (PT_sync (PT_Write_nonshared tl) ())
+
+
+val run_store_exclusive_instruction : forall 'v. View 'v, SetType 'v => instr_runner 'v
+let run_store_exclusive_instruction params (s,ii,view,o) = 
+  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  let c = ensure_excl_res_outcome o in
+  run_failed_store_exclusive_instruction params (s,ii,view,c false) 
+  ::
+  (option_guard (xcl_bank s) >>= fun rxinfo ->
+   run_store_instruction (Just rxinfo) params (s,ii,view,c true))
+
+
+
+let initialise_instruction params isem s (addr,opcode,instr) = 
+  let o = isem.initial_outcome_s_of_instruction instr in
+  let (ioid,ids) = gen_fresh_id (ids s) in
+  let ii = init_instruction_info ioid addr opcode instr in
+  let s = set_ids ids s in
+  (s,ii,bot,o)
+
+let run_instruction
+    (params : model_params)
+    (isem : instruction_semantics)
+    (s : pts' 'v)
+    ((addr,opcode,instr) : (address * maybe opcode * instruction_ast))
+  : list (pthread_trans (pts' 'v) 'v) = 
+  let (s,ii,view,o) = initialise_instruction params.t isem s (addr,opcode,instr) in
+  if is_branch instr then 
+    run_branch_instruction params (s,ii,view,o)
+  else
+    let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+    match fst o with
+    | Done _ -> run_plain_instruction params (s,ii,view,o)
+    | Read_mem _ _ -> run_load_instruction params (s,ii,view,o)
+    | Write_ea _ _ ->
+       if is_amo instr
+       then run_amo_instruction params (s,ii,view,o)
+       else run_store_instruction Nothing params (s,ii,view,o)
+    | Barrier _ _ -> run_barrier_instruction params (s,ii,view,o)
+    | Excl_res _ -> run_store_exclusive_instruction params (s,ii,view,o)
+    | _ -> fail
+    end
+
+let fail_fetch s (fde : fetch_and_decode_exception) = 
+  let c () = s in
+  let e = ET_fetch_and_decode fde in
+  let l = (head (instrs s)).ii_ioid in
+  PT_only (make_plabel (tid s) l (PT_exception e) c)
+
+let run_addr params isem (s : pts' 'v) addr = 
+  match (prog s) addr with
+  | FDO_address_not_concrete ->
+     return (fail_fetch s (FDE_non_concrete_fetch_address_error))
+  | FDO_illegal_fetch_address ->
+     return (fail_fetch s (FDE_illegal_fetch_address_error addr))
+  | FDO_decode_error de ->
+     return (fail_fetch s (FDE_decode_error de addr))
+  | FDO_success _ opcode instr -> 
+     if params.t.thread_fail_on_loop &&
+        exists (i MEM (instrs s)). i.ii_program_loc = addr
+     then failwith "found loop"
+     else run_instruction params isem s (addr,opcode,instr)
+  end
+   
+let cia_of_state params s = 
+  let cia_rv = reg_value params.thread_isa_info.cia_reg s in
+  let cia_al = ensure_just (address_lifted_of_register_value cia_rv) "fail" in
+  let cia_a = addr_of_addr_lifted cia_al in
+  cia_a
+
+let quick_detect_deadlock ts = 
+  exists ((wid,v,addr) IN promises ts). 
+  not ((joinS [vWp ts;vCAP ts;vCoh addr ts]) < v)
+
+
+let quick_quick_detect_deadlock ts = 
+  exists ((wid,v,addr) IN promises ts). not (vCAP ts < v)
+
+
+let next_instruction_transitions_of_thread
+    (params : model_params)
+    (isem : instruction_semantics)
+    (s : pts' 'v)
+  : list (pthread_trans (pts' 'v) 'v) =
+  let cia = cia_of_state params.t s in
+  guard (isJust (initAddr s) && 
+         cia <> (retAddr s) &&
+         not (quick_quick_detect_deadlock s)) >>
+  run_addr params isem s cia
+
+
+(* fix the params.thread_run_after_stop_promising case *)
+let is_final_tstate params (s : pts' 'v) : bool =
+  empty_promises s && (cia_of_state params s) = retAddr s
+    (* not params.thread_run_after_stop_promising *)

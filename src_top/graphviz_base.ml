@@ -18,6 +18,7 @@
 
 open Printf
 
+open Sail_impl_base
 open Fragments
 open Events
 open BasicTypes
@@ -645,12 +646,12 @@ let parse_dot_positions lines =
 let ioid_trans_lookup (nc: (ConcModel.ui_trans) list)
     : Events.ioid -> (ConcModel.ui_trans) list
   =
-  let ioid_trans_lookup_data  : (Events.ioid * (ConcModel.ui_trans)) list =
+  let ioid_trans_lookup_data  : (Events.ioid option * (ConcModel.ui_trans)) list =
     List.map (fun (n,t) -> (ConcModel.principal_ioid_of_trans t, (n,t))) nc
   in
   fun (ioid: Events.ioid) ->
     Misc.option_map
-      (fun (ioid',n) -> if ioid=ioid' then Some n else None)
+      (fun (ioid',n) -> if ioid' = Some ioid then Some n else None)
       ioid_trans_lookup_data
 
 end (* Make *)

@@ -89,11 +89,6 @@ let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe footprint =
           let r = tl.tl_label in
           Just r.r_addr
       | T_try_store_excl _        -> Nothing
-      | T_Promising_propagate_write _ -> Nothing
-      | T_Promising_fulfil_promise _  -> Nothing
-      | T_Promising_propagate_write_nonshared _ -> Nothing
-      | T_Promising_mem_satisfy_read tl -> Just (fst tl.tl_label).r_addr
-      | T_Promising_mem_satisfy_read_nonshared tl -> Just (fst tl.tl_label).r_addr
       end
   | T_trans (T_thread_start _) -> Nothing
   end
@@ -155,11 +150,6 @@ let write_footprints_of_trans (transition: trans 'ts 'ss) : list footprint =
       | T_Flat_try_commit_store_cond tl -> let (w, _) = tl.tl_label in [w.w_addr]
       | T_TSO_mem_satisfy_read _        -> []
       | T_try_store_excl _              -> []
-      | T_Promising_propagate_write tl  -> [(fst tl.tl_label).wd_w.w_addr]
-      | T_Promising_fulfil_promise tl -> []
-      | T_Promising_propagate_write_nonshared tl  -> [tl.tl_label.wd_w.w_addr]
-      | T_Promising_mem_satisfy_read _  -> []
-      | T_Promising_mem_satisfy_read_nonshared _  -> []
       end
   | T_trans (T_thread_start _) -> []
   end
@@ -262,7 +252,6 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
           | SS_Flowing_partially_satisfy_read _ _      -> false
           (*** TSO transitions: ***)
           | SS_TSO_propagate_write_to_memory _ -> false
-          | SS_Promising_stop_promising -> false
           end
 
       | SS_sync ss_sync_trans _ _ ->
@@ -322,11 +311,6 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
           | T_Flat_try_commit_store_cond _ -> false
           | T_TSO_mem_satisfy_read _       -> false
           | T_try_store_excl _             -> false
-          | T_Promising_fulfil_promise _   -> false
-          | T_Promising_propagate_write _  -> false
-          | T_Promising_mem_satisfy_read _ -> false
-          | T_Promising_propagate_write_nonshared _  -> false
-          | T_Promising_mem_satisfy_read_nonshared _ -> false
           end
       | T_thread_start _ -> false
       end
@@ -496,11 +480,6 @@ let fetch_multi_priority : trans 'ts 'ss -> bool = function
   | _ -> false
 end
 
-let stop_promising_priority : trans 'ts 'ss -> bool = function
-  | SS_trans (SS_only SS_Promising_stop_promising _) -> true
-  | _ -> false
-end
-
 
 (* Consider an AArch64 STXR instruction, right after fetching it. At this
 state (after some internal transitions) we have two enabled transitions
@@ -518,17 +497,6 @@ indicates that the transitions should be further subdivided by ioid. *)
 let priority_transitions params (ss_final_state : bool) (_: eager_mode) :
       list ((trans 'ts 'ss -> bool) * bool) =
   match params.t.thread_model with
-  | Promising_thread_model -> (* also see optimised transition enumeration *)
-     if not params.ss.promise_first then
-       []
-     else if ss_final_state && not (params.t.thread_run_after_stop_promising) then
-       [(fun t -> true, false)]
-     else if ss_final_state (* stopped_promising = true *) then
-       [(fun t -> not (MachineDefPromisingARM.promising_shared_write t), true);
-        (fun t -> true, true)] 
-     else
-       [(fun t -> MachineDefPromisingARM.promising_shared_write t ||
-                    stop_promising_priority t, false)]
   | POP_thread_model _ ->
       match params.t.thread_isa_info.ism with
       | AARCH64_ism _ -> [(exclusive_priority,true); (fetch_multi_priority,true)]
@@ -540,5 +508,6 @@ let priority_transitions params (ss_final_state : bool) (_: eager_mode) :
   | PLDI11_thread_model -> []
   | TSO_thread_model -> []
   | Relaxed_thread_model -> []
+  | Promising_thread_model -> []
   end
  

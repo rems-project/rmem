@@ -1,0 +1,232 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*  Copyright Shaked Flur, University of Cambridge            2017               *)
+(*  Copyright Jon French, University of Cambridge             2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Relation
+open import Pervasives_extra
+open import Sail_impl_base
+open import InstructionSemantics
+open import FreshIds
+open import Events
+open import Fragments
+open import Debug
+open import Utils
+open import Params
+open import BasicTypes
+open import RegUtils
+open import UiTypes
+     import Map
+open import MachineDefUI
+     import ArmV8_embed_types
+open ListMonad
+open import PromisingViews
+open import PromisingTransitions
+open import PromisingThread
+open import PromisingStorage
+open import Promising
+
+
+
+type ui_ptrans 'ts 'ss 'v = nat * ptrans 'ts 'ss 'v
+
+type pss_ui_state =
+  <|  (* storage state *)
+      ui_pss_memory: list (changed3 (write * t * maybe thread_id));
+      ui_pss_stopped_promising: changed2b bool;
+      ui_pss_transitions: list (ui_ptrans pts pss t);
+  |>
+
+
+type ui_instruction_info_list = list (changed2 instruction_info)
+
+type pts_ui_state' 'ui_view =
+    <|
+    ui_promising_reg: list (changed3 (reg_base_name * register_value));
+    ui_promising_vReg: list (changed3 (reg_base_name * 'ui_view));
+    ui_promising_regdata: registerdata;
+
+
+    ui_promising_vCoh: list (changed3 (address * 'ui_view));
+    ui_promising_vRm: changed2b 'ui_view;
+    ui_promising_vRp: changed2b 'ui_view;
+    ui_promising_vWm: changed2b 'ui_view;
+    ui_promising_vWp: changed2b 'ui_view;
+    ui_promising_vCAP: changed2b 'ui_view;
+    ui_promising_vRel: changed2b 'ui_view;
+
+    ui_promising_thread: thread_id;
+
+    ui_promising_fwd_bank: list (changed3 (address * (w_eiid * bool * 'ui_view)));
+    ui_promising_xcl_bank : changed2b (maybe ((w_eiid * address) * 'ui_view));
+
+    ui_promising_initAddr: changed2b (maybe address);
+    ui_promising_promises: list (changed3 w_eiid);
+    ui_promising_instrs: ui_instruction_info_list;
+    ui_promising_initRegS: (reg_base_name -> register_value);
+
+    ui_promising_last_ioid : maybe ioid;
+    |>
+
+type pts_ui_state = pts_ui_state' t
+
+
+
+let make_pss_ui_state_1 ss' ss_trans = 
+  <| ui_pss_memory = unchanged3_list ss'.pss_memory; 
+     ui_pss_stopped_promising = C2b_unchanged ss'.pss_stopped_promising;
+     ui_pss_transitions = ss_trans |>
+
+let make_pss_ui_state_2 ss ss' ss_trans = 
+  <| ui_pss_memory = ui_list_diff3 ss.pss_memory ss'.pss_memory; 
+     ui_pss_stopped_promising = 
+       ui_eq_diff2b ss.pss_stopped_promising ss'.pss_stopped_promising;
+     ui_pss_transitions = ss_trans |>
+
+let make_pss_ui_state (ss: maybe pss) (ss': pss)
+      (transitions: list (ui_ptrans pts pss t))
+    : pss_ui_state
+  =
+  let transitions = List.filter (comb p_is_storage_transition snd) transitions in
+  match (ss,ss') with
+  | (Nothing, ss') ->
+     make_pss_ui_state_1 ss' transitions
+  | (Just ss, ss') ->
+     make_pss_ui_state_2 ss ss' transitions
+  end
+
+
+type p_ui_state 'ts 'ss =
+  <| p_ui_program_memory:        (address -> fetch_and_decode_outcome);
+     p_ui_initial_writes:        list write;
+     p_ui_thread_states:         list (thread_id * 'ts);
+     p_ui_storage_state:         'ss;
+     p_ui_model:                 model_params;
+  |>
+
+val make_pts_ui_state_1 : pts -> pts_ui_state
+let make_pts_ui_state_1 (t' : pts) = 
+  <| ui_promising_reg = List.map C3_unchanged (Map_extra.toList t'.reg);
+     ui_promising_vReg = 
+       List.map (fun (rbn,v) -> C3_unchanged (rbn,v))
+         (Map_extra.toList t'.vReg) ;
+     ui_promising_regdata = t'.regdata;
+     ui_promising_vCoh = 
+       List.map (fun (addr,v) -> C3_unchanged (addr, v)) 
+         (Map_extra.toList t'.vCoh) ;
+     ui_promising_vRm = C2b_unchanged (t'.vRm);
+     ui_promising_vRp = C2b_unchanged (t'.vRp);
+     ui_promising_vWm = C2b_unchanged (t'.vWm);
+     ui_promising_vWp = C2b_unchanged (t'.vWp);
+     ui_promising_vCAP = C2b_unchanged (t'.vCAP);
+     ui_promising_vRel = C2b_unchanged (t'.vRel);
+     ui_promising_thread = t'.tid;
+     ui_promising_instrs = [];
+     ui_promising_fwd_bank =
+       List.map (fun (addr,(wid,xcl,v)) -> C3_unchanged (addr,(wid,xcl,v)))
+         (Map_extra.toList t'.fwd_bank) ;
+     ui_promising_xcl_bank =
+       C2b_unchanged (Maybe.map (fun (x,v) -> (x,v)) (t'.xcl_bank));
+     ui_promising_promises = unchanged3_set (Set.map (fun (p,_,_) -> p) t'.promises);
+     ui_promising_initAddr = C2b_unchanged t'.initAddr ;
+     ui_promising_initRegS = t'.initRegS;
+     ui_promising_last_ioid = Maybe.map (fun i -> i.ii_ioid) (index t'.instrs 0);
+  |>
+
+
+let rec ui_diff_instrs instrs instrs' = 
+  match (instrs,instrs') with
+  | (_ii :: instrs, ii' :: instrs') -> 
+     C2_unchanged ii' :: ui_diff_instrs instrs instrs'
+  | ([], ii' :: instrs') ->
+     C2_new ii' :: ui_diff_instrs [] instrs
+  | ([], []) -> []
+  | _ -> fail
+  end
+
+
+val make_pts_ui_state_2 : pts -> pts -> list (ui_ptrans pts pss t) ->
+  pts_ui_state
+let make_pts_ui_state_2 t t' ncands = 
+  <| ui_promising_reg = ui_list_diff3 (Map_extra.toList t.reg) (Map_extra.toList t'.reg);
+     ui_promising_vReg = 
+       let vreg = List.map (fun (rbn,v) -> (rbn,v)) (Map_extra.toList t.vReg) in
+       let vreg' = List.map (fun (rbn,v) -> (rbn,v)) (Map_extra.toList t.vReg) in
+       ui_list_diff3 vreg vreg';
+     ui_promising_regdata = t'.regdata;
+     ui_promising_vCoh = 
+       let coh = List.map (fun (a,v) -> (a,v)) (Map_extra.toList t.vCoh) in
+       let coh' = List.map (fun (a,v) -> (a,v)) (Map_extra.toList t'.vCoh) in
+       ui_list_diff3 coh coh';
+     ui_promising_vRm = ui_eq_diff2b (t.vRm) (t'.vRm);
+     ui_promising_vRp = ui_eq_diff2b (t.vRp) (t'.vRp);
+     ui_promising_vWm = ui_eq_diff2b (t.vWm) (t'.vWm);
+     ui_promising_vWp = ui_eq_diff2b (t.vWp) (t'.vWp);
+     ui_promising_vCAP = ui_eq_diff2b (t.vCAP) (t'.vCAP);
+     ui_promising_vRel = ui_eq_diff2b (t.vRel) (t'.vRel);
+     ui_promising_thread = t'.tid;
+     ui_promising_instrs = ui_diff_instrs t.instrs t'.instrs;
+     ui_promising_xcl_bank =
+       let xcl = Maybe.map (fun (x,v) -> (x,v)) t.xcl_bank in
+       let xcl' = Maybe.map (fun (x,v) -> (x,v)) t'.xcl_bank in
+       ui_eq_diff2b xcl xcl';
+     ui_promising_fwd_bank = 
+       let fwd = List.map (fun (a,(x,b,v)) -> (a,(x,b,v))) (Map_extra.toList t.fwd_bank) in
+       let fwd' = List.map (fun (a,(x,b,v)) -> (a,(x,b,v))) (Map_extra.toList t'.fwd_bank) in
+       ui_list_diff3 fwd fwd';
+     ui_promising_promises = ui_set_diff3 (Set.map (fun (p,_,_) -> p) t.promises) (Set.map (fun (p,_,_) -> p) t'.promises);
+     ui_promising_initAddr = ui_eq_diff2b t.initAddr t'.initAddr;
+     ui_promising_initRegS = t'.initRegS;
+     ui_promising_last_ioid = Maybe.map (fun i -> i.ii_ioid) (index t'.instrs 0);
+  |>
+
+
+
+let make_pts_ui_state 
+      (s : pss)
+      (t : maybe pts) 
+      (t' : pts) 
+      (ncands: list (ui_ptrans pts pss t))
+    : pts_ui_state =
+  match (s,t,t') with
+  | (_, Nothing, t') ->
+     make_pts_ui_state_1 t'
+  | (_, Just t, t') ->
+     make_pts_ui_state_2 t t' ncands
+  end
+
+
+let make_p_ui_state 
+      (s : maybe (pstate pts pss))
+      (s' : pstate pts pss)
+      (ncands : list (ui_ptrans pts pss t)) 
+    : (p_ui_state pts_ui_state pss_ui_state) =
+  let threads : list thread_id = Set_extra.toList (Map.domain s'.p_thread_states) in
+  <| p_ui_program_memory = s'.p_program_memory; 
+     p_ui_initial_writes = s'.p_initial_writes;
+     p_ui_thread_states 
+       = 
+     List.map 
+       (fun tid -> 
+         let t = Maybe.map (fun s -> Map_extra.find tid s.p_thread_states) s in
+         let t' = Map_extra.find tid s'.p_thread_states in
+         (tid, make_pts_ui_state s'.p_storage_state t t' ncands))
+       threads;
+     p_ui_storage_state = make_pss_ui_state
+         (Maybe.map (fun s -> s.p_storage_state) s) 
+         s'.p_storage_state ncands;
+     p_ui_model = s'.p_model;
+  |>

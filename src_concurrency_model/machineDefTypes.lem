@@ -38,6 +38,7 @@ open import Fragments
 open import BasicTypes
 open import UiTypes
 open import Params
+open import Utils
 open import InstructionSemantics
 import Power_embed
 import ArmV8_embed
@@ -52,103 +53,7 @@ import X86_embed_types
 
 
 
-(** relon is a relation over a set (useful when the domain of the
-relation does not cover the set, e.g., coherence when there is only one
-write) *)
-type relon 'a =
-  <| relon_set: set 'a;
-     relon_rel: Relation.rel 'a 'a;
-  |>
 
-let relonEmpty = <| relon_set = {};
-                    relon_rel = Relation.relEmpty;
-                 |>
-
-let relonFromSetAndRelation s r =
-  let () = ensure (Relation.relOver r s)
-      ("relonFromSetAndRelation: 'r' is not over 's' (" ^ (show ((Relation.relDefinedOn r) \ s)) ^ ")")
-  in
-  <| relon_set = s; relon_rel = r |>
-
-(* true iff e1,e2 are in the set and (e1,e2) in the relation *)
-let relonInRel e1 e2 r =
-  e1 IN r.relon_set &&
-  e2 IN r.relon_set &&
-  Relation.inRel e1 e2 r.relon_rel
-
-(* return the set of elements that are left of e in r *)
-let relonLeftOf e r =
-  { a | forall ((a, b) IN r.relon_rel) | b = e }
-
-(* return the set of elements that are right of e in r *)
-let relonRightOf e r =
-  { b | forall ((a, b) IN r.relon_rel) | a = e }
-
-let relonAddToSet e r = <| r with relon_set = Set.insert e r.relon_set; |>
-
-let relonAddToRel e1 e2 r =
-  <| relon_set = r.relon_set union {e1; e2};
-     relon_rel = Relation.relAdd e1 e2 r.relon_rel; |>
-
-(* add e to the relation to the right of all the elements for which pred is true *)
-let relonAddToTheRight pred e r =
-  let relon_rel' =
-    r.relon_rel
-    union
-    {(e', e) | forall (e' IN r.relon_set) | pred e'}
-  in
-  <| relon_set = Set.insert e r.relon_set;
-     relon_rel = relon_rel';
-  |>
-
-(* add e to the relation to the left of all the elements for which pred is true *)
-let relonAddToTheLeft e pred r =
-  let relon_rel' =
-    r.relon_rel
-    union
-    {(e, e') | forall (e' IN r.relon_set) | pred e'}
-  in
-  <| relon_set = Set.insert e r.relon_set;
-     relon_rel = relon_rel';
-  |>
-
-let relonRemoveElement e r =
-  <| relon_set = r.relon_set \ {e};
-     relon_rel = {(a, b) | forall ((a, b) IN r.relon_rel)
-                         | a <> e && b <> e};
-  |>
-
-let relonFilterSet f r =
-  let relon_set' = Set.filter f r.relon_set in
-  <| relon_set = relon_set';
-     relon_rel = Relation.relRestrict r.relon_rel relon_set';
-  |>
-
-let relonUnion r r' =
-  <| relon_set = r.relon_set union r'.relon_set;
-     relon_rel = r.relon_rel union r'.relon_rel;
-  |>
-
-let relonTransitiveClosure r =
-  <| r with relon_rel = Relation.transitiveClosure r.relon_rel |>
-
-let relonBigUnion relons =
-  <| relon_set = Set.bigunion (Set.map (fun r -> r.relon_set) relons);
-     relon_rel = Set.bigunion (Set.map (fun r -> r.relon_rel) relons) |>
-
-let rec list_to_rel_aux (acc : relon 'a) (xs : list 'a) : relon 'a =
-  match xs with
-  | [] -> acc
-  | x :: xs -> 
-     let acc = relonAddToTheRight (fun _ -> true) x acc in
-     list_to_rel_aux acc xs
-  end
-
-let list_to_rel (xs : list 'a) : Relation.rel 'a 'a =
-  (list_to_rel_aux relonEmpty xs).relon_rel
-
-
-(** relon end *)
 
 
 (** instruction kinds *)
@@ -609,79 +514,6 @@ type tso_storage_subsystem_state =
   |>
 
 
-(*** Views *********************************************************************)
-
-type t = nat
-type write_ids = WI of set w_eiid
-
-let write_ids_eq (WI wi1) (WI wi2) =
-  setEqual wi1 wi2
-let write_ids_neq wi1 wi2 = not (write_ids_eq wi1 wi2)
-
-instance (Eq write_ids)
-  let (=) = write_ids_eq
-  let (<>) = write_ids_neq
-end
-
-type ui_t = t
-type ui_write_ids = list w_eiid
-
-type view =
-  | Timestamp of t
-  | Write_Ids of write_ids
-
-let ensure_timestamp = function
-  | Timestamp t -> t
-  | _ -> failwith "not a timestamp"
-end
-
-let ensure_write_ids = function
-  | Write_Ids ws -> ws
-  | _ -> failwith "not write_ids"
-end
-
-type ui_view =
-  | UI_Timestamp of ui_t
-  | UI_Write_Ids of ui_write_ids
-
-let view_eq v1 v2 = 
-  match (v1,v2) with
-  | (Timestamp t1, Timestamp t2) -> t1 = t2
-  | (Write_Ids i1, Write_Ids i2) -> i1 = i2
-  | _ -> false
-  end
-let view_neq v1 v2 = not (view_eq v1 v2)
-
-instance (Eq view)
-  let (=) = view_eq
-  let (<>) = view_neq
-end
-
-
-(******************** Promising Storage Subsystem *******************)
-
-(* write promising write IDS are (tid,addr,number of writes by tid to addr) *)
-
-type writedata = <| wd_w : write; 
-                    wd_rexinfo : maybe (w_eiid * address); 
-                    wd_req_view : view |>
-
-type pssto = 
-  <| pssto_memory : list (write * t * maybe thread_id); 
-     pssto_stopped_promising : bool; |>
-
-type psspo = 
-  <| psspo_writes : set write; 
-     psspo_order : Relation.rel w_eiid w_eiid; 
-     psspo_addr_view: set (w_eiid * footprint); 
-     psspo_stopped_promising : bool;
- |>
-
-type promising_storage_state =
-  | PSSTO of pssto
-  | PSSPO of psspo
-
-
 (** ********************** instruction instance states **************)
 
 (* we need an explicit type of instruction states (we can't just build
@@ -960,99 +792,6 @@ type thread_state =
   |>
 
 
-(******************** Promising Thread Subsystem *******************)
-
-type addrNat = nat
-
-type pts' 'v = 
-  <| reg : map reg_base_name register_value
-   ; vCoh : map address 'v
-   ; vReg : map reg_base_name 'v
-   ; vRm  : 'v
-   ; vRp  : 'v
-   ; vWm  : 'v
-   ; vWp  : 'v
-   ; vCAP : 'v
-   ; vRel : 'v
-   ; fwd_bank : map address (w_eiid * bool * 'v)
-   ; xcl_bank : maybe ((w_eiid * address) * 'v) (* v is read exclusive view, for RISCV *)
-   ; promises : set (w_eiid * 'v * address)
-   ; prog     : address -> fetch_and_decode_outcome
-   ; initAddr : maybe address
-   ; retAddr  : address
-   ; tid      : thread_id
-   ; ids      : id_state thread_id
-   ; wids     : Map.map addrNat nat
-   ; regdata  : registerdata
-   (* information for user-interface purposes only *)
-   ; instrs   : list instruction_instance
-   ; initRegS : (reg_base_name -> register_value)
-  |>
-
-type ptsto = pts' t
-type ptspo = pts' write_ids
-
-type promising_thread_state =
-  | PTSTO of ptsto
-  | PTSPO of ptspo
-
-(** *********************  View class *******************************)
-
-class (View 'v) 
-  val join : 'v -> 'v -> 'v
-  val bot : 'v
-  val le : 'v -> 'v -> bool
-  val to_view : 'v -> view
-  val to_v : view -> 'v
-  val add_write : write -> 'v -> 'v
-    
-  val toPTS : pts' 'v -> promising_thread_state
-  val to_ui_view : 'v -> ui_view
-end
-
-
-instance (View nat)
-  let join = max
-  let bot = 0
-  let le = (<=)
-  let to_view = Timestamp
-  let to_v = function 
-    | Timestamp t -> t
-    | _ -> fail
-    end
-   let add_write = fun _ -> (+) 1
-  let toPTS = fun s -> PTSTO s
-  let to_ui_view = fun n -> UI_Timestamp n
-end 
-
-instance (View write_ids)
-  let join = fun (WI s) (WI s') -> WI (s union s')
-  let bot = WI Set.empty
-  let le = fun (WI s) (WI s') -> Set.isSubsetOf s s'
-  let to_view = fun (WI s) -> Write_Ids (WI s)
-  let to_v = function 
-    | Write_Ids s -> s
-    | _ -> fail
-    end
-  let add_write = fun w (WI v) -> WI (Set.insert w.weiid v)
-  let toPTS = fun s -> PTSPO s
-  let to_ui_view = fun (WI s) -> UI_Write_Ids (Set_extra.toList s)
-end 
-
-val joinS : forall 'v. View 'v => list 'v -> 'v
-let joinS = List.foldl join bot
-
-val ifV : forall 'v. View 'v => bool -> 'v -> 'v
-let inline ifV c v = if c then v else bot
-
-val mV : forall 'v. View 'v => maybe 'v -> 'v
-let inline mV = function
-  | Nothing -> bot
-  | Just v -> v
-end
-
-
-
 
 (** whole system state *)
 (*: \subsection{Whole-system state} :*)
@@ -1086,8 +825,6 @@ type ss_only_trans =
   | SS_Flowing_partially_satisfy_read of read_request * list (write * slices)
   (*** TSO transitions: ***)
   | SS_TSO_propagate_write_to_memory of write
-  (*** Promising transitions: ***)
-  | SS_Promising_stop_promising
 
 let principal_ioid_of_ss_only_trans = function
   | SS_PLDI11_partial_coherence_commit w1 _      -> w1.w_ioid (* or maybe the other one? *)
@@ -1105,7 +842,6 @@ let principal_ioid_of_ss_only_trans = function
   | SS_Flowing_flow_to_segment e                 -> principal_ioid_of_flowing_event e
   | SS_Flowing_partially_satisfy_read r _        -> r.r_ioid
   | SS_TSO_propagate_write_to_memory w           -> w.w_ioid
-  | SS_Promising_stop_promising                  -> (0,0) (* TODO: fix? *)
   end
 
 (* transitions that are initiated by the storage subsystem but also change the thread state *)
@@ -1309,27 +1045,6 @@ type thread_sync_label 'ts =
                                       writes the load-reserve read from *)
       (memory_write_outcome unit)
       'ts
-  (*** Promising: ***)
-  | T_Promising_propagate_write of thread_label
-      (writedata * bool) 
-      (memory_write_outcome view)
-      'ts
-  | T_Promising_fulfil_promise of thread_label
-      writedata
-      (memory_write_outcome view)
-      'ts
-  | T_Promising_mem_satisfy_read of thread_label
-      (read_request * view)
-      (maybe (write * view))
-      'ts 
-  | T_Promising_propagate_write_nonshared of thread_label
-      writedata (* whether promising *)
-      (memory_write_outcome view)
-      'ts
-  | T_Promising_mem_satisfy_read_nonshared of thread_label
-      (read_request * view)
-      (maybe (write * view))
-      'ts 
   (*** TSO: ***)
   | T_TSO_mem_satisfy_read of thread_label
       read_request
@@ -1349,11 +1064,6 @@ let tid_of_thread_sync_trans = function
   | T_Flat_mem_satisfy_read tl      -> tl.tl_cont.tc_tid
   | T_Flat_try_commit_store_cond tl -> tl.tl_cont.tc_tid
   | T_TSO_mem_satisfy_read tl       -> tl.tl_cont.tc_tid
-  | T_Promising_fulfil_promise tl   -> tl.tl_cont.tc_tid
-  | T_Promising_propagate_write tl  -> tl.tl_cont.tc_tid
-  | T_Promising_mem_satisfy_read tl -> tl.tl_cont.tc_tid
-  | T_Promising_propagate_write_nonshared tl  -> tl.tl_cont.tc_tid
-  | T_Promising_mem_satisfy_read_nonshared tl -> tl.tl_cont.tc_tid
   end
 
 let ioid_of_thread_sync_trans = function
@@ -1369,11 +1079,6 @@ let ioid_of_thread_sync_trans = function
   | T_Flat_mem_satisfy_read tl      -> tl.tl_cont.tc_ioid
   | T_Flat_try_commit_store_cond tl -> tl.tl_cont.tc_ioid
   | T_TSO_mem_satisfy_read tl       -> tl.tl_cont.tc_ioid
-  | T_Promising_fulfil_promise tl   -> tl.tl_cont.tc_ioid
-  | T_Promising_propagate_write tl  -> tl.tl_cont.tc_ioid
-  | T_Promising_mem_satisfy_read tl -> tl.tl_cont.tc_ioid
-  | T_Promising_propagate_write_nonshared tl  -> tl.tl_cont.tc_ioid
-  | T_Promising_mem_satisfy_read_nonshared tl -> tl.tl_cont.tc_ioid
   end
 
 (* all the thread transitions; this is a union of 'thread_label's with
@@ -1427,9 +1132,9 @@ type trans 'ts 'ss =
 
 let principal_ioid_of_trans (t: trans 'ts 'ss) =
   match t with
-  | SS_trans t -> principal_ioid_of_ss_trans t
-  | T_trans t  -> ioid_of_thread_trans t
-  | Sys_trans _ _ -> (1000,0) (* bogus ioid *)
+  | SS_trans t -> Just (principal_ioid_of_ss_trans t)
+  | T_trans t  -> Just (ioid_of_thread_trans t)
+  | Sys_trans _ _ -> Nothing
   end
    
 let is_storage_transition : trans 'ts 'ss -> bool = function
@@ -1547,25 +1252,6 @@ type tso_ui_storage_subsystem_state 'ts 'ss =
       ui_tso_transitions_propagate_write: list (ui_trans 'ts 'ss);
   |>
 
-type pssto_ui_state 'ts 'ss =
-  <|  (* storage state *)
-      ui_pssto_memory: list (changed3 (write * t * maybe thread_id));
-      ui_pssto_stopped_promising: changed2b bool;
-      ui_pssto_transitions: list (ui_trans 'ts 'ss);
-  |>
-
-type psspo_ui_state 'ts 'ss =
-  <|  (* storage state *)
-      ui_psspo_writes: list (changed3 write);
-      ui_psspo_write_order: list (changed3 (w_eiid * w_eiid));
-      ui_psspo_addr_view: list (changed3 (w_eiid * footprint));
-      ui_psspo_stopped_promising: changed2b bool;
-      ui_psspo_transitions: list (ui_trans 'ts 'ss);
-  |>
-
-type promising_ui_storage_subsystem_state 'ts 'ss =
-  | PSSTO_UI of pssto_ui_state 'ts 'ss
-  | PSSPO_UI of psspo_ui_state 'ts 'ss
 
 type ui_storage_subsystem_state 'ts 'ss =
   | PLDI11_UI_storage  of pldi11_ui_storage_subsystem_state 'ts 'ss
@@ -1574,7 +1260,6 @@ type ui_storage_subsystem_state 'ts 'ss =
   | POP_UI_storage     of pop_ui_storage_subsystem_state 'ts 'ss
   | NOP_UI_storage     of nop_ui_storage_subsystem_state 'ts 'ss
   | TSO_UI_storage     of tso_ui_storage_subsystem_state 'ts 'ss
-  | Promising_UI_storage of promising_ui_storage_subsystem_state 'ts 'ss
 
 
 type ui_subwrites =
@@ -1629,7 +1314,7 @@ type ui_instruction_tree 'ts 'ss =
 type ui_instruction_list 'ts 'ss =
   list (changed3 (ui_instruction_instance 'ts 'ss))
 
-type ui_machine_thread_state 'ts 'ss =
+type ui_thread_state 'ts 'ss =
     <|
     ui_thread: thread_id ;           
     ui_register_data: registerdata;
@@ -1646,44 +1331,6 @@ type ui_machine_thread_state 'ts 'ss =
     (* transitions: *)
     ui_initial_fetch_transitions: list (ui_trans 'ts 'ss) (* the initial T_only(T_fetch ...) transition if present *)
     |>
-
-
-
-
-type ui_pts 'ts 'ss 'ui_view =
-    <|
-    ui_promising_reg: list (changed3 (reg_base_name * register_value));
-    ui_promising_vReg: list (changed3 (reg_base_name * 'ui_view));
-    ui_promising_regdata: registerdata;
-
-
-    ui_promising_vCoh: list (changed3 (address * 'ui_view));
-    ui_promising_vRm: changed2b 'ui_view;
-    ui_promising_vRp: changed2b 'ui_view;
-    ui_promising_vWm: changed2b 'ui_view;
-    ui_promising_vWp: changed2b 'ui_view;
-    ui_promising_vCAP: changed2b 'ui_view;
-    ui_promising_vRel: changed2b 'ui_view;
-
-    ui_promising_thread: thread_id;
-
-    ui_promising_fwd_bank: list (changed3 (address * (w_eiid * bool * 'ui_view)));
-    ui_promising_xcl_bank : changed2b (maybe ((w_eiid * address) * 'ui_view));
-
-    ui_promising_initAddr: changed2b (maybe address);
-    ui_promising_promises: list (changed3 w_eiid);
-    ui_promising_instrs: ui_instruction_list 'ts 'ss;
-    ui_promising_initRegS: (reg_base_name -> register_value);
-
-    ui_promising_last_ioid : maybe ioid;
-    |>
-
-type ui_promising_thread_state 'ts 'ss = ui_pts 'ts 'ss ui_view
-
-
-type ui_thread_state 'ts 'ss =
-  | UI_machine_thread_state of ui_machine_thread_state 'ts 'ss
-  | UI_promising_thread_state of ui_promising_thread_state 'ts 'ss
 
 type ui_system_state 'ts 'ss =
   <| ui_program_memory: (address -> fetch_and_decode_outcome);
@@ -1724,8 +1371,6 @@ type storageSubsystem 'ss =
      ss_thread_memory_value_of_footprint : ss_params ->
        'ss -> thread_id -> footprint -> memory_value;
      ss_clean_reads : ss_params -> 'ss -> thread_id -> set ioid -> set ioid -> maybe 'ss;
-     (* not nice: for Promising specifically *)
-     ss_stopped_promising : 'ss -> bool;
   |>
 
 type machineStorageSubsystem 'ts 'ss =
@@ -1789,7 +1434,6 @@ type system_state_and_transitions 'ts 'ss =
      included instruction restarts or discarded instructions (respectively) *)
      sst_inst_restarted:      bool;
      sst_inst_discarded:      bool;
-     sst_write_after_stop_promising : bool;
   |>
 
 

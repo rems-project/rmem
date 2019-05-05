@@ -1,0 +1,567 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*  Copyright Shaked Flur, University of Cambridge            2017               *)
+(*  Copyright Jon French, University of Cambridge             2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Relation
+open import Pervasives_extra
+open import Sail_impl_base
+open import InstructionSemantics
+open import FreshIds
+open import Events
+open import Fragments
+open import Debug
+open import Utils
+open import Params
+open import BasicTypes
+open import RegUtils
+open import CandidateExecution
+     import Map
+open ListMonad
+open import PromisingViews
+open import PromisingTransitions
+open import PromisingThread
+open import PromisingStorage
+
+
+
+type pstate 'ts 'ss =
+  <| p_program_memory:        (address -> fetch_and_decode_outcome);
+     p_initial_writes:        list write;
+     p_thread_states:         map thread_id 'ts;
+     p_storage_state:         'ss;
+     p_model:                 model_params;
+     p_instruction_semantics: instruction_semantics;
+     (* transition_history:    list (trans 'ts 'ss); *)
+  |>
+
+
+
+let p_initial_state
+    (instruction_semantics:   instruction_semantics)
+    (register_data:           registerdata)
+    (state_record:            initial_state_record)
+    : pstate pts pss
+  =
+  let prog = state_record.isr_program instruction_semantics in
+
+  let initial_thread_states = 
+    let init tid =
+      PromisingThread.p_initial_thread_state
+        state_record.isr_params.t
+        tid
+        prog
+        (ensure_just (List.lookup tid state_record.isr_return_addr) "missing return address for thread")
+        register_data
+        (state_record.isr_register_data tid)
+        (state_record.isr_register_values tid)
+        (state_record.isr_first_instruction tid)
+        state_record.isr_memory
+    in
+    [(tid, init tid) | forall (tid MEM state_record.isr_thread_ids) | true]
+  in
+  <| p_program_memory    = prog;
+     p_initial_writes    = state_record.isr_memory;
+     p_thread_states     = Map.fromList initial_thread_states;
+     p_storage_state     = PromisingStorage.pss_initial_state state_record.isr_params
+                               (Set.fromList state_record.isr_thread_ids)
+                               state_record.isr_memory;
+     p_model             = state_record.isr_params;
+     p_instruction_semantics = instruction_semantics;
+  |>
+
+
+
+(*** System ********************************************************************)
+
+let thread_trans_to_psys_thread_trans pts = function
+  | PT_only tl -> return (PT_only tl)
+  | PT_sync tsl _ -> pss_receive_transitions pts tsl
+  | PT_thread_start _ -> failwith "cannot handle thread start"
+  end
+
+let promise_write (ss : pss) (ts : pts) (wd : writedata t) : list (psys_thread_trans pts pss t) = 
+  let tc_cont m_v =
+    let v = ensure_just m_v "fail" in
+    add_promise (wd.wd_w.weiid,v,fst wd.wd_w.w_addr) ts
+  in
+  let tl = make_plabel wd.wd_w.w_thread wd.wd_w.w_ioid (wd,true) tc_cont in
+  let thread_t = PT_Write tl in
+  pss_receive_transitions ss thread_t
+
+let promises_fulfilled t = empty_promises t
+
+
+type certjob 'v =
+  <| CJpss : pss;
+     CJpts : pts;
+     CJpss_view : 'v;
+     CJpromises : set (writedata 'v);
+     CJfulfilled : bool;
+     CJcert_no_write : bool;
+     CJfuel : nat; |>
+
+type cert 'v = 
+  | NotCertified
+  | Certified of bool * set (writedata 'v)
+
+let promisable = (le)
+
+
+let certprom_t params
+    (isem : instruction_semantics)
+    (cj : certjob 'v)
+    trans = 
+  let (pts',pss') = ts_ss_after_psys_thread_trans cj.CJpss trans in
+  let shared_wds = wd_of_shared_prop_trans trans in
+  let newp = {wd | forall (wd IN shared_wds) 
+                 | promisable wd.wd_req_view cj.CJpss_view} in
+  let promises = newp union cj.CJpromises in
+  let cert_no_write = cj.CJcert_no_write && Set.null shared_wds in
+  <| cj with CJpts = pts';
+             CJpss = pss';
+             CJpromises = promises;
+             CJfuel = cj.CJfuel - 1; 
+             CJcert_no_write = cert_no_write |>
+
+let rec certprom_s params
+    (isem : instruction_semantics)
+    (cjs : list (certjob t)) 
+    (cert : cert t)
+  : cert t =
+  match cjs with
+  | [] -> cert
+  | cj :: cjs ->
+    let fulfilled = cj.CJfulfilled || promises_fulfilled cj.CJpts in
+    let next_transitions = 
+      if not (cj.CJfuel > 0)
+      then let () = print_endline "\nWarning: ran out of fuel\n" in []
+      else
+        next_instruction_transitions_of_thread params isem cj.CJpts >>=
+        thread_trans_to_psys_thread_trans cj.CJpss
+    in 
+    if not (List.null next_transitions) then
+      let cj = <| cj with CJfulfilled = fulfilled |> in
+      let new_cjs = List.map (certprom_t params isem cj) next_transitions in
+      certprom_s params isem (new_cjs ++ cjs) cert
+    else if not fulfilled then
+      certprom_s params isem cjs cert
+    else
+      let cert = 
+        match cert with
+        | NotCertified -> Certified cj.CJcert_no_write cj.CJpromises
+        | Certified cert_no_write promises ->
+           Certified (cert_no_write || cj.CJcert_no_write) 
+                     (promises union cj.CJpromises)
+        end in
+      certprom_s params isem cjs cert
+  end
+
+let certprom_transition params isem pts pss tr = 
+  let (pts',pss') = ts_ss_after_psys_thread_trans pss tr in
+  let cj = <| CJpts = pts';
+              CJpss = pss';
+              CJpromises = Set.empty;
+              CJfulfilled = false;
+              CJpss_view = pss_view pss;
+              CJfuel = params.t.thread_promising_fuel;
+              CJcert_no_write = Set.null (wd_of_shared_prop_trans tr);
+           |> in
+  certprom_s params isem [cj] NotCertified
+
+
+
+
+
+
+let p_enumerate_transitions_of_thread
+    (params : model_params)
+    (isem : instruction_semantics)
+    (stopped_promising : bool)
+    (pts : pts)
+    (pss : pss)
+    : maybe (list (ptrans pts pss t * bool)) =  (* 'Nothing' indicates a deadlock *)
+
+  if stopped_promising && quick_detect_deadlock pts then Nothing else
+
+  let trs = 
+    next_instruction_transitions_of_thread params isem pts >>= 
+    thread_trans_to_psys_thread_trans pss in
+
+  let (transitions,promises) = 
+    if stopped_promising
+    then (List.map (fun tr -> (tr,true)) trs, Set.empty)
+    else
+      List.foldl (fun (trs,prms) tr ->
+          match certprom_transition params isem pts pss tr with
+          | NotCertified -> (trs,prms)
+          | Certified cert_no_write promises ->
+             ((tr,cert_no_write) :: trs, prms union promises)
+          end
+        ) ([],Set.empty) trs 
+  in
+
+
+  (* If the same promise can be done with different required views,
+     only enumerate transitions for with biggest required view. In the
+     timestamp case whether minimal/maximal or maximal is not
+     important (just need a unique one), since this "locally required
+     view" does not matter: we do not record that view but the view of
+     memory "before" doing this write. In the write-ids model it does
+     matter. Picking the promise(s) with maximal view constrains the
+     storage subsystem the most. But that strongest constraint on the
+     storage subsystem should still be weaker than the corresponding
+     storage state in the timestamp model. *)
+    let promises = 
+        {p | forall (p IN promises)
+           | not (exists (p' IN promises).
+                  (p.wd_w = p'.wd_w &&
+                   p.wd_rexinfo = p'.wd_rexinfo &&
+                   (p'.wd_req_view <> p.wd_req_view &&
+                    le p.wd_req_view p'.wd_req_view) ))
+        } in
+
+  let promises = Set_extra.toList promises in
+
+  let promise_transitions = promises >>= fun wd ->
+                            promise_write pss pts wd >>= fun tr ->
+                            return (tr,false) in
+  let transitions = transitions ++ promise_transitions in
+  if List.null transitions && not (is_final_tstate params.t pts)
+  then Nothing else Just (List.map (fun (t,b) -> (PT_trans t,b)) transitions)
+
+
+
+let rec enumerate_possible_final_states
+    (params : model_params)
+    (isem : instruction_semantics)
+    (pss : pss)
+    (pts : pts)
+  =
+  if is_final_tstate params.t pts then return (pts,pss) else
+    (* guard (quick_detect_deadlock pss pts) >> *)
+    next_instruction_transitions_of_thread params isem pts >>= 
+    thread_trans_to_psys_thread_trans pss >>= fun tr ->
+    guard (not (is_shared_write tr)) >>
+    let (pts,pss) = ts_ss_after_psys_thread_trans pss tr in
+    enumerate_possible_final_states params isem pss pts
+
+
+let rec merge_pss_memories m1 m2 =
+  match (m1,m2) with
+  | ([], []) -> []
+  | (_ :: _, []) -> failwith "merge_memories: different length"
+  | ([], _ :: _) -> failwith "merge_memories: different length"
+  | ((w1,t1,maybetid1) :: ws1, (w2,t2,maybetid2) :: ws2) ->
+     match (maybetid1,maybetid2) with
+     | (Just tid1, Just tid2) ->
+        failwith ("merge_pss_memories: non-shared "^
+                    "location accessed by different threads")
+     | (Just _, _) ->
+        (w1,t1,maybetid1) :: merge_pss_memories ws1 ws2
+     | (_, Just _) ->
+        (w2,t2,maybetid2) :: merge_pss_memories ws1 ws2
+     | _ -> 
+        (w1,t1,maybetid1) :: merge_pss_memories ws1 ws2
+     end
+  end
+
+let merge_pss_states s1 s2 =
+  let memory = merge_pss_memories s1.pss_memory s2.pss_memory in
+  <| s1 with pss_memory = memory |>
+
+
+
+
+val merge_combination : list (thread_id * (pts * pss)) -> map thread_id pts * pss
+let merge_combination combination =
+  match combination with
+    | [] -> failwith "merge_combinations"
+    | (tid,(pts,pss)) :: rest ->
+       let add (ptss,pss) (tid',(pts',pss')) =
+         (Map.insert tid' pts' ptss, merge_pss_states pss pss')
+       in
+       List.foldl add (Map.singleton tid pts, pss) rest
+  end
+
+
+
+val all_combinations : forall 'a 'b. list ('a * list 'b) -> list (list ('a * 'b))
+let rec all_combinations l = 
+  match l with
+  | [] -> [[]]
+  | (a, bs) :: rest ->
+     [(a,b) :: combinations 
+        | forall (b MEM bs) (combinations MEM all_combinations rest) | true]
+  end
+
+let enumerate_finalise_transitions isem state = 
+  if pss_is_final_state state.p_model.ss state.p_storage_state &&
+       Map.all (fun _ ts -> is_final_tstate state.p_model.t ts) state.p_thread_states
+  then []
+  else
+    let pss = state.p_storage_state in
+    let ptss = Map_extra.toList state.p_thread_states in
+    let (final_states_per_thread : list (thread_id * (list (pts * pss)))) =
+      List.map (fun (tid,pts) -> (tid, enumerate_possible_final_states state.p_model isem pss pts)) ptss in
+    let (combinations : list (list (thread_id * (pts * pss)))) = all_combinations final_states_per_thread in
+    List.map merge_combination combinations
+
+
+let p_enumerate_transitions
+    (state:               pstate pts pss)
+    (cached_sys_thread_trans: map thread_id (list (ptrans pts pss t * bool)))
+    : (list (ptrans pts pss t)) * (map thread_id (list (ptrans pts pss t * bool)))  
+  =
+  let stopped_promising = state.p_storage_state.pss_stopped_promising in
+
+  let stop_running =
+    stopped_promising && not (state.p_model.t.thread_run_after_stop_promising) in
+
+  if stop_running then
+    let (possible_states : list (map thread_id pts * pss)) =
+      enumerate_finalise_transitions state.p_instruction_semantics state in
+    let transitions = List.map (fun (ptss, pss) -> PSys_trans ptss pss) possible_states in
+    let transitions' = Map.singleton 1000 (List.map (fun tr -> (tr,true)) transitions) in
+    (transitions, transitions')
+  else
+  
+  let stop_certifying =
+    stopped_promising && not (state.p_model.t.thread_certify_after_stop_promising) in
+
+
+
+
+  let sys_thread_transitions : map thread_id (list (ptrans pts pss t * bool)) =
+
+    let (transitions,_already_have_one,deadlock) : (map thread_id (list (ptrans pts pss t * bool)) * bool * bool) = 
+      Map_extra.fold
+        (fun tid ts (m,already_have_one,deadlock) ->
+         match Map.lookup tid cached_sys_thread_trans with
+         | Just [] -> (Map.insert tid [] m, already_have_one, deadlock)
+         | Just trs -> (Map.insert tid trs m, true, deadlock)
+         | Nothing ->
+            if already_have_one && stopped_promising
+            then (m,already_have_one,deadlock)
+            else
+              match p_enumerate_transitions_of_thread
+                      state.p_model state.p_instruction_semantics stop_certifying ts
+                      state.p_storage_state with
+              | Just [] -> (Map.insert tid [] m, false, deadlock)
+              | Just trs -> (Map.insert tid trs m, true, deadlock)
+              | Nothing -> (m, true, true)
+              end
+         end
+        )
+        state.p_thread_states (Map.empty,false,false)
+    in
+
+    if deadlock then Map.empty else transitions
+  in
+
+
+  let can_stop_promising = 
+    not stopped_promising &&
+    Map.all (fun tid trs ->
+        let ts = Map_extra.find tid state.p_thread_states in
+        is_final_tstate state.p_model.t ts || List.any snd trs)
+      sys_thread_transitions
+  in
+
+  let storage_transitions = 
+    guard can_stop_promising >>
+    pss_enumerate_transitions state.p_model state.p_storage_state
+  in
+
+  let filter (tr,cert_no_write) = 
+    ((state.p_model.t.thread_certify_after_stop_promising && stopped_promising) --> 
+       cert_no_write) &&
+    ((state.p_model.t.thread_certify_after_stop_promising && stopped_promising) --> 
+       not (is_shared_write_trans tr)) &&
+    ((state.p_model.ss.promise_first && not stopped_promising) --> 
+      is_shared_write_trans tr)
+  in
+  let thread_transitions = 
+    Map_extra.fold (fun _ trs acc -> acc ++ (List.filter filter trs))
+      sys_thread_transitions []
+  in
+
+  ((List.map fst thread_transitions) ++ storage_transitions, sys_thread_transitions)
+
+
+
+
+let p_number_of_instructions s = 
+  Map_extra.fold (fun _tid pts n -> n + (List.length pts.instrs)) s.p_thread_states 0
+
+let p_is_ioid_finished (target_ioid : ioid) s : bool =
+  let (thread_id, inst_id) = target_ioid in
+  let thread = ensure_just (Map.lookup thread_id s.p_thread_states)
+                           "No such thread" in
+  isJust (List.find (fun i -> i.ii_ioid = target_ioid) thread.instrs)
+
+
+type pst 'ts 'ss 'v =
+  <| pst_state: pstate 'ts 'ss;
+     pst_trans: list (ptrans 'ts 'ss 'v);
+  |>
+
+
+let pst_of_state s =
+  let (trans,_) = p_enumerate_transitions s Map.empty in
+  <| pst_state = s; 
+     pst_trans = trans |>
+
+
+
+let pstate_after_transition (s : pstate pts pss) (t: ptrans pts pss 'v) 
+    : pstate pts pss =
+  match t with
+  | PSS_trans (PSS_stop_promising c) ->
+     <| s with p_storage_state = c () |>
+  | PT_trans t ->
+     let (pts,pss) = ts_ss_after_psys_thread_trans s.p_storage_state t in
+     <| s with p_storage_state = pss;
+               p_thread_states = Map.insert pts.tid pts s.p_thread_states;
+     |>
+  | PSys_trans ptss pss ->
+     <| s with p_storage_state = pss;
+               p_thread_states = ptss;
+     |>
+  end
+
+
+
+
+
+let pst_after_transition
+    (s:         pst pts pss t)
+    (t:         ptrans pts pss t)
+    : transition_outcome (pst pts pss t)
+  =
+  TO_system_state (pst_of_state (pstate_after_transition s.pst_state t))
+  
+
+val p_is_final_state : forall 'ts 'ss. pstate pts pss -> bool
+let p_is_final_state s : bool =
+  (* quantify over list rather than set to avoid needing set type for thread states *)
+  (forall ((_,ts) MEM (Map_extra.toList s.p_thread_states)).
+   PromisingThread.is_final_tstate s.p_model.t ts)
+  &&
+    PromisingStorage.pss_is_final_state s.p_model.ss s.p_storage_state
+
+
+
+(* This does not produce all the information cex would like to have,
+   should fix later *)
+let p_make_cex_instruction_info
+    (* (_prefix: list instruction_info) *)
+    (i:      instruction_info)
+    : cex_instruction_instance
+  =
+  <|
+    cex_instance_ioid = i.ii_ioid;
+    cex_program_loc = i.ii_program_loc;
+    cex_program_opcode = i.ii_program_opcode;
+    cex_instruction = i.ii_instruction; 
+    cex_instruction_kind = i.ii_kind;
+    (* register part *)
+    cex_regs_in = Set.fromList (List.map fst i.ii_reg_reads);
+    cex_regs_out = Set.fromList (List.map fst i.ii_reg_writes);
+    cex_regs_in_feeding_address = Set.fromList i.ii_regs_feeding_address;
+    cex_ioids_feeding_address = Set.empty;
+    cex_reg_reads = List.map (fun (r,v) -> (r,[],v)) i.ii_reg_reads;
+    cex_reg_writes = i.ii_reg_writes;
+    (* memory part *)
+    cex_writes_read_from = Set.fromList (List.concatMap snd i.ii_writes_read_from);
+    cex_committed_barriers = [];
+    cex_potential_write_addresses = [];
+    cex_potential_writes = [];
+    cex_propagated_writes = i.ii_propagated_writes;
+    cex_requested_unsatisfied_reads = [];
+    cex_satisfied_reads =
+      List.mapMaybe
+        (fun (rr, writes_read_from) ->
+          let mrs =
+            <|  mrs_footprint        = rr.r_addr;
+                mrs_value            = value_of_write_slices writes_read_from;
+                mrs_writes_read_from = writes_read_from;
+            |>
+          in
+          Just (rr, mrs)
+        )
+        i.ii_writes_read_from;
+    (* status *)
+    cex_finished = true;
+
+    (* dependencies *)
+    cex_address_dependencies = Set.empty;
+    cex_data_dependencies = Set.empty;
+    cex_control_dependencies = Set.empty;
+    cex_paired_atomic_load = Nothing;
+  |>
+
+
+let p_make_cex_instruction_tree (iis:list instruction_info) : cex_instruction_tree =
+  List.foldr (fun ii t -> CEX_T [(p_make_cex_instruction_info ii,t)]) (CEX_T []) iis
+
+
+let p_make_cex_thread_state (t : pts) : cex_thread_state = 
+  <| cex_thread = t.tid;
+     cex_register_data = t.regdata;
+     cex_initial_register_state = t.initRegS;
+     cex_initial_fetch_address = t.initAddr;
+     cex_instruction_tree = p_make_cex_instruction_tree t.instrs;
+  |>
+
+val p_make_cex_candidate : forall 'ts 'ss. pstate pts pss -> cex_candidate
+let p_make_cex_candidate s : cex_candidate =
+  let rf =
+    let instructions =
+      Map.map (fun t -> Set.fromList t.instrs) s.p_thread_states $>
+      Map.range $> Set.bigunion 
+    in
+    Set.bigunionMap
+      (fun i ->
+        List.concatMap
+          (fun (r, wss) -> [(ws, r) | forall (ws MEM wss) |true])
+          i.ii_writes_read_from
+        $> Set.fromList
+      )
+      instructions
+  in
+
+  let co = pss_coherence s.p_storage_state in
+
+  let fr =
+    let rfConverse = {(r, w) | forall (((w, _), r) IN rf) | true} in
+    Relation.relComp rfConverse co
+    $> Set.filter (fun (r,w) -> non_empty_intersection r.r_addr w.w_addr)
+  in
+
+  <|
+    cex_program_memory = s.p_program_memory;
+    cex_initial_writes = s.p_initial_writes;
+    cex_threads = Map.map p_make_cex_thread_state s.p_thread_states;
+    cex_rf = rf;
+    cex_co = Relation.withoutTransitiveEdges co;
+    cex_fr = fr;
+    cex_model = s.p_model;
+  |> 
+
+
+let p_branch_targets_of_state _  : branch_targets_map = Map.empty
+let p_shared_memory_of_state _ : set footprint = Set.empty

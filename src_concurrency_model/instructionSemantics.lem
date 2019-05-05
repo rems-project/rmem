@@ -482,8 +482,12 @@ let initialise_shallow_embedding_semantics endianness ism =
        | Just instr -> FDO_success address (Just opcode) (MIPS_instr instr)
        end
    | RISCV_ism ->
-      let instr = Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv)) in
-      FDO_success address (Just opcode) (RISCV_instr instr)
+      match Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv)) with
+      | Just instr ->
+         FDO_success address (Just opcode) (RISCV_instr instr)
+      | Nothing -> 
+         FDO_decode_error (Not_an_instruction_error opcode)
+      end
    | X86_ism ->
       failwith "x86 decode not implemented"
     end in

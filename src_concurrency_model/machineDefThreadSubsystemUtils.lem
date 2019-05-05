@@ -1213,9 +1213,9 @@ let make_label state iic
 let make_ui_machine_thread_state (_s : 'storage_subsystem_state) 
       (t : maybe thread_state) (t' : thread_state)
       (ncands: list (ui_trans 'ts 'ss)) : (ui_thread_state 'ts 'ss) =
-    let trans t = Maybe.bind t $ fun (t, _) -> Just t in
+  let trans t = Maybe.bind t $ fun (t, _) -> Just t in
 
-  UI_machine_thread_state
+  (* UI_machine_thread_state *)
     <| ui_thread = t'.thread ;           
        ui_register_data = t'.register_data;
        ui_initial_register_state = t'.initial_register_state;

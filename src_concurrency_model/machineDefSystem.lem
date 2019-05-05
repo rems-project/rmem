@@ -44,7 +44,7 @@ open import MachineDefTypes
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
 open import MachineDefInstructionPredicates
-open import MachineDefPromisingARM
+
 
 
 (** initial system state ********************************************)
@@ -326,7 +326,7 @@ instructions were discarded (discarded branch) *)
 let system_state_after_transition
     (state: system_state 'ts 'ss)
     (t: trans 'ts 'ss)
-    : transition_outcome (system_state 'ts 'ss * bool * list thread_id * bool * bool * bool)
+    : transition_outcome (system_state 'ts 'ss * bool * list thread_id * bool * bool)
   =
   let update_state storage thread =
     let (restarted, discarded) = match thread with
@@ -379,14 +379,7 @@ let system_state_after_transition
       $> fromMaybe []
     in
 
-    let write_after_stop_promising = 
-        (state.model.ss.promise_first &&
-         state.s_model.ss_is_final_state state.model.ss state.storage_subsystem) &&
-          promising_shared_write t
-    in
-
-    TO_system_state (state', isJust storage', changed_threads, restarted,
-                     discarded, write_after_stop_promising)
+    TO_system_state (state', isJust storage', changed_threads, restarted, discarded)
   in
 
   match t with
@@ -403,7 +396,7 @@ let system_state_after_transition
   | Sys_trans tss ss -> 
      let all_tids = Set_extra.toList (Map.domain state.thread_states) in
      let state' = <| state with thread_states = tss; storage_subsystem = ss |> in
-     TO_system_state (state', true, all_tids, false, false, false)
+     TO_system_state (state', true, all_tids, false, false)
 
   | T_trans label ->
     match label with
@@ -411,20 +404,20 @@ let system_state_after_transition
       match tl.tl_label with
       | T_RISCV_atomic_begin ->
           match update_state Nothing (Just (tl.tl_cont.tc_cont ())) with
-          | TO_system_state (state, storage, changed_threads, restarted, discarded, write_after_stop_promising) ->
+          | TO_system_state (state, storage, changed_threads, restarted, discarded) ->
               let () = ensure (state.riscv_AMO_lock = Nothing) $
                 "instruction " ^ show tl.tl_cont.tc_ioid ^ " is trying to take the AMO lock but it is already taken by " ^ show state.riscv_AMO_lock in
               let state' = <| state with riscv_AMO_lock = Just tl.tl_cont.tc_ioid |> in
-              TO_system_state (state', storage, changed_threads, restarted, discarded, write_after_stop_promising)
+              TO_system_state (state', storage, changed_threads, restarted, discarded)
           | TO_unhandled_exception _ _ _ -> fail
           end
       | T_RISCV_atomic_end ->
           match update_state Nothing (Just (tl.tl_cont.tc_cont ())) with
-          | TO_system_state (state, storage, changed_threads, restarted, discarded, write_after_stop_promising) ->
+          | TO_system_state (state, storage, changed_threads, restarted, discarded) ->
               let () = ensure (state.riscv_AMO_lock = Just tl.tl_cont.tc_ioid) $
                 "instruction " ^ show tl.tl_cont.tc_ioid ^ " is trying to release the AMO lock but it is taken by " ^ show state.riscv_AMO_lock in
               let state' = <| state with riscv_AMO_lock = Nothing |> in
-              TO_system_state (state', storage, changed_threads, restarted, discarded, write_after_stop_promising)
+              TO_system_state (state', storage, changed_threads, restarted, discarded)
           | TO_unhandled_exception _ _ _ -> fail
           end
       | _ -> update_state Nothing (Just (tl.tl_cont.tc_cont ()))
@@ -443,17 +436,12 @@ let system_state_after_transition
       | T_POP_tm_commit tl              -> update_state ssc (Just (next_thread_of_tl tl))
       | T_POP_tm_abort tl               -> update_state ssc (Just (next_thread_of_tl tl))
       | T_try_store_excl tl             -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_Promising_fulfil_promise tl   -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_Promising_propagate_write tl  -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_Promising_mem_satisfy_read tl -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_Promising_propagate_write_nonshared tl  -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_Promising_mem_satisfy_read_nonshared tl -> update_state ssc (Just (next_thread_of_tl tl))
       end
 
     | T_thread_start tl ->
       (* update the calling thread and then start the new thread *)
       match update_state Nothing (Just (next_thread_of_tl tl)) with
-      | TO_system_state (state, storage, changed_threads, restarted, discarded, write_after_stop_promising) ->
+      | TO_system_state (state, storage, changed_threads, restarted, discarded) ->
           let (state', changed_threads') =
             match Maybe_extra.fromJust tl.tl_suppl with
             | Just new_tid ->
@@ -464,7 +452,7 @@ let system_state_after_transition
                 (state, changed_threads)
             end
           in
-          TO_system_state (state', storage, changed_threads', restarted, discarded, write_after_stop_promising)
+          TO_system_state (state', storage, changed_threads', restarted, discarded)
       | TO_unhandled_exception _ _ _ -> fail
       end
     end
@@ -506,7 +494,7 @@ let sst_after_transition
   =
   match system_state_after_transition s.sst_state t with
   | TO_system_state (system_state', changed_storage, changed_threads, restarted,
-                     discarded, write_after_stop_promising) ->
+                     discarded) ->
       let (system_trans, ss_trans, thread_trans, sys_thread_trans) =
         system_state'.system_model.s_enumerate_transitions_of_system 
           system_state'
@@ -523,7 +511,6 @@ let sst_after_transition
            sst_sys_thread_transitions  = sys_thread_trans;
            sst_inst_restarted      = restarted;
            sst_inst_discarded      = discarded;
-           sst_write_after_stop_promising = write_after_stop_promising;
         |>
 
   | TO_unhandled_exception thread_id ioid exception_type ->
@@ -546,7 +533,6 @@ let sst_of_state
      sst_sys_thread_transitions  = thread_sys_trans;
      sst_inst_restarted      = false;
      sst_inst_discarded      = false;
-     sst_write_after_stop_promising = false;
   |>
 
 (** auxiliaries to let us report the number of finished instructions and the number of instruction instances ever created *)

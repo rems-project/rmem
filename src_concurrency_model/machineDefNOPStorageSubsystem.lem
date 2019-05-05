@@ -512,11 +512,6 @@ let nop_ss_receive_transition params state t_send =
   | T_POP_tm_start _               -> fail
   | T_POP_tm_commit _              -> fail
   | T_POP_tm_abort _               -> fail
-  | T_Promising_fulfil_promise _   -> fail
-  | T_Promising_propagate_write _  -> fail
-  | T_Promising_mem_satisfy_read _ -> fail
-  | T_Promising_propagate_write_nonshared _  -> fail
-  | T_Promising_mem_satisfy_read_nonshared _ -> fail
   end
 
 
@@ -571,7 +566,6 @@ let nop_storage =
      ss_is_final_state         = fun p s -> true (* FIXME: *);
      ss_coherence              = fun s -> failwith "not implemented yet";
      ss_clean_reads            = nop_ss_remove_old_read_requests;
-     ss_stopped_promising = fun _ -> false;
  |>
 
 val nop_machine_storage : forall 'ts. machineStorageSubsystem 'ts nop_storage_subsystem_state

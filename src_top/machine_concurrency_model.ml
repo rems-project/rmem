@@ -82,14 +82,6 @@ module MachineSYS (Ss : SS) = struct
   let dict_ss = Ss.dict_StorageSubsystem
 end 
 
-module PromisingSYS = struct
-  type ts = MachineDefTypes.promising_thread_state
-  type ss = MachineDefTypes.promising_storage_state
-  let dict_sys = MachineDefPromisingARM.promising_system
-  let dict_ts = MachineDefPromisingARM.promising_thread
-  let dict_ss = MachineDefPromisingARM.promising_storage
-end 
-
 
 (********************************************************************)
 
@@ -254,11 +246,8 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
     Pmap.bindings_list s.sst_state.thread_states
     |> List.map (fun (tid, state) -> (tid, (s.sst_state.t_model.ts_final_reg_state state)))
   let transitions s = s.sst_system_transitions
-  let stopped_promising s =
-    s.sst_state.s_model.ss_stopped_promising
-      s.sst_state.storage_subsystem
-  let write_after_stop_promising s =
-    s.sst_write_after_stop_promising
+  let stopped_promising s = false
+  let write_after_stop_promising s = false
   let inst_discarded s = s.sst_inst_discarded
   let inst_restarted s = s.sst_inst_restarted
 end
@@ -267,22 +256,5 @@ end
 
 
 
-let make
-    (isaModel: (module Isa_model.S))
-    (ts:       Params.thread_model)
-    (ss:       Params.storage_model)
-    : (module Concurrency_model.S)
-  =
-  let (module Sys : SYS) = match (ts,ss) with
-    | (Params.Promising_thread_model,_)  -> (module PromisingSYS)
-    | (_,Params.Promising_storage_model) -> (module PromisingSYS)
-    | (_,Params.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
-    | (_,Params.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
-    | (_,Params.Flat_storage_model)      -> (module MachineSYS(FlatSS))
-    | (_,Params.POP_storage_model)       -> (module MachineSYS(POPSS))
-    | (_,Params.NOP_storage_model)       -> (module MachineSYS(NOPSS))
-    | (_,Params.TSO_storage_model)       -> (module MachineSYS(TSOSS))
-  in
 
-  (module (Make ((val isaModel)) (Sys)) : Concurrency_model.S)
 

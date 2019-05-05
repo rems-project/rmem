@@ -1,0 +1,204 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*  Copyright Shaked Flur, University of Cambridge            2017               *)
+(*  Copyright Jon French, University of Cambridge             2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+open import Relation
+open import Pervasives_extra
+open import Sail_impl_base
+open import FreshIds
+open import Events
+open import Fragments
+open import Debug
+open import Utils
+open import Params
+open import BasicTypes
+     import Map
+open ListMonad
+open import PromisingViews
+open import PromisingTransitions
+
+
+
+
+
+(******************** Promising Storage Subsystem *******************)
+
+(* write promising write IDS are (tid,addr,number of writes by tid to addr) *)
+
+type pss = 
+  <| pss_memory : list (write * t * maybe thread_id); 
+     pss_stopped_promising : bool; |>
+
+
+(** Storage Subsystem *********************************************************)
+(*  Total-order based *********************************************************)
+
+(* initial state *)
+
+let pss_initial_state params threads iws = 
+  let make_write i w = (w, List.length iws - i, Nothing) in
+  <| pss_memory = List.mapi make_write iws;
+     pss_stopped_promising = false |>
+
+(* NOTE: returns current time, not next timestamp *)
+val pss_view : pss -> t
+let pss_view pss = 
+  match pss.pss_memory with
+  | [] -> (0 : nat)
+  | (w,t,_) :: _ -> t
+end
+
+let pss_find_write pss weiid =
+  List_extra.findNonPure (fun (w,_,_) -> w.weiid = weiid) pss.pss_memory
+
+let pss_view_of_write pss id =
+  let (_,t,_) = pss_find_write pss id in t
+  
+
+(* read transition *)
+
+let pss_possible_read_writes pss (rr,t) =
+  let addr_writes = [(w,t) | forall ((w,t,_) MEM pss.pss_memory) 
+                           | sub_footprint rr.r_addr w.w_addr] in
+  let (after,before) = splitWhile (fun (w,wt) -> wt > t) addr_writes in
+  let ws = match before with
+  | w::ws -> w :: after
+  | [] -> after
+  end in
+  let () = ensure (ws <> []) "no write to read from found" in
+  ws
+
+let pss_receive_mem_satisfy_read_transition pss tl = 
+  let (rr,t) = tl.ptl_label in
+  pss_possible_read_writes pss (rr,t) >>= fun (w,t) ->
+  let tl' = <| tl with ptl_suppl = Just (Just (w, t)) |> in
+  return (PT_sync (PT_Read tl') Nothing)
+
+
+(* write transition *)
+
+let pss_can_be_atomic pss w rf_weiid = 
+  let before_w = tail (dropWhile (fun (w',_,_) -> w <> w') pss.pss_memory) in
+  let between = takeWhile (fun (w',_,_) -> w'.weiid <> rf_weiid) before_w in
+  forall ((w',_,_) MEM between).
+  (fst w'.w_addr <> fst w.w_addr || w'.w_thread = w.w_thread)
+
+let pss_can_store_xcl_succeed pss w rxinfo =
+  match rxinfo with
+  | Nothing -> true
+  | Just (rf_weiid,r_addr) ->
+     (fst w.w_addr <> r_addr) || (pss_can_be_atomic pss w rf_weiid)
+  end
+
+let pss_receive_propagate_write_transition pss tl = 
+  let wd = fst tl.ptl_label in
+  let t = pss_view pss in
+  let memory = (wd.wd_w,t+1,Nothing) :: pss.pss_memory in
+  let pss = <| pss with pss_memory = memory |> in
+  guard (pss_can_store_xcl_succeed pss wd.wd_w wd.wd_rexinfo) >>
+  let c () = pss in
+  let tl' = <| tl with ptl_suppl = Just (Just (t+1)) |> in
+  return (PT_sync (PT_Write tl') (Just c))
+
+
+(* non-shared-write transition *)
+
+(* Assumes w' has sub-footprint of w *)
+let update_memory_write w w' = 
+  let mrs = ensure_just (mrs_from_writes w.w_addr (complete_writes [w';w]))
+              "PromisingARM: update_write failed" in
+  <| w with w_value = Just mrs.mrs_value |>
+
+let rec pss_replace_write_aux w' acc rest = 
+  match rest with
+  | [] -> failwith "no matching write to replace found"
+  | (w,t,mtid) :: rest ->
+     if sub_footprint (w'.w_addr) (w.w_addr)
+     then 
+       let () = match mtid with
+         | Just tid -> ensure (tid = w'.w_thread) "Multiple threads accessing shared memory"
+         | Nothing -> () 
+       end in
+       (List.reverseAppend ((update_memory_write w w',t, Just w'.w_thread) :: acc) rest, t)
+     else pss_replace_write_aux w' ((w,t,mtid) :: acc) rest
+  end
+
+let pss_replace_write w memory =
+  pss_replace_write_aux w [] memory
+
+let pss_receive_propagate_write_nonshared_transition pss tl = 
+  let wd = tl.ptl_label in
+  let (memory,t) = pss_replace_write wd.wd_w pss.pss_memory in
+  let tl' = <| tl with ptl_suppl = Just (Just wd.wd_req_view) |> in
+  let c () = <| pss with pss_memory = memory |> in
+  return (PT_sync (PT_Write_nonshared tl') (Just c))
+
+
+(* fulfil transition *)
+
+let pss_receive_fulfil_promise_transition pss tl = 
+  let wd = tl.ptl_label in
+  let required_view = wd.wd_req_view in
+  let (w,t,_) = pss_find_write pss wd.wd_w.weiid in
+  guard (wd.wd_w = w && required_view < t) >>
+  guard (pss_can_store_xcl_succeed pss wd.wd_w wd.wd_rexinfo) >>
+  let tl = <| tl with ptl_suppl = Just (Just t) |> in
+  return (PT_sync (PT_Fulfil tl) Nothing)
+
+
+(* receive transitions *)
+
+let pss_receive_transitions pss = function
+  | PT_Write tl ->
+     pss_receive_propagate_write_transition pss tl
+  | PT_Write_nonshared tl ->
+     pss_receive_propagate_write_nonshared_transition pss tl
+  | PT_Fulfil tl ->
+     pss_receive_fulfil_promise_transition pss tl
+  | PT_Read tl -> 
+     pss_receive_mem_satisfy_read_transition pss tl
+  | PT_Read_nonshared tl ->
+     pss_receive_mem_satisfy_read_transition pss tl
+end
+
+
+(* final state logging *)
+
+let pss_coherence pss =
+  {(w,w') | forall (((w',_,_),(w,_,_)) IN list_to_rel (pss.pss_memory))
+          | w.w_addr = w'.w_addr}
+
+
+let pss_memory_value_of_footprint s fp = 
+  let writes = 
+    List.map (fun (w,_,_) -> write_with_complete_slice w) s.pss_memory in
+  let mrs = ensure_just (mrs_from_writes fp writes)
+              "promising_ss_thread_memory_value_of_footprints" in
+  mrs.mrs_value
+
+let pss_memory_value_of_footprints s fps =
+  List.map (fun fp -> (fp,pss_memory_value_of_footprint s fp)) fps
+
+let pss_enumerate_transitions params s = 
+  guard (params.ss.promise_first && not s.pss_stopped_promising) >>
+  let c () = <| s with pss_stopped_promising = true |> in
+  return (PSS_trans (PSS_stop_promising c))
+  
+let pss_is_final_state params s = 
+  params.promise_first --> s.pss_stopped_promising
+
+

@@ -16,6 +16,7 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+open Globals
 
 let mycommand ppmode command input_file output_file =
   let error_file = output_file ^ ".err" in
