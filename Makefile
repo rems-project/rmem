@@ -757,6 +757,7 @@ ifeq ($(filter RISCV,$(ISA_LIST)),)
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscv.lem
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/isaInfoRISCV.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
+  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp2.lem
 else
   RISCV_FILES += build_isa_models/riscv/riscv_extras.lem
   RISCV_FILES += build_isa_models/riscv/riscv_types.lem
@@ -766,6 +767,7 @@ else
   LEMFLAGS += -wl_pat_red ign
   RISCV_FILES += src_concurrency_model/isaInfoRISCV.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
+  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp2.lem
 #  ISA_TOFROM_INTERP_FILES += build_isa_models/riscv/riscv_toFromInterp.lem
 endif
 

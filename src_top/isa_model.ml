@@ -233,7 +233,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       | AArch64_instr instr -> ArmV8_toFromInterp.astToInterpValue0 instr
       | MIPS_instr instr -> Mips_toFromInterp.astToInterpValue1 instr
       | RISCV_instr instr -> failwith "not implemented yet"
-      | X86_instr instr -> X86_toFromInterp.astToInterpValue3 instr
+      | X86_instr instr -> X86_toFromInterp.astToInterpValue4 instr
       | Fetch_error -> failwith "fetch error"
     in
 
@@ -243,7 +243,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
        | AARCH64_ism AArch64GenSail -> failwith "not implemented yet"
        | MIPS_ism -> MIPS_instr (Mips_toFromInterp.astFromInterpValue1 instr)
        | RISCV_ism -> failwith "not implemented yet"
-       | X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue3 instr)
+       | X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue4 instr)
     in
 
 
@@ -538,13 +538,13 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     in
 
     let instruction_to_interp2_instruction = function
-      | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue instr
+      | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue3 instr
       | Fetch_error -> failwith "fetch error"
       | _ -> failwith "not implemented yet"
     in
 
     let interp2_instruction_to_instruction instr = match ism with
-      | RISCV_ism -> RISCV_instr (Riscv_toFromInterp2.astFromInterpValue instr)
+      | RISCV_ism -> RISCV_instr (Riscv_toFromInterp2.astFromInterpValue3 instr)
       | _ -> failwith "not implemented yet"
     in
 

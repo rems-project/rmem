@@ -2260,6 +2260,7 @@ let make_prompt interact_state : SO.t =
   end
 
 let extract_options interact_state : Screen.options_state =
+  let open Screen in
   { run_options  = interact_state.options;
     model_params = !Globals.model_params;
     ppmode       = interact_state.ppmode;
