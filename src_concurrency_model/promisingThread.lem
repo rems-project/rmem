@@ -132,24 +132,10 @@ let inc_vmap m k v' =
   let v = Map.findWithDefault k bot m in
   Map.insert k (join v v') m
 
-(* let inc_vCoh addr t s = 
- *   let t' = Map.findWithDefault addr bot s.vCoh in
- *   <| s with vCoh = Map.insert addr (join t t') s.vCoh |> *)
-(* let inc_vRm t s = <| s with vRm = join t s.vRm |>
- * let inc_vRp t s = <| s with vRp = join t s.vRp |>
- * let inc_vWm t s = <| s with vWm = join t s.vWm |>
- * let inc_vWp t s = <| s with vWp = join t s.vWp |>
- * let inc_vRel t s = <| s with vRel = join t s.vRel |>
- * let inc_vCAP t s = <| s with vCAP = join t s.vCAP |> *)
-(* let set_fwd_bank addr (t,wx,fwdt) s = 
- *   <| s with fwd_bank = Map.insert addr (t,wx,fwdt) s.fwd_bank |> *)
-(* let set_xcl_bank x s = <| s with xcl_bank = x |>
- * let set_initAddr x s = <| s with initAddr = x |>
- * let add_promise x s = <| s with promises = Set.insert x s.promises |> *)
 let remove_promise wid promises = 
   Set.filter (fun (w,_,_) -> w <> wid) promises
-(* let set_ids x s    = <| s with ids = x |>
- * let set_instrs x s  = <| s with instrs = x |> *)
+
+
 
 let gen_fresh_wid addr s = 
   let addr = natFromInteger (integer_of_address addr) in
@@ -159,11 +145,6 @@ let gen_fresh_wid addr s =
   let wids = Map.insert addr next s.wids in
   let s = <| s with wids = wids |> in
   (s,id)
-
-
-
-let inline ifA (c : bool) (a : 'x -> 'x) (s : 'x) = 
-  if c then a s else s
 
 
 let ensure_done_outcome (o,_) =
