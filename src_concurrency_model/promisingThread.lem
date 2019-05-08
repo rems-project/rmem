@@ -268,14 +268,21 @@ let update_reg_value r v' s =
   let v'' = ensure_just (reassemble_register_value base_reg found) "fail" in
   set_reg rbn v'' s
 
+
+
+type instr_conf' 'v 'o = pts' 'v * instruction_info * 'v * 'o
+type instr_conf 'v = instr_conf' 'v outcome_S
+
+
+
 (* these do not handle mixed-size register accesses *)
-let read_reg (s,ii,view,o) r = 
+let read_reg ((s,ii,view,o) : instr_conf' 'v (register_value -> outcome_S)) r = 
   let rbn = register_base_name r in
   let (v,view') = (reg_value r s, vReg rbn s) in
   let ii = <| ii with ii_reg_reads = (r,v) :: ii.ii_reg_reads |> in
   (s,ii,join view view',o v)
 
-let write_reg (s,ii,view,o) (r,v,rview) = 
+let write_reg ((s,ii,view,o) : instr_conf 'v) (r,v,rview) = 
   let rbn = register_base_name r in
   let ii = <| ii with ii_reg_writes = (r,v) :: ii.ii_reg_writes |> in
   let s = s $> update_reg_value r v
@@ -334,13 +341,13 @@ let p_initial_thread_state
 
 
 
-let rec do_internal_steps (s,ii,view,o) = 
+let rec do_internal_steps ((s,ii,view,o) : instr_conf 'v) = 
   match fst o with
   | Internal _ o -> do_internal_steps (s,ii,view,o)
   | _ -> (s,ii,view,o)
 end
 
-let rec do_local_effs (s,ii,view,o) = 
+let rec do_local_effs ((s,ii,view,o) : instr_conf 'v) = 
   match fst o with
   | Done () ->           (s,ii,view,o)
   | Read_mem _ _ ->      (s,ii,view,o)
@@ -359,7 +366,7 @@ let rec do_local_effs (s,ii,view,o) =
   | Footprint o ->       failwith "footprint recalculation not supported"
 end
 
-let write_nia_arm params (s,ii,view,o) = 
+let write_nia_arm params ((s,ii,view,o) : instr_conf 'v) = 
   let nia_reg = params.t.thread_isa_info.nia_reg in
   let nia_rbn = register_base_name nia_reg in
   if isJust (List.lookup nia_reg ii.ii_reg_writes)
@@ -371,7 +378,7 @@ let write_nia_arm params (s,ii,view,o) =
     let s = set_vReg nia_rbn bot s in
     (s,ii,view,o)
 
-let write_nia_riscv params (s,ii,view,o) = 
+let write_nia_riscv params ((s,ii,view,o) : instr_conf 'v) = 
   let cia_reg = params.t.thread_isa_info.cia_reg in
   let cia_rbn = register_base_name cia_reg in
   let nia_reg = params.t.thread_isa_info.nia_reg in
@@ -390,14 +397,14 @@ let write_nia_riscv params (s,ii,view,o) =
   let s = set_vReg cia_rbn bot s in
   (s,ii,view,o)
 
-let write_nia params (s,ii,view,o) = 
+let write_nia params ((s,ii,view,o) : instr_conf 'v) = 
   match params.t.thread_isa_info.ism with
   | AARCH64_ism _ -> write_nia_arm params (s,ii,view,o)
   | RISCV_ism -> write_nia_riscv params (s,ii,view,o)
   | _ -> fail
   end
 
-let finish_instruction params (s,ii,view,o) = 
+let finish_instruction params ((s,ii,view,o) : instr_conf 'v) = 
   let () = ensure_done_outcome o in
   let (s,ii,view,o) = write_nia params (s,ii,view,o) in
   let s = <| s with instrs = ii :: s.instrs |> in
@@ -412,9 +419,8 @@ let make_plain_transition (s,ii) =
   let tl = PT_finish ii.ii_program_loc ii.ii_instruction in
   return (PT_only (make_plabel s.tid ii.ii_ioid tl c))
     
-type iie_state 'v = pts' 'v * instruction_info * 'v * outcome_S
-type instr_runner 'v = model_params -> iie_state 'v -> list (pthread_trans (pts' 'v) 'v)
-type instr_runner_s 'v = model_params -> iie_state 'v -> pthread_trans (pts' 'v) 'v
+type instr_runner 'v = model_params -> instr_conf 'v -> list (pthread_trans (pts' 'v) 'v)
+type instr_runner_s 'v = model_params -> instr_conf 'v -> pthread_trans (pts' 'v) 'v
 
 val run_barrier_instruction : forall 'v. View 'v => instr_runner 'v
 let run_barrier_instruction params (s,ii,view,o) = 
