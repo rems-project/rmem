@@ -96,7 +96,7 @@ let thread_trans_to_psys_thread_trans pts = function
 let promise_write (ss : pss) (ts : pts) (wd : writedata t) : list (psys_thread_trans pts pss t) = 
   let tc_cont m_v =
     let v = ensure_just m_v "fail" in
-    add_promise (wd.wd_w.weiid,v,fst wd.wd_w.w_addr) ts
+    <| ts with promises = Set.insert (wd.wd_w.weiid,v,fst wd.wd_w.w_addr) ts.promises |>
   in
   let tl = make_plabel wd.wd_w.w_thread wd.wd_w.w_ioid (wd,true) tc_cont in
   let thread_t = PT_Write tl in

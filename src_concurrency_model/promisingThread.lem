@@ -115,7 +115,7 @@ type pts = pts' t
 (*  Auxiliaries ***************************************************************)
 
 
-let reg r s =
+let inline reg r s =
   match Map.lookup r s.reg with
   | Just v -> v
   | Nothing -> register_state_zero s.regdata s.tid r
@@ -124,26 +124,32 @@ let vReg r s = findBot r s.vReg
 let vCoh addr s = findBot addr s.vCoh
 let fwd_bank addr s = Map.lookup addr s.fwd_bank
 let regdata r s  = ensure_just (reg_from_data s.regdata r) (show r)
+
 let set_reg r x s = <| s with reg = Map.insert r x s.reg |>
 let set_vReg r t s = <| s with vReg = Map.insert r t s.vReg |>
-let inc_vCoh addr t s = 
-  let t' = Map.findWithDefault addr bot s.vCoh in
-  <| s with vCoh = Map.insert addr (join t t') s.vCoh |>
-let inc_vRm t s = <| s with vRm = join t s.vRm |>
-let inc_vRp t s = <| s with vRp = join t s.vRp |>
-let inc_vWm t s = <| s with vWm = join t s.vWm |>
-let inc_vWp t s = <| s with vWp = join t s.vWp |>
-let inc_vRel t s = <| s with vRel = join t s.vRel |>
-let inc_vCAP t s = <| s with vCAP = join t s.vCAP |>
-let set_fwd_bank addr (t,wx,fwdt) s = 
-  <| s with fwd_bank = Map.insert addr (t,wx,fwdt) s.fwd_bank |>
-let set_xcl_bank x s = <| s with xcl_bank = x |>
-let set_initAddr x s = <| s with initAddr = x |>
-let add_promise x s = <| s with promises = Set.insert x s.promises |>
-let remove_promise wid s =
-  <| s with promises = Set.filter (fun (w,_,_) -> w <> wid) s.promises |>
-let set_ids x s    = <| s with ids = x |>
-let set_instrs x s  = <| s with instrs = x |>
+
+let inc_vmap m k v' = 
+  let v = Map.findWithDefault k bot m in
+  Map.insert k (join v v') m
+
+(* let inc_vCoh addr t s = 
+ *   let t' = Map.findWithDefault addr bot s.vCoh in
+ *   <| s with vCoh = Map.insert addr (join t t') s.vCoh |> *)
+(* let inc_vRm t s = <| s with vRm = join t s.vRm |>
+ * let inc_vRp t s = <| s with vRp = join t s.vRp |>
+ * let inc_vWm t s = <| s with vWm = join t s.vWm |>
+ * let inc_vWp t s = <| s with vWp = join t s.vWp |>
+ * let inc_vRel t s = <| s with vRel = join t s.vRel |>
+ * let inc_vCAP t s = <| s with vCAP = join t s.vCAP |> *)
+(* let set_fwd_bank addr (t,wx,fwdt) s = 
+ *   <| s with fwd_bank = Map.insert addr (t,wx,fwdt) s.fwd_bank |> *)
+(* let set_xcl_bank x s = <| s with xcl_bank = x |>
+ * let set_initAddr x s = <| s with initAddr = x |>
+ * let add_promise x s = <| s with promises = Set.insert x s.promises |> *)
+let remove_promise wid promises = 
+  Set.filter (fun (w,_,_) -> w <> wid) promises
+(* let set_ids x s    = <| s with ids = x |>
+ * let set_instrs x s  = <| s with instrs = x |> *)
 
 let gen_fresh_wid addr s = 
   let addr = natFromInteger (integer_of_address addr) in
@@ -208,16 +214,13 @@ let p_update_initial_register_state t updates =
 let p_update_initial_fetch_address params (t : pts) addr = 
   let cia_reg = params.thread_isa_info.cia_reg in
   let rv = register_value_of_address addr (direction_of_reg_name cia_reg) in
-  t $> set_reg (register_base_name cia_reg) rv 
-    $> set_initAddr (Just addr) 
+  <| t with reg = Map.insert (register_base_name cia_reg) rv t.reg;
+            initAddr = Just addr |>
 
 
 let inline dummy_ioid tid : ioid = (tid,0)
 let inline dummy_eiid tid : eiid = (dummy_ioid tid,0)
 
-
-let error_make_readwrite_events ii ((addr,sz) : footprint) =
-  (show ii.ii_ioid) ^ ". addr=" ^ show addr ^  " size=" ^ show sz
 
 let make_write_events params s ii (wk,addr,sz,memv) =
   let (write_addresses, _) =
@@ -230,10 +233,6 @@ let make_write_events params s ii (wk,addr,sz,memv) =
                 "no/multiple write events generated for store" in
   let write = <| write with w_ioid = dummy_ioid s.tid; weiid = wid |> in
   (s,write)
-
-let record_write ii w = 
-  <| ii with ii_propagated_writes = [w] |>
-
 
 let make_read_events params tid ii (rk,addr,sz) = 
   let (read_requests, id_state') =
@@ -314,7 +313,6 @@ let p_initial_thread_state
     (addr : maybe address)
     (iws : list write)
   : (pts' 'v) =
-  (* replicating what promising_ss_initial_state does *)
   let ws = List.map (fun w -> (fst w.w_addr,bot)) iws in
   let vCoh = Map.fromList ws in
   let reg = List.foldl (fun m (rbn,v) -> Map.insert rbn v m) Map.empty ird in
@@ -421,7 +419,7 @@ let write_nia params (s,ii,view,o) =
 let finish_instruction params (s,ii,view,o) = 
   let () = ensure_done_outcome o in
   let (s,ii,view,o) = write_nia params (s,ii,view,o) in
-  let s = set_instrs (ii :: s.instrs) s in
+  let s = <| s with instrs = ii :: s.instrs |> in
   (s,ii)
 
 val make_plain_transition :
@@ -465,7 +463,8 @@ let run_barrier_instruction params (s,ii,view,o) =
 
     | _ -> failwith ("cannot handle this barrier: " ^ show bk)
     end in
-  let s = s $> inc_vRp (joinS Rp) $> inc_vWp (joinS Wp) in
+  let s = <| s with vRp = joinS (s.vRp :: Rp);
+                    vWp = joinS (s.vWp :: Wp); |> in
   let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
   make_plain_transition (finish_instruction params (s,ii,view,o))
 
@@ -473,7 +472,7 @@ val run_branch_instruction : forall 'v. View 'v => instr_runner 'v
 let run_branch_instruction params (s,ii,view,o) = 
   let ii = <| ii with ii_kind = IK_branch |> in
   let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
-  let s = inc_vCAP view s in
+  let s = <| s with vCAP = join s.vCAP view |> in
   make_plain_transition (finish_instruction params (s,ii,view,o))
 
 val run_plain_instruction : forall 'v. View 'v => instr_runner 'v
@@ -485,7 +484,7 @@ let run_plain_instruction params (s,ii,view,o) =
 val run_failed_store_exclusive_instruction : forall 'v. View 'v => instr_runner_s 'v
 let run_failed_store_exclusive_instruction params (s,ii,_view,o) = 
   let view = bot in (* revisit to check if still good *)
-  let s = set_xcl_bank Nothing s in
+  let s = <| s with xcl_bank = Nothing |> in
   let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
   let (s,ii) = finish_instruction params (s,ii,view,o) in
   let c () = s in
@@ -526,13 +525,15 @@ let run_load_instruction params (s,ii,view,o) =
     end in 
     let post_view = join pre_view rf_view in
     let s = 
-      s $> inc_vCoh addr post_view
-        $> inc_vRm post_view
-        $> inc_vCAP addr_view
-        $> ifA (is_acquire_R rk) (inc_vRp post_view)
-        $> ifA (is_acquire_R rk) (inc_vWp post_view)
-        $> ifA (is_strong_release_R rk) (inc_vRel post_view)
-        $> ifA (is_exclusive_R rk) (set_xcl_bank (Just ((w.weiid,addr),post_view)))
+      <| s with vCoh = inc_vmap s.vCoh addr post_view;
+                vRm  = join s.vRm post_view;
+                vCAP = join s.vCAP addr_view;
+                vRp  = join s.vRp (ifV (is_acquire_R rk) post_view);
+                vWp  = join s.vWp (ifV (is_acquire_R rk) post_view);
+                vRel = join s.vRel (ifV (is_strong_release_R rk) post_view);
+                xcl_bank = if is_exclusive_R rk 
+                           then Just ((w.weiid,addr),post_view) else s.xcl_bank;
+      |>
     in
     let (s,ii,view,o) = do_local_effs (s,ii,post_view,c mv) in
     fst (finish_instruction params (s,ii,view,o))
@@ -573,18 +574,20 @@ let run_store_instruction xinfo params (s,ii,view,o) =
               wd_req_view = req_view |> in
   let state' = fun m_v -> 
     let post_view = ensure_just m_v "fail" in
-    let ii = <| ii with ii_kind = IK_mem_write wk |> in
-    let ii = record_write ii w in
+    let ii = <| ii with ii_kind = IK_mem_write wk;
+                        ii_propagated_writes = [w] |> in
     let s = 
-      s $> inc_vCoh addr post_view
-        $> inc_vCAP addr_view
-        $> inc_vWm post_view
-        $> ifA (is_strong_release_W wk) (inc_vRel post_view)
-        $> ifA (is_acquire_W wk) (inc_vRp post_view)
-        $> ifA (is_acquire_W wk) (inc_vWp post_view)
-        $> ifA (is_exclusive_W wk) (set_xcl_bank Nothing)
-        $> set_fwd_bank addr (w.weiid,is_exclusive_W wk, addr_data_view)
-        $> remove_promise w.weiid
+      <| s with vCoh = inc_vmap s.vCoh addr post_view;
+                vCAP = join s.vCAP addr_view;
+                vWm  = join s.vWm post_view;
+                vRel = join s.vRel (ifV (is_strong_release_W wk) post_view);
+                vRp  = join s.vRp (ifV (is_acquire_W wk) post_view);
+                vWp  = join s.vWp (ifV (is_acquire_W wk) post_view);
+                xcl_bank = if is_exclusive_W wk then Nothing else s.xcl_bank;
+                fwd_bank = let e = (w.weiid,is_exclusive_W wk, addr_data_view) in
+                           Map.insert addr e s.fwd_bank;
+                promises = remove_promise w.weiid s.promises
+      |>
     in
     let (s,ii,view,o) = do_local_effs (s,ii,post_view,c true) in
     fst (finish_instruction params (s,ii,view,o))
@@ -615,7 +618,7 @@ let initialise_instruction params isem s (addr,opcode,instr) =
   let o = isem.initial_outcome_s_of_instruction instr in
   let (ioid,ids) = gen_fresh_id s.ids in
   let ii = init_instruction_info ioid addr opcode instr in
-  let s = set_ids ids s in
+  let s = <| s with ids = ids |> in
   (s,ii,bot,o)
 
 let run_instruction
