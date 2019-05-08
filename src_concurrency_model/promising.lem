@@ -102,7 +102,7 @@ let promise_write (ss : pss) (ts : pts) (wd : writedata t) : list (psys_thread_t
   let thread_t = PT_Write tl in
   pss_receive_transitions ss thread_t
 
-let promises_fulfilled t = empty_promises t
+let promises_fulfilled t = Set.null t.promises
 
 
 type certjob 'v =
