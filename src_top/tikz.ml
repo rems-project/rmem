@@ -535,12 +535,19 @@ let make_init_state (info: Test.info) (test: Test.test) : unit =
     Test.C.pp_state symtab (regs, mem)
   in
 
+  let model_name =
+    let params = !Globals.model_params in
+    try List.assoc (params.ss.ss_model, params.t.thread_model) Model_aux.model_assoc with
+    | Not_found -> failwith "Unknown combination of storage and thread sub-systems"
+  in
+
   let states_out = open_out ((basename_in_dir info.Test.name) ^ ".states.tex") in
 
   pp_tex_header states_out info;
 
   fprintf states_out "\\newcommand{\\litmusname}{%s}\n" info.Test.name;
   fprintf states_out "\\newcommand{\\litmusarch}{%s}\n" (Archs.pp test.Test.arch);
+  fprintf states_out "\\newcommand{\\rmemmodel}{%s}\n" model_name;
   fprintf states_out "\\newcommand{\\initstate}{%s}\n" init_state;
 
   close_out states_out
