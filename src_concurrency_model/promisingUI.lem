@@ -41,14 +41,9 @@ open import Promising
 
 
 
-type ui_ptrans 'ts 'ss 'v = nat * ptrans 'ts 'ss 'v
+type ui_p_trans 'ts 'ss 'v = nat * p_trans 'ts 'ss 'v
 
-type pss_ui_state =
-  <|  (* storage state *)
-      ui_pss_memory: list (changed3 (write * t * maybe thread_id));
-      ui_pss_stopped_promising: changed2b bool;
-      ui_pss_transitions: list (ui_ptrans pts pss t);
-  |>
+type pss_ui_state = list (changed3 (write * t * maybe thread_id))
 
 
 type ui_instruction_info_list = list (changed2 instruction_info)
@@ -85,27 +80,16 @@ type pts_ui_state = pts_ui_state' t
 
 
 
-let make_pss_ui_state_1 ss' ss_trans = 
-  <| ui_pss_memory = unchanged3_list ss'.pss_memory; 
-     ui_pss_stopped_promising = C2b_unchanged ss'.pss_stopped_promising;
-     ui_pss_transitions = ss_trans |>
+let make_pss_ui_state_1 ss' = unchanged3_list ss'
+let make_pss_ui_state_2 ss ss' =  ui_list_diff3 ss ss'
 
-let make_pss_ui_state_2 ss ss' ss_trans = 
-  <| ui_pss_memory = ui_list_diff3 ss.pss_memory ss'.pss_memory; 
-     ui_pss_stopped_promising = 
-       ui_eq_diff2b ss.pss_stopped_promising ss'.pss_stopped_promising;
-     ui_pss_transitions = ss_trans |>
+     
 
-let make_pss_ui_state (ss: maybe pss) (ss': pss)
-      (transitions: list (ui_ptrans pts pss t))
-    : pss_ui_state
+let make_pss_ui_state (ss: maybe pss) (ss': pss) : pss_ui_state
   =
-  let transitions = List.filter (comb p_is_storage_transition snd) transitions in
   match (ss,ss') with
-  | (Nothing, ss') ->
-     make_pss_ui_state_1 ss' transitions
-  | (Just ss, ss') ->
-     make_pss_ui_state_2 ss ss' transitions
+  | (Nothing, ss') -> make_pss_ui_state_1 ss'
+  | (Just ss, ss') -> make_pss_ui_state_2 ss ss'
   end
 
 
@@ -115,10 +99,11 @@ type p_ui_state 'ts 'ss =
      p_ui_thread_states:         list (thread_id * 'ts);
      p_ui_storage_state:         'ss;
      p_ui_model:                 model_params;
+     p_ui_stopped_promising:     changed2b bool;
   |>
 
-val make_pts_ui_state_1 : pts -> pts_ui_state
-let make_pts_ui_state_1 (t' : pts) = 
+val make_pts_ui_state_1 : pts t -> pts_ui_state
+let make_pts_ui_state_1 (t' : pts t) = 
   <| ui_promising_reg = List.map C3_unchanged (Map_extra.toList t'.reg);
      ui_promising_vReg = 
        List.map (fun (rbn,v) -> C3_unchanged (rbn,v))
@@ -158,7 +143,7 @@ let rec ui_diff_instrs instrs instrs' =
   end
 
 
-val make_pts_ui_state_2 : pts -> pts -> list (ui_ptrans pts pss t) ->
+val make_pts_ui_state_2 : pts t -> pts t -> list (ui_p_trans (pts t) pss t) ->
   pts_ui_state
 let make_pts_ui_state_2 t t' ncands = 
   <| ui_promising_reg = ui_list_diff3 (Map_extra.toList t.reg) (Map_extra.toList t'.reg);
@@ -197,9 +182,9 @@ let make_pts_ui_state_2 t t' ncands =
 
 let make_pts_ui_state 
       (s : pss)
-      (t : maybe pts) 
-      (t' : pts) 
-      (ncands: list (ui_ptrans pts pss t))
+      (t : maybe (pts t)) 
+      (t' : pts t) 
+      (ncands: list (ui_p_trans (pts t) pss t))
     : pts_ui_state =
   match (s,t,t') with
   | (_, Nothing, t') ->
@@ -210,9 +195,9 @@ let make_pts_ui_state
 
 
 let make_p_ui_state 
-      (s : maybe (pstate pts pss))
-      (s' : pstate pts pss)
-      (ncands : list (ui_ptrans pts pss t)) 
+      (s : maybe (p_state (pts t) pss t))
+      (s' : p_state (pts t) pss t)
+      (ncands : list (ui_p_trans (pts t) pss t)) 
     : (p_ui_state pts_ui_state pss_ui_state) =
   let threads : list thread_id = Set_extra.toList (Map.domain s'.p_thread_states) in
   <| p_ui_program_memory = s'.p_program_memory; 
@@ -226,7 +211,13 @@ let make_p_ui_state
          (tid, make_pts_ui_state s'.p_storage_state t t' ncands))
        threads;
      p_ui_storage_state = make_pss_ui_state
-         (Maybe.map (fun s -> s.p_storage_state) s) 
-         s'.p_storage_state ncands;
+         (Maybe.map (fun s -> s.p_storage_state) s) s'.p_storage_state;
      p_ui_model = s'.p_model;
+
+     p_ui_stopped_promising =
+       match s with
+       | Nothing -> C2b_unchanged s'.p_stopped_promising
+       | Just s-> ui_eq_diff2b s.p_stopped_promising s'.p_stopped_promising
+       end;
+
   |>

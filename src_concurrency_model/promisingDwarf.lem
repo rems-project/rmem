@@ -41,7 +41,7 @@ open import Promising
 
 let p_get_dwarf_evaluation_context
     (endianness: end_flag)
-    (state:      pstate pts pss)
+    (state:      p_state (pts 'v) pss 'v)
     (tid:        thread_id)
     (ioid:       ioid)
     : maybe (natural (* the ioid address*) * dwarf_evaluation_context)

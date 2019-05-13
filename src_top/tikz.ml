@@ -536,8 +536,9 @@ let make_init_state (info: Test.info) (test: Test.test) : unit =
   in
 
   let model_name =
+    let open Params in
     let params = !Globals.model_params in
-    try List.assoc (params.ss.ss_model, params.t.thread_model) Model_aux.model_assoc with
+    try List.assoc (params.ss.Params.ss_model, params.t.thread_model) Model_aux.model_assoc with
     | Not_found -> failwith "Unknown combination of storage and thread sub-systems"
   in
 

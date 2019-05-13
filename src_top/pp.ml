@@ -1539,10 +1539,6 @@ let pp_ss_only_label ?(graph=false) (m: Globals.ppmode) t =
       let info = colour_memory_action m (pp_write_uncoloured m write) in
       ("propagate write to memory", Some info)
 
-let pp_pss_only_label ?(graph=false) (m: Globals.ppmode) t =
-  match t with
-  | PSS_stop_promising _ -> ("stop promising", None)
-
 
 let pp_ss_sync_label ?(graph=false) m t =
   match t with
@@ -1686,25 +1682,7 @@ let pp_t_only_label ?(graph=false) m tl =
 
 
 
-let pp_pt_only_label ?(graph=false) m tl =
-  let ioid = tl.ptl_ioid in
-  match tl.ptl_label with
 
-  | PT_finish (addr, instr) ->
-      let instr_pped = pp_instruction m.pp_symbol_table instr addr in
-      ("finish instruction: " ^ instr_pped, None)
-
-  | PT_exception exception_type ->
-      ("raise exception", Some (pp_exception m ioid exception_type))
-
-  | PT_failed_store_excl ->
-      begin match !(Globals.model_params).t.thread_isa_info.ism with
-      | AARCH64_ism _ -> ("failed store-exclusive instruction", None)
-      | RISCV_ism     -> ("failed store-conditional instruction", None)
-      | PPCGEN_ism    -> failwith "not implemented for PPC"
-      | MIPS_ism      -> failwith "not implemented for PPC"
-      | X86_ism       -> failwith "not implemented for PPC"
-      end
 
 
 
@@ -1826,55 +1804,6 @@ let pp_t_sync_label ?(graph=false) m t =
       ("abort memory transaction", Some info)
 
 
-let pp_pt_sync_label ?(graph=false) m t =
-  match t with
-
-  | PT_Read {ptl_suppl = None}
-  | PT_Read_nonshared {ptl_suppl = None} -> assert false
-
-  | PT_Read {ptl_label = ((r,t)); ptl_suppl = Some (Some (w,wt)); ptl_cont = tc}
-  | PT_Read_nonshared {ptl_label = ((r,t)); ptl_suppl = Some (Some (w,wt)); ptl_cont = tc} ->
-      let info =
-        sprintf "%s = [%s]"
-        (* sprintf (if lock then "%s = [%s] and lock" else "%s = [%s]") *)
-          (colour_memory_action m (pp_read_with_slices_and_view_uncoloured m r [] t))
-          (colour_memory_action m (pp_write_and_view_uncoloured m (w,wt)))
-      in
-      ("satisfy memory read", Some info)
-
-  | PT_Read {ptl_label = ((r,t)); ptl_suppl = Some None; ptl_cont = tc}
-  | PT_Read_nonshared {ptl_label = ((r,t)); ptl_suppl = Some None; ptl_cont = tc} ->
-      let info =
-        "(unmapped memory) " ^
-          (colour_memory_action m (pp_read_with_slices_and_view_uncoloured m r [] t))
-      in
-      ("satisfy memory read from memory", Some info)
-
-  | PT_Fulfil {ptl_label = wd; ptl_suppl = _; ptl_cont = tc} ->
-      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
-     ("fulfill promise", Some info)
-
-  | PT_Write {ptl_suppl = None}
-  | PT_Write_nonshared {ptl_suppl = None} -> assert false
-
-  | PT_Write {ptl_label = (wd,true); ptl_suppl = Some Some _; ptl_cont = tc} ->
-      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
-      ("promise write", Some info)
-
-  | PT_Write {ptl_label = (wd,false); ptl_suppl = Some Some _; ptl_cont = tc}
-  | PT_Write_nonshared {ptl_label = wd; ptl_suppl = Some Some _; ptl_cont = tc} ->
-      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
-      ("propagate memory write to storage", Some info)
-
-  | PT_Write {ptl_label = (wd,true); ptl_suppl = Some None; ptl_cont = tc} ->
-      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
-      ("promise write (unmapped address)", Some info)
-
-  | PT_Write {ptl_label = (wd,false); ptl_suppl = Some None; ptl_cont = tc}
-  | PT_Write_nonshared {ptl_label = wd; ptl_suppl = Some None; ptl_cont = tc} ->
-      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
-      ("propagate memory write to storage (unmapped address)", Some info)
-
 
 
 let pp_t_thread_start_label_aux graph m (r_address, r_toc) ioid suppl =
@@ -1908,8 +1837,7 @@ let pp_t_thread_start_label_aux graph m (r_address, r_toc) ioid suppl =
 let pp_t_thread_start_label ?(graph=false) m tl =
   pp_t_thread_start_label_aux graph m tl.tl_label tl.tl_cont.tc_ioid tl.tl_suppl
 
-let pp_pt_thread_start_label ?(graph=false) m tl =
-  pp_t_thread_start_label_aux graph m tl.ptl_label tl.ptl_ioid tl.ptl_suppl
+
 
 
 let pp_trans_label_only ?(graph=false) m (t: ('ts,'ss) trans) =
@@ -1927,15 +1855,6 @@ let pp_ss_only_trans ?(graph=false) (m: Globals.ppmode) t =
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
-let pp_pss_only_trans ?(graph=false) (m: Globals.ppmode) t =
-  match pp_pss_only_label ~graph m t with
-  | (label, None)      -> label
-  | (label, Some info) -> label ^ ": " ^ info
-
-let pp_pss_only_label ?(graph=false) (m: Globals.ppmode) t =
-  match t with
-  | PSS_stop_promising _ -> ("stop promising", None)
-
 let pp_ss_sync_trans ?(graph=false) m t =
   match pp_ss_sync_label ~graph m t with
   | (label, None)      -> label
@@ -1947,12 +1866,6 @@ let pp_t_only_trans ?(graph=false) m tl =
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
-let pp_pt_only_trans ?(graph=false) m tl =
-  pp_thread_trans_prefix ~graph m tl.ptl_tid tl.ptl_ioid  ^
-  match pp_pt_only_label ~graph m tl with
-  | (label, None)      -> label
-  | (label, Some info) -> label ^ ": " ^ info
-
 let pp_t_sync_trans ?(graph=false) m t =
   let tid = MachineDefTypes.tid_of_thread_sync_trans t in
   let ioid = ioid_of_thread_sync_trans t in
@@ -1961,23 +1874,9 @@ let pp_t_sync_trans ?(graph=false) m t =
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
-let pp_pt_sync_trans ?(graph=false) m t =
-  let tid = tid_of_pthread_sync_trans t in
-  let ioid = ioid_of_pthread_sync_trans t in
-  pp_thread_trans_prefix ~graph m tid ioid  ^
-  match pp_pt_sync_label ~graph m t with
-  | (label, None)      -> label
-  | (label, Some info) -> label ^ ": " ^ info
-
 let pp_t_thread_start_trans ?(graph=false) m tl =
   pp_thread_trans_prefix ~graph m tl.tl_cont.tc_tid tl.tl_cont.tc_ioid  ^
   match pp_t_thread_start_label ~graph m tl with
-  | (label, None)      -> label
-  | (label, Some info) -> label ^ ": " ^ info
-
-let pp_pt_thread_start_trans ?(graph=false) m tl =
-  pp_thread_trans_prefix ~graph m tl.ptl_tid tl.ptl_ioid  ^
-  match pp_pt_thread_start_label ~graph m tl with
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
@@ -1990,13 +1889,79 @@ let pp_trans ?(graph=false) m (t: ('ts,'ss) trans) =
   | T_trans (T_sync (t', _))      -> pp_t_sync_trans ~graph m t'
   | T_trans (T_thread_start tl)   -> pp_t_thread_start_trans ~graph m tl
 
-let pp_ptrans ?(graph=false) m (t: ('ts,'ss,PromisingViews.t0) ptrans) =
+
+
+
+
+
+
+let pp_pt_trans_aux ?(graph=false) m t =
   match t with
-  | PSys_trans _ -> "Finalise Promising execution"
-  | PSS_trans t'    -> pp_pss_only_trans ~graph m t'
-  | PT_trans (PT_only tl)           -> pp_pt_only_trans ~graph m tl
-  | PT_trans (PT_sync (t', _))      -> pp_pt_sync_trans ~graph m t'
-  | PT_trans (PT_thread_start tl)   -> pp_pt_thread_start_trans ~graph m tl
+
+  | PT_Read (_, (r,t), (w,wt), _) ->
+      let info =
+        sprintf "%s = [%s]"
+        (* sprintf (if lock then "%s = [%s] and lock" else "%s = [%s]") *)
+          (colour_memory_action m (pp_read_with_slices_and_view_uncoloured m r [] t))
+          (colour_memory_action m (pp_write_and_view_uncoloured m (w,wt)))
+      in
+      ("read", Some info)
+
+  | PT_Fulfil (_, wd, _, _) ->
+      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
+     ("fulfill promise", Some info)
+
+  | PT_Write (_, (wd,pr,_), _, _) ->
+      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
+      begin match pr with
+      | Promise -> ("promise write", Some info)
+      | NonPromise -> ("write", Some info)
+      end
+
+  | PT_finish (_, (addr, instr), _) ->
+      let instr_pped = pp_instruction m.pp_symbol_table instr addr in
+      ("finish instruction: " ^ instr_pped, None)
+
+  | PT_failed_store_excl (_, _) ->
+      begin match !(Globals.model_params).t.thread_isa_info.ism with
+      | AARCH64_ism _ -> ("failed store-exclusive instruction", None)
+      | RISCV_ism     -> ("failed store-conditional instruction", None)
+      | PPCGEN_ism    -> failwith "not implemented for PPC"
+      | MIPS_ism      -> failwith "not implemented for PPC"
+      | X86_ism       -> failwith "not implemented for PPC"
+      end
+
+  | PT_exception ((_,ioid), exception_type, _) ->
+      ("raise exception", Some (pp_exception m ioid exception_type))
+
+
+let pp_pt_trans ?(graph=false) m t =
+  let tid = tid_of_pt_trans t in
+  let ioid = ioid_of_pt_trans t in
+  pp_thread_trans_prefix ~graph m tid ioid  ^
+  match pp_pt_trans_aux ~graph m t with
+  | (label, None)      -> label
+  | (label, Some info) -> label ^ ": " ^ info
+
+let pp_pt_thread_start_label ?(graph=false) m (tid,ioid) (rv,mrv) mtid' =
+  pp_t_thread_start_label_aux graph m (rv,mrv) ioid (Some mtid')
+
+
+let pp_pt_thread_start_trans ?(graph=false) m (tid,ioid) (rv,mrv) mtid' =
+  pp_thread_trans_prefix ~graph m tid ioid  ^
+  match pp_pt_thread_start_label ~graph m (tid,ioid) (rv,mrv) mtid' with
+  | (label, None)      -> label
+  | (label, Some info) -> label ^ ": " ^ info
+
+
+
+let pp_p_trans ?(graph=false) m (t: ('ts,'ss,PromisingViews.t0) p_trans) =
+  match t with
+  | PT t -> pp_pt_trans ~graph m t
+  | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
+     pp_pt_thread_start_trans ~graph m (tid,ioid) (rv,mrv) tid'
+  | PSys_stop_promising -> "Stop promising"
+  | PSys_finish (_, _) -> "Finalise Promising execution"
 
 
 
@@ -2044,7 +2009,7 @@ let pp_cand_aux pp_trans_f m (n,t) =
          sprintf "%s %s    %s %s" s (colour_tran_id m (sprintf "%-2d" n)) (colour_tran_id m (pp_trans_f m t)) s
 
 let pp_cand m (n,t) = pp_cand_aux pp_trans m (n,t)
-let pp_pcand m (n,t) = pp_cand_aux pp_ptrans m (n,t)
+let pp_pcand m (n,t) = pp_cand_aux pp_p_trans m (n,t)
 
 
 (** pp a UI storage subsystem state *)
@@ -2375,27 +2340,14 @@ let tso_pp_ui_storage_subsystem_state m model ss =
 let pp_pssto_state m model ss =
   let memory =
     pp_changed3_list_body m
-      pp_write_time_and_maybetid_uncoloured ss.ui_pss_memory
+      pp_write_time_and_maybetid_uncoloured ss
   in
-
-  let stopped_promising = 
-    let pp _m = function
-      | true -> "(stopped_promising)"
-      | _ -> "(still promising)"
-    in
-    colour_changed2b_f m pp ss.ui_pss_stopped_promising
-  in
-
-  let pp_pss_transitions ts =
-    String.concat "\n" (List.map (pp_pcand m) ts) ^ "\n" in
 
     (*begin match m.Globals.pp_kind with
     | Ascii ->*)
       String.concat ""
        [sprintf "%s:"                           (colour_bold m "Storage subsystem state (Promising)"); !linebreak;
         "memory:  " ^ memory; !linebreak;
-        stopped_promising; !linebreak;
-        sprintf "%s"                            (pp_pss_transitions ss.ui_pss_transitions);
        ]
     (*| Html ->
     end*)
@@ -3403,11 +3355,22 @@ let pp_ui_system_state m s =
 
 
 let pp_ui_pstate m s =
+
+  let stopped_promising = 
+    let pp _m = function
+      | true -> "(stopped_promising)"
+      | _ -> "(still promising)"
+    in
+    colour_changed2b_f m pp s.p_ui_stopped_promising
+  in
+
   pp_pssto_state m s.p_ui_model s.p_ui_storage_state
+  ^ !linebreak
+  ^ stopped_promising
+  ^ !linebreak
   ^ !linebreak
   ^ String.concat !linebreak (List.map (pp_ui_promising_thread_state m)
                                 s.p_ui_thread_states)
-  ^ !linebreak
 
 
 

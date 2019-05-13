@@ -17,29 +17,27 @@
 
 module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
 
-  type thread_subsystem_state = PromisingThread.pts
+  type thread_subsystem_state = PromisingViews.t0 PromisingThread.pts
   type storage_subsystem_state = PromisingStorage.pss
-  type system_state = (thread_subsystem_state,storage_subsystem_state) Promising.pstate
+  type system_state = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) Promising.p_state
   type ui_state = (PromisingUI.pts_ui_state, PromisingUI.pss_ui_state) PromisingUI.p_ui_state 
 
   (* For efficiency, 'state' also includes all the enabled transitions *)
   type state = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) Promising.pst
-  type trans = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) PromisingTransitions.ptrans
+  type trans = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) PromisingTransitions.p_trans
 
   type ui_trans = int * trans
 
-  let final_ss_state s = PromisingStorage.pss_is_final_state
-                           s.Promising.p_model.Params.ss
-                           s.Promising.p_storage_state
+  let final_ss_state _s = true
 
-  let sst_of_state = Promising.pst_of_state
+  let sst_of_state = Promising.type_specialised_p_pst_of_state
 
   let initial_state ism run_options initial_state_record =
     Promising.p_initial_state
       (ISAModel.instruction_semantics ism run_options)
       ISAModel.ISADefs.reg_data
       initial_state_record
-    |> Promising.pst_of_state
+    |> Promising.type_specialised_p_pst_of_state
 
   let update_dwarf (state: system_state) (ppmode: Globals.ppmode) : Globals.ppmode =
     let pp_dwarf_dynamic =
@@ -86,11 +84,11 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
     in
     (ppmode', ui_state)
 
-  let state_after_trans = Promising.pst_after_transition
+  let state_after_trans = Promising.type_specialised_pst_after_transition
 
   let is_final_state s = 
     s.Promising.pst_trans = [] && 
-    Promising.p_is_final_state s.Promising.pst_state
+    Promising.type_specialised_p_is_final_state s.Promising.pst_state
 
   let branch_targets_of_state = Promising.p_branch_targets_of_state
   let shared_memory_of_state = Promising.p_shared_memory_of_state
@@ -107,20 +105,17 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
     let open Promising in
     PromisingTransitions.p_priority_transitions
       s.pst_state.p_model
-      (PromisingStorage.pss_is_final_state
-         s.pst_state.p_model.Params.ss
-         s.pst_state.p_storage_state)
+      true
       eager_mode
 
   let is_thread_trans = PromisingTransitions.p_is_thread_transition
-  let ioid_of_trans = PromisingTransitions.ioid_of_pthread_trans
 
-  let fuzzy_compare_transitions = Model_ptransition_aux.p_fuzzy_compare_transitions
+  let fuzzy_compare_transitions = Model_ptransition_aux.fuzzy_compare_p_trans
 
   let is_fetch_single_trans = (fun _ -> false)
   let is_fetch_multi_trans = (fun _ -> false)
 
-  let trans_fetch_addr = PromisingTransitions.ptrans_fetch_address
+  let trans_fetch_addr = PromisingTransitions.p_trans_fetch_address
   let trans_reads_fp fp _s t = PromisingTransitions.ptrans_reads_footprint fp t
   let trans_writes_fp fp _s t = PromisingTransitions.ptrans_writes_footprint fp t
 
@@ -131,20 +126,20 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
   let number_constructed_instructions s =
     Promising.p_number_of_instructions s.Promising.pst_state
 
-  let principal_ioid_of_trans = PromisingTransitions.principal_ioid_of_ptrans
+  let principal_ioid_of_trans = PromisingTransitions.ioid_of_p_trans
   let is_ioid_finished i s =
     Promising.p_is_ioid_finished i s.Promising.pst_state
-  let threadid_of_thread_trans = PromisingTransitions.thread_id_of_pthread_trans
-  let ioid_of_thread_trans = PromisingTransitions.ioid_of_pthread_trans
+  let threadid_of_thread_trans = PromisingTransitions.tid_of_p_trans
+  let ioid_of_thread_trans = PromisingTransitions.ioid_of_p_trans
   let is_storage_trans = PromisingTransitions.p_is_storage_transition
   let pp_transition_history = fun _ -> failwith "pp_transition_history"
   let pp_cand = Pp.pp_pcand
-  let pp_trans = Pp.pp_ptrans
+  let pp_trans = Pp.pp_p_trans
   let pp_ui_state = Pp.pp_ui_pstate
   let pp_instruction = Pp.pp_p_ui_instruction
   let set_model_params model s =
     let open Promising in
-    pst_of_state {s.pst_state with p_model = model}
+    type_specialised_p_pst_of_state {s.pst_state with p_model = model}
   let model_params s = s.Promising.pst_state.Promising.p_model
   let final_reg_states s = 
     let open Promising in
@@ -153,7 +148,7 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
   let transitions s = s.Promising.pst_trans
   let stopped_promising s =
     let open Promising in
-    s.pst_state.p_storage_state.PromisingStorage.pss_stopped_promising
+    s.pst_state.p_stopped_promising
   let write_after_stop_promising s = false
   let inst_discarded s = false
   let inst_restarted s = false

@@ -80,7 +80,7 @@ let init_instruction_info ioid addr opcode ast =
 
 
 
-type pts' 'v = 
+type pts 'v = 
   <| reg : map reg_base_name register_value
    ; vCoh : map address 'v
    ; vReg : map reg_base_name 'v
@@ -103,12 +103,8 @@ type pts' 'v =
    (* information for user-interface purposes only *)
    ; instrs   : list instruction_info
    ; initRegS : (reg_base_name -> register_value)
+   ; raised_exception: maybe exception_type
   |>
-
-type pts = pts' t
-
-
-
 
 
 (** Thread Subsystem **********************************************************)
@@ -171,11 +167,10 @@ let ensure_read_reg_outcome (o,_) =
 let addr_of_addr_lifted a = 
   ensure_just (address_of_address_lifted a) "fail" 
 
-(*** Thread Subsystem **********************************************************)
 
 let promising_find_instruction
     (p : list instruction_info -> instruction_info -> bool) 
-    (s : pts)
+    (s : pts 'vo)
   : maybe (list instruction_info * instruction_info) = 
   let aux : list (maybe (list instruction_info * instruction_info)) =
     mapWithContext
@@ -192,7 +187,7 @@ let p_registers_final_state s =
 let p_update_initial_register_state t updates = 
   List.foldl (fun s (x,y) -> set_reg x y s) t updates
 
-let p_update_initial_fetch_address params (t : pts) addr = 
+let p_update_initial_fetch_address params (t : pts 'v) addr = 
   let cia_reg = params.thread_isa_info.cia_reg in
   let rv = register_value_of_address addr (direction_of_reg_name cia_reg) in
   <| t with reg = Map.insert (register_base_name cia_reg) rv t.reg;
@@ -269,27 +264,6 @@ let update_reg_value r v' s =
   set_reg rbn v'' s
 
 
-
-type instr_conf' 'v 'o = pts' 'v * instruction_info * 'v * 'o
-type instr_conf 'v = instr_conf' 'v outcome_S
-
-
-
-(* these do not handle mixed-size register accesses *)
-let read_reg ((s,ii,view,o) : instr_conf' 'v (register_value -> outcome_S)) r = 
-  let rbn = register_base_name r in
-  let (v,view') = (reg_value r s, vReg rbn s) in
-  let ii = <| ii with ii_reg_reads = (r,v) :: ii.ii_reg_reads |> in
-  (s,ii,join view view',o v)
-
-let write_reg ((s,ii,view,o) : instr_conf 'v) (r,v,rview) = 
-  let rbn = register_base_name r in
-  let ii = <| ii with ii_reg_writes = (r,v) :: ii.ii_reg_writes |> in
-  let s = s $> update_reg_value r v
-            $> set_vReg rbn rview in
-  (s,ii,view,o)
-
-
 let p_initial_thread_state
     (params : thread_params)
     (tid : thread_id)
@@ -300,7 +274,7 @@ let p_initial_thread_state
     (irv : reg_base_name -> register_value)
     (addr : maybe address)
     (iws : list write)
-  : (pts' 'v) =
+  : (pts 'v) =
   let ws = List.map (fun w -> (fst w.w_addr,bot)) iws in
   let vCoh = Map.fromList ws in
   let reg = List.foldl (fun m (rbn,v) -> Map.insert rbn v m) Map.empty ird in
@@ -334,30 +308,50 @@ let p_initial_thread_state
            ; regdata  = rd
            ; instrs   = []
            ; initRegS = irv
+           ; raised_exception = Nothing;
            |>
   in
   List.foldl (fun s (r,v) -> update_reg_value r v s)
     s params.thread_isa_info.fixed_pseudo_registers
 
 
+type istate 'v 'o  = (instruction_info * 'v * 'o)
+type iconf' 'v 'o = (pts 'v * istate 'v 'o)
+type iconf 'v = (pts 'v * istate 'v outcome_S)
 
-let rec do_internal_steps ((s,ii,view,o) : instr_conf 'v) = 
+
+(* these do not handle mixed-size register accesses *)
+let read_reg ((ts,(ii,view,o)) : iconf' 'v (register_value -> outcome_S)) r = 
+  let rbn = register_base_name r in
+  let (v,view') = (reg_value r ts, vReg rbn ts) in
+  let ii = <| ii with ii_reg_reads = (r,v) :: ii.ii_reg_reads |> in
+  (ts,(ii,join view view',o v))
+
+let write_reg ((ts,(ii,view,o)) : iconf 'v) (r,v,rview) = 
+  let rbn = register_base_name r in
+  let ii = <| ii with ii_reg_writes = (r,v) :: ii.ii_reg_writes |> in
+  let ts = ts $> update_reg_value r v
+              $> set_vReg rbn rview in
+  (ts,(ii,view,o))
+
+
+let rec do_internal_steps ((ts,(ii,view,o)) : iconf 'v) = 
   match fst o with
-  | Internal _ o -> do_internal_steps (s,ii,view,o)
-  | _ -> (s,ii,view,o)
+  | Internal _ o -> do_internal_steps (ts,(ii,view,o))
+  | _ -> (ts,(ii,view,o))
 end
 
-let rec do_local_effs ((s,ii,view,o) : instr_conf 'v) = 
+let rec do_local_effs ((ts,(ii,view,o)) : iconf 'v) = 
   match fst o with
-  | Done () ->           (s,ii,view,o)
-  | Read_mem _ _ ->      (s,ii,view,o)
-  | Write_ea _ _ ->      (s,ii,view,o)
-  | Write_memv _ _ ->    (s,ii,view,o)
-  | Barrier _ _ ->       (s,ii,view,o)
-  | Excl_res _ ->        (s,ii,view,o)
-  | Read_reg r o ->      do_local_effs (read_reg (s,ii,view,o) r)
-  | Write_reg (r,v) o -> do_local_effs (write_reg (s,ii,view,o) (r,v,view))
-  | Internal _ o ->      do_local_effs (s,ii,view,o)
+  | Done () ->           (ts,(ii,view,o))
+  | Read_mem _ _ ->      (ts,(ii,view,o))
+  | Write_ea _ _ ->      (ts,(ii,view,o))
+  | Write_memv _ _ ->    (ts,(ii,view,o))
+  | Barrier _ _ ->       (ts,(ii,view,o))
+  | Excl_res _ ->        (ts,(ii,view,o))
+  | Read_reg r o ->      do_local_effs (read_reg (ts,(ii,view,o)) r)
+  | Write_reg (r,v) o -> do_local_effs (write_reg (ts,(ii,view,o)) (r,v,view))
+  | Internal _ o ->      do_local_effs (ts,(ii,view,o))
   | Escape Nothing ->    failwith ("escape Nothing")
   | Escape (Just err) -> failwith ("escape " ^ err)
   | Error err ->         failwith ("unhandled Error " ^ err)
@@ -366,65 +360,59 @@ let rec do_local_effs ((s,ii,view,o) : instr_conf 'v) =
   | Footprint o ->       failwith "footprint recalculation not supported"
 end
 
-let write_nia_arm params ((s,ii,view,o) : instr_conf 'v) = 
+let write_nia_arm params ((ts,(ii,view,o)) : iconf 'v) = 
   let nia_reg = params.t.thread_isa_info.nia_reg in
   let nia_rbn = register_base_name nia_reg in
   if isJust (List.lookup nia_reg ii.ii_reg_writes)
-  then (s,ii,view,o)
+  then (ts,(ii,view,o))
   else
     let nia_v = add_address_nat ii.ii_program_loc 4 in
     let v = register_value_of_address nia_v (direction_of_reg_name nia_reg) in
-    let s = set_reg nia_rbn v s in
-    let s = set_vReg nia_rbn bot s in
-    (s,ii,view,o)
+    let ts = set_reg nia_rbn v ts in
+    let ts = set_vReg nia_rbn bot ts in
+    (ts,(ii,view,o))
 
-let write_nia_riscv params ((s,ii,view,o) : instr_conf 'v) = 
+let write_nia_riscv params ((ts,(ii,view,o)) : iconf 'v) = 
   let cia_reg = params.t.thread_isa_info.cia_reg in
   let cia_rbn = register_base_name cia_reg in
   let nia_reg = params.t.thread_isa_info.nia_reg in
   let nia_rbn = register_base_name nia_reg in
-  let s = 
-    if isJust (List.lookup nia_reg ii.ii_reg_writes) then s
+  let ts = 
+    if isJust (List.lookup nia_reg ii.ii_reg_writes) then ts
     else
       let nia_v = add_address_nat ii.ii_program_loc 4 in
       let v = register_value_of_address nia_v (direction_of_reg_name nia_reg) in
-      let s = set_reg nia_rbn v s in
-      let s = set_vReg nia_rbn bot s in
-      s
+      let ts = set_reg nia_rbn v ts in
+      let ts = set_vReg nia_rbn bot ts in
+      ts
   in
-  let nia_v = reg nia_rbn s in
-  let s = set_reg cia_rbn nia_v s in
-  let s = set_vReg cia_rbn bot s in
-  (s,ii,view,o)
+  let nia_v = reg nia_rbn ts in
+  let ts = set_reg cia_rbn nia_v ts in
+  let ts = set_vReg cia_rbn bot ts in
+  (ts,(ii,view,o))
 
-let write_nia params ((s,ii,view,o) : instr_conf 'v) = 
+let write_nia params ((ts,(ii,view,o)) : iconf 'v) = 
   match params.t.thread_isa_info.ism with
-  | AARCH64_ism _ -> write_nia_arm params (s,ii,view,o)
-  | RISCV_ism -> write_nia_riscv params (s,ii,view,o)
+  | AARCH64_ism _ -> write_nia_arm params (ts,(ii,view,o))
+  | RISCV_ism -> write_nia_riscv params (ts,(ii,view,o))
   | _ -> fail
   end
 
-let finish_instruction params ((s,ii,view,o) : instr_conf 'v) = 
+let finish_instruction params ((ts,(ii,view,o)) : iconf 'v) = 
   let () = ensure_done_outcome o in
-  let (s,ii,view,o) = write_nia params (s,ii,view,o) in
-  let s = <| s with instrs = ii :: s.instrs |> in
-  (s,ii)
+  let (ts,(ii,view,o)) = write_nia params (ts,(ii,view,o)) in
+  let ts = <| ts with instrs = ii :: ts.instrs |> in
+  (ts,ii)
 
 val make_plain_transition :
-  forall 'v. View 'v => 
-  pts' 'v * instruction_info ->
-  list (pthread_trans (pts' 'v) 'v)
+  forall 'v 'pss. View 'v => 
+  pts 'v * instruction_info ->
+  list (pt_trans (pts 'v) 'pss 'v)
 let make_plain_transition (s,ii) =
-  let c () = s in
-  let tl = PT_finish ii.ii_program_loc ii.ii_instruction in
-  return (PT_only (make_plabel s.tid ii.ii_ioid tl c))
-    
-type instr_runner 'v = model_params -> instr_conf 'v -> list (pthread_trans (pts' 'v) 'v)
-type instr_runner_s 'v = model_params -> instr_conf 'v -> pthread_trans (pts' 'v) 'v
+  return (PT_finish (s.tid,ii.ii_ioid) (ii.ii_program_loc,ii.ii_instruction) s)
 
-val run_barrier_instruction : forall 'v. View 'v => instr_runner 'v
-let run_barrier_instruction params (s,ii,view,o) = 
-  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+let run_barrier_instruction params ((s,(ii,view,o)) : iconf 'v) : list (pt_trans (pts 'v) 'pss 'v) = 
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
   let (bk,o) = ensure_barrier_outcome o in
   (* let ii = record_barrier_event params s.tid ii bk in *)
   let (Rp,Wp) = match bk with
@@ -452,43 +440,41 @@ let run_barrier_instruction params (s,ii,view,o) =
     end in
   let s = <| s with vRp = joinS (s.vRp :: Rp);
                     vWp = joinS (s.vWp :: Wp); |> in
-  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
-  make_plain_transition (finish_instruction params (s,ii,view,o))
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
+  make_plain_transition (finish_instruction params (s,(ii,view,o)))
 
-val run_branch_instruction : forall 'v. View 'v => instr_runner 'v
-let run_branch_instruction params (s,ii,view,o) = 
+let run_branch_instruction params ((s,(ii,view,o)) : iconf 'v) : list (pt_trans (pts 'v) 'pss 'v) = 
   let ii = <| ii with ii_kind = IK_branch |> in
-  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
   let s = <| s with vCAP = join s.vCAP view |> in
-  make_plain_transition (finish_instruction params (s,ii,view,o))
+  make_plain_transition (finish_instruction params (s,(ii,view,o)))
 
-val run_plain_instruction : forall 'v. View 'v => instr_runner 'v
-let run_plain_instruction params (s,ii,view,o) =
+let run_plain_instruction params ((s,(ii,view,o)) : iconf 'v) : list (pt_trans (pts 'v) 'pss 'v) =
   let ii = <| ii with ii_kind = IK_simple |> in
-  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
-  make_plain_transition (finish_instruction params (s,ii,view,o))
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
+  make_plain_transition (finish_instruction params (s,(ii,view,o)))
 
-val run_failed_store_exclusive_instruction : forall 'v. View 'v => instr_runner_s 'v
-let run_failed_store_exclusive_instruction params (s,ii,_view,o) = 
+let run_failed_store_exclusive_instruction params ((s,(ii,_view,o)) : iconf 'v) : list (pt_trans (pts 'v) 'pss 'v) = 
   let view = bot in (* revisit to check if still good *)
   let s = <| s with xcl_bank = Nothing |> in
-  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
-  let (s,ii) = finish_instruction params (s,ii,view,o) in
-  let c () = s in
-  let tl = PT_failed_store_excl in
-  PT_only (make_plabel s.tid ii.ii_ioid tl c)
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
+  let (s,ii) = finish_instruction params (s,(ii,view,o)) in
+  return (PT_failed_store_excl (s.tid,ii.ii_ioid) s)
 
-val run_amo_instruction : forall 'v. View 'v => instr_runner 'v
-let run_amo_instruction params (s,ii,view,o) = 
+let run_amo_instruction params ((s,(ii,view,o)) : iconf 'v) = 
   failwith "AMO instruction not supported yet."
 
 let set_regs_feeding_address_regs_so_far ii = 
   let regs_so_far = List.map fst ii.ii_reg_reads in
   <| ii with ii_regs_feeding_address = regs_so_far |>
 
-val run_load_instruction : forall 'v. View 'v => instr_runner 'v
-let run_load_instruction params (s,ii,view,o) = 
-  let (s,ii,addr_view,o) = do_local_effs (s,ii,view,o) in
+let run_load_instruction 
+      params 
+      ((s,(ii,view,o)) : iconf 'v) 
+      (apss : apss 'pss 'v) 
+    : list (pt_trans (pts 'v) 'pss 'v) 
+  = 
+  let (s,(ii,addr_view,o)) = do_local_effs (s,(ii,view,o)) in
   let ii = set_regs_feeding_address_regs_so_far ii in
   let ((rk,addr,sz),c) = ensure_read_mem_outcome o in
   let addr = addr_of_addr_lifted addr in
@@ -500,49 +486,50 @@ let run_load_instruction params (s,ii,view,o) =
            ifV (is_release_R rk) s.vRm;
            ifV (is_release_R rk) s.vWm
       ] in
-  let c m_wv = 
-    let (w,t) = ensure_just m_wv "fail" in
-    let (ii,mv) = do_read ii rr w in
-    let ii = <| ii with ii_kind = IK_mem_read rk |> in
-    let rf_view = match fwd_bank addr s with
-      | Nothing -> t
-      | Just (fwd_weiid,wx,fwd_view) -> 
-         if fwd_weiid = w.weiid && ((is_RISC params || is_acquire_R rk) --> not wx)
-         then fwd_view else t
-    end in 
-    let post_view = join pre_view rf_view in
-    let s = 
-      <| s with vCoh = inc_vmap s.vCoh addr post_view;
-                vRm  = join s.vRm post_view;
-                vCAP = join s.vCAP addr_view;
-                vRp  = join s.vRp (ifV (is_acquire_R rk) post_view);
-                vWp  = join s.vWp (ifV (is_acquire_R rk) post_view);
-                vRel = join s.vRel (ifV (is_strong_release_R rk) post_view);
-                xcl_bank = if is_exclusive_R rk 
-                           then Just ((w.weiid,addr),post_view) else s.xcl_bank;
+  let sh = if in_shared_memory params (addr,sz) then Shared else NonShared in
+  let view_constraint = join (vCoh addr s) pre_view in
+  apss.pss_sem.handle_read apss.pss rr view_constraint sh >>= fun (w,t) ->
+  let (ii,mv) = do_read ii rr w in
+  let ii = <| ii with ii_kind = IK_mem_read rk |> in
+  let rf_view = match fwd_bank addr s with
+    | Nothing -> t
+    | Just (fwd_weiid,wx,fwd_view) -> 
+       if fwd_weiid = w.weiid && ((is_RISC params || is_acquire_R rk) --> not wx)
+       then fwd_view else t
+    end 
+  in 
+  let post_view = join pre_view rf_view in
+  let s = 
+    <| s with vCoh = inc_vmap s.vCoh addr post_view;
+              vRm  = join s.vRm post_view;
+              vCAP = join s.vCAP addr_view;
+              vRp  = join s.vRp (ifV (is_acquire_R rk) post_view);
+              vWp  = join s.vWp (ifV (is_acquire_R rk) post_view);
+              vRel = join s.vRel (ifV (is_strong_release_R rk) post_view);
+              xcl_bank = if is_exclusive_R rk 
+                         then Just ((w.weiid,addr),post_view) else s.xcl_bank;
       |>
-    in
-    let (s,ii,view,o) = do_local_effs (s,ii,post_view,c mv) in
-    fst (finish_instruction params (s,ii,view,o))
   in
-  let tkind = if in_shared_memory params (addr,sz)
-              then PT_Read else PT_Read_nonshared in
-  let label = make_plabel s.tid ii.ii_ioid (rr, join (vCoh addr s) pre_view) c in
-  return (PT_sync (tkind label) ())
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,post_view,c mv)) in
+  let s = fst (finish_instruction params (s,(ii,view,o))) in
+  return (PT_Read (s.tid,ii.ii_ioid) (rr,view_constraint) (w,t) s)
+
 
 
 (* see also run_store_exclusive_instruction *)
-val run_store_instruction : 
-  forall 'v. View 'v, SetType 'v => 
-    (Maybe.maybe ((w_eiid * Sail_impl_base.address) * 'v)) ->
-    instr_runner 'v
-let run_store_instruction xinfo params (s,ii,view,o) = 
-  let (s,ii,addr_view,o) = do_local_effs (s,ii,view,o) in
+let run_store_instruction
+      xinfo
+      params
+      ((s,(ii,view,o)) : iconf 'v)
+      (apss : apss 'pss 'v) :
+      list (pt_trans (pts 'v) 'pss 'v)
+  = 
+  let (s,(ii,addr_view,o)) = do_local_effs (s,(ii,view,o)) in
   let ii = set_regs_feeding_address_regs_so_far ii in
   let ((wk,addr,sz),o) = ensure_write_ea_outcome o in
   let addr = addr_of_addr_lifted addr in
   let _ = natFromInteger (integer_of_address addr) in
-  let (s,ii,addr_data_view,o) = do_local_effs (s,ii,addr_view,o) in
+  let (s,(ii,addr_data_view,o)) = do_local_effs (s,(ii,addr_view,o)) in
   let (mv,c) = ensure_write_memv_outcome o in
   let (s,w) = make_write_events params s ii (wk,addr,sz,mv) in
   let pre_view = 
@@ -559,10 +546,9 @@ let run_store_instruction xinfo params (s,ii,view,o) =
   let wd = <| wd_w = w; 
               wd_rexinfo = Maybe.map fst xinfo; 
               wd_req_view = req_view |> in
-  let state' = fun m_v -> 
-    let post_view = ensure_just m_v "fail" in
-    let ii = <| ii with ii_kind = IK_mem_write wk;
-                        ii_propagated_writes = [w] |> in
+  let ii = <| ii with ii_kind = IK_mem_write wk;
+                      ii_propagated_writes = [w] |> in
+  let c post_view = 
     let s = 
       <| s with vCoh = inc_vmap s.vCoh addr post_view;
                 vCAP = join s.vCAP addr_view;
@@ -576,28 +562,25 @@ let run_store_instruction xinfo params (s,ii,view,o) =
                 promises = remove_promise w.weiid s.promises
       |>
     in
-    let (s,ii,view,o) = do_local_effs (s,ii,post_view,c true) in
-    fst (finish_instruction params (s,ii,view,o))
+    let (s,(ii,view,o)) = do_local_effs (s,(ii,post_view,c true)) in
+    fst (finish_instruction params (s,(ii,view,o)))
   in
   if exists ((p,_,_) IN s.promises). p = w.weiid then
-    let tl = make_plabel s.tid ii.ii_ioid wd state' in
-    return (PT_sync (PT_Fulfil tl) ())
-  else if in_shared_memory params (addr,sz) then
-    let tl = make_plabel s.tid ii.ii_ioid (wd,false) state' in
-    return (PT_sync (PT_Write tl) ())
-  else 
-    let tl = make_plabel s.tid ii.ii_ioid wd state' in
-    return (PT_sync (PT_Write_nonshared tl) ())
+    apss.pss_sem.handle_fulfil apss.pss wd >>= fun post_view ->
+    return (PT_Fulfil (s.tid,ii.ii_ioid) wd post_view (c post_view))
+  else
+    let sh = if in_shared_memory params (addr,sz) then Shared else NonShared in
+    apss.pss_sem.handle_write apss.pss wd sh >>= fun (post_view,pss) ->
+    return (PT_Write (s.tid,ii.ii_ioid) (wd,NonPromise,sh)
+              post_view (c post_view, pss))
 
-
-val run_store_exclusive_instruction : forall 'v. View 'v, SetType 'v => instr_runner 'v
-let run_store_exclusive_instruction params (s,ii,view,o) = 
-  let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+let run_store_exclusive_instruction params ((s,(ii,view,o)) : iconf 'v) apss = 
+  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
   let c = ensure_excl_res_outcome o in
-  run_failed_store_exclusive_instruction params (s,ii,view,c false) 
-  ::
+  run_failed_store_exclusive_instruction params (s,(ii,view,c false))
+  ++
   (option_guard s.xcl_bank >>= fun rxinfo ->
-   run_store_instruction (Just rxinfo) params (s,ii,view,c true))
+   run_store_instruction (Just rxinfo) params (s,(ii,view,c true)) apss)
 
 
 
@@ -606,38 +589,37 @@ let initialise_instruction params isem s (addr,opcode,instr) =
   let (ioid,ids) = gen_fresh_id s.ids in
   let ii = init_instruction_info ioid addr opcode instr in
   let s = <| s with ids = ids |> in
-  (s,ii,bot,o)
+  (s,(ii,bot,o))
 
 let run_instruction
     (params : model_params)
     (isem : instruction_semantics)
-    (s : pts' 'v)
+    (s : pts 'v)
+    (apss : apss 'pss 'v)
     ((addr,opcode,instr) : (address * maybe opcode * instruction_ast))
-  : list (pthread_trans (pts' 'v) 'v) = 
-  let (s,ii,view,o) = initialise_instruction params.t isem s (addr,opcode,instr) in
+  : list (pt_trans (pts 'v) 'pss 'v) = 
+  let (s,(ii,view,o)) = initialise_instruction params.t isem s (addr,opcode,instr) in
   if is_branch instr then 
-    run_branch_instruction params (s,ii,view,o)
+    run_branch_instruction params (s,(ii,view,o))
   else
-    let (s,ii,view,o) = do_local_effs (s,ii,view,o) in
+    let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
     match fst o with
-    | Done _ -> run_plain_instruction params (s,ii,view,o)
-    | Read_mem _ _ -> run_load_instruction params (s,ii,view,o)
+    | Done _ -> run_plain_instruction params (s,(ii,view,o))
+    | Read_mem _ _ -> run_load_instruction params (s,(ii,view,o)) apss
     | Write_ea _ _ ->
        if is_amo instr
-       then run_amo_instruction params (s,ii,view,o)
-       else run_store_instruction Nothing params (s,ii,view,o)
-    | Barrier _ _ -> run_barrier_instruction params (s,ii,view,o)
-    | Excl_res _ -> run_store_exclusive_instruction params (s,ii,view,o)
+       then run_amo_instruction params (s,(ii,view,o))
+       else run_store_instruction Nothing params (s,(ii,view,o)) apss
+    | Barrier _ _ -> run_barrier_instruction params (s,(ii,view,o))
+    | Excl_res _ -> run_store_exclusive_instruction params (s,(ii,view,o)) apss
     | _ -> fail
     end
 
 let fail_fetch s (fde : fetch_and_decode_exception) = 
-  let c () = s in
   let e = ET_fetch_and_decode fde in
-  let l = (head s.instrs).ii_ioid in
-  PT_only (make_plabel s.tid l (PT_exception e) c)
+  PT_exception (s.tid,(head s.instrs).ii_ioid) e s
 
-let run_addr params isem (s : pts' 'v) addr = 
+let run_addr params isem (s : pts 'v) (apss : apss 'pss 'v) addr = 
   match s.prog addr with
   | FDO_address_not_concrete ->
      return (fail_fetch s (FDE_non_concrete_fetch_address_error))
@@ -649,7 +631,7 @@ let run_addr params isem (s : pts' 'v) addr =
      if params.t.thread_fail_on_loop &&
         exists (i MEM s.instrs). i.ii_program_loc = addr
      then failwith "found loop"
-     else run_instruction params isem s (addr,opcode,instr)
+     else run_instruction params isem s apss (addr,opcode,instr) 
   end
    
 let cia_of_state params s = 
@@ -670,16 +652,19 @@ let quick_quick_detect_deadlock ts =
 let next_instruction_transitions_of_thread
     (params : model_params)
     (isem : instruction_semantics)
-    (s : pts' 'v)
-  : list (pthread_trans (pts' 'v) 'v) =
+    (s : pts 'v)
+    (apss : apss 'pss 'v)
+  : list (pt_trans (pts 'v) 'pss 'v) =
   let cia = cia_of_state params.t s in
   guard (isJust s.initAddr && 
          cia <> s.retAddr &&
+         isNothing s.raised_exception &&
          not (quick_quick_detect_deadlock s)) >>
-  run_addr params isem s cia
+  run_addr params isem s apss cia
 
 
 (* fix the params.thread_run_after_stop_promising case *)
-let is_final_tstate params (s : pts' 'v) : bool =
-  (Set.null s.promises) && (cia_of_state params s) = s.retAddr
-    (* not params.thread_run_after_stop_promising *)
+let is_final_tstate params (s : pts 'v) : bool =
+  isJust s.raised_exception ||
+  (Set.null s.promises && (cia_of_state params s) = s.retAddr)
+
