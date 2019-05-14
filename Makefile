@@ -297,7 +297,7 @@ clean: clean_ocaml
 
 ## marshal defs ######################################################
 
-MARSHAL_DEFS_FILES = PPCGen.defs AArch64.defs MIPS64.defs X86.defs
+MARSHAL_DEFS_FILES = PPCGen.defs MIPS64.defs X86.defs
 
 marshal_defs: build_concurrency_model/make_sentinel
 	rm -f marshal_defs.native
@@ -629,7 +629,16 @@ gen_patch_isa_model_power:
 	diff -au $(saildir)/power/power_embed.lem build_isa_models/power/power_embed.lem > patches/power_embed.lem.patch || true
 
 get_isa_model_aarch64: ISANAME=armV8
-get_isa_model_aarch64: ISADIR=$(saildir)/arm
+get_isa_model_aarch64: ISADIR=$(sail2dir)/aarch64_small
+get_isa_model_aarch64: ISASAILFILES=$(ISADIR)/*.sail
+get_isa_model_aarch64: ISALEMFILES=$(ISADIR)/for-rmem/*.lem
+get_isa_model_aarch64: ISALEMFILES+=$(ISADIR)/armV8_extras_embed.lem
+get_isa_model_aarch64: ISALEMFILES+=$(ISADIR)/armV8_extras.lem
+get_isa_model_aarch64: ISALEMFILES+=$(ISADIR)/for-rmem/armV8_toFromInterp2.ml
+get_isa_model_aarch64: ISADEFSFILES=$(ISADIR)/for-rmem/armV8.defs
+get_isa_model_aarch64: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" all
+INSTALL_DEFS_FILES += armV8.defs
+CLEANFILES += armV8.defs
 ifeq ($(filter AArch64,$(ISA_LIST)),)
   get_isa_model_aarch64: BUILDISA=false
   RMEMSTUBS += build_isa_models/aarch64/armV8.ml
@@ -730,11 +739,11 @@ ifeq ($(filter AArch64,$(ISA_LIST)),)
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_toFromInterp.lem
 else
   AARCH64_FILES += build_isa_models/aarch64/armV8_extras_embed.lem
-  AARCH64_FILES += build_isa_models/aarch64/armV8_embed_types.lem
-  AARCH64_FILES += build_isa_models/aarch64/armV8_embed.lem
+  AARCH64_FILES += build_isa_models/aarch64/armV8_types.lem
+  AARCH64_FILES += build_isa_models/aarch64/armV8.lem
   AARCH64_FILES += src_concurrency_model/isaInfoAArch64.lem
   AARCH64_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/aarch64/armV8_extras.lem)
-  ISA_TOFROM_INTERP_FILES += build_isa_models/aarch64/armV8_toFromInterp.lem
+  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_toFromInterp.lem
 endif
 
 ifeq ($(filter MIPS,$(ISA_LIST)),)
@@ -825,6 +834,7 @@ MACHINEFILES=\
   build_sail2_shallow_embedding/sail2_values.lem\
   build_sail2_shallow_embedding/sail2_operators.lem\
   build_sail2_shallow_embedding/sail2_operators_mwords.lem\
+  build_sail2_shallow_embedding/sail2_operators_bitlists.lem\
   build_sail2_shallow_embedding/sail2_prompt_monad.lem\
   build_sail2_shallow_embedding/sail2_prompt.lem\
   build_sail2_shallow_embedding/sail2_string.lem\
