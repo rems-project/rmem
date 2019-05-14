@@ -26,7 +26,7 @@ let marshal_isa defs filename =
 
 let opts = [
   ("-PPCGen",     Arg.String (marshal_isa Power.defs),    "<filename>");
-  ("-AArch64",    Arg.String (marshal_isa ArmV8.defs),    "<filename>");
+  (* ("-AArch64",    Arg.String (marshal_isa ArmV8.defs),    "<filename>"); *)
 (*   ("-AArch64Gen", Arg.String (marshal_isa ArmV8Gen.defs), "<filename>"); *)
   ("-MIPS64",     Arg.String (marshal_isa Mips.defs),     "<filename>");
   (* ("-RISCV",      Arg.String (marshal_isa (Ast.Defs [], Type_check.Env.set_prover None Type_check.initial_env)),    "<filename>"); *)

@@ -49,7 +49,7 @@ let herdtools_ast_to_interp_instruction (i : instruction) =
 (* #include "build_isa_models/aarch64/gen/herdtools_types_to_shallow_types.hgen" *)
 
 let herdtools_ast_to_shallow_ast (instr : instruction) =
-  let open ArmV8_embed_types in
+  let open ArmV8_types in
   let instr = match instr with
   (* #include "build_isa_models/aarch64/gen/herdtools_ast_to_shallow_ast.hgen" *)
   | i ->
@@ -64,7 +64,7 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
 (* #include "build_isa_models/aarch64/gen/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
-  let open ArmV8_embed_types in
+  let open ArmV8_types in
   match instr with
   | InstructionSemantics.AArch64_instr instr ->
      begin match instr with

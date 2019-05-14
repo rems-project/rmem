@@ -19,6 +19,7 @@
 
 open import Pervasives
 open import Assert_extra
+open import Maybe_extra
 open import Sail_impl_base
 open import Utils
 open import FreshIds
@@ -26,16 +27,17 @@ open import Events
 open import InstructionSemantics
 open import BasicTypes
 import Sail_values
-import ArmV8_embed_types
+import ArmV8_types
 
 
 let aarch64_is_system_call_instruction = function
-  | AArch64_instr (ArmV8_embed_types.GenerateExceptionEL1 imm) -> Just (Sail_values.unsigned imm)
+  | AArch64_instr (ArmV8_types.GenerateExceptionEL1 imm) -> Just (fromJust (Sail2_values.unsigned_of_bits imm))
   | _ -> Nothing
   end
 
 let aarch64_is_thread_start_instruction = function
-  | AArch64_instr (ArmV8_embed_types.ImplementationDefinedThreadStart) -> true
+  (* TODO FIXME *)
+  (* | AArch64_instr (ArmV8_types.ImplementationDefinedThreadStart) -> true *)
   | _ -> false
   end
 
@@ -119,14 +121,14 @@ let aarch64_register_data_info : registerdata =
     reg 128 "V31" [];
 
     (* A64  special purpose registers *)
-    reg 32 "CurrentEL" [("EL", (3,2))];
-    reg 32 "DAIF"
+    reg 33 "CurrentEL" [("EL", (3,2))];
+    reg 34 "DAIF"
       [ ("D", (9,9));
         ("A", (8,8));
         ("I", (7,7));
         ("F", (6,6));
       ];
-    reg 32 "NZCV"
+    reg 35 "NZCV"
       [ ("N", (31,31));
         ("Z", (30,30));
         ("C", (29,29));
@@ -136,8 +138,8 @@ let aarch64_register_data_info : registerdata =
     reg 64 "SP_EL1" [];
     reg 64 "SP_EL2" [];
     reg 64 "SP_EL3" [];
-    reg 32 "SPSel" [("SP", (0,0))];
-    reg 32 "SPSR_EL1"
+    reg 36 "SPSel" [("SP", (0,0))];
+    reg 37 "SPSR_EL1"
       [ ("N",    (31,31));
         ("Z",    (30,30));
         ("C",    (29,29));
@@ -151,7 +153,7 @@ let aarch64_register_data_info : registerdata =
         ("M4",   (4,4));
         ("M3_0", (3,0));
       ];
-    reg 32 "SPSR_EL2"
+    reg 37 "SPSR_EL2"
       [ ("N",    (31,31));
         ("Z",    (30,30));
         ("C",    (29,29));
@@ -165,7 +167,7 @@ let aarch64_register_data_info : registerdata =
         ("M4",   (4,4));
         ("M3_0", (3,0));
       ];
-    reg 32 "SPSR_EL3"
+    reg 37 "SPSR_EL3"
       [ ("N",    (31,31));
         ("Z",    (30,30));
         ("C",    (29,29));
@@ -184,7 +186,7 @@ let aarch64_register_data_info : registerdata =
     reg 64 "ELR_EL3" [];
 
     (* A64 general system control registers *)
-    reg 64 "HCR_EL2"
+    reg 66 "HCR_EL2"
       [ ("ID",    (33,33));
         ("CD",    (32,32));
         ("RW",    (31,31));
@@ -219,7 +221,7 @@ let aarch64_register_data_info : registerdata =
         ("SWIO",  (1,1));
         ("VM",    (0,0));
       ];
-    reg 64 "ID_AA64MMFR0_EL1"
+    reg 67 "ID_AA64MMFR0_EL1"
       [ ("TGran4",    (31,28));
         ("TGran64",   (27,24));
         ("TGran16",   (23,20));
@@ -232,7 +234,7 @@ let aarch64_register_data_info : registerdata =
     reg 64 "RVBAR_EL1" [];
     reg 64 "RVBAR_EL2" [];
     reg 64 "RVBAR_EL3" [];
-    reg 32 "SCR_EL3"
+    reg 38 "SCR_EL3"
       [ ("TWE", (13,13));
         ("TWI", (12,12));
         ("ST",  (11,11));
@@ -245,7 +247,7 @@ let aarch64_register_data_info : registerdata =
         ("IRQ", (1,1));
         ("NS",  (0,0));
       ];
-    reg 32 "SCTLR_EL1"
+    reg 41 "SCTLR_EL1"
       [ ("UCI",     (26,26));
         ("EE",      (25,25));
         ("E0E",     (24,24));
@@ -265,7 +267,7 @@ let aarch64_register_data_info : registerdata =
         ("A",       (1,1));
         ("M",       (0,0));
       ];
-    reg 32 "SCTLR_EL2"
+    reg 42 "SCTLR_EL2"
       [ ("EE",  (25,25));
         ("WXN", (19,19));
         ("I",   (12,12));
@@ -274,7 +276,7 @@ let aarch64_register_data_info : registerdata =
         ("A",   (1,1));
         ("M",   (0,0));
       ];
-    reg 32 "SCTLR_EL3"
+    reg 42 "SCTLR_EL3"
       [ ("EE",  (25,25));
         ("WXN", (19,19));
         ("I",   (12,12));
@@ -283,7 +285,7 @@ let aarch64_register_data_info : registerdata =
         ("A",   (1,1));
         ("M",   (0,0));
       ];
-    reg 64 "TCR_EL1"
+    reg 68 "TCR_EL1"
       [ ("TBI1",  (38,38));
         ("TBI0",  (37,37));
         ("AS",    (36,36));
@@ -302,7 +304,7 @@ let aarch64_register_data_info : registerdata =
         ("EPD0",  (7,7));
         ("T0SZ",  (5,0));
       ];
-    reg 32 "TCR_EL2"
+    reg 43 "TCR_EL2"
       [ ("TBI",   (20,20));
         ("PS",    (18,16));
         ("TG0",   (15,14));
@@ -311,7 +313,7 @@ let aarch64_register_data_info : registerdata =
         ("IRGN0", (9,8));
         ("T0SZ",  (5,0));
       ];
-    reg 32 "TCR_EL3"
+    reg 43 "TCR_EL3"
       [ ("TBI",   (20,20));
         ("PS",    (18,16));
         ("TG0",   (15,14));
@@ -323,11 +325,11 @@ let aarch64_register_data_info : registerdata =
     reg 64 "TPIDR_EL0" [];
 
     (* A64 debug registers *)
-    reg 32 "DBGPRCR_EL1" [("CORENPDRQ", (0,0))];
-    reg 32 "OSDLR_EL1" [("DLK", (0,0))];
+    reg 44 "DBGPRCR_EL1" [("CORENPDRQ", (0,0))];
+    reg 45 "OSDLR_EL1" [("DLK", (0,0))];
 
     (* A64 external debug registers *)
-    reg 32 "EDSCR"
+    reg 46 "EDSCR"
       [ ("RXfull",  (30,30));
         ("TXfull",  (29,29));
         ("ITO",     (28,28));
@@ -349,11 +351,11 @@ let aarch64_register_data_info : registerdata =
       ];
 
     (* A64 transactional memory registers *)
-    reg 64 "TXIDR_EL0" [("DEPTH", (7,0))];
+    reg 69 "TXIDR_EL0" [("DEPTH", (7,0))];
     reg 8 "TxNestingLevel" [];
 
     (* A32 general system control registers *)
-    reg 32 "SCR"
+    reg 38 "SCR"
       [ ("TWE", (13,13));
         ("TWI", (12,12));
         ("ST",  (11,11));
@@ -368,8 +370,8 @@ let aarch64_register_data_info : registerdata =
       ];
 
     (* A32 debug registers *)
-    reg 32 "DBGOSDLR" [("DLK", (0,0))];
-    reg 32 "DBGPRCR" [("CORENPDRQ", (0,0))];
+    reg 39 "DBGOSDLR" [("DLK", (0,0))];
+    reg 40 "DBGPRCR" [("CORENPDRQ", (0,0))];
   ]
 
 let aarch64_reg_name name : reg_name =
@@ -443,8 +445,8 @@ let aarch64_thread_start_info =
    particular, the function will return false for STXP/STLXP, even though they
    are store-pair, since the whole write is single-copy atomic. *)
 let aarch64_is_nonatomic_store_pair_instruction = function
-  | AArch64_instr (ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_STORE,_,_)) -> true
-  | AArch64_instr (ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_STORE,_,_,_)) -> true
+  | AArch64_instr (ArmV8_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_STORE,_,_)) -> true
+  | AArch64_instr (ArmV8_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_STORE,_,_,_)) -> true
   | _ -> false
   end
 
@@ -455,9 +457,9 @@ let aarch64_is_nonatomic_store_pair_instruction = function
    (32bit) registers even though these are load-pair, since the whole read is
    single-copy atomic. *)
 let aarch64_is_nonatomic_load_pair_instruction = function
-  | AArch64_instr (ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_LOAD,_,_)) -> true
-  | AArch64_instr (ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_LOAD,_,_,_)) -> true
-  | AArch64_instr (ArmV8_embed_types.LoadStoreAcqExc (_,_,_,_,_,_,Sail_values.B1,MemOp_LOAD,elsize,_,_)) ->
+  | AArch64_instr (ArmV8_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_LOAD,_,_)) -> true
+  | AArch64_instr (ArmV8_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_LOAD,_,_,_)) -> true
+  | AArch64_instr (ArmV8_types.LoadStoreAcqExc (_,_,_,_,_,_,Sail2_values.B1,MemOp_LOAD,elsize,_,_)) ->
      natFromInteger elsize = 64 (* no pattern matching on integers in Lem *)
   | _ -> false
   end

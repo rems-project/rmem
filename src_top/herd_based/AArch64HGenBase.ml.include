@@ -499,22 +499,22 @@ let pp_reverse sf op =
   | RevOp_REV16 -> "REV16"
   | RevOp_REV32 -> if sf = Set32 then "REV" else "REV32"
 
-let pp_dcop op =
-  match op with
-  | IVAC  -> "IVAC"
-  | ISW   -> "ISW"
-  | CSW   -> "CSW"
-  | CISW  -> "CISW"
-  | ZVA   -> "ZVA"
-  | CVAC  -> "CVAC"
-  | CVAU  -> "CVAU"
-  | CIVAC -> "CIVAC"
-
-let pp_icop op =
-  match op with
-  | IALLUIS -> "IALLUIS"
-  | IALLU   -> "IALLU"
-  | IVAU    -> "IVAU"
+(* let pp_dcop op =
+ *   match op with
+ *   | IVAC  -> "IVAC"
+ *   | ISW   -> "ISW"
+ *   | CSW   -> "CSW"
+ *   | CISW  -> "CISW"
+ *   | ZVA   -> "ZVA"
+ *   | CVAC  -> "CVAC"
+ *   | CVAU  -> "CVAU"
+ *   | CIVAC -> "CIVAC"
+ * 
+ * let pp_icop op =
+ *   match op with
+ *   | IALLUIS -> "IALLUIS"
+ *   | IALLU   -> "IALLU"
+ *   | IVAU    -> "IVAU" *)
 
 (*** TODO: end ***)
 

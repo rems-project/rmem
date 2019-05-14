@@ -33,7 +33,7 @@ open import UiTypes
 open import MachineDefThreadSubsystemUtils
 open import MachineDefTypes
 open import MachineDefUI
-     import ArmV8_embed_types
+     import ArmV8_types
 open ListMonad
 
 
@@ -133,11 +133,11 @@ let is_exclusive_W = function
 end
                         
 let is_branch = function
-  | AArch64_instr (ArmV8_embed_types.CompareAndBranch _) -> true
-  | AArch64_instr (ArmV8_embed_types.BranchConditional _) -> true
-  | AArch64_instr (ArmV8_embed_types.TestBitAndBranch _) -> true
-  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) -> true
-  | AArch64_instr (ArmV8_embed_types.BranchRegister _) -> true
+  | AArch64_instr (ArmV8_types.CompareAndBranch _) -> true
+  | AArch64_instr (ArmV8_types.BranchConditional _) -> true
+  | AArch64_instr (ArmV8_types.TestBitAndBranch _) -> true
+  | AArch64_instr (ArmV8_types.BranchImmediate _) -> true
+  | AArch64_instr (ArmV8_types.BranchRegister _) -> true
   | RISCV_instr (Riscv_types.BTYPE _) -> true
   | _ -> false
 end

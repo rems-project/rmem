@@ -30,11 +30,10 @@ open import Sail_values
        import Sail2_operators_mwords
 import Prompt
 import Power_embed
-import ArmV8_embed
 import Mips_embed
 import X86_embed
 import Riscv
-
+import ArmV8
 
 
 type aarch64_variant =
@@ -50,7 +49,7 @@ type instruction_semantics_mode (* ism *) =
 
 type instruction_ast =
   | PPCGEN_instr of Power_embed_types.ast
-  | AArch64_instr of ArmV8_embed_types.ast
+  | AArch64_instr of ArmV8_types.ast
   | MIPS_instr of Mips_embed_types.ast
   | RISCV_instr of Riscv_types.ast
   | X86_instr of X86_embed_types.ast
@@ -130,6 +129,28 @@ let sail_bit_1to2 b =
   | Sail_values.BU -> Sail2_values.BU
 end
 
+let sail_bit_2to1 b =
+  match b with
+  | Sail2_values.B0 -> Sail_values.B0
+  | Sail2_values.B1 -> Sail_values.B1
+  | Sail2_values.BU -> Sail_values.BU
+end
+
+let bitl_of_bitU b =
+  match b with
+  | Sail_values.B1 -> Bitl_one
+  | Sail_values.B0 -> Bitl_zero
+  | Sail_values.BU -> Bitl_undef
+  end
+   
+let bitU_of_bitl b =
+  match b with
+  | Bitl_one -> Sail_values.B1
+  | Bitl_zero -> Sail_values.B0
+  | Bitl_undef -> Sail_values.BU
+  | Bitl_unknown -> Sail_values.BU
+  end
+
 let bool_to_bitU b =
   match b with
   | true -> Sail_values.B1
@@ -151,6 +172,9 @@ let sail_bv_1to2 vec =
 
 let riscv_bits_to_sail1_vec bv =
   (Sail_values.Vector (List.map bool_to_bitU (Machine_word.bitlistFromWord bv)) (integerFromNat (Machine_word.word_length bv)) false)
+
+let armv8_bits_to_sail1_vec bv =
+  (Sail_values.Vector (List.map sail_bit_2to1 bv) (integerFromNat (List.length bv)) false)
 
 let riscv_bk_to_sail1 bk =
   match bk with
@@ -234,7 +258,7 @@ let riscv_ck_to_sail1 ck =
   | Sail2_instr_kinds.Cache_op_I_IVAU    -> Sail_impl_base.Cache_op_I_IVAU
   end
 
-let riscv_ik_to_sail1 ik =
+let sail2_ik_to_sail1 ik =
   match ik with
   | Sail2_instr_kinds.IK_barrier bk       -> Sail_impl_base.IK_barrier (riscv_bk_to_sail1 bk)
   | Sail2_instr_kinds.IK_mem_read rk      -> Sail_impl_base.IK_mem_read (riscv_rk_to_sail1 rk)
@@ -276,6 +300,29 @@ let riscv_diafp_to_sail1 dfp =
   | Riscv_types.DIAFP_reg rfp     -> Sail_values.DIAFP_reg (riscv_regfp_to_sail1 rfp)
   end
 
+let armv8_regfp_to_sail1 rfp =
+  match rfp with
+  | ArmV8_types.RFull s     -> Sail_values.RFull s
+  | ArmV8_types.RSlice t    -> Sail_values.RSlice t
+  | ArmV8_types.RSliceBit t -> Sail_values.RSliceBit t
+  | ArmV8_types.RField t    -> Sail_values.RField t
+  end
+
+let armv8_niafp_to_sail1 nfp =
+  match nfp with
+  | ArmV8_types.NIAFP_successor ()        -> Sail_values.NIAFP_successor
+  | ArmV8_types.NIAFP_indirect_address () -> Sail_values.NIAFP_indirect_address
+  | ArmV8_types.NIAFP_concrete_address bv -> Sail_values.NIAFP_concrete_address (armv8_bits_to_sail1_vec bv)
+  end
+
+let armv8_diafp_to_sail1 dfp =
+  match dfp with
+  | ArmV8_types.DIAFP_none ()     -> Sail_values.DIAFP_none
+  | ArmV8_types.DIAFP_concrete bv -> Sail_values.DIAFP_concrete (armv8_bits_to_sail1_vec bv)
+  | ArmV8_types.DIAFP_reg rfp     -> Sail_values.DIAFP_reg (armv8_regfp_to_sail1 rfp)
+  end
+
+   
 let outcome_unwrap o =
   match o with
   | Sail_impl_base.Done a -> a
@@ -283,7 +330,7 @@ let outcome_unwrap o =
   end
 
 
-let string_to_sail1_reg name =
+let riscv_string_to_sail1_reg name =
   let len = match name with
     | "cur_privilege" -> 2
     | "medeleg"       -> 65
@@ -350,6 +397,249 @@ let riscv_regval_to_sail rv =
 
   | Riscv_types.Regval_vector_64_dec_bit w -> build_register_value (List.map bool_to_bitl (Machine_word.bitlistFromWord w)) D_decreasing 64 63
   | _ -> failwith "unknown regval given to riscv_regval_to_sail"
+end
+
+let armv8_string_to_sail1_reg name =
+  let len = match name with
+    | "PSTATE_nRW" -> 1
+    | "PSTATE_E" -> 1
+
+    | "PSTATE_M" -> 5
+
+    | "TxNestingLevel" -> 8
+
+    (* 32-bit bitfields *)
+    | "CurrentEL" -> 33 (* CurrentEL_type *)
+    | "DAIF" -> 34 (* DAIF_type *)
+    | "NZCV" -> 35 (* NZCV_type *)
+    | "SPSel" -> 36 (* SPSel_type *)
+    | "SPSR_EL1" -> 37 (* SPSR_type *)
+    | "SPSR_EL2" -> 37
+    | "SPSR_EL3" -> 37
+    | "SCR" -> 38 (* SCRType *)
+    | "SCR_EL3" -> 38
+    | "DBGOSDLR" -> 39 (* DBGOSDLR_type *)
+    | "DBGPRCR" -> 40 (* DBGPRCR_type *)
+    | "DBGPRCR_EL1" -> 40 
+    | "SCTLR_EL1" -> 41 (* SCTLR_EL1_type *)
+    | "SCTLR_EL2" -> 42 (* SCTLR_type *)
+    | "SCTLR_EL3" -> 42
+    | "TCR_EL2" -> 43 (* TCR_type *)
+    | "TCR_EL3" -> 43
+    | "OSDLR_EL1" -> 45 (* OSDLR_type *)
+    | "EDSCR" -> 46 (* EDSCR_type *)
+
+    | "R0"-> 64
+    | "R1"-> 64
+    | "R2"-> 64
+    | "R3"-> 64
+    | "R4"-> 64
+    | "R5"-> 64
+    | "R6"-> 64
+    | "R7"-> 64
+    | "R8"-> 64
+    | "R9"-> 64
+    | "R10"-> 64
+    | "R11"-> 64
+    | "R12"-> 64
+    | "R13"-> 64
+    | "R14"-> 64
+    | "R15"-> 64
+    | "R16"-> 64
+    | "R17"-> 64
+    | "R18"-> 64
+    | "R19"-> 64
+    | "R20"-> 64
+    | "R21"-> 64
+    | "R22"-> 64
+    | "R23"-> 64
+    | "R24"-> 64
+    | "R25"-> 64
+    | "R26"-> 64
+    | "R27"-> 64
+    | "R28"-> 64
+    | "R29"-> 64
+    | "R30" -> 64
+    | "SP_EL0" -> 64
+    | "SP_EL1" -> 64
+    | "SP_EL2" -> 64
+    | "SP_EL3" -> 64
+    | "ELR_EL1" -> 64
+    | "ELR_EL2" -> 64
+    | "ELR_EL3" -> 64
+    | "RVBAR_EL1" -> 64
+    | "RVBAR_EL2" -> 64
+    | "RVBAR_EL3" -> 64
+    | "TPIDR_EL0" -> 64
+    | "TPIDR_EL1" -> 64
+    | "TPIDR_EL2" -> 64
+    | "TPIDR_EL3" -> 64
+    | "_PC" -> 64
+    | "data_cache_operation_CVAU" -> 64
+    | "instruction_cache_operation_IVAU" -> 64
+
+    (* 64-bit bitfields *)
+    | "TMAbortEffect" -> 65 (* TMSTATUS_type *)
+    | "TMStartEffect" -> 65
+    | "HCR_EL2" -> 66 (* HCR_type *)
+    | "ID_AA64MMFR0_EL1" -> 67 (* ID_AA64MMFR0_type *)
+    | "TCR_EL1" -> 68 (* TCR_EL1_type *)
+    | "TXIDR_EL0" -> 69 (* TXIDR_EL0_type *)
+
+    | "V0"-> 128
+    | "V1"-> 128
+    | "V2"-> 128
+    | "V3"-> 128
+    | "V4"-> 128
+    | "V5"-> 128
+    | "V6"-> 128
+    | "V7"-> 128
+    | "V8"-> 128
+    | "V9"-> 128
+    | "V10"-> 128
+    | "V11"-> 128
+    | "V12"-> 128
+    | "V13"-> 128
+    | "V14"-> 128
+    | "V15"-> 128
+    | "V16"-> 128
+    | "V17"-> 128
+    | "V18"-> 128
+    | "V19"-> 128
+    | "V20"-> 128
+    | "V21"-> 128
+    | "V22"-> 128
+    | "V23"-> 128
+    | "V24"-> 128
+    | "V25"-> 128
+    | "V26"-> 128
+    | "V27"-> 128
+    | "V28"-> 128
+    | "V29"-> 128
+    | "V30" -> 128
+    | "V31" -> 128
+    | _ -> failwith ("unknown register " ^ name ^ " in armv8_string_to_sail1_reg")
+    end in
+  Sail_impl_base.Reg name (len - 1) len Sail_impl_base.D_decreasing
+
+let sail1_regval_to_armv8 rv =
+  let _ = debug_print "in sail1_regval_to_armv8" in
+  if rv.rv_start <> 0 || rv.rv_dir <> Sail_impl_base.D_decreasing then failwith "invalid vector sail1_regval_to_armv8" else
+    match List.length (rv.rv_bits) with
+    | 1 ->
+       ArmV8_types.regval_of_vector (fun v -> ArmV8_types.regval_of_bit v) 1 false (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) rv.rv_bits)
+    | 5 ->
+       ArmV8_types.regval_of_vector (fun v -> ArmV8_types.regval_of_bit v) 5 false (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) rv.rv_bits)
+    | 8 ->
+       ArmV8_types.regval_of_vector (fun v -> ArmV8_types.regval_of_bit v) 8 false (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) rv.rv_bits)
+    | 64 ->
+       ArmV8_types.regval_of_vector (fun v -> ArmV8_types.regval_of_bit v) 64 false (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) rv.rv_bits)
+    | 128 ->
+       ArmV8_types.regval_of_vector (fun v -> ArmV8_types.regval_of_bit v) 128 false (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) rv.rv_bits)
+
+    (* 32-bit bitfields *)
+    | 33 ->
+       ArmV8_types.Regval_CurrentEL_type <| ArmV8_types.CurrentEL_type_CurrentEL_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 1 rv.rv_bits)) |>
+    | 34 ->
+       ArmV8_types.Regval_DAIF_type <| ArmV8_types.DAIF_type_DAIF_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 2 rv.rv_bits)) |>
+    | 35 ->
+       ArmV8_types.Regval_NZCV_type <| ArmV8_types.NZCV_type_NZCV_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 3 rv.rv_bits)) |>
+    | 36 ->
+       ArmV8_types.Regval_SPSel_type <| ArmV8_types.SPSel_type_SPSel_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 4 rv.rv_bits)) |>
+    | 37 ->
+       ArmV8_types.Regval_SPSR_type <| ArmV8_types.SPSR_type_SPSR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 5 rv.rv_bits)) |>
+    | 38 ->
+       ArmV8_types.Regval_SCRType <| ArmV8_types.SCRType_SCRType_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 6 rv.rv_bits)) |>
+    | 39 ->
+       ArmV8_types.Regval_DBGOSDLR_type <| ArmV8_types.DBGOSDLR_type_DBGOSDLR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 7 rv.rv_bits)) |>
+    | 40 ->
+       ArmV8_types.Regval_DBGPRCR_type <| ArmV8_types.DBGPRCR_type_DBGPRCR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 8 rv.rv_bits)) |>
+    | 41 ->
+       ArmV8_types.Regval_SCTLR_EL1_type <| ArmV8_types.SCTLR_EL1_type_SCTLR_EL1_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 9 rv.rv_bits)) |>
+    | 42 ->
+       ArmV8_types.Regval_SCTLR_type <| ArmV8_types.SCTLR_type_SCTLR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 10 rv.rv_bits)) |>
+    | 43 ->
+       ArmV8_types.Regval_TCR_type <| ArmV8_types.TCR_type_TCR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 11 rv.rv_bits)) |>
+    | 45 ->
+       ArmV8_types.Regval_OSDLR_type <| ArmV8_types.OSDLR_type_OSDLR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 13 rv.rv_bits)) |>
+    | 46 ->
+       ArmV8_types.Regval_EDSCR_type <| ArmV8_types.EDSCR_type_EDSCR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 14 rv.rv_bits)) |>
+
+    (* 64-bit bitfields *)
+    | 65 ->
+       ArmV8_types.Regval_TMSTATUS_type <| ArmV8_types.TMSTATUS_type_TMSTATUS_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 1 rv.rv_bits)) |>
+    | 66 ->
+       ArmV8_types.Regval_HCR_type <| ArmV8_types.HCR_type_HCR_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 2 rv.rv_bits)) |>
+    | 67 ->
+       ArmV8_types.Regval_ID_AA64MMFR0_type <| ArmV8_types.ID_AA64MMFR0_type_ID_AA64MMFR0_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 3 rv.rv_bits)) |>
+    | 68 ->
+       ArmV8_types.Regval_TCR_EL1_type <| ArmV8_types.TCR_EL1_type_TCR_EL1_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 4 rv.rv_bits)) |>
+    | 69 ->
+       ArmV8_types.Regval_TXIDR_EL0_type <| ArmV8_types.TXIDR_EL0_type_TXIDR_EL0_type_chunk_0 = (List.map (fun b -> sail_bit_1to2 (bitU_of_bitl b)) (List.drop 5 rv.rv_bits)) |>
+
+    | _ ->
+       failwith "invalid vector length given to sail1_regval_to_armv8"
+end
+
+let armv8_regval_to_sail rv =
+  match rv with
+  | ArmV8_types.Regval_vector (len, false, vs) ->
+     (* why doesn't lem let me pattern match on integers like I want *)
+     if len = 1 then
+       build_register_value (List.map (fun (ArmV8_types.Regval_bit b) -> bitl_of_bitU (sail_bit_2to1 b)) vs) D_decreasing 1 0
+     else if len = 5 then
+       build_register_value (List.map (fun (ArmV8_types.Regval_bit b) -> bitl_of_bitU (sail_bit_2to1 b)) vs) D_decreasing 5 4
+     else if len = 8 then
+       build_register_value (List.map (fun (ArmV8_types.Regval_bit b) -> bitl_of_bitU (sail_bit_2to1 b)) vs) D_decreasing 8 7
+     else if len = 64 then
+       build_register_value (List.map (fun (ArmV8_types.Regval_bit b) -> bitl_of_bitU (sail_bit_2to1 b)) vs) D_decreasing 64 63
+     else if len = 128 then
+       build_register_value (List.map (fun (ArmV8_types.Regval_bit b) -> bitl_of_bitU (sail_bit_2to1 b)) vs) D_decreasing 128 127
+     else
+       failwith "invalid vector length given to armv8_regval_to_sail"
+
+  (* 32-bit bitfields *)
+  | ArmV8_types.Regval_CurrentEL_type <| ArmV8_types.CurrentEL_type_CurrentEL_type_chunk_0 = bits |> ->
+     build_register_value (bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 33 32
+  | ArmV8_types.Regval_DAIF_type <| ArmV8_types.DAIF_type_DAIF_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 34 33
+  | ArmV8_types.Regval_NZCV_type <| ArmV8_types.NZCV_type_NZCV_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 35 34
+  | ArmV8_types.Regval_SPSel_type <| ArmV8_types.SPSel_type_SPSel_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 36 35
+  | ArmV8_types.Regval_SPSR_type <| ArmV8_types.SPSR_type_SPSR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 37 36
+  | ArmV8_types.Regval_SCRType <| ArmV8_types.SCRType_SCRType_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 38 37
+  | ArmV8_types.Regval_DBGOSDLR_type <| ArmV8_types.DBGOSDLR_type_DBGOSDLR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 39 38
+  | ArmV8_types.Regval_DBGPRCR_type <| ArmV8_types.DBGPRCR_type_DBGPRCR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 40 39
+  | ArmV8_types.Regval_SCTLR_EL1_type <| ArmV8_types.SCTLR_EL1_type_SCTLR_EL1_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 41 40
+  | ArmV8_types.Regval_SCTLR_type <| ArmV8_types.SCTLR_type_SCTLR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 42 41
+  | ArmV8_types.Regval_TCR_type <| ArmV8_types.TCR_type_TCR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 43 42
+  | ArmV8_types.Regval_OSDLR_type <| ArmV8_types.OSDLR_type_OSDLR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 45 44
+  | ArmV8_types.Regval_EDSCR_type <| ArmV8_types.EDSCR_type_EDSCR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 46 45
+
+  (* 64-bit bitfields *)
+  | ArmV8_types.Regval_TMSTATUS_type <| ArmV8_types.TMSTATUS_type_TMSTATUS_type_chunk_0 = bits |> ->
+     build_register_value (bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 65 64
+  | ArmV8_types.Regval_HCR_type <| ArmV8_types.HCR_type_HCR_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 66 65
+  | ArmV8_types.Regval_ID_AA64MMFR0_type <| ArmV8_types.ID_AA64MMFR0_type_ID_AA64MMFR0_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 67 66
+  | ArmV8_types.Regval_TCR_EL1_type <| ArmV8_types.TCR_EL1_type_TCR_EL1_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 68 67
+  | ArmV8_types.Regval_TXIDR_EL0_type <| ArmV8_types.TXIDR_EL0_type_TXIDR_EL0_type_chunk_0 = bits |> ->
+     build_register_value (bl0::bl0::bl0::bl0::bl0::(List.map (fun b -> bitl_of_bitU (sail_bit_2to1 b)) bits)) D_decreasing 69 68
+    
+  | _ ->
+     failwith "invalid regval given to armv8_regval_to_sail"
   end
 
 let address_lifted_of_address a =
@@ -371,26 +661,47 @@ let sail2_memval_to_sail1 mv =
   memory_value_of_integer E_big_endian len (fromJust (Sail2_values.unsigned_of_bits (Sail2_values.bits_of_bytes mv)))
 
 (* TODO FIXME expand and correct *)
-val sail2_prompt_to_outcome : forall 'a 'e. Sail2_prompt_monad.monad Riscv_types.register_value 'a 'e -> outcome 'a
-let rec sail2_prompt_to_outcome p =
+val riscv_prompt_to_outcome : forall 'a 'e. Sail2_prompt_monad.monad Riscv_types.register_value 'a 'e -> outcome 'a
+let rec riscv_prompt_to_outcome p =
   match p with
   | Sail2_prompt_monad.Done a                 -> Sail_impl_base.Done a
   | Sail2_prompt_monad.Exception e            -> Sail_impl_base.Fail (Just "*Sail2 exception escaped*") (* TODO *)
   | Sail2_prompt_monad.Fail s                 -> Sail_impl_base.Fail (Just s)
-  | Sail2_prompt_monad.Print s next           -> sail2_prompt_to_outcome next (* TODO *)
-  | Sail2_prompt_monad.Footprint next         -> Sail_impl_base.Footprint (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Print s next           -> riscv_prompt_to_outcome next (* TODO *)
+  | Sail2_prompt_monad.Footprint next         -> Sail_impl_base.Footprint (riscv_prompt_to_outcome next, Nothing)
   | Sail2_prompt_monad.Choose _ _             -> failwith "unsupported Choose constructor of prompt monad"
   | Sail2_prompt_monad.Read_memt _ _ _ _      -> failwith "unsupported Read_memt constructor of prompt monad"
   | Sail2_prompt_monad.Write_memt _ _ _ _ _ _ -> failwith "unsupported Write_memt constructor of prompt monad"
-  | Sail2_prompt_monad.Read_reg name f        -> Sail_impl_base.Read_reg (string_to_sail1_reg name) (fun v -> (sail2_prompt_to_outcome (f (sail1_regval_to_riscv v)), Nothing))
-  | Sail2_prompt_monad.Write_reg name v next  -> Sail_impl_base.Write_reg (string_to_sail1_reg name, riscv_regval_to_sail v) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Barrier bk next        -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Read_mem rk a sz f     -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (sail2_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
-  | Sail2_prompt_monad.Write_ea wk a sz next  -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Write_mem _ _ _ mv f   -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
-  | Sail2_prompt_monad.Excl_res f             -> Sail_impl_base.Excl_res (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Read_reg name f        -> Sail_impl_base.Read_reg (riscv_string_to_sail1_reg name) (fun v -> (riscv_prompt_to_outcome (f (sail1_regval_to_riscv v)), Nothing))
+  | Sail2_prompt_monad.Write_reg name v next  -> Sail_impl_base.Write_reg (riscv_string_to_sail1_reg name, riscv_regval_to_sail v) (riscv_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Barrier bk next        -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (riscv_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Read_mem rk a sz f     -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (riscv_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
+  | Sail2_prompt_monad.Write_ea wk a sz next  -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (riscv_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Write_mem _ _ _ mv f   -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (riscv_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Excl_res f             -> Sail_impl_base.Excl_res (fun b -> (riscv_prompt_to_outcome (f b), Nothing))
 end
 
+(* TODO FIXME expand and correct *)
+val armv8_prompt_to_outcome : forall 'a 'e. Sail2_prompt_monad.monad ArmV8_types.register_value 'a 'e -> outcome 'a
+let rec armv8_prompt_to_outcome p =
+  match p with
+  | Sail2_prompt_monad.Done a                 -> Sail_impl_base.Done a
+  | Sail2_prompt_monad.Exception e            -> Sail_impl_base.Fail (Just "*Sail2 exception escaped*") (* TODO *)
+  | Sail2_prompt_monad.Fail s                 -> Sail_impl_base.Fail (Just s)
+  | Sail2_prompt_monad.Print s next           -> armv8_prompt_to_outcome next (* TODO *)
+  | Sail2_prompt_monad.Footprint next         -> Sail_impl_base.Footprint (armv8_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Choose _ _             -> failwith "unsupported Choose constructor of prompt monad"
+  | Sail2_prompt_monad.Read_memt _ _ _ _      -> failwith "unsupported Read_memt constructor of prompt monad"
+  | Sail2_prompt_monad.Write_memt _ _ _ _ _ _ -> failwith "unsupported Write_memt constructor of prompt monad"
+  | Sail2_prompt_monad.Read_reg name f        -> Sail_impl_base.Read_reg (armv8_string_to_sail1_reg name) (fun v -> (armv8_prompt_to_outcome (f (sail1_regval_to_armv8 v)), Nothing))
+  | Sail2_prompt_monad.Write_reg name v next  -> Sail_impl_base.Write_reg (armv8_string_to_sail1_reg name, armv8_regval_to_sail v) (armv8_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Barrier bk next        -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (armv8_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Read_mem rk a sz f     -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (armv8_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
+  | Sail2_prompt_monad.Write_ea wk a sz next  -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (armv8_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Write_mem _ _ _ mv f   -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (armv8_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Excl_res f             -> Sail_impl_base.Excl_res (fun b -> (armv8_prompt_to_outcome (f b), Nothing))
+end
+   
 val outcome_bind : forall 'a 'b. Sail_impl_base.outcome 'a -> ('a -> Sail_impl_base.outcome 'b) -> Sail_impl_base.outcome 'b
 let rec outcome_bind o f =
   match o with
@@ -420,13 +731,26 @@ let analysis_outcome_riscv_to_sail1 o =
          List.map riscv_regfp_to_sail1 address_feeding_address_regs,
          List.map riscv_niafp_to_sail1 nias,
          riscv_diafp_to_sail1 dia,
-         riscv_ik_to_sail1 instruction_kind)
+         sail2_ik_to_sail1 instruction_kind)
+    )
+
+let analysis_outcome_armv8_to_sail1 o =
+  outcome_bind o
+    (fun (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) ->
+      Sail_impl_base.Done
+        (List.map armv8_regfp_to_sail1 input_regs,
+         List.map armv8_regfp_to_sail1 output_regs,
+         List.map armv8_regfp_to_sail1 address_feeding_address_regs,
+         List.map armv8_niafp_to_sail1 nias,
+         armv8_diafp_to_sail1 dia,
+         sail2_ik_to_sail1 instruction_kind)
     )
 
 (** shallow embedding ***********************************************)
 
 val handle_reg_reads : forall 'a. list (reg_name * register_value) -> outcome 'a -> 'a
-let rec handle_reg_reads environment outcome = match outcome with
+let rec handle_reg_reads environment outcome =
+  match outcome with
   | Read_reg reg_name c ->
      let regval =
        ensure_just (List.lookup reg_name environment)
@@ -464,15 +788,15 @@ let initialise_shallow_embedding_semantics endianness ism =
           end
        end
     | AARCH64_ism AArch64HandSail ->
-       match ArmV8_embed.decode opcode_bitv with
-       | Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
-       | Done (Just instr)  -> FDO_success address (Just opcode) (AArch64_instr instr)
-       | Error descr         -> failwith ("armV8 decode failed with: Error " ^ descr)
-       | Fail (Just descr)   -> failwith ("armV8 decode failed with: Fail " ^ descr)
-       | Fail Nothing        -> failwith ("armV8 decode failed with unspecified error: Fail")
-       | Escape (Just descr) -> failwith ("armV8 decode failed with: Exception " ^ descr)
-       | Escape Nothing      -> failwith ("armV8 decode failed with exception: Exception")
-       | Internal _ _        -> failwith ("armV8 decode returned unexpected Internal outcome")
+       match ArmV8.decode (sail_bv_1to2 opcode_bitv) with
+       | Sail2_prompt_monad.Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
+       | Sail2_prompt_monad.Done (Just instr)  -> FDO_success address (Just opcode) (AArch64_instr instr)
+       (* | Sail2_prompt_monad.Error descr         -> failwith ("armV8 decode failed with: Error " ^ descr)
+        * | Sail2_prompt_monad.Fail (Just descr)   -> failwith ("armV8 decode failed with: Fail " ^ descr)
+        * | Sail2_prompt_monad.Fail Nothing        -> failwith ("armV8 decode failed with unspecified error: Fail")
+        * | Sail2_prompt_monad.Escape (Just descr) -> failwith ("armV8 decode failed with: Exception " ^ descr)
+        * | Sail2_prompt_monad.Escape Nothing      -> failwith ("armV8 decode failed with exception: Exception")
+        * | Sail2_prompt_monad.Internal _ _        -> failwith ("armV8 decode returned unexpected Internal outcome") *)
        | _                   -> failwith ("armV8 decode had unhandled effect")
        end
     | AARCH64_ism AArch64GenSail -> failwith "AArch64Gen ISA not supported by shallow embedding"
@@ -490,9 +814,9 @@ let initialise_shallow_embedding_semantics endianness ism =
 
   let shallow_embedding__initial_outcome_s_of_instruction = function
     | PPCGEN_instr instr  ->  (Power_embed.execute instr,Nothing)
-    | AArch64_instr instr ->  (ArmV8_embed.execute instr,Nothing)
+    | AArch64_instr instr ->  (ignore_outcome (armv8_prompt_to_outcome (ArmV8.execute instr)),Nothing)
     | MIPS_instr instr ->     (Mips_embed.execute instr,Nothing)
-    | RISCV_instr instr ->    (ignore_outcome (sail2_prompt_to_outcome (Riscv.execute instr)),Nothing)
+    | RISCV_instr instr ->    (ignore_outcome (riscv_prompt_to_outcome (Riscv.execute instr)),Nothing)
     | X86_instr instr ->      (X86_embed.execute instr,Nothing)
     | Fetch_error         -> failwith "initial_outcome_s_of_instruction Fetch_error"
     end in
@@ -510,7 +834,7 @@ let initialise_shallow_embedding_semantics endianness ism =
         | (PPCGEN_instr _, _) ->
            failwith "instruction_analysis: unknown POWER analysis function"
         | (AArch64_instr instr, "initial_analysis") ->
-           ArmV8_embed.initial_analysis instr
+           analysis_outcome_armv8_to_sail1 (armv8_prompt_to_outcome (ArmV8.initial_analysis instr))
         | (AArch64_instr _, _) ->
            failwith "instruction_analysis: unknown ARM analysis function"
         | (MIPS_instr instr, "initial_analysis") ->
@@ -518,7 +842,7 @@ let initialise_shallow_embedding_semantics endianness ism =
         | (MIPS_instr _, _) ->
            failwith "instruction_analysis: unknown MIPS analysis function"
         | (RISCV_instr instr, "initial_analysis") ->
-           analysis_outcome_riscv_to_sail1 (sail2_prompt_to_outcome (Riscv.initial_analysis instr))
+           analysis_outcome_riscv_to_sail1 (riscv_prompt_to_outcome (Riscv.initial_analysis instr))
         | (RISCV_instr _, _) ->
            failwith "instruction_analysis: unknown RISCV analysis function"
         | (X86_instr instr, "initial_analysis") ->
@@ -589,7 +913,7 @@ let interp_nias_of_instruction
       in
       NIA_successor :: nias
 
-  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) ->
+  | AArch64_instr (ArmV8_types.BranchImmediate _) ->
       let () = ensure
         match nias with
         | NIA_concrete_address _ :: [] -> true
@@ -598,7 +922,7 @@ let interp_nias_of_instruction
         "unexpected nia_values ('BranchImmediate' instruction)"
       in
       nias
-  | AArch64_instr (ArmV8_embed_types.BranchRegister _) ->
+  | AArch64_instr (ArmV8_types.BranchRegister _) ->
       let () = ensure
         match nias with
         | _ :: [] -> true
