@@ -122,16 +122,16 @@ end
 module AArch64ISADefs : ISADefs = struct
     let name = "AArch64"
     let reg_data = IsaInfoAArch64.aarch64hand_ism.BasicTypes.register_data_info
-    let isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_defs "AArch64")
-    let interp2_isa_defs_thunk = empty_interp2_isa_defs
-    let isa_memory_access = (ArmV8_extras.aArch64_read_memory_functions,
+    let isa_defs_thunk = empty_isa_defs
+    let interp2_isa_defs_thunk = memo_unit (fun () -> Screen.unmarshal_interp2_defs "armV8")
+    let isa_memory_access = ([],
                               [],
-                              ArmV8_extras.aArch64_memory_writes,
-                              ArmV8_extras.aArch64_memory_eas,
-                              ArmV8_extras.aArch64_memory_vals,
                               [],
-                              ArmV8_extras.aArch64_barrier_functions,
-                              ArmV8_extras.aArch64_excl_res)
+                              [],
+                              [],
+                              [],
+                              [],
+                              None)
     let isa_externs = []
 end
 
@@ -485,24 +485,59 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       | true -> Value.V_bit (Sail_lib.B1)
     in
 
-    let interp2__regval_to_value rv =
+    let record_from_bits name bits =
+      Value.V_record (Value.StringMap.add name (Value.V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) bits)) Value.StringMap.empty)
+    in
+
+    let interp2__riscv_regval_to_value rv =
       let open Value in
       let open Sail_impl_base in
       let open InstructionSemantics in
-      if rv.rv_start <> 0 || rv.rv_dir <> D_decreasing then failwith "invalid vector interp2__regval_to_interp" else
+      if rv.rv_start <> 0 || rv.rv_dir <> D_decreasing then failwith "invalid vector interp2__riscv_regval_to_value" else
         match List.length (rv.rv_bits) with
         | 1 -> V_bool (bool_from_bitl (List.hd rv.rv_bits))
         | 2 -> Riscv_toFromInterp2.privilegeToInterpValue (Riscv.privLevel_of_bits (Lem.wordFromBitlist (List.map bool_from_bitl rv.rv_bits)))
         | 64 -> V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) rv.rv_bits)
-        | 65 -> V_record (StringMap.add "Medeleg_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 1 rv.rv_bits))) StringMap.empty)
-        | 66 -> V_record (StringMap.add "Sedeleg_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 2 rv.rv_bits))) StringMap.empty)
-        | 67 -> V_record (StringMap.add "Misa_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 3 rv.rv_bits))) StringMap.empty)
-        | 68 -> V_record (StringMap.add "Mtvec_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 4 rv.rv_bits))) StringMap.empty)
-        | 69 -> V_record (StringMap.add "Minterrupts_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 5 rv.rv_bits))) StringMap.empty)
-        | 70 -> V_record (StringMap.add "Mstatus_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 6 rv.rv_bits))) StringMap.empty)
-        | 71 -> V_record (StringMap.add "Sstatus_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 6 rv.rv_bits))) StringMap.empty)
-        | 72 -> V_record (StringMap.add "Mcause_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 8 rv.rv_bits))) StringMap.empty)
-        | n -> failwith ("invalid vector length " ^ string_of_int n ^ " given to interp2__regval_to_value")
+        | 65 -> record_from_bits "Medeleg_chunk_0" (Util.drop 1 rv.rv_bits)
+        | 66 -> record_from_bits "Sedeleg_chunk_0" (Util.drop 2 rv.rv_bits)
+        | 67 -> record_from_bits "Misa_chunk_0" (Util.drop 3 rv.rv_bits)
+        | 68 -> record_from_bits "Mtvec_chunk_0" (Util.drop 4 rv.rv_bits)
+        | 69 -> record_from_bits "Minterrupts_chunk_0" (Util.drop 5 rv.rv_bits)
+        | 70 -> record_from_bits "Mstatus_chunk_0" (Util.drop 6 rv.rv_bits)
+        | 71 -> record_from_bits "Sstatus_chunk_0" (Util.drop 6 rv.rv_bits)
+        | 72 -> record_from_bits "Mcause_chunk_0" (Util.drop 8 rv.rv_bits)
+        | n -> failwith ("invalid vector length " ^ string_of_int n ^ " given to interp2__riscv_regval_to_value")
+    in
+
+    let interp2__armv8_regval_to_value rv =
+      let open Value in
+      let open Sail_impl_base in
+      let open InstructionSemantics in
+      if rv.rv_start <> 0 || rv.rv_dir <> D_decreasing then failwith "invalid vector interp2__armv8_regval_to_value" else
+        match List.length (rv.rv_bits) with
+        | 1 | 5 | 8 | 64 | 128 -> V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) rv.rv_bits)
+
+        | 33 -> record_from_bits "CurrentEL_type_chunk_0" (Util.drop 1 rv.rv_bits)
+        | 34 -> record_from_bits "DAIF_type_chunk_0" (Util.drop 2 rv.rv_bits)
+        | 35 -> record_from_bits "NZCV_type_chunk_0" (Util.drop 3 rv.rv_bits)
+        | 36 -> record_from_bits "SPSel_type_chunk_0" (Util.drop 4 rv.rv_bits)
+        | 37 -> record_from_bits "SPSR_type_chunk_0" (Util.drop 5 rv.rv_bits)
+        | 38 -> record_from_bits "SCRType_chunk_0" (Util.drop 6 rv.rv_bits)
+        | 39 -> record_from_bits "DBGOSDLR_type_chunk_0" (Util.drop 7 rv.rv_bits)
+        | 40 -> record_from_bits "DBGPRCR_type_chunk_0" (Util.drop 8 rv.rv_bits)
+        | 41 -> record_from_bits "SCTLR_EL1_type_chunk_0" (Util.drop 9 rv.rv_bits)
+        | 42 -> record_from_bits "SCTLR_type_chunk_0" (Util.drop 10 rv.rv_bits)
+        | 43 -> record_from_bits "TCR_type_chunk_0" (Util.drop 11 rv.rv_bits)
+        | 45 -> record_from_bits "OSDLR_type_chunk_0" (Util.drop 13 rv.rv_bits)
+        | 46 -> record_from_bits "EDSCR_type_chunk_0" (Util.drop 14 rv.rv_bits)
+
+        | 65 -> record_from_bits "TMSTATUS_type_chunk_0" (Util.drop 1 rv.rv_bits)
+        | 66 -> record_from_bits "HCR_type_chunk_0" (Util.drop 2 rv.rv_bits)
+        | 67 -> record_from_bits "ID_AA64MMFR0_type_chunk_0" (Util.drop 3 rv.rv_bits)
+        | 68 -> record_from_bits "TCR_EL1_type_chunk_0" (Util.drop 4 rv.rv_bits)
+        | 69 -> record_from_bits "TXIDR_EL0_type_chunk_0" (Util.drop 5 rv.rv_bits)
+
+        | n -> failwith ("invalid vector length " ^ string_of_int n ^ " given to interp2__armv8_regval_to_value")
     in
 
     let interp2__bool_to_bitl = function
@@ -510,7 +545,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
       | true -> Sail_impl_base.Bitl_one
     in
 
-    let interp2__value_to_regval v =
+    let interp2__riscv_value_to_regval v =
       let open Value in
       let open Sail_impl_base in
       let open InstructionSemantics in
@@ -529,22 +564,57 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
           | [("Mstatus_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::List.map bit_to_bitl bs) D_decreasing 70 0
           | [("Sstatus_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::List.map bit_to_bitl bs) D_decreasing 71 0
           | [("Mcause_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::List.map bit_to_bitl bs) D_decreasing 72 0
-          | _ -> failwith ("invalid record type given to interp2__value_to_regval: " ^ Value.string_of_value v)
+          | _ -> failwith ("invalid record type given to interp2__riscv_value_to_regval: " ^ Value.string_of_value v)
         end
       | V_vector bs
            when List.for_all (function V_bit _ -> true | _ -> false) bs
         -> build_register_value (List.map bit_to_bitl bs) D_decreasing (List.length bs) 0
-      | _ -> failwith ("invalid value given to interp2__value_to_regval: " ^ Value.string_of_value v)
+      | _ -> failwith ("invalid value given to interp2__riscv_value_to_regval: " ^ Value.string_of_value v)
+    in
+
+    let interp2__armv8_value_to_regval v =
+      let open Value in
+      let open Sail_impl_base in
+      let open InstructionSemantics in
+      match v with
+      | V_record fs when List.length (StringMap.bindings fs) = 1 -> begin
+            match StringMap.bindings fs with
+            | [("CurrentEL_type_chunk_0", V_vector bs)] -> build_register_value (bl0::(List.map bit_to_bitl bs)) D_decreasing 33 0
+            | [("DAIF_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 34 0
+            | [("NZCV_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 35 0
+            | [("SPSel_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 36 0
+            | [("SPSR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 37 0
+            | [("SCRType_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 38 0
+            | [("DBGOSDLR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 39 0
+            | [("DBGPRCR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 40 0
+            | [("SCTLR_EL1_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 41 0
+            | [("SCTLR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 42 0
+            | [("TCR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 43 0
+            | [("OSDLR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 45 0
+            | [("EDSCR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 46 0
+            | [("TMSTATUS_type_chunk_0", V_vector bs)] -> build_register_value (bl0::(List.map bit_to_bitl bs)) D_decreasing 65 0
+            | [("HCR_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 66 0
+            | [("ID_AA64MMFR0_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 67 0
+            | [("TCR_EL1_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 68 0
+            | [("TXIDR_EL0_type_chunk_0", V_vector bs)] -> build_register_value (bl0::bl0::bl0::bl0::bl0::(List.map bit_to_bitl bs)) D_decreasing 69 0
+            | _ -> failwith ("invalid record type given to interp2__armv8_value_to_regval: " ^ Value.string_of_value v)
+          end
+      | V_vector bs
+           when List.for_all (function V_bit _ -> true | _ -> false) bs
+        -> build_register_value (List.map bit_to_bitl bs) D_decreasing (List.length bs) 0
+      | _ -> failwith ("invalid value given to interp2__armv8_value_to_regval: " ^ Value.string_of_value v)
     in
 
     let instruction_to_interp2_instruction = function
       | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue instr
       | Fetch_error -> failwith "fetch error"
+      | AArch64_instr instr -> ArmV8_toFromInterp2.astToInterpValue instr
       | _ -> failwith "not implemented yet"
     in
 
     let interp2_instruction_to_instruction instr = match ism with
       | RISCV_ism -> RISCV_instr (Riscv_toFromInterp2.astFromInterpValue instr)
+      | AARCH64_ism AArch64HandSail -> AArch64_instr (ArmV8_toFromInterp2.astFromInterpValue instr)
       | _ -> failwith "not implemented yet"
     in
 
@@ -591,13 +661,25 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
             end
           | Interpreter.Read_reg (name, cont) -> begin
               let open Sail_impl_base in
-              let reg_name = InstructionSemantics.string_to_sail1_reg name in
-              ((Sail_impl_base.Read_reg (reg_name, fun rv -> frame_to_outcome (cont (interp2__regval_to_value rv) state))), pp_state out stack state)
+              match ism with
+              | RISCV_ism ->
+                 let reg_name = InstructionSemantics.riscv_string_to_sail1_reg name in
+                 ((Sail_impl_base.Read_reg (reg_name, fun rv -> frame_to_outcome (cont (interp2__riscv_regval_to_value rv) state))), pp_state out stack state)
+              | AARCH64_ism AArch64HandSail ->
+                 let reg_name = InstructionSemantics.armv8_string_to_sail1_reg name in
+                 ((Sail_impl_base.Read_reg (reg_name, fun rv -> frame_to_outcome (cont (interp2__armv8_regval_to_value rv) state))), pp_state out stack state)
+              | _ -> assert false
             end
           | Interpreter.Write_reg (name, v, cont) -> begin
               let open Sail_impl_base in
-              let reg_name = InstructionSemantics.string_to_sail1_reg name in
-              (Sail_impl_base.Write_reg ((reg_name, interp2__value_to_regval v), frame_to_outcome (cont () state)), pp_state out stack state)
+              match ism with
+              | RISCV_ism ->
+                 let reg_name = InstructionSemantics.riscv_string_to_sail1_reg name in
+                 (Sail_impl_base.Write_reg ((reg_name, interp2__riscv_value_to_regval v), frame_to_outcome (cont () state)), pp_state out stack state)
+              | AARCH64_ism AArch64HandSail ->
+                 let reg_name = InstructionSemantics.armv8_string_to_sail1_reg name in
+                 (Sail_impl_base.Write_reg ((reg_name, interp2__armv8_value_to_regval v), frame_to_outcome (cont () state)), pp_state out stack state)
+              | _ -> assert false
             end
         end
     in
@@ -653,9 +735,16 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
           match eff with
           | Interpreter.Read_reg (name, cont) -> begin
               let open Sail_impl_base in
-              let reg_name = InstructionSemantics.string_to_sail1_reg name in
-              let rv = List.assoc reg_name rvs in
-              frame_handle_reg_reads rvs (cont (interp2__regval_to_value rv) state)
+              match ism with
+              | RISCV_ism ->
+                 let reg_name = InstructionSemantics.riscv_string_to_sail1_reg name in
+                 let rv = List.assoc reg_name rvs in
+                 frame_handle_reg_reads rvs (cont (interp2__riscv_regval_to_value rv) state)
+              | AARCH64_ism AArch64HandSail ->
+                 let reg_name = InstructionSemantics.armv8_string_to_sail1_reg name in
+                 let rv = List.assoc reg_name rvs in
+                 frame_handle_reg_reads rvs (cont (interp2__armv8_regval_to_value rv) state)
+              | _ -> assert false
             end
           | _ -> failwith "frame_handle_reg_reads: unhandled effect"
         end
@@ -678,7 +767,9 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     let interp2__decode_to_instruction (address : Sail_impl_base.address) (opcode : Sail_impl_base.opcode) =
       match Interpreter.decode_instruction state (opcode_to_lits opcode) with
       | Interpreter.Value_success v -> FDO_success (address, Some opcode, interp2_instruction_to_instruction v)
-      | Interpreter.Value_error exn -> FDO_decode_error (Internal_decode_error (Printexc.to_string exn))
+      | Interpreter.Value_error exn -> FDO_decode_error (Internal_decode_error (match exn with
+                                                                                | Type_check.Type_error (_, _, err) -> Type_error.string_of_type_error err
+                                                                                | exn -> Printexc.to_string exn))
     in
 
     (fun eager ->
@@ -693,11 +784,13 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
 
     if run_options.RunOptions.interpreter then
       match ism with
-      | RISCV_ism ->
+      | RISCV_ism
+      | AARCH64_ism AArch64HandSail ->
          begin match ISADefs.interp2_isa_defs_thunk () with
          | Ast.Defs [], _ -> raise (Misc.Fatal "Empty ISA defs (use '-shallow_embedding true')")
          | defs, env ->
             let open Value in
+            (* Extra primops for RISCV *)
             let primops = StringMap.add "Platform.dram_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
             let primops = StringMap.add "Platform.dram_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "00000000ffffffff")) primops in
             let primops = StringMap.add "Platform.rom_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
@@ -711,6 +804,16 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
             let primops = StringMap.add "Platform.load_reservation" (fun _ -> V_unit) primops in
             let primops = StringMap.add "Platform.match_reservation" (fun _ -> V_bool true) primops in
             let primops = StringMap.add "Platform.cancel_reservation" (fun _ -> V_unit) primops in
+
+            (* Extra primops for AArch64 *)
+            let primops = StringMap.add "SCTLR_EL1_type_to_SCTLR_type"
+                            (fun vs -> match vs with
+                                      | [V_record fs] -> (match StringMap.bindings fs with
+                                                        | [("SCTLR_EL1_type_chunk_0", V_vector bs)] -> V_record (StringMap.add "SCTLR_type_chunk_0" (V_vector bs) StringMap.empty)
+                                                        | _ -> assert false)
+                                      | _ -> assert false)
+                        primops in
+
             let interp_state =
               (* try *)
               Interpreter.initial_state defs env primops
