@@ -618,6 +618,10 @@ patch = modtime="$$(stat --printf '%y' $(1))" &&\
   patch $(1) $(2) &&\
   touch -d "$$modtime" $(1)
 
+sed = modtime="$$(stat --printf '%y' $(1))" &&\
+  sed -i $(2) $(1) &&\
+  touch -d "$$modtime" $(1)
+
 patch_isa_model_power:
 # the shallow embedding generates bad code because of some typing issue
 ifeq ($(filter PPCGEN,$(ISA_LIST)),)
@@ -645,6 +649,11 @@ ifeq ($(filter AArch64,$(ISA_LIST)),)
   RMEMSTUBS += src_top/AArch64HGenTransSail.ml
 endif
 get_all_isa_models: get_isa_model_aarch64
+
+patch_isa_model_aarch64:
+# fix up places where lem renaming means things don't match
+	$(call sed,build_isa_models/aarch64/armV8_toFromInterp2.ml,'s/Barrier /Barrier3 /g')
+	$(call sed,build_isa_models/aarch64/armV8_toFromInterp2.ml,'s/Address /Address0 /g')
 
 # TODO: Currently AArch64Gen is always stubbed out
 RMEMSTUBS += src_top/AArch64GenTransSail.ml
