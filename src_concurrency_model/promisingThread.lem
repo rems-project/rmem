@@ -471,7 +471,8 @@ let set_regs_feeding_address_regs_so_far ii =
 let run_load_instruction 
       params 
       ((s,(ii,view,o)) : iconf 'v) 
-      (apss : apss 'pss 'v) 
+      (pss_sem : pss_sem 'pss 'v)
+      (pss : 'pss)
     : list (pt_trans (pts 'v) 'pss 'v) 
   = 
   let (s,(ii,addr_view,o)) = do_local_effs (s,(ii,view,o)) in
@@ -488,7 +489,7 @@ let run_load_instruction
       ] in
   let sh = if in_shared_memory params (addr,sz) then Shared else NonShared in
   let view_constraint = join (vCoh addr s) pre_view in
-  apss.pss_sem.handle_read apss.pss rr view_constraint sh >>= fun (w,t) ->
+  pss_sem.handle_read pss rr view_constraint sh >>= fun (w,t) ->
   let (ii,mv) = do_read ii rr w in
   let ii = <| ii with ii_kind = IK_mem_read rk |> in
   let rf_view = match fwd_bank addr s with
@@ -521,8 +522,9 @@ let run_store_instruction
       xinfo
       params
       ((s,(ii,view,o)) : iconf 'v)
-      (apss : apss 'pss 'v) :
-      list (pt_trans (pts 'v) 'pss 'v)
+      (pss_sem : pss_sem 'pss 'v)
+      (pss : 'pss)
+      : list (pt_trans (pts 'v) 'pss 'v)
   = 
   let (s,(ii,addr_view,o)) = do_local_effs (s,(ii,view,o)) in
   let ii = set_regs_feeding_address_regs_so_far ii in
@@ -566,21 +568,24 @@ let run_store_instruction
     fst (finish_instruction params (s,(ii,view,o)))
   in
   if exists ((p,_,_) IN s.promises). p = w.weiid then
-    apss.pss_sem.handle_fulfil apss.pss wd >>= fun post_view ->
+    pss_sem.handle_fulfil pss wd >>= fun post_view ->
     return (PT_Fulfil (s.tid,ii.ii_ioid) wd post_view (c post_view))
   else
     let sh = if in_shared_memory params (addr,sz) then Shared else NonShared in
-    apss.pss_sem.handle_write apss.pss wd sh >>= fun (post_view,pss) ->
+    pss_sem.handle_write pss wd sh >>= fun (post_view,pss) ->
     return (PT_Write (s.tid,ii.ii_ioid) (wd,NonPromise,sh)
               post_view (c post_view, pss))
 
-let run_store_exclusive_instruction params ((s,(ii,view,o)) : iconf 'v) apss = 
+let run_store_exclusive_instruction params 
+      ((s,(ii,view,o)) : iconf 'v)
+      (pss_sem : pss_sem 'pss 'v)
+      (pss : 'pss) = 
   let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
   let c = ensure_excl_res_outcome o in
   run_failed_store_exclusive_instruction params (s,(ii,view,c false))
   ++
   (option_guard s.xcl_bank >>= fun rxinfo ->
-   run_store_instruction (Just rxinfo) params (s,(ii,view,c true)) apss)
+   run_store_instruction (Just rxinfo) params (s,(ii,view,c true)) pss_sem pss)
 
 
 
@@ -595,7 +600,8 @@ let run_instruction
     (params : model_params)
     (isem : instruction_semantics)
     (s : pts 'v)
-    (apss : apss 'pss 'v)
+    (pss_sem : pss_sem 'pss 'v)
+    (pss : 'pss)
     ((addr,opcode,instr) : (address * maybe opcode * instruction_ast))
   : list (pt_trans (pts 'v) 'pss 'v) = 
   let (s,(ii,view,o)) = initialise_instruction params.t isem s (addr,opcode,instr) in
@@ -605,13 +611,13 @@ let run_instruction
     let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
     match fst o with
     | Done _ -> run_plain_instruction params (s,(ii,view,o))
-    | Read_mem _ _ -> run_load_instruction params (s,(ii,view,o)) apss
+    | Read_mem _ _ -> run_load_instruction params (s,(ii,view,o)) pss_sem pss
     | Write_ea _ _ ->
        if is_amo instr
        then run_amo_instruction params (s,(ii,view,o))
-       else run_store_instruction Nothing params (s,(ii,view,o)) apss
+       else run_store_instruction Nothing params (s,(ii,view,o)) pss_sem pss
     | Barrier _ _ -> run_barrier_instruction params (s,(ii,view,o))
-    | Excl_res _ -> run_store_exclusive_instruction params (s,(ii,view,o)) apss
+    | Excl_res _ -> run_store_exclusive_instruction params (s,(ii,view,o)) pss_sem pss
     | _ -> fail
     end
 
@@ -619,7 +625,11 @@ let fail_fetch s (fde : fetch_and_decode_exception) =
   let e = ET_fetch_and_decode fde in
   PT_exception (s.tid,(head s.instrs).ii_ioid) e s
 
-let run_addr params isem (s : pts 'v) (apss : apss 'pss 'v) addr = 
+let run_addr params isem 
+      (s : pts 'v)
+      (pss_sem : pss_sem 'pss 'v)
+      (pss : 'pss)
+      addr = 
   match s.prog addr with
   | FDO_address_not_concrete ->
      return (fail_fetch s (FDE_non_concrete_fetch_address_error))
@@ -631,7 +641,7 @@ let run_addr params isem (s : pts 'v) (apss : apss 'pss 'v) addr =
      if params.t.thread_fail_on_loop &&
         exists (i MEM s.instrs). i.ii_program_loc = addr
      then failwith "found loop"
-     else run_instruction params isem s apss (addr,opcode,instr) 
+     else run_instruction params isem s pss_sem pss (addr,opcode,instr) 
   end
    
 let cia_of_state params s = 
@@ -653,14 +663,15 @@ let next_instruction_transitions_of_thread
     (params : model_params)
     (isem : instruction_semantics)
     (s : pts 'v)
-    (apss : apss 'pss 'v)
+    (pss_sem : pss_sem 'pss 'v)
+    (pss : 'pss)
   : list (pt_trans (pts 'v) 'pss 'v) =
   let cia = cia_of_state params.t s in
   guard (isJust s.initAddr && 
          cia <> s.retAddr &&
          isNothing s.raised_exception &&
          not (quick_quick_detect_deadlock s)) >>
-  run_addr params isem s apss cia
+  run_addr params isem s pss_sem pss cia
 
 
 (* fix the params.thread_run_after_stop_promising case *)

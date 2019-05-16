@@ -72,8 +72,8 @@ type read_request = (* r *)
      r_thread:            thread_id;
      r_addr:              footprint;
      r_read_kind:         read_kind;
-     r_write_lower_bound: set write;
-     r_write_upper_bound: set write;
+     (* r_write_lower_bound: set write;
+      * r_write_upper_bound: set write; *)
   |>
 
 type read_response = (* rr *)
@@ -388,8 +388,8 @@ let make_read_request_event
         reiid = new_eiid;
         r_addr = (addr, size);
         r_read_kind = read_kind;
-        r_write_lower_bound = {};
-        r_write_upper_bound = {};
+        (* r_write_lower_bound = {};
+         * r_write_upper_bound = {}; *)
     |>
   in
   (rr, ist')

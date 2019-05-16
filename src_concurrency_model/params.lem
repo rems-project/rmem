@@ -39,8 +39,6 @@ type ss_params =
 
      (* parameters for Flowing *)
      flowing_topology : flowing_topology;
-
-     promise_first: bool;
   |>
 
 
@@ -94,11 +92,9 @@ type thread_params =
 
      branch_targets: branch_targets_map;
 
-     thread_run_after_stop_promising : bool;
-     thread_certify_after_stop_promising : bool;
-     thread_promising_fuel : nat;
-
-     promising_partial_order : bool;
+     p_run_after_stop_promising : bool;
+     p_promising_fuel : maybe nat;
+     p_promise_first: bool;
   |>
 
 
@@ -249,7 +245,6 @@ let default_model_params =
         new_coh =  Use_old_coherence ;
         (*new_coh =     No_new_coherence;*)
         flowing_topology = FTopo_leaf 0;
-        promise_first = false;
     |>
   in
 
@@ -265,13 +260,11 @@ let default_model_params =
         thread_isa_info                = IsaInfoPPCGen.ppcgen_ism;
         thread_loop_unroll_limit       = Nothing;
 
-        thread_run_after_stop_promising = true;
-        thread_certify_after_stop_promising = false;
-        thread_promising_fuel = 10000;
+        p_promise_first                = false;
+        p_run_after_stop_promising     = true;
+        p_promising_fuel               = Nothing;
 
         branch_targets                 = Map.empty;
-
-        promising_partial_order = false;
     |>
   in
 

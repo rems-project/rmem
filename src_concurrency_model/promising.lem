@@ -47,7 +47,8 @@ type p_state 'ts 'ss 'v =
      p_instruction_semantics: instruction_semantics;
      p_stopped_promising:     bool;
      p_pss_sem:               pss_sem 'ss 'v;
-     (* transition_history:    list (trans 'ts 'ss); *)
+     
+     p_follow_trace:          pt_follow_trace 'v;
   |>
 
 
@@ -86,6 +87,8 @@ let p_initial_state
      p_instruction_semantics = instruction_semantics;
      p_stopped_promising = false;
      p_pss_sem = pss_sem;
+
+     p_follow_trace = [];
   |>
 
 
@@ -110,7 +113,7 @@ type certjob 'pts 'pss 'v =
      CJpromises : set (writedata 'v);
      CJfulfilled : bool;
      CJcert_no_write : bool;
-     CJfuel : nat; |>
+     CJfuel : maybe nat; |>
 
 type cert 'v = 
   | NotCertified
@@ -119,7 +122,6 @@ type cert 'v =
 let promisable = (le)
 
 
-let make_apss pss pss_sem = <| pss_sem = pss_sem; pss = pss |>
 
 let certprom_t params
     (isem : instruction_semantics)
@@ -137,10 +139,17 @@ let certprom_t params
   <| cj with CJpts = pts';
              CJpss = pss';
              CJpromises = promises;
-             CJfuel = cj.CJfuel - 1; 
+             CJfuel = Maybe.map (fun f -> f - 1) cj.CJfuel; 
              CJcert_no_write = cert_no_write |>
 
 
+let fuel_empty = function
+  | Nothing -> false
+  | Just (f : nat) -> f <= 0
+end
+
+let warn_empty_fuel () = 
+  print_endline "\nWarning: ran out of fuel\n"
 
 let rec certprom_s params
     (isem : instruction_semantics)
@@ -153,11 +162,11 @@ let rec certprom_s params
   | cj :: cjs ->
     let fulfilled = cj.CJfulfilled || Set.null cj.CJpts.promises in
     let next_transitions = 
-      if not (cj.CJfuel > 0) then
-        let () = print_endline "\nWarning: ran out of fuel\n" in []
+      if fuel_empty cj.CJfuel then
+        let () = warn_empty_fuel () in []
       else
         next_instruction_transitions_of_thread params
-          isem cj.CJpts (make_apss cj.CJpss pss_sem)
+          isem cj.CJpts pss_sem cj.CJpss
     in 
     if not (List.null next_transitions) then
       let cj = <| cj with CJfulfilled = fulfilled |> in
@@ -176,81 +185,76 @@ let rec certprom_s params
       certprom_s params isem pss_sem cjs cert
   end
 
+
+
+
 let certprom_transition params isem
       (pss_sem : pss_sem 'pss 'v)
       (pts : pts 'v)
       (pss : 'pss) tr = 
-  let fulfilled = Set.null pts.promises in
+  (* let fulfilled = Set.null pts.promises in *)
   let no_write = List.null (wd_of_shared_pt_write_trans tr) in
-  let cert = if fulfilled then Certified no_write Set.empty else NotCertified in
+  (* let cert = if fulfilled then Certified no_write Set.empty else NotCertified in *)
   let (pts',pss') = (tconf_after_pt_trans (pts,pss) tr) in
   let cj = <| CJpts = pts';
               CJpss = pss';
               CJpromises = Set.empty;
-              CJfulfilled = fulfilled;
+              CJfulfilled = false;
               CJpss_view = pss_sem.pss_view pss;
-              CJfuel = params.t.thread_promising_fuel;
+              CJfuel = params.t.p_promising_fuel;
               CJcert_no_write = no_write;
            |> in
-  certprom_s params isem pss_sem [cj] cert
+  certprom_s params isem pss_sem [cj] NotCertified
+
+
+
+(* If the same promise can be done with different required views, only
+   enumerate transitions for with biggest required view. In the
+   timestamp case whether minimal/maximal or maximal is not important
+   (just need a unique one), since this "locally required view" does
+   not matter: we do not record that view but the view of memory
+   "before" doing this write. In the write-ids model it does
+   matter. Picking the promise(s) with maximal view constrains the
+   storage subsystem the most. But that strongest constraint on the
+   storage subsystem should still be weaker than the corresponding
+   storage state in the timestamp model. *)
+let prune_promises promises = 
+  {p | forall (p IN promises)
+     | not (exists (p' IN promises).
+       (p.wd_w = p'.wd_w &&
+        p.wd_rexinfo = p'.wd_rexinfo &&
+        p'.wd_req_view <> p.wd_req_view &&
+        le p.wd_req_view p'.wd_req_view))
+  }
 
 
 let p_enumerate_transitions_of_thread
     (params : model_params)
     (isem : instruction_semantics)
-    (pss_sem : pss_sem 'pss 'v)
-    (stopped_promising : bool)
     (pts : pts 'v)
+    (pss_sem : pss_sem 'pss 'v)
     (pss : 'pss)
-    : maybe (list (p_trans (pts 'v) 'pss 'v * bool)) =  (* 'Nothing' indicates a deadlock *)
+    : list (pt_trans (pts 'v) 'pss 'v * bool) = 
 
-  if stopped_promising && quick_detect_deadlock pts then Nothing else
-
-  let trs = next_instruction_transitions_of_thread params isem 
-              pts (make_apss pss pss_sem) in
-
+  let trs = next_instruction_transitions_of_thread params isem pts pss_sem pss in
   let (transitions,promises) = 
-    if stopped_promising
-    then (List.map (fun tr -> (tr,true)) trs, Set.empty)
-    else
-      List.foldl (fun (trs,prms) tr ->
-          match certprom_transition params isem pss_sem pts pss tr with
-          | NotCertified -> (trs,prms)
-          | Certified cert_no_write promises ->
-             ((tr,cert_no_write) :: trs, prms union promises)
-          end
-        ) ([],Set.empty) trs 
+    List.foldl 
+      (fun (trs,prms) tr ->
+        match certprom_transition params isem pss_sem pts pss tr with
+        | NotCertified -> (trs,prms)
+        | Certified cert_no_write promises ->
+           ((tr,cert_no_write) :: trs, prms union promises)
+        end
+      ) ([],Set.empty) trs 
   in
 
-
-  (* If the same promise can be done with different required views,
-     only enumerate transitions for with biggest required view. In the
-     timestamp case whether minimal/maximal or maximal is not
-     important (just need a unique one), since this "locally required
-     view" does not matter: we do not record that view but the view of
-     memory "before" doing this write. In the write-ids model it does
-     matter. Picking the promise(s) with maximal view constrains the
-     storage subsystem the most. But that strongest constraint on the
-     storage subsystem should still be weaker than the corresponding
-     storage state in the timestamp model. *)
-    let promises = 
-        {p | forall (p IN promises)
-           | not (exists (p' IN promises).
-                  (p.wd_w = p'.wd_w &&
-                   p.wd_rexinfo = p'.wd_rexinfo &&
-                   (p'.wd_req_view <> p.wd_req_view &&
-                    le p.wd_req_view p'.wd_req_view) ))
-        } in
-
-  let promises = Set_extra.toList promises in
+  let promises = Set_extra.toList (prune_promises promises) in
 
   let promise_transitions = 
     promises >>= fun wd ->
     promise_write pss_sem pts pss wd Shared >>= fun tr ->
     return (tr,false) in
-  let transitions = transitions ++ promise_transitions in
-  if List.null transitions && not (is_final_tstate params.t pts)
-  then Nothing else Just (List.map (fun (t,b) -> (PT t,b)) transitions)
+  transitions ++ promise_transitions
 
 
 
@@ -260,15 +264,17 @@ let rec enumerate_possible_final_states
     (pss_sem : pss_sem 'pss 'v)
     (pts : pts 'v)
     (pss : 'pss)
-      : list (pts 'v * 'pss)
+    (trace_so_far : pt_follow_trace 'v)
+      : list (pts 'v * 'pss * pt_follow_trace 'v)
   =
-  if is_final_tstate params.t pts then return (pts,pss) else
+  if is_final_tstate params.t pts then return (pts,pss,List.reverse trace_so_far) else
     (* guard (quick_detect_deadlock pss pts) >> *)
-    next_instruction_transitions_of_thread params isem pts 
-      (make_apss pss pss_sem) >>= fun tr ->
+    next_instruction_transitions_of_thread params isem pts pss_sem pss >>= fun tr ->
     guard (not (is_shared_pt_write_trans tr)) >>
     let (pts,pss) = tconf_after_pt_trans (pts,pss) tr in
-    enumerate_possible_final_states params isem pss_sem pts pss
+    let follow_label = pt_follow_label_of_pt_trans tr in
+    let trace_so_far' = follow_label :: trace_so_far in
+    enumerate_possible_final_states params isem pss_sem pts pss trace_so_far'
 
 
 
@@ -278,15 +284,18 @@ let rec enumerate_possible_final_states
 
 val merge_combination :
   forall 'v 'pss. pss_sem 'pss 'v ->
-  list (thread_id * (pts 'v * 'pss)) -> map thread_id (pts 'v) * 'pss
+  list (thread_id * (pts 'v * 'pss * pt_follow_trace 'v)) ->
+  map thread_id (pts 'v) * 'pss * pt_follow_trace 'v
 let merge_combination pss_sem combination =
   match combination with
     | [] -> failwith "merge_combinations"
-    | (tid,(pts,pss)) :: rest ->
-       let add (ptss,pss) (tid',(pts',pss')) =
-         (Map.insert tid' pts' ptss, pss_sem.merge_pss_states pss pss')
+    | (tid,(pts,pss,trace)) :: rest ->
+       let add (ptss,pss,trace) (tid',(pts',pss',thread_trace)) =
+         (Map.insert tid' pts' ptss,
+          pss_sem.merge_pss_states pss pss',
+          trace ++ thread_trace)
        in
-       List.foldl add (Map.singleton tid pts, pss) rest
+       List.foldl add (Map.singleton tid pts, pss, trace) rest
   end
 
 
@@ -300,100 +309,118 @@ let rec all_combinations l =
         | forall (b MEM bs) (combinations MEM all_combinations rest) | true]
   end
 
+
 let enumerate_finalise_transitions isem
-      (state : p_state (pts 'v) 'pss 'v) = 
-  if state.p_stopped_promising &&
-       Map.all (fun _ ts -> is_final_tstate state.p_model.t ts) state.p_thread_states
+      (state : p_state (pts 'v) 'pss 'v) : list (p_trans (pts 'v) 'pss 'v)
+  = 
+  if Map.all (fun _ ts -> is_final_tstate state.p_model.t ts) state.p_thread_states
   then []
   else
     let pss = state.p_storage_state in
     let ptss = Map_extra.toList state.p_thread_states in
-    let (final_states_per_thread : list (thread_id * (list (pts 'v * 'pss)))) =
+    let (final_states_per_thread : list (thread_id * (list (pts 'v * 'pss * pt_follow_trace 'v)))) =
       List.map (fun (tid,pts) ->
           (tid, enumerate_possible_final_states state.p_model isem
-                  state.p_pss_sem pts pss)) ptss in
-    let (combinations : list (list (thread_id * (pts 'v * 'pss)))) = 
-      all_combinations final_states_per_thread in
-    List.map (merge_combination state.p_pss_sem) combinations
-
-
-let p_enumerate_transitions
-    (state:               p_state (pts 'v) 'pss 'v)
-    (cached_sys_thread_trans: map thread_id (list (p_trans (pts 'v) 'pss 'v * bool)))
-    : (list (p_trans (pts 'v) 'pss 'v)) * (map thread_id (list (p_trans (pts 'v) 'pss 'v * bool)))  
-  =
-  let stop_running =
-    state.p_stopped_promising && not (state.p_model.t.thread_run_after_stop_promising) in
-
-  if stop_running then
-    let (possible_states : list (map thread_id (pts 'v) * 'pss)) =
-      enumerate_finalise_transitions state.p_instruction_semantics state in
-    let transitions = List.map (fun (ptss, pss) -> PSys_finish ptss pss) possible_states in
-    let transitions' = Map.singleton 1000 (List.map (fun tr -> (tr,true)) transitions) in
-    (transitions, transitions')
-  else
-  
-  let stop_certifying =
-    state.p_stopped_promising && not (state.p_model.t.thread_certify_after_stop_promising) in
-
-  let sys_thread_transitions : map thread_id (list (p_trans (pts 'v) 'pss 'v * bool)) =
-
-    let (transitions,_already_have_one,deadlock) : 
-          (map thread_id (list (p_trans (pts 'v) 'pss 'v * bool)) * bool * bool) = 
-      Map_extra.fold
-        (fun tid ts (m,already_have_one,deadlock) ->
-         match Map.lookup tid cached_sys_thread_trans with
-         | Just [] -> (Map.insert tid [] m, already_have_one, deadlock)
-         | Just trs -> (Map.insert tid trs m, true, deadlock)
-         | Nothing ->
-            if already_have_one && state.p_stopped_promising
-            then (m,already_have_one,deadlock)
-            else
-              match p_enumerate_transitions_of_thread
-                      state.p_model state.p_instruction_semantics 
-                      state.p_pss_sem
-                      stop_certifying ts
-                      state.p_storage_state 
-              with
-              | Just [] -> (Map.insert tid [] m, false, deadlock)
-              | Just trs -> (Map.insert tid trs m, true, deadlock)
-              | Nothing -> (m, true, true)
-              end
-         end
-        )
-        state.p_thread_states (Map.empty,false,false)
+                  state.p_pss_sem pts pss [])) ptss
     in
+    let (combs : list (list (thread_id * (pts 'v * 'pss * pt_follow_trace 'v)))) = 
+      all_combinations final_states_per_thread in
+    let merged_combs = List.map (merge_combination state.p_pss_sem) combs in
+    List.map (fun (ptss, pss, trace) -> PSys_finish ptss pss trace) merged_combs
 
-    if deadlock then Map.empty else transitions
+
+let p_enumerate_follow_transition
+  (state : p_state (pts 'v) 'pss 'v) (l : pt_follow_label 'v)
+    : list (p_trans (pts 'v) 'pss 'v) =
+
+  let tid = tid_of_pt_trans l in
+  let ts = Map_extra.find tid state.p_thread_states in
+  let pt_trans =
+    p_enumerate_transitions_of_thread
+      state.p_model
+      state.p_instruction_semantics
+      ts
+      state.p_pss_sem
+      state.p_storage_state
   in
+  match List.filter (fun (t,_) -> pt_trans_matches_pt_follow_label l t) pt_trans with
+  | [(t,b)] -> [PT t]
+  | [] -> failwith ("could not follow, that transition does not exist: " ^ show l)
+  | _  -> failwith ("could not follow, matched multiple transitions: " ^ show l)
+  end
 
+  
+let p_normally_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
+    : list (p_trans (pts 'v) 'pss 'v)
+  =
+
+  let map_thread_transitions =
+    Map.map
+      (fun ts ->
+        p_enumerate_transitions_of_thread
+          state.p_model
+          state.p_instruction_semantics 
+          ts
+          state.p_pss_sem
+          state.p_storage_state 
+      )
+      state.p_thread_states
+  in
 
   let can_stop_promising = 
     not state.p_stopped_promising &&
+    state.p_model.t.p_promise_first &&
     Map.all (fun tid trs ->
         let ts = Map_extra.find tid state.p_thread_states in
-        is_final_tstate state.p_model.t ts || List.any snd trs)
-      sys_thread_transitions
-  in
-
-  let stop_promising_transitions = 
-    if can_stop_promising then [PSys_stop_promising] else []
+        is_final_tstate state.p_model.t ts || 
+          List.any snd trs)
+      map_thread_transitions
   in
 
   let filter (tr,cert_no_write) = 
-    ((state.p_model.t.thread_certify_after_stop_promising && state.p_stopped_promising) --> 
-       cert_no_write) &&
-    ((state.p_model.t.thread_certify_after_stop_promising && state.p_stopped_promising) --> 
-       not (is_shared_p_write_trans tr)) &&
-    ((state.p_model.ss.promise_first && not state.p_stopped_promising) --> 
-      is_shared_p_write_trans tr)
-  in
-  let thread_transitions = 
-    Map_extra.fold (fun _ trs acc -> acc ++ (List.filter filter trs))
-      sys_thread_transitions []
+    if state.p_stopped_promising then
+      cert_no_write && not (is_shared_pt_write_trans tr)
+    else if state.p_model.t.p_promise_first then
+      is_shared_pt_write_trans tr
+    else true
   in
 
-  ((List.map fst thread_transitions) ++ stop_promising_transitions, sys_thread_transitions)
+  let thread_transitions = 
+    List.filter filter
+      (Map_extra.fold  (fun _ trs acc -> acc ++ trs) map_thread_transitions [])
+  in
+  let thread_transitions = List.map (fun (t,_) -> PT t) thread_transitions in
+
+  if can_stop_promising then PSys_stop_promising :: thread_transitions
+  else thread_transitions
+
+   
+
+
+let p_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
+    : list (p_trans (pts 'v) 'pss 'v)
+  =
+  match state.p_follow_trace with
+  | [] ->
+    if state.p_stopped_promising && not (state.p_model.t.p_run_after_stop_promising)
+    then enumerate_finalise_transitions state.p_instruction_semantics state
+    else p_normally_enumerate_transitions state
+  | t :: _ ->  p_enumerate_follow_transition state t
+  end
+
+
+
+
+let p_priority_transitions s (_: eager_mode) :
+      list ((p_trans 'ts 'ss 'v -> bool) * bool) =
+  match s.p_model.t.thread_model with
+  | Promising_thread_model -> (* also see optimised transition enumeration *)
+     if s.p_stopped_promising then [(fun t -> true, true)]  else []
+  | _ -> []
+end
+
+
+
 
 
 
@@ -415,30 +442,35 @@ type pst 'ts 'ss 'v =
 
 
 let pst_of_state s =
-  let (trans,_) = p_enumerate_transitions s Map.empty in
   <| pst_state = s; 
-     pst_trans = trans |>
+     pst_trans = p_enumerate_transitions s |>
 
 
 
 
 let pstate_after_transition (s : p_state (pts 'v) 'pss 'v) (t: p_trans (pts 'v) 'pss 'v)
     : p_state (pts 'v) 'pss 'v =
-  match t with
-  | PSys_thread_start _ _ _ _ -> fail
-  | PSys_stop_promising -> 
-     <| s with p_stopped_promising = true |>
-  | PSys_finish ptss pss -> 
-     <| s with p_thread_states = ptss; p_storage_state = pss |>
-  | PT t -> 
-     let tid = tid_of_pt_trans t in
-     let pts = Map_extra.find tid s.p_thread_states in
-     let (pts,pss) = tconf_after_pt_trans (pts,s.p_storage_state) t in
-     <| s with p_thread_states = Map.insert tid pts s.p_thread_states;
-               p_storage_state = pss |>
-  end
-
-
+  let s' = 
+    match t with
+    | PSys_thread_start _ _ _ _ -> fail
+    | PSys_stop_promising -> 
+       <| s with p_stopped_promising = true |>
+    | PSys_finish ptss pss trace -> 
+       <| s with (* p_thread_states = ptss; 
+                  * p_storage_state = pss; *)
+                 p_follow_trace = trace;
+       |>
+    | PT t -> 
+       let tid = tid_of_pt_trans t in
+       let pts = Map_extra.find tid s.p_thread_states in
+       let (pts,pss) = tconf_after_pt_trans (pts,s.p_storage_state) t in
+       <| s with p_thread_states = Map.insert tid pts s.p_thread_states;
+                 p_storage_state = pss |>
+    end
+  in
+  if s.p_follow_trace = [] then s'
+  else <| s' with p_follow_trace = List_extra.tail s.p_follow_trace |>
+ 
 
 
 
@@ -451,7 +483,7 @@ let pst_after_transition
   
 
 let p_is_final_state (s : p_state (pts 'v) 'pss 'v) : bool =
-  s.p_model.ss.promise_first --> s.p_stopped_promising &&
+  s.p_model.t.p_promise_first --> s.p_stopped_promising &&
   (* quantify over list rather than set to avoid needing set type for thread states *)
   (forall ((_,ts) MEM (Map_extra.toList s.p_thread_states)).
    PromisingThread.is_final_tstate s.p_model.t ts)

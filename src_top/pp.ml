@@ -1961,7 +1961,7 @@ let pp_p_trans ?(graph=false) m (t: ('ts,'ss,PromisingViews.t0) p_trans) =
   | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
      pp_pt_thread_start_trans ~graph m (tid,ioid) (rv,mrv) tid'
   | PSys_stop_promising -> "Stop promising"
-  | PSys_finish (_, _) -> "Finalise Promising execution"
+  | PSys_finish (_, _, _) -> "Finalise Promising execution"
 
 
 

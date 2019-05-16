@@ -93,13 +93,14 @@ let make_pss_ui_state (ss: maybe pss) (ss': pss) : pss_ui_state
   end
 
 
-type p_ui_state 'ts 'ss =
+type p_ui_state 'ts 'ss 'v =
   <| p_ui_program_memory:        (address -> fetch_and_decode_outcome);
      p_ui_initial_writes:        list write;
      p_ui_thread_states:         list (thread_id * 'ts);
      p_ui_storage_state:         'ss;
      p_ui_model:                 model_params;
      p_ui_stopped_promising:     changed2b bool;
+     p_ui_follow_trace:          pt_follow_trace 'v;
   |>
 
 val make_pts_ui_state_1 : pts t -> pts_ui_state
@@ -198,7 +199,7 @@ let make_p_ui_state
       (s : maybe (p_state (pts t) pss t))
       (s' : p_state (pts t) pss t)
       (ncands : list (ui_p_trans (pts t) pss t)) 
-    : (p_ui_state pts_ui_state pss_ui_state) =
+    : (p_ui_state pts_ui_state pss_ui_state t) =
   let threads : list thread_id = Set_extra.toList (Map.domain s'.p_thread_states) in
   <| p_ui_program_memory = s'.p_program_memory; 
      p_ui_initial_writes = s'.p_initial_writes;
@@ -220,4 +221,5 @@ let make_p_ui_state
        | Just s-> ui_eq_diff2b s.p_stopped_promising s'.p_stopped_promising
        end;
 
+     p_ui_follow_trace = s'.p_follow_trace
   |>

@@ -20,7 +20,7 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
   type thread_subsystem_state = PromisingViews.t0 PromisingThread.pts
   type storage_subsystem_state = PromisingStorage.pss
   type system_state = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) Promising.p_state
-  type ui_state = (PromisingUI.pts_ui_state, PromisingUI.pss_ui_state) PromisingUI.p_ui_state 
+  type ui_state = (PromisingUI.pts_ui_state, PromisingUI.pss_ui_state, PromisingViews.t0) PromisingUI.p_ui_state 
 
   (* For efficiency, 'state' also includes all the enabled transitions *)
   type state = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) Promising.pst
@@ -103,10 +103,7 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
 
   let priority_trans s eager_mode = 
     let open Promising in
-    PromisingTransitions.p_priority_transitions
-      s.pst_state.p_model
-      true
-      eager_mode
+    p_priority_transitions s.pst_state eager_mode
 
   let is_thread_trans = PromisingTransitions.p_is_thread_transition
 
