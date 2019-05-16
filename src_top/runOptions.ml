@@ -27,7 +27,6 @@ type t =
     priority_reduction:      bool;
     prune_restarts:          bool;
     prune_discards:          bool;
-    prune_late_writes:       bool; (* promising only *)
     pseudorandom:            bool;
     pseudorandom_traces:     int;
 
@@ -62,7 +61,6 @@ let partial_order_reduction_lens = { Lens.get = (fun o -> o.partial_order_reduct
 let priority_reduction_lens = { Lens.get = (fun o -> o.priority_reduction); Lens.set = (fun v o -> { o with priority_reduction = v }) }
 let prune_restarts_lens = { Lens.get = (fun o -> o.prune_restarts); Lens.set = (fun v o -> { o with prune_restarts = v }) }
 let prune_discards_lens = { Lens.get = (fun o -> o.prune_discards); Lens.set = (fun v o -> { o with prune_discards = v }) }
-let prune_late_writes_lens = { Lens.get = (fun o -> o.prune_late_writes); Lens.set = (fun v o -> { o with prune_late_writes = v }) }
 let pseudorandom_lens = { Lens.get = (fun o -> o.pseudorandom); Lens.set = (fun v o -> { o with pseudorandom = v }) }
 let pseudorandom_traces_lens = { Lens.get = (fun o -> o.pseudorandom_traces); Lens.set = (fun v o -> { o with pseudorandom_traces = v }) }
 let interpreter_lens = { Lens.get = (fun o -> o.interpreter); Lens.set = (fun v o -> { o with interpreter = v }) }
@@ -142,7 +140,6 @@ let default_options =
     priority_reduction      = false;
     prune_restarts          = false;
     prune_discards          = false;
-    prune_late_writes       = false;
     pseudorandom            = false;
     pseudorandom_traces     = 1;
 

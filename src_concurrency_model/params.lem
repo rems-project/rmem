@@ -92,8 +92,8 @@ type thread_params =
 
      branch_targets: branch_targets_map;
 
-     p_run_after_stop_promising : bool;
-     p_promising_fuel : maybe nat;
+     p_par_pts_search : bool;
+     p_fuel : maybe nat;
      p_promise_first: bool;
   |>
 
@@ -261,8 +261,8 @@ let default_model_params =
         thread_loop_unroll_limit       = Nothing;
 
         p_promise_first                = false;
-        p_run_after_stop_promising     = true;
-        p_promising_fuel               = Nothing;
+        p_par_pts_search               = false;
+        p_fuel                         = Nothing;
 
         branch_targets                 = Map.empty;
     |>

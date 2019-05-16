@@ -209,10 +209,6 @@ let opts = [
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.prune_discards = b}),
     (Printf.sprintf "<bool> (requires '-model forbid_tree_speculation') for batch mode, don't explore traces with discarded instructions (%b)" !run_options.RunOptions.prune_discards));
 
-("-prune_late_writes",
-    Arg.Bool (fun b -> run_options := {!run_options with RunOptions.prune_late_writes = b}),
-    (Printf.sprintf "<bool> for batch mode, don't explore traces where writes are committed after the Promising 'stop promising transition' (%b)" !run_options.RunOptions.prune_late_writes));
-
 ("-suppress_non_symbol_memory",
     Arg.Bool (fun b -> Globals.suppress_non_symbol_memory := b),
     (Printf.sprintf "<bool> suppress non-symbol memory for ELF input files (%b)" !Globals.suppress_non_symbol_memory));

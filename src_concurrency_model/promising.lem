@@ -201,7 +201,7 @@ let certprom_transition params isem
               CJpromises = Set.empty;
               CJfulfilled = false;
               CJpss_view = pss_sem.pss_view pss;
-              CJfuel = params.t.p_promising_fuel;
+              CJfuel = params.t.p_fuel;
               CJcert_no_write = no_write;
            |> in
   certprom_s params isem pss_sem [cj] NotCertified
@@ -402,7 +402,7 @@ let p_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
   =
   match state.p_follow_trace with
   | [] ->
-    if state.p_stopped_promising && not (state.p_model.t.p_run_after_stop_promising)
+    if state.p_stopped_promising && state.p_model.t.p_par_pts_search
     then enumerate_finalise_transitions state.p_instruction_semantics state
     else p_normally_enumerate_transitions state
   | t :: _ ->  p_enumerate_follow_transition state t

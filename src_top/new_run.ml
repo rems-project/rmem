@@ -722,22 +722,6 @@ let rec search search_state : search_outcome =
     end
   in
 
-  let prune_late_writes cont = fun search_state ->
-    begin match search_state.search_nodes with
-    | [] -> assert false
-    | search_node :: _ ->
-        if search_node.open_transition = []
-            && search_state.options.prune_late_writes
-            && ConcModel.write_after_stop_promising search_node.system_state
-        then
-          { search_state with
-            late_write_prune_count = search_state.late_write_prune_count + 1
-          } |> pop |> continue_search
-        else
-          cont search_state
-    end
-  in
-
   let take_eager_transition cont = fun search_state ->
     match search_state.search_nodes with
     | [] -> assert false
@@ -945,7 +929,6 @@ let rec search search_state : search_outcome =
           @@ check_bound
           @@ prune_restarts
           @@ prune_discards
-          @@ prune_late_writes
           @@ take_eager_transition
           (* @@ assert_no_eager *)
           @@ hash_prune
