@@ -1,0 +1,2 @@
+#!/bin/sh
+./rmem -model flat -shallow_embedding true -eager true -hash_prune true -priority_reduction true "$@"
