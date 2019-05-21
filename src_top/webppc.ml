@@ -143,9 +143,9 @@ let model_to_html : unit -> unit = fun () ->
               (not (!Globals.model_params).t.thread_allow_tree_speculation);
 
   check_radio "promiseFirst"
-              (!Globals.model_params).ss.promise_first;
+              (!Globals.model_params).t.p_promise_first;
   check_radio "promiseAnytime"
-              (not (!Globals.model_params).ss.promise_first);
+              (not (!Globals.model_params).t.p_promise_first;);
 
   check_radio "force_sc_true"
               ((!Globals.model_params).t.thread_restriction = RestrictionSC && (!Globals.model_params).ss.ss_sc);
