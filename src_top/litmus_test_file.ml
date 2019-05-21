@@ -252,9 +252,35 @@ let initial_state_record
       (test: test)
       (isa_defs: (module Isa_model.ISADefs))
       (model: Params.model_params) = 
-  initial_state_record_base
-    (Globals.get_endianness ())
-    (!Globals.aarch64gen)
-    test
-    isa_defs
-    model
+
+  let (thread_isa_info',
+       prog,
+       return_addresses,
+       tids,
+       init_reg_data,
+       init_reg_value,
+       initial_fetch_address,
+       init_write_events) = 
+
+    initial_state_record_base
+      (Globals.get_endianness ())
+      (!Globals.aarch64gen)
+      test
+      isa_defs
+      model.t.thread_isa_info
+  in
+
+  let open Params in
+
+  let t' = {model.t with thread_isa_info = thread_isa_info'} in
+  let model' = {model with t = t'} in
+
+  { isr_params            = model';
+    isr_program           = prog;
+    isr_return_addr       = return_addresses;
+    isr_thread_ids        = tids;
+    isr_register_data     = init_reg_data;
+    isr_register_values   = init_reg_value;
+    isr_first_instruction = initial_fetch_address;
+    isr_memory            = init_write_events;
+  }

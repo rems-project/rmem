@@ -390,7 +390,7 @@ let initial_state_record_base
     (aarch64gen: bool)
     (test:      test)
     (isa_defs:  (module Isa_defs.ISADefs))
-    (model:     Params.model_params)
+    (thread_isa_info:     BasicTypes.isa_info)
   =
 
   let open Params in
@@ -543,10 +543,10 @@ let initial_state_record_base
     List.map snd init_reg_data' in
 
 
-  let model' =
+  let thread_isa_info' =
     let fixed_pseudo_registers' =
       let open Sail_impl_base in
-      match model.t.thread_isa_info.ism with
+      match thread_isa_info.ism with
       | PPCGEN_ism ->
           let endianness =
             match endianness with
@@ -554,7 +554,7 @@ let initial_state_record_base
             | E_big_endian    -> register_value_ones  D_increasing 1 0
           in
           (Reg_slice ("bigendianmode", 0, D_increasing, (0,0)), endianness) ::
-          model.t.thread_isa_info.fixed_pseudo_registers
+          thread_isa_info.fixed_pseudo_registers
 
       | AARCH64_ism _ ->
           let endianness =
@@ -564,31 +564,27 @@ let initial_state_record_base
           in
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "E0E", (24,24)), endianness) ::
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "EE",  (25,25)), endianness) ::
-          model.t.thread_isa_info.fixed_pseudo_registers
+          thread_isa_info.fixed_pseudo_registers
 
       | MIPS_ism ->
           (* TODO: set endianness? *)
-          model.t.thread_isa_info.fixed_pseudo_registers
+          thread_isa_info.fixed_pseudo_registers
       | RISCV_ism ->
-          model.t.thread_isa_info.fixed_pseudo_registers
+          thread_isa_info.fixed_pseudo_registers
       | X86_ism ->
-          model.t.thread_isa_info.fixed_pseudo_registers
+          thread_isa_info.fixed_pseudo_registers
     in
 
-    let thread_isa_info' =
-      { model.t.thread_isa_info with fixed_pseudo_registers = fixed_pseudo_registers' }
-    in
-    let t' = {model.t with thread_isa_info = thread_isa_info'} in
-    {model with t = t'}
+    {thread_isa_info with fixed_pseudo_registers = fixed_pseudo_registers'}
   in
 
-  let open Params in
-  { isr_params            = model';
-    isr_program           = prog;
-    isr_return_addr       = return_addresses;
-    isr_thread_ids        = tids;
-    isr_register_data     = init_reg_data;
-    isr_register_values   = init_reg_value;
-    isr_first_instruction = initial_fetch_address;
-    isr_memory            = init_write_events;
-  }
+  (thread_isa_info',
+   prog,
+   return_addresses,
+   tids,
+   init_reg_data,
+   init_reg_value,
+   initial_fetch_address,
+   init_write_events)
+  
+
