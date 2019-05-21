@@ -209,3 +209,22 @@ let all_isa_defs : (module ISADefs) list = [
     (module X86ISADefs);
   ]
 
+
+
+let instruction_to_interp_instruction = function
+ | PPCGEN_instr instr -> Power_toFromInterp.astToInterpValue instr
+ | AArch64_instr instr -> ArmV8_toFromInterp.astToInterpValue0 instr
+ | MIPS_instr instr -> Mips_toFromInterp.astToInterpValue1 instr
+ | RISCV_instr instr -> failwith "not implemented yet"
+ | X86_instr instr -> X86_toFromInterp.astToInterpValue4 instr
+ | Fetch_error -> failwith "fetch error"
+
+
+let interp_instruction_to_instruction ism instr = match ism with
+  | PPCGEN_ism -> PPCGEN_instr (Power_toFromInterp.astFromInterpValue instr)
+  | AARCH64_ism AArch64HandSail -> AArch64_instr (ArmV8_toFromInterp.astFromInterpValue0 instr)
+  | AARCH64_ism AArch64GenSail -> failwith "not implemented yet"
+  | MIPS_ism -> MIPS_instr (Mips_toFromInterp.astFromInterpValue1 instr)
+  | RISCV_ism -> failwith "not implemented yet"
+  | X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue4 instr)
+

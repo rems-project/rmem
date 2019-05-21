@@ -579,6 +579,7 @@ let initial_state_record_base
   in
 
   (thread_isa_info',
+   prog_map,
    prog,
    return_addresses,
    tids,

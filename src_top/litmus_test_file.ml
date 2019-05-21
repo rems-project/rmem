@@ -254,6 +254,7 @@ let initial_state_record
       (model: Params.model_params) = 
 
   let (thread_isa_info',
+       _prog_map,
        prog,
        return_addresses,
        tids,

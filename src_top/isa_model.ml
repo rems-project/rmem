@@ -41,29 +41,10 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
         context endianness
     =
 
-    let instruction_to_interp_instruction = function
-      | PPCGEN_instr instr -> Power_toFromInterp.astToInterpValue instr
-      | AArch64_instr instr -> ArmV8_toFromInterp.astToInterpValue0 instr
-      | MIPS_instr instr -> Mips_toFromInterp.astToInterpValue1 instr
-      | RISCV_instr instr -> failwith "not implemented yet"
-      | X86_instr instr -> X86_toFromInterp.astToInterpValue4 instr
-      | Fetch_error -> failwith "fetch error"
-    in
-
-    let interp_instruction_to_instruction instr = match ism with
-       | PPCGEN_ism -> PPCGEN_instr (Power_toFromInterp.astFromInterpValue instr)
-       | AARCH64_ism AArch64HandSail -> AArch64_instr (ArmV8_toFromInterp.astFromInterpValue0 instr)
-       | AARCH64_ism AArch64GenSail -> failwith "not implemented yet"
-       | MIPS_ism -> MIPS_instr (Mips_toFromInterp.astFromInterpValue1 instr)
-       | RISCV_ism -> failwith "not implemented yet"
-       | X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue4 instr)
-    in
-
-
     let decode_error_to_decode_error opcode = function
       | Interp_interface.Unsupported_instruction_error instr ->
          Unsupported_instruction_error0
-          (opcode,interp_instruction_to_instruction instr)
+          (opcode,interp_instruction_to_instruction ism instr)
       | Interp_interface.Not_an_instruction_error opcode ->
          Not_an_instruction_error0 opcode
       | Interp_interface.Internal_error string ->
@@ -110,7 +91,7 @@ module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
     let interp__decode_to_instruction (address : Sail_impl_base.address) (opcode : Sail_impl_base.opcode) =
       match Interp_inter_imp.decode_to_instruction context None opcode with
       | Interp_interface.IDE_instr instruction ->
-         let instruction = interp_instruction_to_instruction instruction in
+         let instruction = interp_instruction_to_instruction ism instruction in
          FDO_success (address,Some opcode,instruction)
       | Interp_interface.IDE_decode_error de ->
          FDO_decode_error (decode_error_to_decode_error opcode de)

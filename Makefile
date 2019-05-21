@@ -441,6 +441,11 @@ endif
 .PHONY: check_external_deps
 get_all_deps: check_external_deps
 
+
+axiomatic:
+	$(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
+
+
 ## internal dependencies: ############################################
 #  these are dependencies we build from source
 

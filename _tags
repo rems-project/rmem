@@ -55,6 +55,9 @@
 <src_top/main.{d.byte,byte,native,p.native}> : package(unix), package(str), package(lem), package(linksem), package(base64), package(sail)
 # the Makefile also adds package(lambda-term) when building text (and not headless)
 
+<src_top/axiomatic.{d.byte,byte,native,p.native}> : package(unix), package(str), package(lem), package(linksem), package(base64), package(sail)
+
+
 <src_top/webppc.{d.byte,byte}> : package(unix), package(js_of_ocaml), package(lem), package(linksem), package(base64), package(sail)
 
 <src_top/console_help_printer.{d.byte,byte,native,p.native}> : package(lem), package(base64)
