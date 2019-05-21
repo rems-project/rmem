@@ -103,15 +103,15 @@ let read_channel_and_update_globals
   =
 
   let ((info,test),isa_info,maybe_x86_syntax) = 
-    read_channel
-      name in_chan
-      isa_callback
-      aarch64gen
-      (fun _ -> !Globals.final_cond)
-  in
+    read_channel name in_chan aarch64gen (fun _ -> !Globals.final_cond) in
 
   Globals.set_model_ism isa_info;
   check_configuration ();  
+
+  begin match isa_callback with
+  | Some f -> f isa_info.ism
+  | _ -> ()
+  end;
 
   begin match maybe_x86_syntax with
   | Some X86_syntax_gas ->   Globals.x86syntax := Some X86_gas

@@ -283,7 +283,6 @@ let test_info (aarch64gen: bool) (test: Test.test) (name: string) : Test.info =
 let read_channel 
       (name: string)
       (in_chan: lex_input)
-      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) 
       (aarch64gen: bool)
       (overwrite_check_cond : string -> string option)
     : (Test.info * test) * BasicTypes.isa_info * x86_syntax option =
@@ -314,11 +313,6 @@ let read_channel
   let open Params in
   let open InstructionSemantics in
   let open BasicTypes in
-
-  begin match isa_callback with
-  | Some f -> f isa_info.ism
-  | _ -> ()
-  end;
 
   let module GenParserConfig : GenParser.Config = struct
     let debuglexer = false
