@@ -14,14 +14,9 @@ open Printf
 
 let comment = "#" (* PPCArch.comment *)
 
-module Make(O:Arch.Config)(V:Constant.S) = struct
+module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   include PPCGenBase
-  module V =
-    struct
-      type v = Constant.v
-      include V
-      let maybevToV c = c
-    end
+  module V = V
 
   let ireg_to_string r = match r with
   | GPR0 -> "r0"
@@ -63,7 +58,7 @@ module Make(O:Arch.Config)(V:Constant.S) = struct
   | _ -> assert false
 
   include
-      ArchExtra.Make(O)
+      ArchExtra_litmus.Make(O)
       (struct
         module V = V
 
@@ -85,6 +80,14 @@ module Make(O:Arch.Config)(V:Constant.S) = struct
           else None
         let reg_class _ = "=&r"
         let comment = comment
+        let error t1 t2 =
+          let open CType in
+(*          Printf.eprintf "Error %s and %s\n" (debug t1) (debug t2) ; *)
+          match t1,t2 with
+          | (Base "int",Pointer _)
+          | (Pointer _,Base "int")  ->
+              true
+          | _ -> false
       end)
 
 end

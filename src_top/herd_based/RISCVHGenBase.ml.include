@@ -151,6 +151,8 @@ let symb_reg_name = function
   | Symbolic_reg r -> Some r
   | _ -> None
 
+let symb_reg r = Symbolic_reg r
+
 
 (************)
 (* Barriers *)
@@ -179,6 +181,8 @@ type instruction =
   ]
 
 type parsedInstruction = instruction
+let nop = `RISCVIType (0, IReg R0, IReg R0, RISCVADDI)
+
 
 let pp_label label = label
 
@@ -224,7 +228,6 @@ let pp_instruction_to_xml (instruction : instruction) : string  =
   pp_xml_empty_tag tag (atts @ [("assem", dump_instruction instruction)])
 
 let pp_instruction = function
-  | PPMode.Xml -> pp_instruction_to_xml
   | _          -> instruction_printer pp_label
 
 

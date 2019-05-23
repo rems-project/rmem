@@ -392,6 +392,8 @@ let symb_reg_name = function
   | Symbolic_reg r -> Some r
   | _ -> None
 
+let symb_reg r = Symbolic_reg r
+
 let pp_displacement i =
   (if bit64_to_int i = 0 then "" else bit64_to_string i) ^ "("
 
@@ -450,6 +452,9 @@ type instruction =
   ]
 
 type parsedInstruction = instruction
+
+let nop = `X86NOP
+
 
 let pp_label label = label
 

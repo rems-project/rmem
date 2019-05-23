@@ -132,6 +132,7 @@ let symb_reg_name = function
   | Symbolic_reg r -> Some r
   | _ -> None
 
+let symb_reg r = Symbolic_reg r
 
 let is_zero_reg r = (r = X ZR || r = W ZR)
 let is_sp_reg r = (r = X SP || r = W SP)
@@ -230,6 +231,8 @@ type instruction =
     | `AArch64Address_label of inst_reg*boolean*label (* d,page,imm *)
   ]
 type parsedInstruction = instruction
+
+let nop = `AArch64Hint SystemHintOp_NOP
 
 (*** TODO: maybe put these in a different file? ***)
 (*** pretty aux functions ***)

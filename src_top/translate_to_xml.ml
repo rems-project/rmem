@@ -16,7 +16,7 @@
 
 open Printf
 
-module Make (A: Arch.S) = struct
+module Make (A: Arch_litmus.S with type V.Scalar.t = string) = struct
   type xml_att = string * string
 
   let att_to_string (name, value) = sprintf "%s=\"%s\"" name value
@@ -83,12 +83,12 @@ module Make (A: Arch.S) = struct
         failwith ("symbolic registers (" ^ str ^ ") are not supported")
 
     | MiscParser.Location_global name ->
-        let atts = [ ("id",  SymbConstant.pp_v name)] @ atts in
+        let atts = [ ("id",  A.V.pp_v name)] @ atts in
         XML_Element ({name ="loc"; atts = atts}, [])
     end
 
   let val_to_xml maybev =
-      let atts = [("value", SymbConstant.pp false maybev)] in
+      let atts = [("value", A.V.pp false maybev)] in
       XML_Element ({name = "const"; atts = atts}, [])
 
   let rec prop_to_xml = begin function
@@ -133,7 +133,7 @@ module Make (A: Arch.S) = struct
           begin fun (locs, regs) (loc, (run_type, maybev)) ->
             let atts =
               [ ("type",  pp_run_type run_type);
-                ("value", SymbConstant.pp false maybev);
+                ("value", A.V.pp false maybev);
               ]
             in
             match loc with

@@ -53,7 +53,7 @@ rule read = parse
   | '-'  { MINUS }
   | '+'  { PLUS }
 
-  | num as n  { NUM (Misc.big_num_of_string n) }
+  | num as n  { NUM (Misc_extra.big_num_of_string n) }
   | name as s { IDENT s }
 
   | _   { raise (SyntaxError ("Unexpected char: " ^ Lexing.lexeme lexbuf)) }

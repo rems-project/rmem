@@ -154,6 +154,7 @@ let symb_reg_name = function
   | Symbolic_reg r -> Some r
   | _ -> None
 
+let symb_reg r = Symbolic_reg r
 
 (************)
 (* Barriers *)
@@ -185,6 +186,7 @@ type instruction =
   ]
 
 type parsedInstruction = instruction
+let nop = `MIPSIType (MIPSIOpSLTI, IReg R0, IReg R0, 0)
 
 let pp_label label = label
 

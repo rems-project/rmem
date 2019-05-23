@@ -188,64 +188,64 @@ let read_file (name: string) (isa_callback: (InstructionSemantics.instruction_se
 
 (********************************************************************)
 
-module Make_litmus_parser_to_xml
-    (Arch: Arch.S)
-    (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo)
-    =
-struct
-  module Parser = GenParser.Make(GenParser.DefaultConfig)(Arch)(LexParse)
-  module Translator = Translate_to_xml.Make(Arch)
+(* module Make_litmus_parser_to_xml *)
+(*     (Arch: Arch_litmus.S with type V.Scalar.t = string) *)
+(*     (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo) *)
+(*     = *)
+(* struct *)
+(*   module Parser = GenParser.Make(GenParser.DefaultConfig)(Arch)(LexParse) *)
+(*   module Translator = Translate_to_xml.Make(Arch) *)
 
-  let parse (in_chan: lex_input) (test_splitted: Splitter.result) =
-    (* parse splitted test *)
-    begin match in_chan with
-    | LexInChannel c -> Parser.parse c test_splitted
-    | LexInString s  -> Parser.parse_string s test_splitted
-    end
-    |> Translator.translate_test test_splitted
-end
+(*   let parse (in_chan: lex_input) (test_splitted: Splitter.result) = *)
+(*     (1* parse splitted test *1) *)
+(*     begin match in_chan with *)
+(*     | LexInChannel c -> Parser.parse c test_splitted *)
+(*     | LexInString s  -> Parser.parse_string s test_splitted *)
+(*     end *)
+(*     |> Translator.translate_test test_splitted *)
+(* end *)
 
 
 
-let channel_to_xml (name: string) (in_chan: lex_input) =
-  (* First split the input file in sections *)
-  let module SPL = Splitter.Make(Splitter.Default) in
-  let test_splitted =
-    begin match in_chan with
-    | LexInChannel c -> SPL.split name c
-    | LexInString s  -> SPL.split_string name s
-    end
-  in
+(* let channel_to_xml (name: string) (in_chan: lex_input) = *)
+(*   (1* First split the input file in sections *1) *)
+(*   let module SPL = Splitter.Make(Splitter.Default) in *)
+(*   let test_splitted = *)
+(*     begin match in_chan with *)
+(*     | LexInChannel c -> SPL.split name c *)
+(*     | LexInString s  -> SPL.split_string name s *)
+(*     end *)
+(*   in *)
 
-  begin match test_splitted.Splitter.arch with
-  | `PPC           ->
-      let module Parser = Make_litmus_parser_to_xml(PPC)(PPCLexParse) in
-      Parser.parse in_chan test_splitted
-  | `AArch64       ->
-      let module Parser = Make_litmus_parser_to_xml(AArch64HGen)(AArch64HGenLexParse) in
-      Parser.parse in_chan test_splitted
-  | `MIPS          ->
-      let module Parser = Make_litmus_parser_to_xml(MIPSHGen)(MIPSHGenLexParse) in
-      Parser.parse in_chan test_splitted
-  | `RISCV         ->
-      let module Parser = Make_litmus_parser_to_xml(RISCVHGen)(RISCVHGenLexParse) in
-      Parser.parse in_chan test_splitted
-  | `X86           ->
-        let syntax = begin try List.assoc "Syntax" test_splitted.Splitter.info with
-                     | Not_found -> "intel" end in
-        if (syntax = "gas") then
-          let module Parser = Make_litmus_parser_to_xml(X86HGen)(X86HGenLexParseGas) in
-          Parser.parse in_chan test_splitted
-        else 
-          let module Parser = Make_litmus_parser_to_xml(X86HGen)(X86HGenLexParseIntel) in
-          Parser.parse in_chan test_splitted
-  | _ -> Warn.fatal "unknown architecture"
-  end
+(*   begin match test_splitted.Splitter.arch with *)
+(*   | `PPC           -> *)
+(*       let module Parser = Make_litmus_parser_to_xml(PPC)(PPCLexParse) in *)
+(*       Parser.parse in_chan test_splitted *)
+(*   | `AArch64       -> *)
+(*       let module Parser = Make_litmus_parser_to_xml(AArch64HGen)(AArch64HGenLexParse) in *)
+(*       Parser.parse in_chan test_splitted *)
+(*   | `MIPS          -> *)
+(*       let module Parser = Make_litmus_parser_to_xml(MIPSHGen)(MIPSHGenLexParse) in *)
+(*       Parser.parse in_chan test_splitted *)
+(*   | `RISCV         -> *)
+(*       let module Parser = Make_litmus_parser_to_xml(RISCVHGen)(RISCVHGenLexParse) in *)
+(*       Parser.parse in_chan test_splitted *)
+(*   | `X86           -> *)
+(*         let syntax = begin try List.assoc "Syntax" test_splitted.Splitter.info with *)
+(*                      | Not_found -> "intel" end in *)
+(*         if (syntax = "gas") then *)
+(*           let module Parser = Make_litmus_parser_to_xml(X86HGen)(X86HGenLexParseGas) in *)
+(*           Parser.parse in_chan test_splitted *)
+(*         else *) 
+(*           let module Parser = Make_litmus_parser_to_xml(X86HGen)(X86HGenLexParseIntel) in *)
+(*           Parser.parse in_chan test_splitted *)
+(*   | _ -> Warn.fatal "unknown architecture" *)
+(*   end *)
 
-let to_xml (file: string) =
-  Misc.input_protect
-    (fun (c: in_channel) -> channel_to_xml file (LexInChannel c))
-    file
+(* let to_xml (file: string) = *)
+(*   Misc.input_protect *)
+(*     (fun (c: in_channel) -> channel_to_xml file (LexInChannel c)) *)
+(*     file *)
 
 
 let initial_state_record 

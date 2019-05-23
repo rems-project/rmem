@@ -117,7 +117,7 @@ rule token = parse
   | '?'      { QUESTION }
 
   | num as n  { try NUM (int_of_string n) with
-                | Failure _ -> BIG_NUM (Misc.big_num_of_string n)
+                | Failure _ -> BIG_NUM (Misc_extra.big_num_of_string n)
               }
 
   | (num as n1) 'e' (num as n2)
