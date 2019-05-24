@@ -686,6 +686,22 @@ get_all_isa_models: get_isa_model_x86
 
 ######################################################################
 
+pp2ml:
+	rm -f pp2ml.native
+	$(OCAMLBUILD) -no-plugin -use-ocamlfind src_top/herd_based/pp2ml.native
+.PHONY: pp2ml
+get_all_deps: pp2ml
+CLEANFILES += $(call add_ocaml_exts,pp2ml)
+
+litmus2xml: get_all_deps
+	rm -f litmus2xml.native
+	$(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/litmus2xml.native $(HIGHLIGHT)
+	@[ -f litmus2xml.native ]
+.PHONY: litmus2xml
+CLEANFILES += $(call add_ocaml_exts,litmus2xml)
+
+######################################################################
+
 LEM=$(lemdir)/lem
 
 LEMFLAGS += -only_changed_output
