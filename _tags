@@ -28,6 +28,8 @@
 #
 "src_top"                       : include
 "src_top/herd_based"            : include
+"src_top/herd_based/lib"        : include
+"src_top/herd_based/litmus"     : include
 <build_isa_models/*>            : include
 "build_concurrency_model"       : include
 "build_sail_interp"             : include
