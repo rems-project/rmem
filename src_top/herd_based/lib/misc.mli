@@ -158,9 +158,12 @@ val output_protect_close  :
       ('chan -> 'b) (* action *) ->
         'chan -> 'b
 
+
 (****************************)
 (* Expand command line args *)
 (****************************)
+
+val is_list : string -> bool
 
 (* File names in style '@name' are replaced by their contents *)
 val fold_argv : (string -> 'a -> 'a) -> string list -> 'a -> 'a
