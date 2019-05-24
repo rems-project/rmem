@@ -1,0 +1,590 @@
+(**************************************************************************)
+(*                                  DIY                                   *)
+(*                                                                        *)
+(* Jade Alglave, Luc Maranget, INRIA Paris-Rocquencourt, France.          *)
+(* Shaked Flur, Susmit Sarkar, Peter Sewell, University of Cambridge, UK. *)
+(*                                                                        *)
+(*  Copyright 2015 Institut National de Recherche en Informatique et en   *)
+(*  Automatique and the authors. All rights reserved.                     *)
+(*  This file is distributed  under the terms of the Lesser GNU General   *)
+(*  Public License.                                                       *)
+(**************************************************************************)
+
+(** Define registers, barriers, and instructions for X86 *)
+
+open Printf
+
+(* Who am i ? *)
+let arch = `X86
+
+(* #include "build_isa_models/x86/gen/types.hgen" *)
+
+(*************)
+(* Registers *)
+(*************)
+
+type ireg =
+  | RAX | RCX | RDX | RBX | RSP | RBP | RSI | RDI
+  | R8  | R9  | R10 | R11 | R12 | R13 | R14 | R15
+
+type reg =
+  | IReg of ireg
+  | PC
+  | Symbolic_reg of string
+  | Internal of int
+
+type x86Base = NoBase | RegBase of reg | RipBase
+
+type x86Rm =
+  | Sym of string
+  | Mem of (int * reg) option * x86Base * bit64
+  | Reg of reg
+
+type x86Dest_src =
+  | R_rm of reg * x86Rm
+  | Rm_i of x86Rm * bit64
+  | Rm_r of x86Rm * reg
+
+type x86Bit_offset = 
+| Bit_rm_imm of (x86Rm * int) 
+| Bit_rm_r of (x86Rm * reg)
+
+type x86Imm_rm =
+  | Imm of bit64
+  | Rm of x86Rm
+
+type token_BHREG   = { high : bool; reg : ireg }
+
+let parse_reg x = match (Misc.lowercase x) with
+  | "%rax" | "rax" | "eax" -> Some (IReg RAX)
+  | "%rcx" | "rcx" | "ecx" -> Some (IReg RCX)
+  | "%rdx" | "rdx" | "edx" -> Some (IReg RDX)
+  | "%rbx" | "rbx" | "ebx" -> Some (IReg RBX)
+  | "%rsp" | "rsp" | "esp" -> Some (IReg RSP)
+  | "%rbp" | "rbp" | "ebp" -> Some (IReg RBP)
+  | "%rsi" | "rsi" | "esi" -> Some (IReg RSI)
+  | "%rdi" | "rdi" | "edi" -> Some (IReg RDI)
+  | "%r8"  | "r8"  -> Some (IReg R8)
+  | "%r9"  | "r9"  -> Some (IReg R9)
+  | "%r10" | "r10" -> Some (IReg R10)
+  | "%r11" | "r11" -> Some (IReg R11)
+  | "%r12" | "r12" -> Some (IReg R12)
+  | "%r13" | "r13" -> Some (IReg R13)
+  | "%r14" | "r14" -> Some (IReg R14)
+  | "%r15" | "r15" -> Some (IReg R15)
+  | _ -> None
+
+let parse_reg_size = function
+  | "%al"   -> Some (X86S8 false, RAX)
+  | "%cl"   -> Some (X86S8 false, RCX)
+  | "%dl"   -> Some (X86S8 false, RDX)
+  | "%bl"   -> Some (X86S8 false, RBX)
+  | "%ah"   -> Some (X86S8 false, RSP)
+  | "%ch"   -> Some (X86S8 false, RBP)
+  | "%dh"   -> Some (X86S8 false, RSI)
+  | "%bh"   -> Some (X86S8 false, RDI)
+  | "%spl"  -> Some (X86S8 true,  RSP)
+  | "%bpl"  -> Some (X86S8 true,  RBP)
+  | "%sil"  -> Some (X86S8 true,  RSI)
+  | "%dil"  -> Some (X86S8 true,  RDI)
+  | "%r8b"  -> Some (X86S8 false, R8)
+  | "%r9b"  -> Some (X86S8 false, R9)
+  | "%r10b" -> Some (X86S8 false, R10)
+  | "%r11b" -> Some (X86S8 false, R11)
+  | "%r12b" -> Some (X86S8 false, R12)
+  | "%r13b" -> Some (X86S8 false, R13)
+  | "%r14b" -> Some (X86S8 false, R14)
+  | "%r15b" -> Some (X86S8 false, R15)
+  | "%ax"   -> Some (X86S16, RAX)
+  | "%cx"   -> Some (X86S16, RCX)
+  | "%dx"   -> Some (X86S16, RDX)
+  | "%bx"   -> Some (X86S16, RBX)
+  | "%sp"   -> Some (X86S16, RSP)
+  | "%bp"   -> Some (X86S16, RBP)
+  | "%si"   -> Some (X86S16, RSI)
+  | "%di"   -> Some (X86S16, RDI)
+  | "%r8w"  -> Some (X86S16, R8)
+  | "%r9w"  -> Some (X86S16, R9)
+  | "%r10w" -> Some (X86S16, R10)
+  | "%r11w" -> Some (X86S16, R11)
+  | "%r12w" -> Some (X86S16, R12)
+  | "%r13w" -> Some (X86S16, R13)
+  | "%r14w" -> Some (X86S16, R14)
+  | "%r15w" -> Some (X86S16, R15)
+  | "%eax"  -> Some (X86S32, RAX)
+  | "%ecx"  -> Some (X86S32, RCX)
+  | "%edx"  -> Some (X86S32, RDX)
+  | "%ebx"  -> Some (X86S32, RBX)
+  | "%esp"  -> Some (X86S32, RSP)
+  | "%ebp"  -> Some (X86S32, RBP)
+  | "%esi"  -> Some (X86S32, RSI)
+  | "%edi"  -> Some (X86S32, RDI)
+  | "%r8d"  -> Some (X86S32, R8)
+  | "%r9d"  -> Some (X86S32, R9)
+  | "%r10d" -> Some (X86S32, R10)
+  | "%r11d" -> Some (X86S32, R11)
+  | "%r12d" -> Some (X86S32, R12)
+  | "%r13d" -> Some (X86S32, R13)
+  | "%r14d" -> Some (X86S32, R14)
+  | "%r15d" -> Some (X86S32, R15)
+  | "%rax"  -> Some (X86S64, RAX)
+  | "%rcx"  -> Some (X86S64, RCX)
+  | "%rdx"  -> Some (X86S64, RDX)
+  | "%rbx"  -> Some (X86S64, RBX)
+  | "%rsp"  -> Some (X86S64, RSP)
+  | "%rbp"  -> Some (X86S64, RBP)
+  | "%rsi"  -> Some (X86S64, RSI)
+  | "%rdi"  -> Some (X86S64, RDI)
+  | "%r8"   -> Some (X86S64, R8)
+  | "%r9"   -> Some (X86S64, R9)
+  | "%r10"  -> Some (X86S64, R10)
+  | "%r11"  -> Some (X86S64, R11)
+  | "%r12"  -> Some (X86S64, R12)
+  | "%r13"  -> Some (X86S64, R13)
+  | "%r14"  -> Some (X86S64, R14)
+  | "%r15"  -> Some (X86S64, R15)
+  | _ -> None
+
+let parse_reg_size_intel x = match (Misc.lowercase x) with
+  | "al"   -> Some (X86S8 false, RAX)
+  | "cl"   -> Some (X86S8 false, RCX)
+  | "dl"   -> Some (X86S8 false, RDX)
+  | "bl"   -> Some (X86S8 false, RBX)
+  | "ah"   -> Some (X86S8 false, RSP)
+  | "ch"   -> Some (X86S8 false, RBP)
+  | "dh"   -> Some (X86S8 false, RSI)
+  | "bh"   -> Some (X86S8 false, RDI)
+  | "spl"  -> Some (X86S8 true,  RSP)
+  | "bpl"  -> Some (X86S8 true,  RBP)
+  | "sil"  -> Some (X86S8 true,  RSI)
+  | "dil"  -> Some (X86S8 true,  RDI)
+  | "r8b"  -> Some (X86S8 false, R8)
+  | "r9b"  -> Some (X86S8 false, R9)
+  | "r10b" -> Some (X86S8 false, R10)
+  | "r11b" -> Some (X86S8 false, R11)
+  | "r12b" -> Some (X86S8 false, R12)
+  | "r13b" -> Some (X86S8 false, R13)
+  | "r14b" -> Some (X86S8 false, R14)
+  | "r15b" -> Some (X86S8 false, R15)
+  | "ax"   -> Some (X86S16, RAX)
+  | "cx"   -> Some (X86S16, RCX)
+  | "dx"   -> Some (X86S16, RDX)
+  | "bx"   -> Some (X86S16, RBX)
+  | "sp"   -> Some (X86S16, RSP)
+  | "bp"   -> Some (X86S16, RBP)
+  | "si"   -> Some (X86S16, RSI)
+  | "di"   -> Some (X86S16, RDI)
+  | "r8w"  -> Some (X86S16, R8)
+  | "r9w"  -> Some (X86S16, R9)
+  | "r10w" -> Some (X86S16, R10)
+  | "r11w" -> Some (X86S16, R11)
+  | "r12w" -> Some (X86S16, R12)
+  | "r13w" -> Some (X86S16, R13)
+  | "r14w" -> Some (X86S16, R14)
+  | "r15w" -> Some (X86S16, R15)
+  | "eax"  -> Some (X86S32, RAX)
+  | "ecx"  -> Some (X86S32, RCX)
+  | "edx"  -> Some (X86S32, RDX)
+  | "ebx"  -> Some (X86S32, RBX)
+  | "esp"  -> Some (X86S32, RSP)
+  | "ebp"  -> Some (X86S32, RBP)
+  | "esi"  -> Some (X86S32, RSI)
+  | "edi"  -> Some (X86S32, RDI)
+  | "r8d"  -> Some (X86S32, R8)
+  | "r9d"  -> Some (X86S32, R9)
+  | "r10d" -> Some (X86S32, R10)
+  | "r11d" -> Some (X86S32, R11)
+  | "r12d" -> Some (X86S32, R12)
+  | "r13d" -> Some (X86S32, R13)
+  | "r14d" -> Some (X86S32, R14)
+  | "r15d" -> Some (X86S32, R15)
+  | "rax"  -> Some (X86S64, RAX)
+  | "rcx"  -> Some (X86S64, RCX)
+  | "rdx"  -> Some (X86S64, RDX)
+  | "rbx"  -> Some (X86S64, RBX)
+  | "rsp"  -> Some (X86S64, RSP)
+  | "rbp"  -> Some (X86S64, RBP)
+  | "rsi"  -> Some (X86S64, RSI)
+  | "rdi"  -> Some (X86S64, RDI)
+  | "r8"   -> Some (X86S64, R8)
+  | "r9"   -> Some (X86S64, R9)
+  | "r10"  -> Some (X86S64, R10)
+  | "r11"  -> Some (X86S64, R11)
+  | "r12"  -> Some (X86S64, R12)
+  | "r13"  -> Some (X86S64, R13)
+  | "r14"  -> Some (X86S64, R14)
+  | "r15"  -> Some (X86S64, R15)
+  | _ -> None
+
+let ireg_to_int r =
+  match r with
+  | RAX -> 0
+  | RCX -> 1
+  | RDX -> 2
+  | RBX -> 3
+  | RSP -> 4
+  | RBP -> 5
+  | RSI -> 6
+  | RDI -> 7
+  | R8  -> 8
+  | R9  -> 9
+  | R10 -> 10
+  | R11 -> 11
+  | R12 -> 12
+  | R13 -> 13
+  | R14 -> 14
+  | R15 -> 15
+
+let int_to_ireg i =
+  match i with
+  | 0 -> RAX
+  | 1 -> RCX
+  | 2 -> RDX
+  | 3 -> RBX
+  | 4 -> RSP
+  | 5 -> RBP
+  | 6 -> RSI
+  | 7 -> RDI
+  | 8 -> R8
+  | 9 -> R9
+  | 10 -> R10
+  | 11 -> R11
+  | 12 -> R12
+  | 13 -> R13
+  | 14 -> R14
+  | 15 -> R15
+  | _ -> failwith "unexpected value"
+
+let reg_to_int r =
+  match r with
+  | IReg r' -> ireg_to_int r'
+  | _ -> failwith "unexpected register"
+
+let check_size (sz1, sz2) =
+  if (sz1 = X86NONE || sz1 = sz2) then () else
+  failwith ("size mismatch: " ^ pp_x86Suffix sz1 ^ ", " ^ pp_x86Suffix sz2)
+
+let check_byte_regs ( {high = h1; reg = reg1}, {high = h2; reg = reg2} ) =
+  if (h1 = h2 || not (List.mem reg1 [RSP; RBP; RSI; RDI] &&
+                  List.mem reg2 [RSP; RBP; RSI; RDI])) then () else
+  failwith "cannot access high and low bytes"
+
+let check_scale i =
+  if (List.mem i [1; 2; 4; 8]) then () else failwith "scale factor must be 1, 2, 4 or 8"
+
+let check_binop_lockable = function
+  | X86ADD -> ()
+  | X86OR  -> ()
+  | X86ADC -> ()
+  | X86SBB -> ()
+  | X86AND -> ()
+  | X86SUB -> ()
+  | X86XOR -> ()
+  | _      -> failwith "lock prefix used with unlockable instruction"
+
+(* FIXME: do we need these *)
+let base =  Internal 0
+and max_idx = Internal 1
+and idx = Internal 2
+and ephemeral = Internal 3
+let loop_idx = Internal 4
+
+let pp_ireg = function
+  | RAX -> "RAX"
+  | RCX -> "RCX"
+  | RDX -> "RDX"
+  | RBX -> "RBX"
+  | RSP -> "RSP"
+  | RBP -> "RBP"
+  | RSI -> "RSI"
+  | RDI -> "RDI"
+  | R8  -> "R8"
+  | R9  -> "R9"
+  | R10 -> "R10"
+  | R11 -> "R11"
+  | R12 -> "R12"
+  | R13 -> "R13"
+  | R14 -> "R14"
+  | R15 -> "R15"
+
+let pp_x86Reg (sz, r) =
+  match sz, r with
+  | X86S8 _,     RAX -> "%al"
+  | X86S8 _,     RCX -> "%cl"
+  | X86S8 _,     RDX -> "%dl"
+  | X86S8 _,     RBX -> "%bl"
+  | X86S8 false, RSP -> "%ah"
+  | X86S8 false, RBP -> "%ch"
+  | X86S8 false, RSI -> "%dh"
+  | X86S8 false, RDI -> "%bh"
+  | X86S8 true,  RSP -> "%spl"
+  | X86S8 true,  RBP -> "%bpl"
+  | X86S8 true,  RSI -> "%sil"
+  | X86S8 true,  RDI -> "%dil"
+  | X86S8 _,     R8  -> "%r8b"
+  | X86S8 _,     R9  -> "%r9b"
+  | X86S8 _,     R10 -> "%r10b"
+  | X86S8 _,     R11 -> "%r11b"
+  | X86S8 _,     R12 -> "%r12b"
+  | X86S8 _,     R13 -> "%r13b"
+  | X86S8 _,     R14 -> "%r14b"
+  | X86S8 _,     R15 -> "%r15b"
+  | X86S16, RAX -> "%ax"
+  | X86S16, RCX -> "%cx"
+  | X86S16, RDX -> "%dx"
+  | X86S16, RBX -> "%bx"
+  | X86S16, RSP -> "%sp"
+  | X86S16, RBP -> "%bp"
+  | X86S16, RSI -> "%si"
+  | X86S16, RDI -> "%di"
+  | X86S16, R8  -> "%r8w"
+  | X86S16, R9  -> "%r9w"
+  | X86S16, R10 -> "%r10w"
+  | X86S16, R11 -> "%r11w"
+  | X86S16, R12 -> "%r12w"
+  | X86S16, R13 -> "%r13w"
+  | X86S16, R14 -> "%r14w"
+  | X86S16, R15 -> "%r15w"
+  | X86S32, RAX -> "%eax"
+  | X86S32, RCX -> "%ecx"
+  | X86S32, RDX -> "%edx"
+  | X86S32, RBX -> "%ebx"
+  | X86S32, RSP -> "%esp"
+  | X86S32, RBP -> "%ebp"
+  | X86S32, RSI -> "%esi"
+  | X86S32, RDI -> "%edi"
+  | X86S32, R8  -> "%r8d"
+  | X86S32, R9  -> "%r9d"
+  | X86S32, R10 -> "%r10d"
+  | X86S32, R11 -> "%r11d"
+  | X86S32, R12 -> "%r12d"
+  | X86S32, R13 -> "%r13d"
+  | X86S32, R14 -> "%r14d"
+  | X86S32, R15 -> "%r15d"
+  | X86S64, RAX -> "%rax"
+  | X86S64, RCX -> "%rcx"
+  | X86S64, RDX -> "%rdx"
+  | X86S64, RBX -> "%rbx"
+  | X86S64, RSP -> "%rsp"
+  | X86S64, RBP -> "%rbp"
+  | X86S64, RSI -> "%rsi"
+  | X86S64, RDI -> "%rdi"
+  | X86S64, R8  -> "%r8"
+  | X86S64, R9  -> "%r9"
+  | X86S64, R10 -> "%r10"
+  | X86S64, R11 -> "%r11"
+  | X86S64, R12 -> "%r12"
+  | X86S64, R13 -> "%r13"
+  | X86S64, R14 -> "%r14"
+  | X86S64, R15 -> "%r15"
+
+let pp_size_reg sz = function
+  | IReg r         -> pp_x86Reg (sz, r)
+  | Symbolic_reg r -> r
+  | Internal i     -> sprintf "i%i" i
+  | PC             -> "%rip"
+
+let pp_reg = pp_size_reg X86S64
+
+let reg_compare = Pervasives.compare
+
+let symb_reg_name = function
+  | Symbolic_reg r -> Some r
+  | _ -> None
+
+let pp_displacement i =
+  (if bit64_to_int i = 0 then "" else bit64_to_string i) ^ "("
+
+let pp_x86Rm (sz, rm) =
+  match rm with
+  | Reg r -> pp_size_reg sz r
+  | Mem (None, RipBase, i) -> pp_displacement i ^ "%rip)"
+  | Mem (None, NoBase, i) -> bit64_to_string i
+  | Mem (None, RegBase r, i) -> pp_displacement i ^ pp_size_reg sz r ^ ")"
+  | Mem (Some (scale, idx), NoBase, i) ->
+      pp_displacement i ^ "," ^ pp_size_reg sz idx ^ "," ^
+      string_of_int scale ^ ")"
+  | Mem (Some (scale, idx), RegBase r, i) ->
+      pp_displacement i ^ pp_size_reg sz r ^ "," ^ pp_size_reg sz idx ^ "," ^
+      string_of_int scale ^ ")"
+  | Sym (s) -> "[" ^ s ^ "]"
+  | Mem _ -> "!! bad address !!"
+
+let pp_x86Dest_src (sz, ds) =
+   match ds with
+   | R_rm (r, rm) -> pp_x86Rm (sz, rm) ^ ", " ^ pp_size_reg sz r
+   | Rm_r (rm, r) -> pp_size_reg sz r ^ ", " ^ pp_x86Rm (sz, rm)
+   | Rm_i (rm, i) -> bit64_to_string i ^ ", " ^ pp_x86Rm (sz, rm)
+
+let pp_x86Bit_offset (sz, bo) =
+  match bo with
+  | Bit_rm_imm (rm, imm) -> pp_x86Rm (sz, rm) ^ ", " ^ string_of_int imm
+  | Bit_rm_r (rm, r) -> pp_x86Rm (sz, rm) ^ ", " ^ pp_size_reg sz r
+
+(************)
+(* Barriers *)
+(************)
+
+type barrier = Sync
+
+let all_kinds_of_barriers = [Sync;]
+
+let pp_barrier = function
+  | Sync -> "Sync"
+
+let barrier_compare = Pervasives.compare
+
+(****************)
+(* Instructions *)
+(****************)
+
+type label = Label.t
+
+type instruction =
+  [
+    (* #include "build_isa_models/x86/gen/ast.hgen" *)
+    | `X86JCCLABEL of x86Cond * label
+    | `X86StopFetching (* this is a special instruction used by ppcmem
+                          to indicate the end of a litmus thread *)
+    | `X86ThreadStart  (* this instruction indicates a thread creation *)
+  ]
+
+type parsedInstruction = instruction
+
+let pp_label label = label
+
+let instruction_printer (pp_label : string -> string) (instruction : instruction) : string  =
+  begin match instruction with
+  (* #include "build_isa_models/x86/gen/pretty.hgen" *)
+  | `X86JCCLABEL (cnd, label) -> "j" ^ pp_x86Cond cnd ^ " " ^ pp_label label
+  end
+
+let do_pp_instruction = instruction_printer pp_label
+
+let pp_instruction _m = do_pp_instruction
+
+let dump_instruction = do_pp_instruction
+
+(****************************)
+(* Symbolic registers stuff *)
+(****************************)
+
+let allowed_for_symb =
+  [ IReg RAX; IReg RCX; IReg RDX; IReg RBX;
+    (* IReg RSP; IReg RBP; IReg RSI; IReg RDI; *)
+    IReg R8 ; IReg R9 ; IReg R10; IReg R11;
+    IReg R12; IReg R13; IReg R14; IReg R15 ]
+
+let fold_regs (f_reg, f_sreg) =
+  let fold_reg reg (y_reg, y_sreg) =
+    match reg with
+    | IReg _ | PC      -> (f_reg reg y_reg, y_sreg)
+    | Symbolic_reg reg -> (y_reg, f_sreg reg y_sreg)
+    | Internal _       -> (y_reg, y_sreg)
+  in
+  let fold_rm rm (y_reg, y_sreg) =
+    match rm with
+    | Reg r -> fold_reg r (y_reg, y_sreg)
+    | Mem (None, RegBase r, _) -> fold_reg r (y_reg, y_sreg)
+    | Mem (Some (_, r1), RegBase r2, _) ->
+        fold_reg r1 (fold_reg r2 (y_reg, y_sreg))
+    | Mem (Some (_, r), _, _) -> fold_reg r (y_reg, y_sreg)
+    | _ -> (y_reg, y_sreg)
+  in
+  let fold_dest_src ds (y_reg, y_sreg) =
+    match ds with
+    | R_rm (r, rm) -> fold_reg r (fold_rm rm (y_reg, y_sreg))
+    | Rm_i (rm, _) -> fold_rm rm (y_reg, y_sreg)
+    | Rm_r (rm, r) -> fold_rm rm (fold_reg r (y_reg, y_sreg))
+  in
+  let fold_imm_rm irm (y_reg, y_sreg) =
+    match irm with
+    | Imm _ -> (y_reg, y_sreg)
+    | Rm rm -> fold_rm rm (y_reg, y_sreg)
+  in
+  let fold_bit_offset bo (y_reg, y_sreg) =
+    match bo with
+    | Bit_rm_imm (rm, imm) -> fold_rm rm (y_reg, y_sreg)
+    | Bit_rm_r (rm, r) -> fold_reg r (fold_rm rm (y_reg, y_sreg))
+  in
+  fun (y_reg, y_sreg as c) ins ->
+    match ins with
+    (* #include "build_isa_models/x86/gen/fold.hgen" *)
+    | _ -> c
+
+(* Map over symbolic regs *)
+let map_regs f_reg f_symb =
+  let map_reg reg =
+    match reg with
+    | IReg _ | PC      -> f_reg reg
+    | Symbolic_reg reg -> f_symb reg
+    | Internal _       -> reg
+  in
+  let map_rm rm =
+    match rm with
+    | Reg r -> Reg (map_reg r)
+    | Mem (None, RegBase r, i) -> Mem (None, RegBase (map_reg r), i)
+    | Mem (Some (i1, r1), RegBase r2, i2) ->
+        Mem (Some (i1, map_reg r1), RegBase (map_reg r2), i2)
+    | Mem (Some (i1, r), x, i2) -> Mem (Some (i1, map_reg r), x, i2)
+    | _ -> rm
+  in
+  let map_dest_src ds =
+    match ds with
+    | R_rm (r, rm) -> R_rm (map_reg r, map_rm rm)
+    | Rm_i (rm, i) -> Rm_i (map_rm rm, i)
+    | Rm_r (rm, r) -> Rm_r (map_rm rm, map_reg r)
+  in
+  let map_imm_rm irm =
+    match irm with
+    | Imm i -> Imm i
+    | Rm rm -> Rm (map_rm rm)
+  in
+  let map_bit_offset bo =
+    match bo with
+    | Bit_rm_imm (rm, imm) -> Bit_rm_imm (map_rm rm, imm)
+    | Bit_rm_r (rm, r)     -> Bit_rm_r (map_rm rm, map_reg r)
+  in
+  fun ins ->
+    match ins with
+    (* #include "build_isa_models/x86/gen/map.hgen" *)
+    | _ -> ins
+
+(* No addresses burried in X86 code? *)
+let fold_addrs _f c _ins = c
+
+let map_addrs _f ins = ins
+
+let norm_ins ins = ins
+
+(* Instruction continuation *)
+(* TODO: I'm not sure what to do here *)
+let get_next = function
+  | _ -> [Label.Next]
+
+include Pseudo.Make
+  (struct
+      type ins = instruction
+      type pins = parsedInstruction
+      let parsed_tr i = i
+
+      type reg_arg = reg
+
+      let get_naccesses = function
+        (* number of memory accesses *)
+        (* XXX this should be guessable from pseudocode *)
+        | _ ->  failwith "shouldn't need this for litmus"
+
+      let fold_labels k f = function
+        | `X86JCCLABEL (_, label) -> f k label
+        | _ -> k
+
+      let map_labels f = function
+        | `X86JCCLABEL (cnd, label) -> `X86JCCLABEL (cnd, f label)
+        | ins -> ins
+
+  end)
+
+let get_macro _name = raise Not_found
+
+(* #include "build_isa_models/x86/gen/token_types.hgen" *)
