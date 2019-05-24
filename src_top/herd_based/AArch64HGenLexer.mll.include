@@ -41,7 +41,7 @@ rule token = parse
 | "(*"      { LU.skip_comment lexbuf ; token lexbuf }
 | '#' (num as num)
     { try NUM (int_of_string num) with
-      | Failure _ -> BIG_NUM (Misc.big_num_of_string num) }
+      | Failure _ -> BIG_NUM (Misc_extra.big_num_of_string num) }
 | 'P' (num as x)
     { PROC (int_of_string x) }
 | "X%" (name as name) { SYMB_XREG (X (Symbolic_reg name)) }

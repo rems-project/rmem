@@ -89,8 +89,8 @@ let pp_int_option : int option -> string = function
   | Some i -> Printf.sprintf "%d" i
 
 let pp_breakpoint_target : ast_breakpoint_target -> string = function
-  | Address a -> Printf.sprintf "0x%s" (Misc.big_num_to_hex_string a)
-  | Footprint (a, s) -> Printf.sprintf "0x%s/%d" (Misc.big_num_to_hex_string a) s
+  | Address a -> Printf.sprintf "0x%s" (Misc_extra.big_num_to_hex_string a)
+  | Footprint (a, s) -> Printf.sprintf "0x%s/%d" (Misc_extra.big_num_to_hex_string a) s
   | Symbol (name, offset) ->
      if offset = 0 then
        name

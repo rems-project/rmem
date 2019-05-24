@@ -1287,7 +1287,7 @@ let do_add_breakpoint_fetch target state : interact_state =
     in
     let desc =
       Printf.sprintf "fetches address 0x%s/%d%s"
-        (Misc.big_num_to_hex_string (Sail_impl_base.integer_of_address addr))
+        (Misc_extra.big_num_to_hex_string (Sail_impl_base.integer_of_address addr))
         (Nat_big_num.to_int size)
         (pp_dwarf_line_of_addr state.ppmode addr)
     in

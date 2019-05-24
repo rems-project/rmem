@@ -213,7 +213,7 @@ module Make : S =
                 Nat_big_num.to_int64 mv
                 |> pp_val symtab
               else if !Globals.print_hex then
-                "0x" ^ Misc.big_num_to_hex_string mv
+                "0x" ^ Misc_extra.big_num_to_hex_string mv
               else
                 Nat_big_num.to_string mv
             in
