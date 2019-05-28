@@ -20,7 +20,8 @@ open MIPS
 %token <MIPSHGenBase.reg> ARCH_REG
 %token <MIPSHGenBase.reg> SYMB_REG
 
-%token <string> NUM
+%token <int> NUM
+%token <Nat_big_num.num> BIG_NUM
 
 %token <string> NAME
 %token <int> PROC
