@@ -90,9 +90,9 @@ module Make (A: Arch_litmus.S with type V.Scalar.t = string) (Trans : Isa_model.
 
     module AllocArch = struct
       include A
-      type v = A.V.v
-      let maybevToV = A.V.maybevToV
       type global = string
+      type v = string Constant.t
+      let maybevToV (c : MiscParser.maybev) : v = c
       let maybevToGlobal = A.vToName
     end
 

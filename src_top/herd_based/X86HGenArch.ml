@@ -19,6 +19,7 @@ module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   module V = V
 
   let reg_to_string = X86.pp_reg
+  let nop = failwith "TODO: Define X86HGEN NOP"
 
   include
       ArchExtra_litmus.Make(O)

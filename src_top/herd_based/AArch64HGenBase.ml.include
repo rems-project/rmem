@@ -132,6 +132,7 @@ let symb_reg_name = function
   | Symbolic_reg r -> Some r
   | _ -> None
 
+let symb_reg r = Symbolic_reg r
 
 let is_zero_reg r = (r = X ZR || r = W ZR)
 let is_sp_reg r = (r = X SP || r = W SP)

@@ -16,13 +16,10 @@ let comment = "#" (* AArch64.comment ??? *)
 
 module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   include AArch64
-  module V =
-   struct
-      include V
-      let maybevToV c = c
-   end
+  module V = V
 
   let reg_to_string = AArch64.pp_reg
+  let nop = failwith "TODO: define AArch64HGen Nop"
 
   include
       ArchExtra_litmus.Make(O)

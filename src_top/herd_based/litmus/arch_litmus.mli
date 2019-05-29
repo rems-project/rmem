@@ -76,11 +76,7 @@ end
 module type S =
   sig
     include ArchBase.S
-    module V :
-      sig
-          include Constant.S
-          val maybevToV : v -> v
-      end
+    module V : Constant.S
 
     val reg_to_string : reg -> string
 

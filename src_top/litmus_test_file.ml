@@ -189,7 +189,7 @@ let read_file (name: string) (isa_callback: (InstructionSemantics.instruction_se
 (********************************************************************)
 
 module Make_litmus_parser_to_xml
-    (Arch: Arch.S)
+    (Arch: Arch_litmus.S with type V.Scalar.t = string)
     (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo)
     =
 struct

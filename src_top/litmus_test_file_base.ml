@@ -48,6 +48,7 @@ struct
   let asmcomment = None
 end
 
+module SymbConstant = SymbConstant.Make(ParsedConstant.StringScalar)
 module PPC = PPCGenArch.Make(Arch_config)(SymbConstant)
 
 module PPCLexParse = struct
@@ -135,7 +136,7 @@ type lex_input = | LexInChannel of in_channel
 
 
 module Make_litmus_parser
-    (Arch: Arch.S)
+    (Arch: Arch_litmus.S with type V.Scalar.t = string)
     (TransSail: Isa_defs.TransSail with type instruction = Arch.instruction)
     (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo)
     (GenParserConfig : GenParser.Config)
@@ -319,6 +320,7 @@ let read_channel
     let debuglexer = false
     let check_kind _ = None
     let check_cond = overwrite_check_cond
+    let verbose = 0
   end in
 
 

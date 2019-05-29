@@ -57,6 +57,8 @@ module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   | Internal i -> sprintf "i%i" i
   | _ -> assert false
 
+  let nop = failwith "TODO: define PPCHGen Nop"
+
   include
       ArchExtra_litmus.Make(O)
       (struct
