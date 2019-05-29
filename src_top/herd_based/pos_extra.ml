@@ -1,3 +1,5 @@
+open Lexing
+
 let str_pos pos =
   Printf.sprintf
     "File \"%s\", line %i, character %i"
