@@ -73,12 +73,12 @@ let calc_size_alignment =
 
 module type S =
   sig
-    module A : Arch.S
+    module A : Arch_litmus.S
 
     val translate_test : A.pseudo MiscParser.t -> Test.test
   end
 
-module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.instruction)
+module Make (A: Arch_litmus.S with type V.Scalar.t = string) (Trans : Isa_model.TransSail with type instruction = A.instruction)
     : S with module A = A =
   struct
     module A = A
@@ -91,7 +91,7 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
     module AllocArch = struct
       include A
       type v = A.V.v
-      let maybevToV = V.maybevToV
+      let maybevToV = A.V.maybevToV
       type global = string
       let maybevToGlobal = A.vToName
     end
@@ -102,11 +102,26 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
       let endianness = Globals.get_endianness () in
       let t_alloc = AllocRegs.allocate_regs t in
       let init_state = t_alloc.MiscParser.init in
+      let filter = t_alloc.MiscParser.filter in
+      let condition = t_alloc.MiscParser.condition in
+      let map_constant f = (function
+       | Constant.Concrete s -> Constant.Concrete (f s)
+       | Constant.Symbolic (a,b) -> Constant.Symbolic (a, b)
+       | Constant.Label (a,b) -> Constant.Label (a,b)) in
+      let i_map_f =
+          (fun (loc_reg, (run_type, v)) -> (loc_reg, (run_type, map_constant Nat_big_num.of_string v))) in
+      let init_state = List.map i_map_f init_state in
+      let filter =
+         (match filter with
+         | Some p -> Some (Misc_extra.map_constrgen_prop (map_constant Nat_big_num.of_string) p)
+         | None   -> None) in
+      let condition = Misc_extra.map_constrgen_constr (Misc_extra.map_constrgen_prop (map_constant Nat_big_num.of_string)) condition in
 
       (* Adapted from herdtools/litmus/compile.ml *)
       let typeof = function
         | Constant.Concrete _ -> MiscParser.Ty "int"
         | Constant.Symbolic _ -> MiscParser.Pointer "int"
+        | Constant.Label    _ -> MiscParser.Pointer "int" (* TODO: BS: Come back to this ... *)
       in
       let empty_typemap = A.LocMap.empty in
       let conds_typemap =
@@ -136,13 +151,14 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
 (* attempt to get locations mentioned only as values in init *)
 (* NOTE: no locations mentioned only in code will get picked up *)
             match (t,v) with
-            | MiscParser.TyDef, Constant.Symbolic a ->
+            | MiscParser.TyDef, Constant.Symbolic (a,0) ->
                 begin try
                   let _ = A.LocMap.find (A.Location_global a) tmapn in
                   tmapn
                 with Not_found ->
                   A.LocMap.add (A.Location_global a) (MiscParser.Ty "int") tmapn
                 end
+            | MiscParser.TyDef, Constant.Symbolic (_,o) -> failwith "Offset with Symbolic not defined"
             | _ -> tmapn
           )
           locs_typemap init_state
@@ -171,7 +187,8 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
       let translate_register_value t v =
         let i =
           match v with
-          | Constant.Symbolic c -> Nat_big_num.of_int (lookup_constant c)
+          | Constant.Symbolic (c,0) -> Nat_big_num.of_int (lookup_constant c)
+          | Constant.Symbolic (_,_) -> failwith "Offset not defined."
           | Constant.Concrete i -> i
         in
         let sz, _ = calc_size_alignment t in
@@ -194,7 +211,7 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
       let translate_memory_value sz v =
         let i =
           (match v with
-          | Constant.Symbolic c ->
+          | Constant.Symbolic (c,0) ->
               Nat_big_num.of_int (lookup_constant c)
         | Constant.Concrete i ->
             i) in
@@ -205,6 +222,7 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
       let i_regs,i_mem =
         List.partition
           (function (A.Location_reg _,_) -> true | _ -> false) init_state in
+      (* let (i_regs, i_mem) = (i_map_f i_regs, i_map_f i_mem) in *)
       let trans_reg r =
         let r_out = (A.reg_to_string r) in
         (* hack Luc/assembly style regnames to sail-like regnames *)
@@ -360,8 +378,8 @@ module Make (A: Arch.S) (Trans : Isa_model.TransSail with type instruction = A.i
           | CG.ExistsState p -> CG.ExistsState (trans_prop p am)
           | CG.NotExistsState p -> CG.NotExistsState (trans_prop p am)
         in
-        trans_constr t_alloc.MiscParser.condition mem_addr_map,
-        match t_alloc.MiscParser.filter with
+        trans_constr condition mem_addr_map,
+        match filter with
         | None -> None
         | Some p -> Some (trans_prop p mem_addr_map) in
 

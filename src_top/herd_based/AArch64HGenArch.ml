@@ -14,19 +14,18 @@ module AArch64 = AArch64HGenBase
 
 let comment = "#" (* AArch64.comment ??? *)
 
-module Make(O:Arch.Config)(V:Constant.S) = struct
+module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   include AArch64
   module V =
-    struct
-      type v = Constant.v
+   struct
       include V
       let maybevToV c = c
-    end
+   end
 
   let reg_to_string = AArch64.pp_reg
 
   include
-      ArchExtra.Make(O)
+      ArchExtra_litmus.Make(O)
       (struct
         module V = V
 
@@ -43,6 +42,13 @@ module Make(O:Arch.Config)(V:Constant.S) = struct
           else None
         let reg_class _ = "=&r"
         let comment = comment
+        let error t1 t2 =
+          let open CType in
+(*          Printf.eprintf "Error %s and %s\n" (debug t1) (debug t2) ; *)
+          match t1,t2 with
+          | (Base "int",Pointer _)
+          | (Pointer _,Base "int")  ->
+              true
+          | _ -> false
       end)
-
 end

@@ -40,3 +40,21 @@ let big_num_to_hex_string n =
   pp n []
   |> String.concat ""
 
+let map_constrgen_atom (f : 'b -> 'c) : ('a, 'b) ConstrGen.atom -> ('a, 'c) ConstrGen.atom =
+   function
+  | LV (a, b) -> LV (a, f b)
+  | LL (a, b) -> LL (a, b)
+
+let rec map_constrgen_prop (f : 'b -> 'c) : ('a, 'b) ConstrGen.prop -> ('a, 'c) ConstrGen.prop =
+   function
+  | Atom a         -> Atom (map_constrgen_atom f a)
+  | Not p          -> Not (map_constrgen_prop f p)
+  | And ps         -> And (List.map (map_constrgen_prop f) ps)
+  | Or ps          -> Or (List.map (map_constrgen_prop f) ps)
+  | Implies (p, q) -> Implies (map_constrgen_prop f p, map_constrgen_prop f q)
+
+let map_constrgen_constr (f : 'a -> 'b) : 'a ConstrGen.constr -> 'b ConstrGen.constr =
+   function
+  | ForallStates p   -> ForallStates (f p)
+  | ExistsState p    -> ExistsState (f p)
+  | NotExistsState p -> NotExistsState (f p)

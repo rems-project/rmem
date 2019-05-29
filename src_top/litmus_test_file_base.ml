@@ -44,6 +44,7 @@ module Arch_config =
 struct
   let memory = Memory.Direct
   let cautious = true
+  let hexa = true
   let asmcomment = None
 end
 
