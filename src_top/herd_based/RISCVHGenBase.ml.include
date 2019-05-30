@@ -181,6 +181,8 @@ type instruction =
   ]
 
 type parsedInstruction = instruction
+let nop = `RISCVIType (0, IReg R0, IReg R0, RISCVADDI)
+
 
 let pp_label label = label
 

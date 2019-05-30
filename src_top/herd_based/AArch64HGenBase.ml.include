@@ -232,6 +232,8 @@ type instruction =
   ]
 type parsedInstruction = instruction
 
+let nop = `AArch64Hint SystemHintOp_NOP
+
 (*** TODO: maybe put these in a different file? ***)
 (*** pretty aux functions ***)
 

@@ -228,6 +228,9 @@ type instruction =
 
   | `Pcomment of string
  ]
+
+let nop = `Pori (Ireg GPR0, Ireg GPR0, 0)
+
 type parsedInstruction = instruction
 
     let pp_crf crb = sprintf "cr%i" crb

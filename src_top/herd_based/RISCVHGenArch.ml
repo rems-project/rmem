@@ -19,8 +19,6 @@ module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   module V = V
 
   let reg_to_string = RISCV.pp_reg
-  let nop = failwith "TODO: define RISCVHGen Nop"
-
   include
       ArchExtra_litmus.Make(O)
       (struct

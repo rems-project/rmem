@@ -186,6 +186,7 @@ type instruction =
   ]
 
 type parsedInstruction = instruction
+let nop = `MIPSIType (MIPSIOpSLTI, IReg R0, IReg R0, 0)
 
 let pp_label label = label
 

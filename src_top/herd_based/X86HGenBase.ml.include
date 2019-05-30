@@ -453,6 +453,9 @@ type instruction =
 
 type parsedInstruction = instruction
 
+let nop = `X86NOP
+
+
 let pp_label label = label
 
 let instruction_printer (pp_label : string -> string) (instruction : instruction) : string  =

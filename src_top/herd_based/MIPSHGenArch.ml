@@ -19,7 +19,6 @@ module Make(O:Arch_litmus.Config)(V:Constant.S) = struct
   module V = V
 
   let reg_to_string = MIPS.pp_reg
-  let nop = failwith "TODO: define MIPSHGen Nop"
 
   include
       ArchExtra_litmus.Make(O)
