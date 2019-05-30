@@ -70,7 +70,7 @@ rule main_pos = parse
     }
 
 and main start = parse
-| blank* ((alpha|digit|'_')+ as arch)
+| blank* (alpha|digit|'_')+ as arch
   blank+
   (testname as tname)
   blank*

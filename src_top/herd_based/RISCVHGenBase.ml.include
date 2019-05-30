@@ -228,7 +228,6 @@ let pp_instruction_to_xml (instruction : instruction) : string  =
   pp_xml_empty_tag tag (atts @ [("assem", dump_instruction instruction)])
 
 let pp_instruction = function
-  | PPMode.Xml -> pp_instruction_to_xml
   | _          -> instruction_printer pp_label
 
 

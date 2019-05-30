@@ -16,4 +16,4 @@
 
 (** Modes for pretty-printing *)
 
-type t = Ascii | Latex | Dot | DotFig | Xml
+type t = Ascii | Latex | Dot | DotFig
