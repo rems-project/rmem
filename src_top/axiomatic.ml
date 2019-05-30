@@ -1,3 +1,28 @@
+(*========================================================================================*)
+(*                                                                                        *)
+(*                rmem executable model                                                   *)
+(*                =====================                                                   *)
+(*                                                                                        *)
+(*  This file is:                                                                         *)
+(*                                                                                        *)
+(*  Copyright Shaked Flur, University of Cambridge                            2016-2018   *)
+(*  Copyright Christopher Pulte, University of Cambridge                      2016-2018   *)
+(*  Copyright Jon French, University of Cambridge                             2016-2018   *)
+(*  Copyright Robert Norton-Wright, University of Cambridge                        2017   *)
+(*  Copyright Peter Sewell, University of Cambridge                                2016   *)
+(*  Copyright Luc Maranget, INRIA, Paris, France                                   2017   *)
+(*  Copyright Linden Ralph, University of Cambridge (when this work was done)      2017   *)
+(*                                                                                        *)
+(*  All rights reserved.                                                                  *)
+(*                                                                                        *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in            *)
+(*  LICENCE.txt.                                                                          *)
+(*                                                                                        *)
+(*========================================================================================*)
+
+
+module Lexer = ModelLexer.Make(struct let debug = false end)
+
 
 type ast = InstructionSemantics.instruction_ast
 type address = Sail_impl_base.address
@@ -9,25 +34,43 @@ type reg_value = Sail_impl_base.register_value
 type write = Events.write
 
 
-let read_file (name: string) : (Test.info * Test.test) * BasicTypes.isa_info =
+let read_litmus_file (litmus_file_name: string) :
+      (Test.info * Test.test) * BasicTypes.isa_info =
+  let ic = open_in litmus_file_name in
   let (t,isa_info,_) = 
     Litmus_test_file_base.read_channel
-      name
-      (LexInChannel (open_in name))
+      litmus_file_name
+      (LexInChannel ic)
       false
       (fun _ -> None)
   in
+  let () = close_in ic in
   (t,isa_info)
 
 
-
-
+let read_cat_file (cat_file_name: string) = 
+  let ic = open_in cat_file_name in
+  let lexbuf = Lexing.from_channel ic in
+  try
+    let model = ModelParser.main Lexer.token lexbuf in
+    let () = close_in ic in
+    model
+  with Parsing.Parse_error ->
+    begin
+      close_in ic;
+      let curr = lexbuf.Lexing.lex_curr_p in
+      let line = curr.Lexing.pos_lnum in
+      let cnum = curr.Lexing.pos_cnum - curr.Lexing.pos_bol in
+      let tok = Lexing.lexeme lexbuf in
+      failwith ("error " ^ string_of_int line ^ ":" ^ string_of_int cnum ^ " `" ^ tok ^ "'")
+  end    
 
 let run catfile litmusfile = 
   let open Isa_defs in
 
-  let ((test_info, test), isa_info) = read_file litmusfile in
-  
+  let ((test_info, test), isa_info) = read_litmus_file litmusfile in
+  let cat_model = read_cat_file catfile in
+
   let endianness = 
     match isa_info.ism with
     | PPCGEN_ism    -> Sail_impl_base.E_big_endian
