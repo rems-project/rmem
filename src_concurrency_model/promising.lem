@@ -336,36 +336,37 @@ let p_enumerate_follow_transition
   let tid = tid_of_pt_trans l in
   let ts = Map_extra.find tid state.p_thread_states in
   let pt_trans =
-    p_enumerate_transitions_of_thread
+    next_instruction_transitions_of_thread
       state.p_model
       state.p_instruction_semantics
       ts
       state.p_pss_sem
       state.p_storage_state
   in
-  match List.filter (fun (t,_) -> pt_trans_matches_pt_follow_label l t) pt_trans with
-  | [(t,b)] -> [PT t]
+  match List.filter (pt_trans_matches_pt_follow_label l) pt_trans with
+  | [t] -> [PT t]
   | [] -> failwith ("could not follow, that transition does not exist: " ^ show l)
   | _  -> failwith ("could not follow, matched multiple transitions: " ^ show l)
   end
 
   
+let p_enumerate_transitions_of_threads state = 
+  Map.map
+    (fun ts ->
+      p_enumerate_transitions_of_thread
+        state.p_model
+        state.p_instruction_semantics 
+        ts
+        state.p_pss_sem
+        state.p_storage_state 
+    )
+    state.p_thread_states
+
 let p_normally_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
     : list (p_trans (pts 'v) 'pss 'v)
   =
 
-  let map_thread_transitions =
-    Map.map
-      (fun ts ->
-        p_enumerate_transitions_of_thread
-          state.p_model
-          state.p_instruction_semantics 
-          ts
-          state.p_pss_sem
-          state.p_storage_state 
-      )
-      state.p_thread_states
-  in
+  let map_thread_transitions = p_enumerate_transitions_of_threads state in
 
   let can_stop_promising = 
     not state.p_stopped_promising &&
