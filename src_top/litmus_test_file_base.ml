@@ -137,7 +137,7 @@ type lex_input = | LexInChannel of in_channel
 
 module Make_litmus_parser
     (Arch: Arch_litmus.S with type V.Scalar.t = string)
-    (TransSail: Isa_defs.TransSail with type instruction = Arch.instruction)
+    (TransSail: Trans.TransSail with type instruction = Arch.instruction)
     (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo)
     (GenParserConfig : GenParser.Config)
     =
@@ -392,7 +392,6 @@ let initial_state_record_base
     (endianness: Sail_impl_base.end_flag)
     (aarch64gen: bool)
     (test:      test)
-    (isa_defs:  (module Isa_defs.ISADefs))
     (thread_isa_info:     BasicTypes.isa_info)
   =
 
@@ -487,8 +486,6 @@ let initial_state_record_base
       test.prog
   in
 
-  let module ISADefs = (val isa_defs) in
-
   (* Set up TPIDR registers -- used for thread local storage, specifically
      seems to be a pointer to the TCB. For now, just put the thread id there *)
   let reg_values : ((Nat_num.nat * Sail_impl_base.reg_base_name) * Sail_impl_base.register_value) list =
@@ -536,7 +533,7 @@ let initial_state_record_base
     | Not_found ->
         (* currently all registers that are not explicitly initialised
         in test are set to zero *)
-        RegUtils.register_state_zero ISADefs.reg_data t r
+        RegUtils.register_state_zero thread_isa_info.register_data_info t r
     end
   in
 

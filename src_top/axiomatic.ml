@@ -66,7 +66,7 @@ let read_cat_file (cat_file_name: string) =
   end    
 
 let run catfile litmusfile = 
-  let open Isa_defs in
+  (* let open Isa_defs in *)
 
   let ((test_info, test), isa_info) = read_litmus_file litmusfile in
   let cat_model = read_cat_file catfile in
@@ -78,16 +78,6 @@ let run catfile litmusfile =
     | MIPS_ism      -> Sail_impl_base.E_big_endian
     | RISCV_ism     -> Sail_impl_base.E_little_endian
     | X86_ism       -> Sail_impl_base.E_little_endian
-  in
-
-
-  let (module IsaDefs : ISADefs) =
-    match isa_info.ism with
-    | PPCGEN_ism    -> (module PPCGenISADefs : ISADefs)
-    | AARCH64_ism _ -> (module AArch64ISADefs : ISADefs)
-    | MIPS_ism      -> (module MIPS64ISADefs : ISADefs)
-    | RISCV_ism     -> (module RISCVISADefs : ISADefs)
-    | X86_ism       -> (module X86ISADefs : ISADefs)
   in
 
   let aarch64gen = false in
@@ -105,11 +95,11 @@ let run catfile litmusfile =
     )
     =
     Litmus_test_file_base.initial_state_record_base
-      endianness aarch64gen test (module IsaDefs) isa_info
+      endianness aarch64gen test isa_info
   in
 
   let deep_embedding_prog_map = 
-    Pmap.map instruction_to_interp_instruction prog_map in
+    Pmap.map Trans.instruction_to_interp_instruction prog_map in
 
   ()
 

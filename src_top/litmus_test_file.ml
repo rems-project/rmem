@@ -250,7 +250,7 @@ let read_file (name: string) (isa_callback: (InstructionSemantics.instruction_se
 
 let initial_state_record 
       (test: test)
-      (isa_defs: (module Isa_model.ISADefs))
+      (_isa_defs: (module Isa_model.ISADefs))
       (model: Params.model_params) = 
 
   let (thread_isa_info',
@@ -267,7 +267,6 @@ let initial_state_record
       (Globals.get_endianness ())
       (!Globals.aarch64gen)
       test
-      isa_defs
       model.t.thread_isa_info
   in
 

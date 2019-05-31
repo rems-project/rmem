@@ -20,6 +20,7 @@
 open InstructionSemantics
 
 
+open Trans
 include Isa_defs
 
 (********************************************************************)
@@ -32,7 +33,7 @@ module type S = sig
 end
 
 
-module Make (ISADefs: ISADefs) (TransSail: TransSail) : S = struct
+module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
   module ISADefs = ISADefs
 
   let initialise_interp_semantics

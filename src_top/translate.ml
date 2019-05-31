@@ -78,7 +78,7 @@ module type S =
     val translate_test : A.pseudo MiscParser.t -> Test.test
   end
 
-module Make (A: Arch_litmus.S with type V.Scalar.t = string) (Trans : Isa_model.TransSail with type instruction = A.instruction)
+module Make (A: Arch_litmus.S with type V.Scalar.t = string) (Trans : Trans.TransSail with type instruction = A.instruction)
     : S with module A = A =
   struct
     module A = A

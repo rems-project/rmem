@@ -443,7 +443,7 @@ get_all_deps: check_external_deps
 
 
 axiomatic:
-	$(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
+	$(OCAMLBUILD) -use-ocamlfind src_top/$@.$(EXT) $(HIGHLIGHT)
 
 
 ## internal dependencies: ############################################
