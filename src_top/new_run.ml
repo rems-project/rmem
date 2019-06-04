@@ -148,8 +148,9 @@ type search_state =
     targets:       state_predicate list;
 
     (* filter out transitions that do not match all of these predicates,
-    i.e., a transition must satisfy all the filters to not be filtered out *)
-    filters:       trans_predicate list;
+    i.e., a transition must satisfy all the filters to not be filtered out.
+    The predicate takes the state BEFORE the transition and the transition. *)
+    filters:       state_and_trans_predicate list;
 
     test_info:     Test.info;
     options:       RunOptions.t;
@@ -458,7 +459,7 @@ let is_eager search_state transition =
 let add_search_node system_state search_state : search_state =
   let filtered_transitions =
     List.mapi (fun i t -> (i, t)) (ConcModel.transitions system_state)
-    |> List.filter (fun (_, t) -> (List.for_all (fun p -> p t) search_state.filters))
+    |> List.filter (fun (_, t) -> (List.for_all (fun p -> p system_state t) search_state.filters))
   in
 
   let new_search_node =
@@ -985,7 +986,7 @@ let search_from_state
     (breakpoints:    breakpoint list)
     (bounds:         state_predicate list)
     (targets:        state_predicate list)
-    (filters:        trans_predicate list)
+    (filters:        state_and_trans_predicate list)
     (print_partial_results: search_state -> unit)
     : search_outcome
   =

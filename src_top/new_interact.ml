@@ -1096,7 +1096,7 @@ let run_interactive_search mode interact_state breakpoints bounds targets filter
   in
 
   let interact_filters =
-    let filter t =
+    let filter _ t =
       filter_transitions interact_state.options [t]
       |> List.hd
       |> fst
@@ -1566,10 +1566,10 @@ let do_step_instruction (maybe_thread_n : int option) (maybe_inst_n : int option
 let do_peek_instruction (tid : int) (inst_n : int)  interact_state : interact_state =
   (* TODO FIXME: should we know about the internal structure of an ioid? *)
   let ioid = (tid, inst_n) in
-  let filter = fun t -> ConcModel.ioid_of_thread_trans t = Some ioid in
+  let filter = fun _ t -> ConcModel.ioid_of_thread_trans t = Some ioid in
   let target = fun state ->
     ConcModel.transitions state
-    |> List.filter filter
+    |> List.filter (filter state)
     |> (function [] -> true | _ -> false)
   in
   run_interactive_search
