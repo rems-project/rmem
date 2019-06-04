@@ -72,3 +72,37 @@ type info =
   }
 
 let trim_state ti state = C.trim_state ti.show_regs ti.show_mem state
+
+
+let reduced_final_reg_state regs (final_reg_states :(Events.thread_id * (Sail_impl_base.reg_base_name * Sail_impl_base.register_value option) list) list)
+    : (Events.thread_id * (Sail_impl_base.reg_base_name * C.value) list) list
+  = 
+  let reg_values_of_thread (tid,regstate) =
+    let final_value = function
+      | Some v ->
+         begin match Sail_impl_base.integer_of_register_value v with
+         | Some i -> C.big_num_to_value i
+         | None -> failwith "register final value has unknown/undef bits"
+         end
+      | None -> failwith "register final value read is blocked"
+    in
+
+    let filtered = List.filter (fun (reg, _) -> List.mem (tid, reg) regs) regstate in
+    let regvals = List.map (fun (reg, value) -> (reg, final_value value)) filtered in
+    (tid,regvals)
+  in
+  List.map reg_values_of_thread final_reg_states
+
+let reduced_final_mem_state
+      mem
+      (memory_values: (Sail_impl_base.footprint * Sail_impl_base.memory_value) list) = 
+  List.map
+    (fun ((addr, size), value) ->
+      let int64_addr = C.interp_address_to_address addr in
+      let big_value =
+        match Sail_impl_base.integer_of_memory_value (Globals.get_endianness ()) value with
+        | Some bi -> bi
+        | None -> failwith "bad final memory value"
+      in
+      ((int64_addr, size), big_value))
+    memory_values 

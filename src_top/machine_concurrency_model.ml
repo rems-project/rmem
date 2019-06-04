@@ -250,6 +250,8 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
   let write_after_stop_promising s = false
   let inst_discarded s = s.sst_inst_discarded
   let inst_restarted s = s.sst_inst_restarted
+
+  let filters _ _ = []
 end
 
 (********************************************************************)

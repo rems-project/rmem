@@ -193,6 +193,9 @@ let opts = [
 ("-hash_prune",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.hash_prune = b}),
     (Printf.sprintf "<bool> for batch mode, prune search tree using a hashmap of already seen states (%b)" !run_options.RunOptions.hash_prune));
+("-postcondition_filter",
+    Arg.Bool (fun b -> run_options := {!run_options with RunOptions.postcondition_filter = b}),
+    (Printf.sprintf "<bool> filter states based on the postcondition (%b)" !run_options.RunOptions.postcondition_filter));
 ("-partial_order_reduction",
     Arg.Bool (fun b -> run_options := {!run_options with RunOptions.partial_order_reduction = b}),
     (Printf.sprintf "<bool> for batch mode, restrict transitions according to partial order reduction (%b)" !run_options.RunOptions.partial_order_reduction));

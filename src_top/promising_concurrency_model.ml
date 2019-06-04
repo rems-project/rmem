@@ -149,6 +149,38 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
   let write_after_stop_promising s = false
   let inst_discarded s = false
   let inst_restarted s = false
+
+  let interesting_state p s =
+    match MoreConstraints.Make.check_prop_incomplete_state p s with
+    | Some true -> true
+    | Some false -> false
+    | None -> true
+
+  let transition_filter test_info p s t =
+    match t with
+    | PromisingTransitions.PSys_stop_promising ->
+       let fps = test_info.Test.show_mem in
+       let memory_values = 
+         PromisingStorage.pss_memory_value_of_footprints 
+           s.Promising.pst_state.Promising.p_storage_state fps in
+       let mem = Test.reduced_final_mem_state fps memory_values in
+       let state = (None, Some mem) in
+       interesting_state p state
+    | _ -> true
+
+
+  type predicate = state -> trans -> bool
+  let make_postcondition_filters (test_info: Test.info) : predicate list =
+    match test_info.Test.constr with
+    | ForallStates p ->   [transition_filter test_info p]
+    | ExistsState p ->    [transition_filter test_info p]
+    | NotExistsState p -> [transition_filter test_info p]
+
+  let filters (options: RunOptions.t) (test_info: Test.info) : predicate list =
+    if options.RunOptions.postcondition_filter
+    then make_postcondition_filters test_info
+    else []
+
 end
 
 (********************************************************************)

@@ -21,6 +21,14 @@
 (*                                                                                       *)
 (*=======================================================================================*)
 
+
+
+
+
+
+
+
+
 module type S = sig
   type value = int64
   type address = int64
@@ -50,6 +58,11 @@ module type S = sig
   type state = 
       (Events.thread_id * register_snapshot) list 
         * memory_snapshot
+
+  type incomplete_state = 
+      ((Events.thread_id * register_snapshot) list) option
+        * memory_snapshot option
+
   val trim_state :
       (Events.thread_id * Sail_impl_base.reg_base_name) list ->
         (Sail_impl_base.address * int) list -> state -> state
@@ -60,6 +73,7 @@ module type S = sig
   val check_prop : prop -> state -> bool
   val check_filter : prop -> state -> bool
   val check_constr : constr -> state list -> bool
+  val check_prop_incomplete_state : prop -> incomplete_state -> bool option
 end
 
 open ConstrGen
@@ -172,6 +186,12 @@ module Make : S =
         (Events.thread_id * register_snapshot) list 
           * memory_snapshot
 
+
+
+    type incomplete_state = 
+        ((Events.thread_id * register_snapshot) list) option
+          * memory_snapshot option
+
     let trim_state kregs _ (regs,mem) =
       let regs =
         List.fold_right
@@ -222,21 +242,24 @@ module Make : S =
       in
       String.concat "" (reg_strings @ mem_strings)
 
+
+
+    let look_in_memstate (mem : memory_snapshot) (a : address) = 
+      (* should we have a identity coercion on mv to do endianness etc? *)
+      try snd (List.find (fun ((a', _), _) -> a' = a) mem) with
+            | Not_found -> Nat_big_num.zero
+
+    let look_in_regstate tid (rsts : (Events.thread_id * register_snapshot) list) r = 
+      try
+        let rst = List.assoc tid rsts in
+        Nat_big_num.of_int64 (List.assoc r rst)
+      with
+      | Not_found -> Nat_big_num.zero
+  
     let look_in_state (state : state) l : Nat_big_num.num =
       begin match l with
-      | Loc_mem a -> 
-          (* should we have a identity coercion on mv to do endianness etc? *)
-          begin try snd (List.find (fun ((a', _), _) -> a' = a) (snd state)) with
-          | Not_found -> Nat_big_num.zero
-          end
-      | Loc_reg (tid, r) -> 
-          begin try
-              let rst = List.assoc tid (fst state) in
-              let vr = List.assoc r rst in
-              Nat_big_num.of_int64 vr
-          with
-          | Not_found -> Nat_big_num.zero
-          end
+      | Loc_mem a -> look_in_memstate (snd state) a
+      | Loc_reg (tid, r) -> look_in_regstate tid (fst state) r
       end
 
     let rec check_prop p state = match p with
@@ -254,6 +277,7 @@ module Make : S =
     | Implies (p1, p2) -> 
 	if check_prop p1 state then check_prop p2 state else true
 
+
     let check_filter p s = check_prop p s
           
     let check_constr c states = match c with
@@ -262,4 +286,55 @@ module Make : S =
     | NotExistsState p ->
         not (List.exists (fun s -> check_prop p s) states)	      
 
+
+
+    let look_in_incomplete_state state l : Nat_big_num.num option =
+      begin match l, state with
+      | (Loc_mem a), (_, Some mem) -> Some (look_in_memstate mem a)
+      | (Loc_reg (tid, r)), (Some rsts, _) -> Some (look_in_regstate tid rsts r)
+      | _ -> None
+      end
+
+    let rec check_prop_incomplete_state p state = match p with
+    | Atom (LV (l,v)) ->
+       begin match look_in_incomplete_state state l with
+       | Some v' ->
+          let v = Nat_big_num.of_int64 v in
+          Some (Nat_big_num.equal v v')
+       | None -> None
+       end
+    | Atom (LL (l1,l2)) ->
+       let v1 = look_in_incomplete_state state l1 in
+       let v2 = look_in_incomplete_state state l2 in
+       begin match v1, v2 with
+       | Some v1, Some v2 ->
+          Some (Nat_big_num.equal v1 v2)
+       | _ -> None
+       end
+    | Not p -> 
+       begin match check_prop_incomplete_state p state with
+       | Some false -> Some true
+       | Some true -> Some false
+       | None -> None
+       end
+    | And ps -> 
+       List.fold_left
+         (fun acc p ->
+           match acc, check_prop_incomplete_state p state with
+           | Some false, _ | _, Some false -> Some false
+           | Some true, Some true -> Some true
+           | _, _ -> None
+         )
+         (Some true) ps
+    | Or ps ->
+       List.fold_left
+         (fun acc p ->
+           match acc, check_prop_incomplete_state p state with
+           | Some true, _ | _, Some true -> Some true
+           | Some false, Some false -> Some false
+           | _, _ -> None
+         )
+         (Some false) ps
+    | Implies (p1, p2) ->
+       check_prop_incomplete_state (Or [Not p1; p2]) state
   end

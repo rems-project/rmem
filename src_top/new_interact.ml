@@ -2634,7 +2634,7 @@ let run_search
         (List.map fst breakpoints)
         [] (* bounds *)
         targets (* targets *)
-        [] (* filters *)
+        (ConcModel.filters options test_info) (* filters *)
         (print_results true)
     with
     | Runner.Complete search_state' -> 

@@ -128,5 +128,9 @@ module type S = sig
   val fuzzy_compare_transitions :
     trans -> trans -> int
 
+  val filters :
+    RunOptions.t ->
+    Test.info ->
+    (state -> trans -> bool) list
 end
 

@@ -1,2 +1,2 @@
 #!/bin/sh
-./rmem -model promising -shallow_embedding true "$@"
+./rmem -hash_prune false -model promising -shallow_embedding true "$@"

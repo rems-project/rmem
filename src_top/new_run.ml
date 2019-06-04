@@ -342,41 +342,13 @@ let record_exception search_state (tid, ioid, e) : search_state =
   {search_state with observed_exceptions = observed_exceptions}
 
 
-(* TODO: this should probably be in a different file *)
 let reduced_final_state regs mem (system_state: ConcModel.state) =
   let final_reg_states = ConcModel.final_reg_states system_state in
-  let reg_state : (Events.thread_id * (Sail_impl_base.reg_base_name * Test.C.value) list) list =
-    let reg_values_of_thread (tid,regstate) =
-      let final_value = function
-        | Some v ->
-           begin match Sail_impl_base.integer_of_register_value v with
-           | Some i -> Test.C.big_num_to_value i
-           | None -> failwith "register final value has unknown/undef bits"
-           end
-        | None -> failwith "register final value read is blocked"
-      in
-
-      let filtered = List.filter (fun (reg, _) -> List.mem (tid, reg) regs) regstate in
-      let regvals = List.map (fun (reg, value) -> (reg, final_value value)) filtered in
-      (tid,regvals)
-    in
-    List.map reg_values_of_thread final_reg_states
-  in
-
-  let mem_state =
-    List.map
-      (fun ((addr, size), value) ->
-        let int64_addr = Test.C.interp_address_to_address addr in
-        let big_value =
-          match Sail_impl_base.integer_of_memory_value (Globals.get_endianness ()) value with
-          | Some bi -> bi
-          | None -> failwith "bad final memory value"
-        in
-        ((int64_addr, size), big_value))
-      (ConcModel.memory_value_of_footprints system_state mem)
-  in
-
+  let reg_state = Test.reduced_final_reg_state regs final_reg_states in
+  let memory_values = ConcModel.memory_value_of_footprints system_state mem in
+  let mem_state = Test.reduced_final_mem_state mem memory_values in
   (reg_state, mem_state)
+
 
 
 let record_final_state target search_state search_node : search_state =

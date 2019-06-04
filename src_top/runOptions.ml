@@ -22,6 +22,7 @@ type t =
   { interactive:             bool;
     eager_mode:              eager_mode;
     hash_prune:              bool;
+    postcondition_filter:    bool;
     allow_partial:           bool;
     partial_order_reduction: bool;
     priority_reduction:      bool;
@@ -45,6 +46,7 @@ type t =
     time_limit:              int option;
     trace_limit:             int option;
 
+
     always_print:            bool;
 
     focused_thread:          int option;
@@ -56,6 +58,8 @@ type t =
 let interactive_lens = { Lens.get = (fun o -> o.interactive); Lens.set = (fun v o -> { o with interactive = v }) }
 let eager_mode_lens = { Lens.get = (fun o -> o.eager_mode); Lens.set = (fun v o -> { o with eager_mode = v }) }
 let hash_prune_lens = { Lens.get = (fun o -> o.hash_prune); Lens.set = (fun v o -> { o with hash_prune = v }) }
+let postcondition_filter_lens = { Lens.get = (fun o -> o.postcondition_filter);
+                                  Lens.set = (fun v o -> { o with postcondition_filter = v }) }
 let allow_partial_lens = { Lens.get = (fun o -> o.allow_partial); Lens.set = (fun v o -> { o with allow_partial = v }) }
 let partial_order_reduction_lens = { Lens.get = (fun o -> o.partial_order_reduction); Lens.set = (fun v o -> { o with partial_order_reduction = v }) }
 let priority_reduction_lens = { Lens.get = (fun o -> o.priority_reduction); Lens.set = (fun v o -> { o with priority_reduction = v }) }
@@ -135,6 +139,7 @@ let default_options =
         em_shared_memory          = Pset.empty Sail_impl_base.footprintCompare;
       });
     hash_prune              = true;
+    postcondition_filter    = false;
     allow_partial           = false;
     partial_order_reduction = false;
     priority_reduction      = false;
