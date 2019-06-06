@@ -771,16 +771,19 @@ let pp_register_value m ioid (rv:Sail_impl_base.register_value) =
 
          
 
+let pp_memory_value_simple mv = 
+  let bls =
+    Sail_impl_base.match_endianness (Globals.get_endianness ()) mv
+    |> List.map (fun (Byte_lifted bs) -> bs)
+    |> List.concat
+  in
+  "0b" ^ String.concat "" 
+           (List.map Printing_functions.bit_lifted_to_string bls)
+
 let pp_memory_value m ioid (mv:Sail_impl_base.memory_value) =
 (*  if List.length mv > 16 then "...TODO:pp long number..." else *)
   if m.pp_kind = Hash then
-    let bls =
-      Sail_impl_base.match_endianness (Globals.get_endianness ()) mv
-      |> List.map (fun (Byte_lifted bs) -> bs)
-      |> List.concat
-    in
-    "0b" ^ String.concat "" 
-             (List.map Printing_functions.bit_lifted_to_string bls)
+    pp_memory_value_simple mv
   else
     Printing_functions.memory_value_to_string (Globals.get_endianness ()) mv ^
       maybe_pp_corresponding_symbol m (Some ioid) 
