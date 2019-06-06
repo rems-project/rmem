@@ -442,10 +442,6 @@ endif
 get_all_deps: check_external_deps
 
 
-axiomatic:
-	$(OCAMLBUILD) -use-ocamlfind src_top/$@.$(EXT) $(HIGHLIGHT)
-
-
 ## internal dependencies: ############################################
 #  these are dependencies we build from source
 
