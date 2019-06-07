@@ -788,6 +788,15 @@ else
 endif
 
 MACHINEFILES-PRE=\
+  build_sail_shallow_embedding/sail_values.lem\
+  build_sail_shallow_embedding/prompt.lem\
+  build_sail2_shallow_embedding/sail2_instr_kinds.lem\
+  build_sail2_shallow_embedding/sail2_values.lem\
+  build_sail2_shallow_embedding/sail2_operators.lem\
+  build_sail2_shallow_embedding/sail2_operators_mwords.lem\
+  build_sail2_shallow_embedding/sail2_prompt_monad.lem\
+  build_sail2_shallow_embedding/sail2_prompt.lem\
+  build_sail2_shallow_embedding/sail2_string.lem\
   src_concurrency_model/utils.lem\
   src_concurrency_model/freshIds.lem\
   $(POWER_FILES)\
@@ -828,16 +837,7 @@ MACHINEFILES-PRE=\
 
 MACHINEFILES=\
   $(wildcard build_sail_interp/*.lem)\
-  build_sail_shallow_embedding/sail_values.lem\
-  build_sail_shallow_embedding/prompt.lem\
   build_sail_shallow_embedding/deep_shallow_convert.lem\
-  build_sail2_shallow_embedding/sail2_instr_kinds.lem\
-  build_sail2_shallow_embedding/sail2_values.lem\
-  build_sail2_shallow_embedding/sail2_operators.lem\
-  build_sail2_shallow_embedding/sail2_operators_mwords.lem\
-  build_sail2_shallow_embedding/sail2_prompt_monad.lem\
-  build_sail2_shallow_embedding/sail2_prompt.lem\
-  build_sail2_shallow_embedding/sail2_string.lem\
   $(MACHINEFILES-PRE)\
   $(ISA_TOFROM_INTERP_FILES)
 
