@@ -35,7 +35,10 @@ import Mips_embed
 import X86_embed
 import Riscv
 
-
+let ensure_sail2_done = function
+  | Sail2_prompt_monad.Done a -> a
+  | _ -> fail
+end
 
 type aarch64_variant =
   | AArch64HandSail   (* hand written ISA model *)
@@ -309,7 +312,7 @@ let sail1_regval_to_riscv rv =
     | 1 ->
        Riscv_types.Regval_bool (bool_from_bitl (List_extra.head rv.rv_bits))
     | 2 ->
-       Riscv_types.Regval_Privilege (Riscv.privLevel_of_bits (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits)))
+       Riscv_types.Regval_Privilege (ensure_sail2_done (Riscv.privLevel_of_bits (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))))
     | 64 ->
        Riscv_types.Regval_vector_64_dec_bit (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))
     | 65 ->
@@ -482,7 +485,7 @@ let initialise_shallow_embedding_semantics endianness ism =
        | Just instr -> FDO_success address (Just opcode) (MIPS_instr instr)
        end
    | RISCV_ism ->
-      let instr = Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv)) in
+      let instr = ensure_sail2_done (Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv))) in
       FDO_success address (Just opcode) (RISCV_instr instr)
    | X86_ism ->
       failwith "x86 decode not implemented"
