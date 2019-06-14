@@ -858,7 +858,8 @@ let pp_instruction
        *   (RISCVHGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
        *     (RISCVHGenTransSail.shallow_ast_to_herdtools_ast inst) in
        * RISCVHGenBase.pp_instruction (PPMode.Ascii) i' *)
-     let s = Riscv.print_insn ast in begin
+     let s = InstructionSemantics.ensure_sail2_done (Riscv.print_insn ast) in
+     begin
          (* Massive hack to show labels *)
          match ast with
          | Riscv_types.RISCV_JAL _
