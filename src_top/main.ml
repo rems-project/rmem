@@ -615,9 +615,14 @@ let main = fun () ->
     ]
     |> Screen.show_message ppmode;
 
-  begin try Top.from_files !run_options files with
-  | Misc.Fatal msg -> fatal_error msg
-  end
+  List.iter
+    (fun (filetype, name) ->
+        begin try Top.from_file !run_options filetype name with
+        | Misc.UserError s -> Printf.eprintf "Error in test %s: %s\n%!" name s
+        | Misc.Fatal     s -> fatal_error s (* exit 1 *)
+        | Misc.Exit -> ()
+        end)
+    files
 ;;
 
 (* now let's call main *)

@@ -186,16 +186,3 @@ let from_file
   | Types.Binary_file ->
      Run_elf.run run_options name None None
   end
-
-let from_files
-    (run_options:         RunOptions.t)
-    (filetypes_and_names: (Types.filetype * string) list)
-    : unit
-  =
-  List.iter
-    (fun (filetype, name) ->
-        begin try from_file run_options filetype name with
-        | Misc.UserError s -> Printf.eprintf "Error in test %s: %s\n%!" name s
-        | Misc.Exit -> ()
-        end)
-    filetypes_and_names

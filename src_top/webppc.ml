@@ -273,7 +273,8 @@ let start_interactive_litmus (name: string) (litmus_str: string) : unit =
   try
     Top.from_litmus_data (options_of_html ()) name litmus_str (Some isa_callback)
   with
-  | Misc.Fatal msg -> error_dialog msg
+  | Misc.UserError s -> error_dialog s
+  | Misc.Fatal     s -> error_dialog s
 ;;
 
 let start_interactive_elf () : unit =
