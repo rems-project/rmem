@@ -35,10 +35,25 @@ import Mips_embed
 import X86_embed
 import Riscv
 
-let ensure_sail2_done = function
+let rec continue_to_sail2_done callee o =
+  match o with
   | Sail2_prompt_monad.Done a -> a
-  | _ -> fail
-end
+  | Sail2_prompt_monad.Print _ o -> continue_to_sail2_done callee o
+
+  | Sail2_prompt_monad.Read_mem _ _ _ _ -> failwith ("Read_mem. " ^ callee)
+  | Sail2_prompt_monad.Read_memt _ _ _ _ -> failwith ("Read_memt. " ^ callee)
+  | Sail2_prompt_monad.Write_ea _ _ _ _ -> failwith ("Write_ea. " ^ callee)
+  | Sail2_prompt_monad.Excl_res _ -> failwith ("Excl_res. " ^ callee)
+  | Sail2_prompt_monad.Write_mem _ _ _ _ _ -> failwith ("Write_mem. " ^ callee)
+  | Sail2_prompt_monad.Write_memt _ _ _ _ _ _ -> failwith ("Write_memt. " ^ callee)
+  | Sail2_prompt_monad.Footprint _ -> failwith ("Footprint. " ^ callee)
+  | Sail2_prompt_monad.Barrier _ _ -> failwith ("Barrier. " ^ callee)
+  | Sail2_prompt_monad.Read_reg _ _ -> failwith ("Read_reg. " ^ callee)
+  | Sail2_prompt_monad.Write_reg _ _ _ -> failwith ("Write_reg. " ^ callee)
+  | Sail2_prompt_monad.Choose _ _ -> failwith ("Choose. " ^ callee)
+  | Sail2_prompt_monad.Fail s -> failwith ("Fail: " ^ s ^ ". " ^ callee)
+  | Sail2_prompt_monad.Exception _ -> failwith ("Exception. " ^ callee)
+  end
 
 type aarch64_variant =
   | AArch64HandSail   (* hand written ISA model *)
@@ -312,7 +327,7 @@ let sail1_regval_to_riscv rv =
     | 1 ->
        Riscv_types.Regval_bool (bool_from_bitl (List_extra.head rv.rv_bits))
     | 2 ->
-       Riscv_types.Regval_Privilege (ensure_sail2_done (Riscv.privLevel_of_bits (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))))
+       Riscv_types.Regval_Privilege (continue_to_sail2_done "regval_privilege" (Riscv.privLevel_of_bits (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))))
     | 64 ->
        Riscv_types.Regval_vector_64_dec_bit (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))
     | 65 ->
@@ -485,7 +500,7 @@ let initialise_shallow_embedding_semantics endianness ism =
        | Just instr -> FDO_success address (Just opcode) (MIPS_instr instr)
        end
    | RISCV_ism ->
-      let instr = ensure_sail2_done (Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv))) in
+      let instr = continue_to_sail2_done "decode" (Riscv.decode (Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv))) in
       FDO_success address (Just opcode) (RISCV_instr instr)
    | X86_ism ->
       failwith "x86 decode not implemented"
