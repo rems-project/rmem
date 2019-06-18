@@ -627,7 +627,7 @@ let initial_state_record
        in
        let each_thread tid =
          [
-           ((tid, "cur_privilege"), Sail_impl_base.register_value_for_reg_of_integer (get_reg "cur_privilege") (Nat_big_num.of_int 2));
+           ((tid, "cur_privilege"), Sail_impl_base.register_value_for_reg_of_integer (get_reg "cur_privilege") (Nat_big_num.of_int 0));
            ((tid, "misa"), Sail_impl_base.register_value_for_reg_of_integer (get_reg "misa") (Nat_big_num.of_string "0x8000000000000881")); (* RV64IMA *)
            ((tid, "mstatus"), Sail_impl_base.register_value_for_reg_of_integer (get_reg "mstatus") (Nat_big_num.of_string "0x0000000a00000000")); (* RV64 in S and U also *)
          ]
