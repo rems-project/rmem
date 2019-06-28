@@ -333,13 +333,13 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
     in
 
     let instruction_to_interp2_instruction = function
-      | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue3 instr
+      | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue instr
       | Fetch_error -> failwith "fetch error"
       | _ -> failwith "not implemented yet"
     in
 
     let interp2_instruction_to_instruction instr = match ism with
-      | RISCV_ism -> RISCV_instr (Riscv_toFromInterp2.astFromInterpValue3 instr)
+      | RISCV_ism -> RISCV_instr (Riscv_toFromInterp2.astFromInterpValue instr)
       | _ -> failwith "not implemented yet"
     in
 

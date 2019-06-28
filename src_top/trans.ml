@@ -67,7 +67,7 @@ let instruction_to_interp_instruction = function
  | AArch64_instr instr -> ArmV8_toFromInterp.astToInterpValue0 instr
  | MIPS_instr instr -> Mips_toFromInterp.astToInterpValue1 instr
  | RISCV_instr instr -> failwith "not implemented yet"
- | X86_instr instr -> X86_toFromInterp.astToInterpValue4 instr
+ | X86_instr instr -> X86_toFromInterp.astToInterpValue3 instr
  | Fetch_error -> failwith "fetch error"
 
 
@@ -77,4 +77,4 @@ let interp_instruction_to_instruction ism instr = match ism with
   | AARCH64_ism AArch64GenSail -> failwith "not implemented yet"
   | MIPS_ism -> MIPS_instr (Mips_toFromInterp.astFromInterpValue1 instr)
   | RISCV_ism -> failwith "not implemented yet"
-  | X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue4 instr)
+  | X86_ism -> X86_instr (X86_toFromInterp.astFromInterpValue3 instr)

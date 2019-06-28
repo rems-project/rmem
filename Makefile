@@ -584,6 +584,7 @@ get_isa_model_%: BUILDISATARGET ?= all
 get_isa_model_%: ISASAILFILES ?= $(ISADIR)/*.sail
 get_isa_model_%: ISALEMFILES ?= $(ISADIR)/*.lem
 get_isa_model_%: ISAGENFILES ?= $(ISADIR)/gen/*
+get_isa_model_%: ISA_INTERPCONVERT ?= $(ISADIR)/$(ISANAME)_toFromInterp2.ml
 get_isa_model_%: ISADEFSFILES ?=
 get_isa_model_%: FORCE
 	rm -rf $(ISABUILDDIR)
@@ -593,8 +594,10 @@ get_isa_model_%: FORCE
 	  $(MAKE) -C $(ISADIR) $(BUILDISATARGET) &&\
 	  cp -a $(ISASAILFILES) $(ISABUILDDIR) &&\
 	  cp -a $(ISALEMFILES) $(ISABUILDDIR) &&\
-	  { [ ! -f $(ISADIR)/$(ISANAME).ml ] || cp -a $(ISADIR)/$(ISANAME).ml $(ISABUILDDIR)/$(ISANAME).ml.notstub; })
+	  { [ ! -f $(ISADIR)/$(ISANAME).ml ] || cp -a $(ISADIR)/$(ISANAME).ml $(ISABUILDDIR)/$(ISANAME).ml.notstub; } &&\
+	  { [ ! -f $(ISA_INTERPCONVERT) ] || cp -a $(ISA_INTERPCONVERT) $(ISABUILDDIR)/$(ISANAME)_toFromInterp2.ml.notstub; })
 	cp -a src_top/generic_sail_ast_def_stub.ml $(ISABUILDDIR)/$(ISANAME).ml.stub
+	{ [ ! -f src_top/$(ISANAME)_toFromInterp2.ml.stub ] || cp -a src_top/$(ISANAME)_toFromInterp2.ml.stub $(ISABUILDDIR); }
 	mkdir -p $(ISABUILDDIR)/gen
 	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
 	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) . ,)
@@ -655,7 +658,7 @@ get_isa_model_riscv: ISADIR=$(riscvdir)
 get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
 get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/for-rmem/*.lem
 get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/*.lem
-get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/generated_definitions/for-rmem/riscv_toFromInterp2.ml
+get_isa_model_riscv: ISA_INTERPCONVERT=$(ISADIR)/generated_definitions/for-rmem/riscv_toFromInterp2.ml
 get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
 get_isa_model_riscv: ISADEFSFILES=$(ISADIR)/generated_definitions/for-rmem/riscv.defs
 INSTALL_DEFS_FILES += riscv.defs
@@ -668,6 +671,7 @@ ifeq ($(filter RISCV,$(ISA_LIST)),)
   get_isa_model_riscv: BUILDISA=false
   RMEMSTUBS += build_isa_models/riscv/riscv.ml
   RMEMSTUBS += src_top/RISCVHGenTransSail.ml
+  RMEMSTUBS += build_isa_models/riscv/riscv_toFromInterp2.ml
 endif
 get_all_isa_models: get_isa_model_riscv
 
@@ -758,7 +762,6 @@ ifeq ($(filter RISCV,$(ISA_LIST)),)
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscv.lem
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/isaInfoRISCV.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp2.lem
 else
   RISCV_FILES += build_isa_models/riscv/riscv_extras.lem
   RISCV_FILES += build_isa_models/riscv/riscv_types.lem
@@ -768,7 +771,6 @@ else
   LEMFLAGS += -wl_pat_red ign
   RISCV_FILES += src_concurrency_model/isaInfoRISCV.lem
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp2.lem
 #  ISA_TOFROM_INTERP_FILES += build_isa_models/riscv/riscv_toFromInterp.lem
 endif
 
