@@ -59,3 +59,5 @@ let mtval_has_illegal_inst_bits () = false
 let enable_writable_misa () = true
 
 let enable_rvc () = true
+
+let enable_pmp () = false

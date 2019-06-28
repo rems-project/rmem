@@ -287,7 +287,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       if rv.rv_start <> 0 || rv.rv_dir <> D_decreasing then failwith "invalid vector interp2__regval_to_interp" else
         match List.length (rv.rv_bits) with
         | 1 -> V_bool (bool_from_bitl (List.hd rv.rv_bits))
-        | 2 -> Riscv_toFromInterp2.privilegeToInterpValue (Riscv.privLevel_of_bits (Lem.wordFromBitlist (List.map bool_from_bitl rv.rv_bits)))
+        | 2 -> Riscv_toFromInterp2.privilegeToInterpValue (InstructionSemantics.continue_to_sail2_done "privilege" (Riscv.privLevel_of_bits (Lem.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))))
         | 64 -> V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) rv.rv_bits)
         | 65 -> V_record (StringMap.add "Medeleg_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 1 rv.rv_bits))) StringMap.empty)
         | 66 -> V_record (StringMap.add "Sedeleg_chunk_0" (V_vector (List.map (fun b -> bool_from_bitl b |> interp2__bool_to_bit) (Util.drop 2 rv.rv_bits))) StringMap.empty)
