@@ -31,16 +31,51 @@ type flowing_topology =
   | FTopo_leaf of thread_id
   | FTopo_join of list flowing_topology
 
+
+type icache_type =
+  | Icache_Flat  (* a single write per address per icache *)
+  | Icache_Many  (* many writes per address per icache *)
+
+type Fetch_params =
+  <| flat_need_ic : bool;
+     flat_need_dc : bool;
+     flat_icache_type : icache_type;
+  |>
+
+type fetch_type =  (* Enable/Disable fetching for self-modifying examples *)
+  | Fetch_Atomic
+  | Fetch_Relaxed of Fetch_params
+
 type ss_params =
   <| ss_model: storage_model;
      ss_sc   : bool; (* behave like SC *)
      pw      : propagate_write_params;
      new_coh : new_coherence_params;
+     ss_fetch_type: fetch_type;
 
      (* parameters for Flowing *)
      flowing_topology : flowing_topology;
   |>
 
+let is_relaxed_icaches params = match params.ss_fetch_type with
+  | Fetch_Atomic -> true
+  | Fetch_Relaxed p ->
+      match p.flat_icache_type with
+      | Icache_Flat -> false
+      | Icache_Many -> true
+      end
+  end
+let update_ss_params_flat_idc params b =
+  match params.ss_fetch_type with
+  | Fetch_Atomic -> params
+  | Fetch_Relaxed p -> <| params with ss_fetch_type = Fetch_Relaxed <| p with flat_need_dc = not b |> |>
+  end
+
+let update_ss_params_flat_dic params b =
+  match params.ss_fetch_type with
+  | Fetch_Atomic -> params
+  | Fetch_Relaxed p -> <| params with ss_fetch_type = Fetch_Relaxed <| p with flat_need_ic = not b |> |>
+  end
 
 type thread_flowing_same_address_params =
   | Flowing_same_address_strict
@@ -77,6 +112,9 @@ type thread_restriction =
 
 type branch_targets_map = map thread_id (map address (set address))
 
+type fetch_order =
+    | Fetch_Unrestricted (* DIC=0 *)
+    | Fetch_Sequential   (* DIC=1 *)
 
 type thread_params =
   <| thread_model:       thread_model;
@@ -89,14 +127,17 @@ type thread_params =
      thread_fail_on_loop:            bool;
      thread_isa_info :               isa_info;
      thread_loop_unroll_limit:       maybe nat;
+     thread_fetch_limit:             maybe nat;
+     thread_fetch_from_ss:           bool;
+     thread_fetch_order: fetch_order;
 
      branch_targets: branch_targets_map;
+     thread_modified_code_footprints: set footprint;
 
      p_par_pts_search : bool;
      p_fuel : maybe nat;
      p_promise_first: bool;
   |>
-
 
 type model_params =
   <| ss:             ss_params;
@@ -107,6 +148,70 @@ type model_params =
      shared_memory:  maybe (set footprint)
   |>
 
+(* this property holds if the model params are valid wrt dc/ic values
+ * i.e. this property holds if the params describe something equivalent to or stronger
+ *  than some DC/IC configuration
+ * but fails if the parameters would give invalid results.
+ *)
+let prop_flat_valid_dcic params =
+  match params.ss.ss_fetch_type with
+  | Fetch_Atomic -> true
+  | Fetch_Relaxed p ->
+      (match p.flat_need_ic with
+      | false ->
+          (* if DIC=1 then must fetch in order *)
+          match params.t.thread_fetch_order with
+          | Fetch_Unrestricted -> false
+          | Fetch_Sequential -> true
+          end
+      | true -> true
+      end) &&
+      (match p.flat_need_dc with
+      | false -> true
+      | true  -> true
+      end)
+  end
+
+let is_flat_idc_1 params =
+  match params.ss.ss_fetch_type with
+  | Fetch_Atomic -> true
+  | Fetch_Relaxed p ->
+      match p.flat_need_dc with
+      | false -> true
+      | true -> false
+      end
+  end
+
+let is_flat_dic_1 params =
+  match params.ss.ss_fetch_type with
+  | Fetch_Atomic -> true
+  | Fetch_Relaxed p ->
+      match p.flat_need_ic with
+      | false -> true
+      | true -> false
+      end
+  end
+
+let update_model_params_flat_idc params b =
+  <| params with ss = update_ss_params_flat_idc params.ss b |>
+
+let update_model_params_flat_dic params b =
+  <| params with ss = update_ss_params_flat_dic params.ss b |>
+
+let is_fetch_sequential params = match params.thread_fetch_order with
+  | Fetch_Sequential -> true
+  | _ -> false
+  end
+
+let is_fetch_relaxed params = match params.ss_fetch_type with
+  | Fetch_Relaxed _ -> true
+  | _ -> false
+  end
+
+let is_fetch_atomic params = match params.ss_fetch_type with
+  | Fetch_Atomic -> true
+  | _ -> false
+  end
 
 let is_pop_model params = match params.thread_model with
   | POP_thread_model _ -> true
@@ -131,6 +236,7 @@ type eager_mode =
     eager_fp_recalc:           bool;
     eager_thread_start:        bool;
 
+    eager_fetch_unmodified:    bool;
     eager_local_mem:           bool;
     em_shared_memory:          set footprint;
   |>
@@ -140,6 +246,7 @@ type eager_mode =
 
 type initial_state_record =
   <|  isr_params:            model_params;
+      (* TODO: remove isr_program *)
       isr_program:           instruction_semantics -> address -> fetch_and_decode_outcome;
       isr_return_addr:       list (thread_id * address);
       isr_thread_ids:        list thread_id;
@@ -148,9 +255,6 @@ type initial_state_record =
       isr_first_instruction: thread_id -> maybe address;
       isr_memory:            list write;
   |>
-
-
-
 
 let branch_targets_from_list
     (bts: list (thread_id * list (address * list address)))
@@ -245,6 +349,7 @@ let default_model_params =
         new_coh =  Use_old_coherence ;
         (*new_coh =     No_new_coherence;*)
         flowing_topology = FTopo_leaf 0;
+        ss_fetch_type = Fetch_Atomic;
     |>
   in
 
@@ -259,12 +364,16 @@ let default_model_params =
         thread_fail_on_loop            = false;
         thread_isa_info                = IsaInfoPPCGen.ppcgen_ism;
         thread_loop_unroll_limit       = Nothing;
+        thread_fetch_limit             = Nothing;
+        thread_fetch_from_ss           = false;
+        thread_fetch_order             = Fetch_Sequential;
 
         p_promise_first                = false;
         p_par_pts_search               = false;
         p_fuel                         = Nothing;
 
         branch_targets                 = Map.empty;
+        thread_modified_code_footprints      = Set.empty;
     |>
   in
 

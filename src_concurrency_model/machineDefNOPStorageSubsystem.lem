@@ -476,7 +476,8 @@ let nop_ss_enumerate_transitions
 
 let nop_ss_receive_transition params state t_send =
   match t_send with
-  | T_fetch _ -> failwith "fetch is handled globally right now"
+  | T_fetch _ -> failwith "fetch not implemented for NOP"
+  | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for NOP"
   | T_mem_read_request tl ->
       match tl.tl_label with
       | (rr, slices, rf, Just _) -> fail (* FIXME: *)

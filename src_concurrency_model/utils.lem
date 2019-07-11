@@ -64,6 +64,25 @@ let rec bigunionListMap f xs =
   end
 
 
+val combinations2 : forall 'a. list 'a -> list ('a * 'a)
+let rec combinations2 cs =
+  match cs with
+  | [] -> []
+  | [_] -> []
+  | (x::xs) ->
+    let pair x y = (x, y) in
+    List.map (pair x) xs ++ combinations2 xs
+  end
+
+val product : forall 'a 'b. list 'a -> list 'b -> list ('a * 'b)
+let rec product xs ys =
+  match xs with
+  | [] -> []
+  | (z::zs) ->
+    let pair x y = (x, y) in
+    List.map (pair z) ys ++ product zs ys
+  end
+
 (** Associative lists *)
 
 (* map key 'k' to value 'v' in associative list 'm' (add the pair or

@@ -73,7 +73,8 @@ type instruction_ast =
   | RISCV_instr of Riscv_types.ast
   | X86_instr of X86_embed_types.ast
   | Fetch_error
-
+  | Unfetched
+  | Fetched of instruction_ast
 
 type decode_error_t =
   | Unsupported_instruction_error of opcode * instruction_ast
@@ -84,8 +85,8 @@ type fetch_and_decode_outcome =
   | FDO_success of address * (maybe opcode) * instruction_ast
   | FDO_address_not_concrete
   | FDO_illegal_fetch_address
+  | FDO_unpredictable_fetch
   | FDO_decode_error of decode_error_t
-
 
 let decode_error_compare e1 e2 =
   match (e1, e2) with
@@ -484,10 +485,15 @@ let initialise_shallow_embedding_semantics endianness ism =
     | AARCH64_ism AArch64HandSail ->
        match ArmV8_embed.decode opcode_bitv with
        | Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
-       | Done (Just instr)  -> FDO_success address (Just opcode) (AArch64_instr instr)
+       | Done (Just instr)  -> 
+          (* TODO: abstract supported_instructions for all ISAs *)
+          match ArmV8_embed.supported_instructions instr with
+          | Nothing -> FDO_decode_error(Unsupported_instruction_error opcode (AArch64_instr instr))
+          | Just _ -> FDO_success address (Just opcode) (AArch64_instr instr)
+          end
        | Error descr         -> failwith ("armV8 decode failed with: Error " ^ descr)
        | Fail (Just descr)   -> failwith ("armV8 decode failed with: Fail " ^ descr)
-       | Fail Nothing        -> failwith ("armV8 decode failed with unspecified error: Fail")
+       | Fail Nothing        -> FDO_decode_error (Internal_decode_error "fail")
        | Escape (Just descr) -> failwith ("armV8 decode failed with: Exception " ^ descr)
        | Escape Nothing      -> failwith ("armV8 decode failed with exception: Exception")
        | Internal _ _        -> failwith ("armV8 decode returned unexpected Internal outcome")
@@ -512,7 +518,9 @@ let initialise_shallow_embedding_semantics endianness ism =
     | MIPS_instr instr ->     (Mips_embed.execute instr,Nothing)
     | RISCV_instr instr ->    (ignore_outcome (sail2_prompt_to_outcome (Riscv.execute instr)),Nothing)
     | X86_instr instr ->      (X86_embed.execute instr,Nothing)
-    | Fetch_error         -> failwith "initial_outcome_s_of_instruction Fetch_error"
+    | Fetch_error -> failwith "initial_outcome_s_of_instruction Fetch_error"
+    | Unfetched -> failwith "initial_outcome_s_of_instruction Unfetched"
+    | Fetched _ -> failwith "initial_outcome_s_of_instruction Fetched _"
     end in
 
   let shallow_embedding__instruction_analysis _ instr analysis_function reginfo _ environment =
@@ -545,6 +553,10 @@ let initialise_shallow_embedding_semantics endianness ism =
            failwith "instruction_analysis: unknown X86 analysis function"
         | (Fetch_error,_) ->
            failwith "instruction_analysis: Fetch_error"
+        | (Unfetched,_) ->
+           failwith "instruction_analysis: Unfetched"
+        | (Fetched _,_) ->
+           failwith "instruction_analysis: Fetched (but not decoded)"
         end in
     let (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) =
       (List.map (regfp_to_reg reginfo) input_regs,

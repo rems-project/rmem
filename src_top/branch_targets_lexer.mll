@@ -49,6 +49,8 @@ rule read =
 
   | '{'  { LEFT_BRACE }
   | '}'  { RIGHT_BRACE }
+  | '('  { LEFT_PAREN }
+  | ')'  { RIGHT_PAREN }
   | ':'  { COLON }
   | ';'  { SEMICOLON }
   | ','  { COMMA }

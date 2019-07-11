@@ -22,13 +22,20 @@
 open import Pervasives
 open import Assert_extra
 
+open import Sail_impl_base
+open import Sail_values
+open import Params
 open import Events
 open import Fragments
 open import Utils
 open import UiTypes
 open import MachineDefUI
 open import MachineDefTypes
+open import MachineDefInstructionPredicates
+open import InstructionSemantics
 open MaybeMonad
+
+import ArmV8_embed_types
 
 let slice_of_write w = (w.w_addr, [complete_slice w.w_addr])
 
@@ -42,7 +49,17 @@ let add_read_exclusive_write_slices state (read, writes_and_slices, se_ioids) =
   <| state with flat_ss_exclusive_reads = exclusive_reads |>
 
 
-let flat_write_memory state write =
+let flat_ss_coherence params state =
+  let co =
+    let ordered w w' = non_empty_intersection w.w_addr w'.w_addr in
+    List.foldl
+      (fun order w -> relonAddToTheLeft w (ordered w) order)
+      relonEmpty
+      state.flat_ss_old_writes
+  in
+  Relation.transitiveClosure co.relon_rel
+
+let flat_flow_write_into_memory params state write =
   (* remove slices that will not be visible after adding the new write *)
   let old_mem =
     List.mapMaybe
@@ -66,20 +83,31 @@ let flat_write_memory state write =
       []
   in
 
-  <| state with flat_ss_memory_writes = new_mem ++ old_mem;
+  let st' =
+     match params.ss_fetch_type with
+     | Fetch_Atomic -> state
+     | Fetch_Relaxed p ->
+         match p.flat_need_dc with
+         | true -> <| state with flat_ss_fetch_buf = write :: state.flat_ss_fetch_buf |>
+         | false -> state
+         end
+     end
+  in
+
+  <| st' with flat_ss_memory_writes = new_mem ++ old_mem;
       flat_ss_old_writes = write :: state.flat_ss_old_writes;
   |>
 
 
-let flat_ss_coherence params state =
-  let co =
-    let ordered w w' = non_empty_intersection w.w_addr w'.w_addr in
-    List.foldl
-      (fun order w -> relonAddToTheLeft w (ordered w) order)
-      relonEmpty
-      state.flat_ss_old_writes
-  in
-  Relation.transitiveClosure co.relon_rel
+let flat_write_memory params state write =
+  match params.ss_fetch_type with
+  | Fetch_Atomic -> flat_flow_write_into_memory params state write
+  | Fetch_Relaxed p ->
+    match p.flat_need_dc with
+    | true -> <| state with flat_ss_fetch_buf = write :: state.flat_ss_fetch_buf |>
+    | false -> flat_flow_write_into_memory params state write
+    end
+  end
 
 
 let flat_propagate_write params state tl = 
@@ -91,7 +119,7 @@ let flat_propagate_write params state tl =
           state.flat_ss_exclusive_reads) >>
   let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
   let state_cont = fun () ->
-    let state = flat_write_memory state write in
+    let state = flat_write_memory params state write in
     let state = List.foldl add_read_exclusive_write_slices state rf in
     match excl with
     | Just read ->
@@ -105,7 +133,8 @@ let flat_satisfy_read params state tl =
   let (read, unsat_slices, old_write_slices, excl) = tl.tl_label in
   let addr = read.r_addr in
   let writes = state.flat_ss_memory_writes in
-  let new_write_slices = match match_writes addr unsat_slices writes [] with
+  let buf_writes = List.map write_with_complete_slice state.flat_ss_fetch_buf in
+  let new_write_slices = match match_writes addr unsat_slices (buf_writes ++ writes) [] with
     | ([], write_slices') -> write_slices'
     | _ -> failwith "read from uninitialized address"
   end in
@@ -171,22 +200,40 @@ let flat_try_commit_store_cond params state tl =
   let (write, rf) = tl.tl_label in
   if check_potential_atomicity params state write.w_thread rf then
     let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
-    let state_cont = fun () -> flat_write_memory state write in
+    let state_cont = fun () -> flat_write_memory params state write in
     return (T_Flat_try_commit_store_cond tl', Just state_cont)
   else
     let tl' = <| tl with tl_suppl = Just MWO_exclusive_failed |> in
     return (T_Flat_try_commit_store_cond tl', Nothing)
 
+let mrs_from_write (addr : footprint) (w : write) : maybe memory_read_source =
+    mrs_from_writes addr [write_with_complete_slice w]
+
+let empty_icache tid =
+  <| ic_memory = [];
+     ic_tid = tid;
+  |>
+
+let icache_from_writes tid writes =
+  <| ic_memory = writes;
+     ic_tid    = tid;
+  |>
+
 let flat_ss_initial_state params tids initial_writes =
   (* TODO: ensure initial writes don't overlap *)
   <|  flat_ss_memory_writes     = complete_writes initial_writes;
+      flat_ss_fetch_buf         = initial_writes;
+      flat_ss_icaches           = Map.fromList [(tid, icache_from_writes tid (complete_writes initial_writes)) | forall (tid MEM (Set_extra.toList tids)) | true];
+      flat_ss_ic_writes         = Map.empty;
       flat_ss_old_writes        = initial_writes;
       flat_ss_exclusive_reads   = Map.empty;
   |>
 
 
 let flat_ss_thread_memory_value_of_footprint _params state _tid footprint =
-  let mrs' = ensure_just (mrs_from_writes footprint state.flat_ss_memory_writes)
+  let mem_writes = state.flat_ss_memory_writes in
+  let buf_writes = List.map write_with_complete_slice state.flat_ss_fetch_buf in
+  let mrs' = ensure_just (mrs_from_writes footprint (buf_writes ++ mem_writes))
                ("flat_ss_thread_memory_value_of_footprint " ^ show footprint) in
   mrs'.mrs_value
 
@@ -213,12 +260,226 @@ let flat_ss_remove_old_read_requests _params state tid restarted_ioids discarded
   in
   return <| state with flat_ss_exclusive_reads = exclusive_reads |>
 
+(* TODO: maybe move this to machineDefSystem and make it fake a read?
+    or maybe just implement equivalent for each model storage subsystem *)
+let flat_try_fetch_atomic _params state tl =
+  let addr = tl.tl_label.fr_addr in
+  let fp = (addr, 4) in  (* TODO: maybe not fixed 4-byte instruction size *)
+  let writes = state.flat_ss_memory_writes in
+  let mrs =
+    match mrs_from_writes fp writes with
+    | Nothing -> failwith "flat try fetch from uninitialized memory"
+    | Just mrs -> mrs
+    end
+  in
+  let fdo = tl.tl_label.fr_decode addr mrs in
+  let tl' = <| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |> in
+  [(T_fetch tl', Nothing)]
 
-let flat_ss_receive_transition params state = function
+let write_is_to_addr (fp : footprint) (w : write) =
+    match mrs_from_write fp w with
+    | Nothing -> false
+    | Just _  -> true
+    end
+
+let write_slices_is_to_addr (fp : footprint) (ws : list (write * slices)) =
+    match mrs_from_writes fp ws with
+    | Nothing -> false
+    | Just _  -> true
+    end
+
+(* TODO: BS: probably return (write * slices) in the fully general case ... *)
+let flat_fetch_from_buffer_relaxed_writes _params state addr =
+  let fp = (addr, 4) in  (* TODO: maybe not fixed 4-byte instruction size *)
+  let ws =
+    match List.filter (write_overlaps_with_addr fp) state.flat_ss_fetch_buf with
+    | [] -> []
+    (* invariant: head of buffer is always in memory *)
+    | (_ :: buf) -> complete_writes buf
+    end
+  in
+  let overlaps ((w,s) : write * slices) : bool =
+      overlapping_slices (w.w_addr,s) (fp,[complete_slice fp]) in
+  (* TODO: BS: throwing away the slice is just wrong, but it works for non-mixed-sized things *)
+  let ws = ws ++ [w | forall (w MEM state.flat_ss_memory_writes) | overlaps w]
+  in
+  ws
+
+(* TODO: BS: smarter permutations *)
+let rec write_slices_permutations (v : list 'a) : list (list 'a) = match v with
+  | [] -> []
+  | (x::[]) -> [[x]]
+  | (x::y::zs) ->
+             map (fun y -> x::y) (write_slices_permutations (y::zs))
+          ++ map (fun z -> y::z) (write_slices_permutations (x::zs))
+  end
+
+let possible_fetches_from_write_slices (fp : footprint) : list (write * slices) -> list memory_read_source
+    = fun ws ->
+      let perms = write_slices_permutations ws in
+      let sliced_perms : list (slices * list (write * slices))  = List.map (match_writes fp [complete_slice fp] []) perms in
+      let wslices =
+          (List.map
+            (function
+            (* we ignore the unsat slices and try fetch anyway *)
+            | (_,ws) -> ws
+            end
+            )) sliced_perms in
+      List.catMaybes $ List.map (mrs_from_writes fp) wslices
+
+let flat_fetch_from_buffer_relaxed params state addr =
+  let fp = (addr, 4) in  (* TODO: maybe not fixed 4-byte instruction size *)
+  let ws = flat_fetch_from_buffer_relaxed_writes params state addr in
+  possible_fetches_from_write_slices fp ws
+
+let mapUpdateWith (f : 'v -> 'v) (k : 'k) (v : 'v) (m : map 'k 'v) : map 'k 'v =
+    match Map.lookup k m with
+    | Nothing -> Map.insert k v m
+    | Just x  -> Map.insert k (f x) m
+    end
+
+let icache_update params (icache) (w : (write * slices)) state =
+    fun () ->
+        let ic_memory' =
+            w :: icache.ic_memory in
+        let icache' =
+            <| icache with
+                ic_memory = ic_memory';
+            |>
+        in
+        <| state with
+            flat_ss_icaches = Map.insert icache.ic_tid icache' (state.flat_ss_icaches);
+        |>
+
+let rec _flat_try_fetch_relaxed params state tl =
+  match params.flat_need_ic with
+  | true -> flat_try_fetch_relaxed_from_icache params state tl
+  | false -> flat_try_fetch_relaxed_from_buffer_only params state tl  (* TODO: impl ... *)
+  end
+
+and flat_make_cbranch_fetch_from_pair params state tl (x, y) =
+  let cbranch = ArmV8_embed_types.BranchConditional (x, y) in
+  let addr = tl.tl_label.fr_addr in
+  let op = Nothing in  (* TODO: BS: re-construct new opcode from cbranch ... *)
+  let fdo = FDO_success addr op (AArch64_instr cbranch) in
+  (T_fetch <| tl with tl_suppl = Just (Fetched_FDO fdo) |>, Just (fun() -> state))
+
+and flat_try_fetch_relaxed params state tl =
+  let fetches = _flat_try_fetch_relaxed params state tl in
+  let fdo_from_fetch (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) = fdo in
+  let is_fdo_success fdo =
+    match fdo with
+    | FDO_success _ _ _ -> true
+    | _ -> false
+    end in
+  let ast_from_fdo (FDO_success _ _ ast) = ast in
+  let maybe_cbranch_from_ast = AArch64_split_maybe_conditional_branch in
+  let fdos = List.map fdo_from_fetch fetches in
+  let successful_fdos = List.filter is_fdo_success fdos in
+  let unsuccessful_fdos = List.filter (fun f -> not (is_fdo_success f)) fdos in
+  let asts = List.map ast_from_fdo successful_fdos in
+  let cbranches = List.mapMaybe maybe_cbranch_from_ast asts in
+  if List.length fetches = 1 || List.all is_AArch64_atomic_fetchable_opcode asts then
+      fetches
+  else if List.length cbranches = List.length fetches then
+    let conds = List.map fst cbranches in
+    let dests = List.map snd cbranches in
+    let combinations = product conds dests in
+    let make_fetch fdo =
+      (T_fetch (<| tl with tl_suppl = Just (Fetched_FDO fdo) |>), Just (fun() -> state)) in
+    List.map make_fetch unsuccessful_fdos ++ List.map (flat_make_cbranch_fetch_from_pair params state tl) combinations
+  else
+      [(T_fetch <| tl with tl_suppl = Just (Fetched_FDO FDO_unpredictable_fetch) |>, Just (fun() -> state))]
+
+and flat_try_fetch_relaxed_from_buffer_only params state tl =
+  let addr = tl.tl_label.fr_addr in
+  let mrss = flat_fetch_from_buffer_relaxed params state addr in
+  let makeFetch mrs =
+      let fdo = tl.tl_label.fr_decode addr mrs in
+      (T_fetch (<| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |>), Just (fun() -> state)) in
+  List.map makeFetch mrss
+
+and flat_try_fetch_relaxed_from_icache params state tl =
+  let addr = tl.tl_label.fr_addr in
+  match Map.lookup tl.tl_label.fr_tid state.flat_ss_icaches with
+  | Nothing     -> failwith "flat_try_fetch_relaxed unknown thread"
+  | Just icache ->
+      let fp = (addr, 4) in
+      let overlaps ((w,s) : write*slices) : bool =
+          overlapping_slices (w.w_addr,s) (fp,[complete_slice fp]) in
+      let matched_ws = [w | forall (w MEM icache.ic_memory) | overlaps w] in
+      let mrss = possible_fetches_from_write_slices fp matched_ws in
+      let makeFetch mrs =
+          let fdo = tl.tl_label.fr_decode addr mrs in
+          (T_fetch (<| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |>), Just (fun() -> state)) in
+      List.map makeFetch mrss
+  end
+
+let flat_try_fetch params state tl =
+    match params.ss_fetch_type with
+    | Fetch_Atomic -> flat_try_fetch_atomic params state tl
+    | Fetch_Relaxed fp -> flat_try_fetch_relaxed fp state tl
+    end
+
+(* TODO: Move this to somewhere better ... *)
+let cache_line_fp (addr : address) : footprint =
+    (* TODO: BS: make this read CTR_EL0 d/i min line *)
+    let cache_line_size : integer = 1*4 in
+    let addr : integer = integer_of_address addr in
+    let offs : integer = modulo addr cache_line_size in
+    let start : integer = addr - offs in
+    let fp : footprint = (address_of_integer start, natFromInteger cache_line_size) in
+    fp
+
+let flat_clear_icache addr ic =
+    (* TODO: BS: is this right?  should we throw away all writes that overlap with the
+     * footprint or just those whose write*slices overlap? *)
+    <| ic with ic_memory =
+        List.filter (fun w -> not (write_slices_overlaps_with_addr (cache_line_fp addr) w)) ic.ic_memory
+    |>
+
+let flat_clear_icaches params state addr =
+    let icaches = state.flat_ss_icaches in
+    Map.map (flat_clear_icache addr) icaches
+
+let flat_propagate_dc params state cmr addr =
+  let fetch_buf = state.flat_ss_fetch_buf in
+  let overlapping = List.filter (write_overlaps_with_addr (addr, 4)) fetch_buf in
+  let newest_write_to_addr = List_extra.head overlapping in
+  let new_fetch_buf =
+    List.filter
+      (fun w -> not (write_overlaps_with_addr (addr, 4) w))
+      fetch_buf
+  in
+  (* remove all to that cacheline from buffer *)
+  let st' = <| state with flat_ss_fetch_buf=new_fetch_buf |> in
+  (* flow the latest into memory *)
+  flat_flow_write_into_memory params st' newest_write_to_addr
+
+
+let flat_propagate_ic params state cmr addr =
+  let ic_writes = state.flat_ss_ic_writes in
+  let tids = Set_extra.toList (Map.domain (state.flat_ss_icaches)) in
+  let ic_writes' = Map.insert addr (cmr, tids) ic_writes in
+  <| state with flat_ss_ic_writes=ic_writes' |>
+
+let flat_propagate_cache_maintenance params state tl =
+    let state_cont =
+        fun () ->
+            let cmr = tl.tl_label in
+            match (cmr.cmr_cmk, cmr.cmr_addr) with
+            | (CM_DC, addr) -> flat_propagate_dc params state cmr addr
+            | (CM_IC, addr) -> flat_propagate_ic params state cmr addr
+            end
+    in
+    return (T_propagate_cache_maintenance <| tl with tl_suppl = Just () |>, Just state_cont)
+
+let flat_ss_receive_transition_guarded params state = function
   | T_propagate_write tl ->            flat_propagate_write params state tl
   | T_Flat_mem_satisfy_read tl ->      flat_satisfy_read params state tl
   | T_Flat_try_commit_store_cond tl -> flat_try_commit_store_cond params state tl
   | T_try_store_excl tl ->             flat_try_store_excl params state tl
+  | T_propagate_cache_maintenance tl -> flat_propagate_cache_maintenance params state tl
   | T_mem_read_request tl ->           fail
   | T_propagate_barrier tl ->          fail
   | T_PLDI11_mem_satisfy_read _ ->     fail
@@ -226,13 +487,139 @@ let flat_ss_receive_transition params state = function
   | T_POP_tm_commit _ ->               fail
   | T_POP_tm_abort _  ->               fail
   | T_TSO_mem_satisfy_read _ ->        fail
-  | T_fetch _ ->                       fail
+  | T_fetch _ -> failwith "T_fetch is not guarded"
+end
+
+let flat_ss_receive_transition params state = function
+  | T_fetch tl -> flat_try_fetch params state tl
+  | trans -> ListMonad.option_guard (flat_ss_receive_transition_guarded params state trans)
 end
 
 
 let flat_ss_is_final_state _params _state : bool = true
 
+let write_not_in_icache ((w,s) : write*slices) (ic : icache) : bool =
+    not (List.any (fun (iw,_) -> iw = w) ic.ic_memory)
 
+let enumerate_icache_update_transitions params (state : flat_storage_subsystem_state) (icache : icache)
+    : list (ss_trans flat_storage_subsystem_state) =
+    let state' w = icache_update params icache w state in
+    let ws = (complete_writes state.flat_ss_fetch_buf) ++ state.flat_ss_memory_writes in
+    let f (wss : write*slices) =
+        (* check whether the actual -write- is in the icache, not just slices *)
+        if write_not_in_icache wss icache then
+            let (w, _) = wss in
+            let (addr, _) = w.w_addr in
+            (* update icache with full write/slice *)
+            [SS_only (SS_Flat_icache_update icache.ic_tid addr wss) (state' wss)]
+        else []
+    in
+    List.concat (List.map f ws)
+
+let enumerate_icache_updates params state =
+   match params.ss_fetch_type with
+   | Fetch_Atomic -> []
+   | Fetch_Relaxed p ->
+      match p.flat_need_ic with
+      | false -> []
+      | true ->
+        (* for each thread's i$ ... *)
+        let caches = Set_extra.toList (Map.range state.flat_ss_icaches) in
+        List.concat (List.map (enumerate_icache_update_transitions params state) caches)
+      end
+   end
+
+let trans_ic_for_thread _params state
+    (cmr : cache_maintenance_request)
+    (addr : address)
+    (tid : thread_id) =
+        let ss_cont =
+            fun () ->
+                let ic_writes = state.flat_ss_ic_writes in
+                match Map.lookup addr ic_writes with
+                | Nothing -> failwith "trans-ic-for-thread addr not exist"
+                | Just (cmr, tids) ->
+                    let tids' = List.filter (fun t -> not (t = tid)) tids in
+                    let ic_writes' = Map.insert addr (cmr, tids') ic_writes in
+                    match Map.lookup tid state.flat_ss_icaches with
+                    | Just ic ->
+                        let ic' = flat_clear_icache addr ic in
+                        let ics' = Map.insert tid ic' state.flat_ss_icaches in
+                        <| state with flat_ss_ic_writes=ic_writes'; flat_ss_icaches = ics' |>
+                    | Nothing -> failwith "trans_ic_for_thread : no icache for given thread id"
+                    end
+                end
+        in
+        [SS_sync (SS_Flat_thread_ic cmr tid) ss_cont ()]
+
+let enumerate_ic_for_addr params state (addr, (cmr, tids)) =
+    match tids with
+    | [] ->
+        let ss_cont =
+            fun () ->
+                let ic_writes = state.flat_ss_ic_writes in
+                let ic_writes' = Map.delete addr ic_writes in
+                <| state with flat_ss_ic_writes=ic_writes' |>
+        in
+        [SS_sync (SS_Flat_ic_finish cmr) ss_cont ()]
+    | _ ->
+        List.concat (List.map (trans_ic_for_thread params state cmr addr) tids)
+    end
+
+let enumerate_ic_transitions params state =
+    let ic_writes = state.flat_ss_ic_writes in
+    List.concat (List.map (enumerate_ic_for_addr params state) (Map_extra.toList ic_writes))
+
+let enumerate_transitions_ss params state =
+    enumerate_icache_updates params state ++
+    enumerate_ic_transitions params state
+
+let ui_mapPair (pf : 'v -> 'v -> 'v2) (m1 : map 'k 'v) (m2 : map 'k 'v) =
+    let ks = Map.domain m1 in
+    let f k =
+        match (Map.lookup k m1, Map.lookup k m2) with
+        | (Just x, Just y) -> (k, pf x y)
+        | _ -> failwith "ui_mapPair had different domains"
+        end in
+    Map.fromList (List.map f (Set_extra.toList ks))
+
+let ui_map' (gf : 'v -> 'v2) (nf : 'v -> 'v2) (df : 'v -> 'v -> list 'v2) (m1 : map 'k 'v) (m2 : map 'k 'v) =
+    let ks = Map.domain m1 in
+    let f k =
+        match (Map.lookup k m1, Map.lookup k m2) with
+        | (Just x, Just y) ->  List.map (fun v -> (k, v)) (df x y)
+        | (Nothing, Just y) -> [(k, nf y)]
+        | (Just x, Nothing) -> [(k, gf x)]
+        | _ -> failwith "ui_mapPair had different domains"
+        end in
+    Map.fromList (List.concat (List.map f (Set_extra.toList ks)))
+
+let flat_make_ui_icache_diff (ic: icache) (ic': icache) : ui_icache =
+    let cmp_write_addrs (w1, _) (w2, _) = compare w1.w_addr w2.w_addr in
+    let sorted_writes  = Sorting.sortByOrd cmp_write_addrs ic.ic_memory in
+    let sorted_writes' = Sorting.sortByOrd cmp_write_addrs ic'.ic_memory in
+    <| ui_ic_memory = ui_list_diff3 sorted_writes sorted_writes';
+       ui_ic_tid = ic'.ic_tid;
+    |>
+
+let flat_make_ui_icache_unchanged (ic : icache) : ui_icache =
+    <| ui_ic_memory = unchanged3_list ic.ic_memory;
+       ui_ic_tid = ic.ic_tid;
+    |>
+
+let flat_ui_ic_writes_diff icw icw' =
+    let df (cmr, a) (_, b) =
+        [(cmr, ui_list_diff3 a b)] in
+    let nf (cmr, a) =
+        (cmr, List.map C3_new a) in
+    let gf (cmr, a) =
+        (cmr, List.map C3_gone a) in
+    ui_map' gf nf df icw icw'
+
+let flat_ui_ic_writes_unchanged icw =
+    let f (cmr, xs) =
+        (cmr, unchanged3_list xs) in
+    Map.map f icw
 
 let flat_make_ui_storage_subsystem_state
     (ss: maybe flat_storage_subsystem_state)
@@ -260,6 +647,27 @@ let flat_make_ui_storage_subsystem_state
           | Nothing ->
              unchanged3_list ss'.flat_ss_old_writes
           end;
+        ui_flat_ss_icaches =
+          match ss with
+          | Just ss ->
+              ui_mapPair flat_make_ui_icache_diff ss.flat_ss_icaches ss'.flat_ss_icaches
+          | Nothing ->
+              Map.map flat_make_ui_icache_unchanged ss'.flat_ss_icaches
+          end;
+        ui_flat_ss_fetch_buf =
+          match ss with
+          | Just ss -> 
+              ui_list_diff3 ss.flat_ss_fetch_buf ss'.flat_ss_fetch_buf
+          | Nothing ->
+              unchanged3_list ss'.flat_ss_fetch_buf
+          end;
+        ui_flat_ss_ic_writes =
+          match ss with
+          | Just ss -> 
+              flat_ui_ic_writes_diff ss'.flat_ss_ic_writes ss.flat_ss_ic_writes
+          | Nothing ->
+              flat_ui_ic_writes_unchanged ss'.flat_ss_ic_writes
+          end;
     |>
 
 
@@ -276,9 +684,9 @@ let flat_storage =
 
 val flat_machine_storage : forall 'ts. machineStorageSubsystem 'ts flat_storage_subsystem_state
 let flat_machine_storage =
-  <| ss_enumerate_transitions             = fun _p _s -> [];
+ <| ss_enumerate_transitions = enumerate_transitions_ss;
      ss_receive_transition = 
-       fun p s tl -> ListMonad.option_guard (flat_ss_receive_transition p s tl);
+         fun p s tl -> flat_ss_receive_transition p s tl;
      ss_enumerate_final_transitions = fun s -> [];
      ss_make_ui_storage_state = flat_make_ui_storage_subsystem_state;
  |>

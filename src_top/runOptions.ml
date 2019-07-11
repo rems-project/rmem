@@ -89,6 +89,7 @@ let eager_finish_lens = ({ Lens.get = (fun o -> o.eager_finish); Lens.set = (fun
 let eager_fp_recalc_lens = ({ Lens.get = (fun o -> o.eager_fp_recalc); Lens.set = (fun v o -> { o with eager_fp_recalc = v }) })
 let eager_thread_start_lens = ({ Lens.get = (fun o -> o.eager_thread_start); Lens.set = (fun v o -> { o with eager_thread_start = v }) })
 let eager_local_mem_lens = ({ Lens.get = (fun o -> o.eager_local_mem); Lens.set = (fun v o -> { o with eager_local_mem = v }) })
+let eager_fetch_unmodified_lens = ({ Lens.get = (fun o -> o.eager_fetch_unmodified); Lens.set = (fun v o -> { o with eager_fetch_unmodified = v }) })
 
 let eager_mode_all_off eager_mode : eager_mode =
   ({ eager_mode with
@@ -103,6 +104,7 @@ let eager_mode_all_off eager_mode : eager_mode =
      eager_thread_start        = false;
 
      eager_local_mem           = false;
+     eager_fetch_unmodified    = false;
   })
 
 let eager_mode_all_on eager_mode : eager_mode =
@@ -118,6 +120,7 @@ let eager_mode_all_on eager_mode : eager_mode =
      eager_thread_start        = true;
 
      (*eager_local_mem           = true;*)
+     (*eager_fetch_unmodified    = true;*)
   })
 
 
@@ -136,6 +139,7 @@ let default_options =
         eager_thread_start        = false;
 
         eager_local_mem           = false;
+        eager_fetch_unmodified    = false;
         em_shared_memory          = Pset.empty Sail_impl_base.footprintCompare;
       });
     hash_prune              = true;

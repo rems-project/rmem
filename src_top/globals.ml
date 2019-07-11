@@ -98,6 +98,11 @@ let branch_targets = ref None
 let litmus_test_base_address = ref 0x00001000
 let litmus_test_minimum_width = ref 0x100
 
+(* given the thread index, tid, and the instruction offset in the
+thread, n, return the memory address of the instruction *)
+let aval_of_inst_index tid n = 0x50000 + 0x1000 * tid + n
+let aval_of_inst_index_num tid n = Nat_big_num.of_int (aval_of_inst_index tid n)
+
 let shared_memory = ref None
 
 let add_bt_and_sm_to_model_params symbol_table =

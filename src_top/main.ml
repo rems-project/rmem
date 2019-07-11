@@ -71,6 +71,12 @@ let opts = [
     | m1 :: m2 :: m3 :: _ ->
         Printf.sprintf "<%s|%s|%s|...> model options (repeatable), see details below" m1 m2 m3
     | _ -> "<option> model options (repeatable), see details below");
+("-thread_fetch_limit",
+    Arg.Int (fun i -> if i < 0 then raise (Failure "-thread_fetch_limit must be at least 0");
+        Globals.model_params :=
+            Model_aux.set_thread_fetch_limit i !Globals.model_params),
+    ("<n> number of un-decoded instructions in each path (default: None)"));
+    (* TODO: if both this and topologies are specified, check consistency *)
 ("-loop_limit",
  Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with t = { (!Globals.model_params).t with thread_loop_unroll_limit = Some i }}),
  ("<integer> automatically unroll loops to this depth (default: off)"));
@@ -240,6 +246,14 @@ let opts = [
       run_options := {!run_options with RunOptions.eager_mode = eager_mode}),
     (Printf.sprintf "<bool> eagerly take thread-local memory access transitions (%b); exhaustive mode will run multiple times; at the end of each run we calculate the shared memory footprint and use it in the next run, to a fixed-point; the initial shared memory footprint can be set using the litmus file key \"Shared-memory=...\" and the -shared_memory option (empty otherwise)." !run_options.RunOptions.eager_mode.eager_local_mem));
 
+("-eager_fetch_unmodified",
+    Arg.Bool (fun b ->
+      let eager_mode =
+        {!run_options.RunOptions.eager_mode with
+            eager_fetch_unmodified = b}
+      in
+      run_options := {!run_options with RunOptions.eager_mode = eager_mode}),
+    (Printf.sprintf "<bool> eagerly take fetches of unmodified locations (%b); exhaustive mode will run multiple times; at the end of each run we calculate the set of memory locations that were fetched and written to and use it in the next run, to a fixed-point." !run_options.RunOptions.eager_mode.eager_fetch_unmodified));
 
 ("-shared_memory",
     Arg.String (fun filename ->

@@ -32,10 +32,11 @@ let cmp_tc tc1 tc2 =
             (fun () -> Pervasives.compare tc1.tc_ioid tc2.tc_ioid);
           ]
 
-  let cmp_tl cmp tl1 tl2 =
+let cmp_tl cmp tl1 tl2 =
     cmps  [ (fun () -> cmp_tc tl1.tl_cont tl2.tl_cont);
             (fun () -> cmp tl1.tl_label tl2.tl_label);
           ]
+
 (* fuzzy_compare_transitions is used to determine if a transition was
 enabled in the previous state so we can use the same UI number for it. *)
 let fuzzy_compare_transitions trans1 trans2 =
@@ -154,13 +155,29 @@ let fuzzy_compare_transitions trans1 trans2 =
 	| (SS_TSO_propagate_write_to_memory _, _) -> 1
 	| (_, SS_TSO_propagate_write_to_memory _) -> -1
 	*)
-
-
-
     (* | (SS_Promising_stop_promising, SS_Promising_stop_promising) -> 0
      * | (SS_Promising_stop_promising, _) -> 1
      * | (_, SS_Promising_stop_promising) -> -1 *)
+    | (SS_Flat_icache_update (tid, addr, mrs), SS_Flat_icache_update (tid2, addr2, mrs2)) -> 
+            cmps [ (fun () -> Pervasives.compare tid tid2)
+                 ; (fun () -> Sail_impl_base.addressCompare addr addr2)
+                 ; (fun () -> Pervasives.compare mrs mrs2)
+                 ]
+    | (SS_Flat_icache_update (_, _, _), _) -> 1
+    | (_, SS_Flat_icache_update (_, _, _)) -> -1
   in
+
+  let cmkCompare cmk1 cmk2 =
+      (match (cmk1, cmk2) with
+       | (CM_DC, CM_DC) -> 0
+       | (CM_IC, CM_DC) -> -1
+       | (CM_DC, CM_IC) -> 1
+       | (CM_IC, CM_IC) -> 0) in
+
+  let cmrCompare cmr1 cmr2 = 
+      cmps [ (fun () -> Sail_impl_base.addressCompare cmr1.cmr_addr cmr2.cmr_addr);
+             (fun () -> Pervasives.compare cmr1.cmr_ioid cmr2.cmr_ioid);
+             (fun () -> cmkCompare cmr1.cmr_cmk cmr2.cmr_cmk) ] in
 
   let cmp_ss_sync_trans l1 l2 =
     match (l1, l2) with
@@ -202,6 +219,18 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (SS_Flowing_mem_read_response (read1, _),
        SS_Flowing_mem_read_response (read2, _))
         -> read_requestCompare read1 read2
+    | (SS_Flat_thread_ic (cmr1, tid1),
+       SS_Flat_thread_ic (cmr2, tid2))
+        -> cmps [ (fun () -> Pervasives.compare tid1 tid2);
+                  (fun () -> cmrCompare cmr1 cmr2) ]
+    | (SS_Flat_thread_ic _, _) -> 1
+    | (_, SS_Flat_thread_ic _) -> -1
+
+    | (SS_Flat_ic_finish cmr1,
+       SS_Flat_ic_finish cmr2)
+        -> cmrCompare cmr1 cmr2
+    | (SS_Flat_ic_finish _, _) -> 1
+    | (_, SS_Flat_ic_finish _) -> -1
     (* unused case (last):
     | (SS_Flowing_mem_read_response _, _) -> 1
     | (_, SS_Flowing_mem_read_response _) -> -1
@@ -210,6 +239,18 @@ let fuzzy_compare_transitions trans1 trans2 =
 
   let cmp_t_only_trans l1 l2 =
     match (l1, l2) with
+    | (T_init_fetch (addr1,_), T_init_fetch (addr2,_)) ->
+        Sail_impl_base.addressCompare addr1 addr2
+    | (T_init_fetch _, _) -> 1
+    | (_, T_init_fetch _) -> -1
+
+    | (T_decode (addr1, fetched1), T_decode (addr2, fetched2))  ->
+        cmps [ (fun () -> Sail_impl_base.addressCompare addr1 addr2)
+             ; (fun () -> Pervasives.compare fetched1 fetched2)
+             ]
+    | (T_decode _, _)  -> 1
+    | (_, T_decode _)  -> -1
+
     | (T_internal_outcome, T_internal_outcome) -> 0
     | (T_internal_outcome, _) -> 1
     | (_, T_internal_outcome) -> -1
@@ -388,9 +429,28 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (T_try_store_excl _, _) -> 1
     | (_, T_try_store_excl _) -> -1
 
+
     | (T_fetch tl1, T_fetch tl2) ->
-        let cmp (addr1, _) (addr2, _) = Sail_impl_base.addressCompare addr1 addr2 in
+        let cmp f1 f2 = Sail_impl_base.addressCompare f1.fr_addr f2.fr_addr in
         cmp_tl cmp tl1 tl2
+    | (T_fetch _, _) -> 1
+    | (_, T_fetch _) -> -1
+
+    | (T_propagate_cache_maintenance tl1, T_propagate_cache_maintenance tl2) ->
+        let cmp {cmr_cmk=cmk1; cmr_addr=addr1} {cmr_cmk=cmk2; cmr_addr=addr2} =
+            cmps [ (fun () -> Sail_impl_base.addressCompare addr1 addr2)
+                 ; (fun () ->
+                     (match (cmk1, cmk2) with
+                      | (CM_DC, CM_DC) -> 0
+                      | (CM_IC, CM_IC) -> 0
+                      | (CM_DC, _) -> -1
+                      | (_, _) -> 1
+                     ))
+                 ]
+        in
+        cmp_tl cmp tl1 tl2
+    | (T_propagate_cache_maintenance _, _) -> 1
+    | (_, T_propagate_cache_maintenance _) -> -1
 
     (* | (T_Promising_mem_satisfy_read tl1, T_Promising_mem_satisfy_read tl2) -> -1
      *     (\* let cmp (read1,_) (read2,_) = read_requestCompare read1 read2 in

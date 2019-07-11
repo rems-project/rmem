@@ -771,6 +771,31 @@ let finish_action params state iic =
   $> make_old_instructions params
   $> make_thread_cont_res {} discarded_ioids
 
+(* Update an instruction (sub)tree to restart dcs to some address:
+ * TODO: when we get DC; po; (R|W)  ordering then this needs updating *)
+let handle_restart_dc fp it =
+  instruction_tree_map
+    (fun prefix i _ ->
+      match address_from_AArch64_dc i with
+      | Just addr ->
+          (* TODO: dc cache line overlap *)
+          if footprints_overlap fp (addr, 4) then
+            restart_instruction i
+          else
+            i
+      | Nothing -> i
+      end)
+  []
+  it
+
+
+(* can "finish" a DC only once it becomes non-restartable (see above) 
+ * currently we make this a strong requirement that all po-previous instructions
+ * are finished.
+ *)
+let flat_can_finish_dc params iic =
+  (forall (iprev MEM iic.active_prefix).
+    iprev.finished)
 
 let propagate_write_action
     (params:        thread_params)
@@ -802,7 +827,9 @@ let propagate_write_action
       $> restart_dependent_subtrees it
   in
 
-  let state = <| state with instruction_tree = apply_tree_context inst_context.context (i', it') |> in
+  let it'' = handle_restart_dc write.w_addr it' in
+
+  let state = <| state with instruction_tree = apply_tree_context inst_context.context (i', it'') |> in
 
   match state.thread_substate with
   | POP_thread thread_substate ->
@@ -1277,7 +1304,16 @@ let pop_commit_barrier_cand
   po-later loads can be satisfied only after all loads preceding the fence.tso are satisfied *)
   (is_RISCV_fence_tso inst -->
     forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access iprev --> iprev.finished)
+        is_viable_memory_access iprev --> iprev.finished) &&
+
+  (* for IC/DC *)
+  (is_AArch64_dc_wait_barrier inst -->
+    forall (iprev MEM iic.active_prefix).
+        is_AArch64_dc_instr iprev --> iprev.finished) &&
+
+  (is_AArch64_ic_wait_barrier inst -->
+    forall (iprev MEM iic.active_prefix).
+        is_AArch64_ic_instr iprev --> iprev.finished)
 
 let pop_commit_store_cand
     (params: thread_params)
@@ -1818,11 +1854,12 @@ let pop_satisfy_read_from_storage_action params
   in
 
   let (it', restarted_ioids) = restart_dependent_subtrees inst_context.subtree irestart_roots in
+  let it'' = handle_restart_dc request.r_addr it' in
   let pop_substate = get_pop_thread_substate state.thread_substate in
   let pop_substate' = pop_remove_restarted_reads_from_order pop_substate restarted_ioids in
 
   <| state with
-      instruction_tree = apply_tree_context inst_context.context (instruction', it');
+      instruction_tree = apply_tree_context inst_context.context (instruction', it'');
       thread_substate = POP_thread pop_substate';
   |>
   $> make_thread_cont_res restarted_ioids {}
@@ -2067,23 +2104,23 @@ let pop_satisfy_read_by_forwarding_action params
     $> restart_dependent_subtrees it
   in
 
+  let it'' = handle_restart_dc request.r_addr it' in
+
   let pop_substate = get_pop_thread_substate state.thread_substate in
   let pop_substate' = pop_remove_restarted_reads_from_order pop_substate restarted_ioids in
 
   <| state with
-      instruction_tree = apply_tree_context inst_context.context (i', it');
+      instruction_tree = apply_tree_context inst_context.context (i', it'');
       thread_substate  = POP_thread pop_substate';
   |>
   $> make_thread_cont_res restarted_ioids {}
 
-let fetch_instruction params
+let init_fetch_instruction params
     (i_sem:           instruction_semantics)
     (state:           thread_state)
-    (complete_prefix: list instruction_instance) (* this must include both active_prefix and old_prefix *)
-    (addr:            address)
-    : fetch_and_decode_outcome -> FreshIds.id_state thread_id * list instruction_instance
-  = function
-  | FDO_success address opcode inst (* init_instruction_state *) ->
+    (complete_prefix: list instruction_instance)
+    : address -> FreshIds.id_state thread_id * list instruction_instance
+  = fun addr ->
       let () = ensure
           (params.thread_fail_on_loop -->
               not (exists (i MEM complete_prefix). i.program_loc = addr))
@@ -2091,7 +2128,7 @@ let fetch_instruction params
       in
 
       let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
-      let i' = starting_inst_instance params i_sem ioid' opcode inst addr complete_prefix in
+      let i' = starting_fetch_inst params ioid' addr in
 
       match (params.thread_loop_unroll_limit, complete_prefix) with
       | (Nothing, _) -> (id_state', [i'])
@@ -2108,6 +2145,7 @@ let fetch_instruction params
             (id_state', [i'])
       end
 
+(* FDO cases for decode ...
   | FDO_address_not_concrete ->
       let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
       (id_state', [starting_fetch_exception_inst_instance ioid' FDE_non_concrete_fetch_address_error addr])
@@ -2120,7 +2158,7 @@ let fetch_instruction params
       let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
       (id_state', [starting_fetch_exception_inst_instance ioid' (FDE_decode_error de addr) addr])
   end
-
+*)
 
 
 let get_fetch_instruction_continuation params
@@ -2128,21 +2166,30 @@ let get_fetch_instruction_continuation params
     (state:        thread_state)
     (inst_context: instruction_in_context)
     (addr:         address)
-    : (fetch_and_decode_outcome -> thread_cont_res thread_state)
+    : (fetched -> thread_cont_res thread_state)
   =
-  fun fdo ->
-    let i = inst_context.iic_instance in
-    let prefix = (i :: inst_context.active_prefix ++ inst_context.old_prefix) in
-
-    let (id_state', is') = fetch_instruction params i_sem state prefix addr fdo in
-
-    let (T iits) = inst_context.subtree in
-    let it' = T (iits ++ [(i', T[]) | forall (i' MEM is') | true]) in
-
-    <|  state with
-        instruction_tree = apply_tree_context inst_context.context (i,it');
-        id_state = id_state'
-    |>
+  fun f ->
+    let i =
+        match f with
+        | Fetched_FDO FDO_unpredictable_fetch ->
+            <| inst_context.iic_instance with
+                micro_op_state = MOS_unpredictable
+            |>
+        | _ ->
+            <| inst_context.iic_instance with
+                micro_op_state = MOS_fetch (Just f);
+                instruction =
+                    match f with
+                    | Fetched_FDO (FDO_success _ _ ast) -> Fetched ast
+                    | Fetched_Mem _ (FDO_success _ _ ast) -> Fetched ast
+                    | _ -> Fetch_error
+                    end
+            |>
+        end
+    in
+        <|  state with
+            instruction_tree = apply_tree_context inst_context.context (i,inst_context.subtree);
+        |>
     $> make_old_instructions params
     $> make_thread_cont_res {} {}
 
@@ -2162,7 +2209,6 @@ let get_fetch_instruction_continuation params
 let po_predecessors_all_finished (iic: instruction_in_context) : bool =
   forall (iprev MEM iic.active_prefix).
     iprev.finished
-
 
 
 (** enumerate all instruction transitions of thread *****************)
@@ -2303,6 +2349,60 @@ let handle_write_memv_outcome
   in
   [T_only (make_label state iic (T_mem_potential_write potential_writes) state')]
 
+let cache_maintenance_trans_ic
+    (params: thread_params)
+    (i_sem:  instruction_semantics)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    (addr:   address) 
+    (o: outcome_S) =
+  guard (
+        forall (iprev MEM iic.active_prefix).
+          (is_AArch64_ic_wait_barrier iprev --> iprev.finished)
+  ) >>
+
+  let i = iic.iic_instance in
+  let state' =
+      fun () ->
+        let i' = <| i with micro_op_state = MOS_wait_IC o |> in
+        <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
+        $> make_thread_cont_res {} {}
+  in
+  let lbl =
+      <| cmr_cmk = CM_IC;
+         cmr_ioid = i.instance_ioid;
+         cmr_addr = addr;
+      |>
+  in
+  [T_sync (T_propagate_cache_maintenance (make_label state iic lbl state')) ()]
+
+let cache_maintenance_trans_dc
+    (params: thread_params)
+    (i_sem:  instruction_semantics)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    (addr:   address)
+    (o:      outcome_S) =
+  (* wait for po-previous DMB/DSB *)
+  guard (
+        forall (iprev MEM iic.active_prefix).
+          (is_AArch64_dc_wait_barrier iprev --> iprev.finished)
+  ) >>
+
+  let i = iic.iic_instance in
+  let state' =
+      fun () ->
+        let i' = <| i with micro_op_state = MOS_plain o |> in
+        <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
+        $> make_thread_cont_res {} {}
+  in
+  let lbl =
+      <| cmr_cmk = CM_DC;
+         cmr_ioid = i.instance_ioid;
+         cmr_addr = addr;
+      |>
+  in
+  [T_sync (T_propagate_cache_maintenance (make_label state iic lbl state')) ()]
 
 let handle_barrier_outcome
     (params: thread_params)
@@ -2336,7 +2436,21 @@ let handle_barrier_outcome
         committed_barriers = b :: i.committed_barriers;
       |>
     in
-    let s' = <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |> in
+    let sub' = 
+        if is_AArch64_isb_barrier i then
+            instruction_tree_map
+              (fun _ i _ ->
+                match i.micro_op_state with
+                | MOS_fetch _ ->
+                    starting_fetch_inst params i.instance_ioid i.program_loc
+                | s -> i
+                end)
+            []
+            iic.subtree
+        else
+            iic.subtree
+    in
+    let s' = <| state with instruction_tree = apply_tree_context iic.context (i', sub') |> in
 
     match params.thread_model with
     | PLDI11_thread_model    -> pldi11_commit_barrier_action s' b
@@ -2559,6 +2673,8 @@ let handle_done_outcome
          | Promising_thread_model -> fail
          | Relaxed_thread_model   -> true
          end) >>
+
+  guard (is_AArch64_dc_instr i --> flat_can_finish_dc params iic) >>
 
   if params.thread_isa_info.is_thread_start_instruction i.instruction then
     (* special case for thread creation pseudo-instruction *)
@@ -2799,8 +2915,7 @@ let enumerate_flat_read_satisfy_from_memory_transitions
         <| i.subreads with sr_requested = (rr, unsat_slices) :: i.subreads.sr_requested |>
       in
       let i' = <| i with subreads = subreads' |> in
-      let iic' = <| iic with iic_instance = i' |> in
-      satisfy_read_action params state iic' rr mrss
+      satisfy_read_action params state iic rr mrss
     | Nothing ->
       read_unmapped_memory_action params state iic rr unsat_slices
     end
@@ -3772,6 +3887,148 @@ let handle_thread_start
 
     [T_thread_start (make_label state iic (addr_v, toc_v) thread_continuation)]
 
+let handle_ic_ivau
+    (params:   thread_params)
+    (i_sem:    instruction_semantics)
+    (state:    thread_state)
+    (iic:      instruction_in_context)
+    (value:    register_value)
+    (outcome:  outcome_S)
+  =
+      match address_of_register_value value with
+      | Nothing -> failwith "TODO: handle_ic_ivau fail invalid addr"
+      | Just addr ->
+            cache_maintenance_trans_ic params i_sem state iic addr outcome
+      end
+
+let handle_dc_cvau
+    (params:   thread_params)
+    (i_sem:    instruction_semantics)
+    (state:    thread_state)
+    (iic:      instruction_in_context)
+    (value:    register_value)
+    (outcome:  outcome_S)
+  =
+      match address_of_register_value value with
+      | Nothing -> failwith "TODO: handle_dc_cvau fail invalid addr"
+      | Just addr ->
+            cache_maintenance_trans_dc params i_sem state iic addr outcome
+      end
+
+let create_opcode =
+    fun mrs ->
+        match maybe_all (List.map byte_of_byte_lifted (mrs.mrs_value)) with
+        | Nothing -> failwith ("create_opcode lifted byte: " ^ (show mrs.mrs_value))
+        | Just [b0; b1; b2; b3] ->
+            let endianness = E_little_endian in (* TODO: hook this into the arch? *)
+            match endianness with
+            | E_big_endian -> opcode_of_bytes b0 b1 b2 b3
+            | E_little_endian -> opcode_of_bytes b3 b2 b1 b0
+            end
+        | Just _ -> failwith "create_fdo unexpected number of bytes"
+        end
+
+
+let create_fdo i_sem (a : address)
+    : memory_read_source -> fetch_and_decode_outcome =
+    fun mrs ->
+        let opcode = create_opcode mrs in
+        let fdo = i_sem.decode_to_instruction a opcode in
+        fdo
+
+
+let enumerate_fetch_transitions_of_instruction params
+    (i_sem:  instruction_semantics)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    : list (thread_trans thread_state)
+    =
+  let i = iic.iic_instance in
+  guard (i.micro_op_state = MOS_fetch Nothing) >>
+
+  (* let fetch_kind =
+    if not prev_i.finished
+        && exists (nia IN prev_iic.iic_instance.nias). nia = NIA_indirect_address
+    then FK_unfixed
+    else if Set.size all_fetch_addrs > 1 then FK_multiple_fixed
+    else FK_normal
+  in *)
+  let fetch_kind = FK_normal in
+  let addr = i.program_loc in
+  let thread_cont = get_fetch_instruction_continuation params i_sem state iic addr in
+  let make_fr addr fk =
+    <| fr_addr = addr;
+       fr_kind = fk;
+       fr_tid = state.thread;
+       fr_decode = create_fdo i_sem;
+    |>
+  in
+  [T_sync (T_fetch (make_label state iic (make_fr addr fetch_kind) thread_cont)) ()]
+
+let enumerate_decode_transitions_of_instruction params
+    (i_sem:  instruction_semantics)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    : list (thread_trans thread_state)
+    =
+  let i = iic.iic_instance in
+  (* Can only decode after fetched *)
+  guard (match i.micro_op_state with
+         | MOS_fetch (Just _) -> true
+         | _ -> false
+         end) >>
+
+  (* only decode if program-order previous decoded ISBs are finished *)
+  guard (
+        forall (iprev MEM iic.active_prefix).
+          (is_AArch64_isb_barrier iprev --> iprev.finished)
+  ) >>
+
+  (* Can only decode after parent has decoded or initial fetch *)
+  let prefix = iic.active_prefix ++ iic.old_prefix in
+  guard (match prefix with
+         | hd::_ ->
+            match hd.micro_op_state with
+            | MOS_fetch _ -> false
+            | _ -> true
+            end
+         | [] -> true
+         end) >>
+
+  let f =
+    match i.micro_op_state with
+    | MOS_fetch (Just f) -> f
+    | _ -> failwith "unreachable"
+    end
+  in
+  let cont () =
+    let fdo = fdo_from_fetched f in
+    let prefix = (i :: iic.active_prefix ++ iic.old_prefix) in
+    match fdo with
+    | FDO_success addr opcode inst ->
+        let i' = starting_inst_instance params i_sem i.instance_ioid opcode inst addr prefix in
+            <|  state with
+                instruction_tree = apply_tree_context iic.context (i',iic.subtree);
+            |>
+    | err ->
+      let fde =
+        match err with
+        | FDO_address_not_concrete -> FDE_non_concrete_fetch_address_error
+        | FDO_illegal_fetch_address -> FDE_illegal_fetch_address_error i.program_loc
+        | FDO_decode_error de -> FDE_decode_error de i.program_loc
+        | _ -> failwith "impossible"
+        end
+      in
+        let i' = <| i with micro_op_state = MOS_pending_exception (ET_fetch_and_decode fde) |> in
+            <|  state with
+                instruction_tree = apply_tree_context iic.context (i',iic.subtree);
+            |>
+    end
+    $> make_old_instructions params
+    $> make_thread_cont_res {} {}
+  in
+  [T_only (make_label state iic (T_decode i.program_loc f) cont)]
+
 
 let enumerate_transitions_of_instruction
     (params: thread_params)
@@ -3784,6 +4041,10 @@ let enumerate_transitions_of_instruction
   guard (is_restricted --> forall (p MEM iic.active_prefix). p.finished) >>
 
   match iic.iic_instance.micro_op_state with
+  | MOS_unpredictable -> []
+  | MOS_fetch Nothing  -> enumerate_fetch_transitions_of_instruction params i_sem s iic
+  | MOS_fetch (Just _) -> enumerate_decode_transitions_of_instruction params i_sem s iic
+  | MOS_wait_IC _ -> []
   | MOS_plain is ->
     match fst is with
     (* these are special outcomes that we abuse instead of adding new effect kinds *)
@@ -3793,6 +4054,14 @@ let enumerate_transitions_of_instruction
       handle_tmabort_outcome params i_sem s iic v o
     | Barrier Barrier_TM_COMMIT o ->
       handle_tmcommit_outcome params i_sem s iic o
+
+    (* IC *)
+    | Write_reg (Reg "instruction_cache_operation_IVAU" 63 64 D_decreasing, v) o ->
+      handle_ic_ivau  params i_sem s iic v o
+
+    (* DC *)
+    | Write_reg (Reg "data_cache_operation_CVAU" 63 64 D_decreasing, v) o ->
+      handle_dc_cvau params i_sem s iic v o
 
     (* normal outcomes *)
     | Read_mem descr c     -> handle_read_mem_outcome     params i_sem s iic descr c
@@ -3842,7 +4111,25 @@ let enumerate_transitions_of_instruction
 (* val debug_print : string -> unit *)
 (* declare ocaml target_rep function debug_print s = `Printf.eprintf` "%s%!" s *)
 
-let enumerate_fetch_transitions_of_instruction params
+(* TODO: proper fixed-point or enumerate all addrs *)
+let potential_next_addresses_of_instruction_relaxed
+    (params: thread_params)
+    (state:  thread_state)
+    (iic:    instruction_in_context)
+    : set address
+  =
+    match iic.iic_instance.micro_op_state with
+    | MOS_fetch _ ->
+        let branch_targets = Map.findWithDefault state.thread Map.empty params.branch_targets in
+        let addrs = Map.findWithDefault iic.iic_instance.program_loc Set.empty branch_targets in
+        let succ = successor_fetch_address iic.iic_instance in
+        if Set.null addrs then {succ}
+        else addrs
+    | _ ->
+        potential_next_addresses_of_instruction params state iic
+    end
+
+let enumerate_init_fetch_transitions_of_instruction params
     (i_sem:  instruction_semantics)
     (state:  thread_state)
     (iic:    instruction_in_context)
@@ -3855,32 +4142,74 @@ let enumerate_fetch_transitions_of_instruction params
   end in
 
   let i = iic.iic_instance in
+  let prefix = (i :: iic.active_prefix ++ iic.old_prefix) in
+
   guard (is_restricted --> i.finished) >>
   guard (params.thread_model = TSO_thread_model --> i.finished) >>
 
   guard (i.micro_op_state <> MOS_pending_exception ET_loop_limit_reached) >>
+
+  guard (
+    match params.thread_fetch_limit with
+    | Just lim ->
+      let is_not_decoded inst =
+            (match inst.micro_op_state with
+            | MOS_fetch _ -> true
+            | _ -> false
+            end) in
+      let decode_depth = List.length (List.filter is_not_decoded iic.active_prefix) in
+        lim > decode_depth
+    | Nothing -> true
+    end) >>
+
+  (* init only after previous have been decoded *)
+  guard (params.thread_fetch_order = Fetch_Sequential -->
+      match i.micro_op_state with
+         | MOS_fetch _ -> false
+         | _ -> true
+         end) >>
 
   let (T iits) = iic.subtree in
   let already_fetched_addrs = { i.program_loc | forall ((i,_) MEM iits) | true } in
 
   guard (params.thread_allow_tree_speculation || already_fetched_addrs = {}) >>
 
-  let all_fetch_addrs = potential_next_addresses_of_instruction params state iic in
-  let fetch_kind =
-    if not i.finished
-        && exists (nia IN iic.iic_instance.nias). nia = NIA_indirect_address
-    then FK_unfixed
-    else if Set.size all_fetch_addrs > 1 then FK_multiple_fixed
-    else FK_normal
+  (* TODO: make potential_next_addresses of init fetch be unconstrained *)
+  let all_fetch_addrs =
+      match params.thread_fetch_order with
+      | Fetch_Sequential -> potential_next_addresses_of_instruction params state iic
+      | Fetch_Unrestricted -> potential_next_addresses_of_instruction_relaxed params state iic
+      end
   in
+  let multiple = Set.size all_fetch_addrs > 1 in
 
   (* remove addresses we have already fetched from, and remove the return address *)
   Set_extra.toList all_fetch_addrs >>= fun addr -> (* for each addr .. *)
   guard (addr NIN already_fetched_addrs) >>
   guard (addr <> state.return_address) >>
 
-  let thread_cont = get_fetch_instruction_continuation params i_sem state iic addr in
-  [T_sync (T_fetch (make_label state iic (addr, fetch_kind) thread_cont)) ()]
+  guard (
+    match (params.thread_loop_unroll_limit, prefix) with
+    | (Nothing, _) -> true
+    | (_, [])      -> true
+    | (Just limit, iprev :: _) ->
+        not (addr <= iprev.program_loc
+             && (exists (iprev MEM prefix). iprev.program_loc = addr)
+             && (_count_pairs prefix iprev.program_loc addr 0) + 1 >= limit)
+    end) >>
+
+
+  let state' addr = fun () ->
+    let (id_state', is') = init_fetch_instruction params i_sem state [] addr in
+    let (T iits) = iic.subtree in
+    let it' = T (iits ++ [(i', T[]) | forall (i' MEM is') | true]) in
+    <| state with
+       instruction_tree = apply_tree_context iic.context (i, it');
+       id_state = id_state';
+    |>
+    $> make_thread_cont_res {} {}
+  in
+  [T_only (make_label state iic (T_init_fetch addr multiple) (state' addr))]
 
 
 let initial_fetch_transition_of_thread
@@ -3902,8 +4231,8 @@ let initial_fetch_transition_of_thread
     (ioid, <| state with id_state = id_state' |>)
   in
 
-  let thread_cont = fun (fdo: fetch_and_decode_outcome) ->
-    let (id_state', is') = fetch_instruction params i_sem state [] addr fdo in
+  let thread_cont = fun a ->
+    let (id_state', is') = init_fetch_instruction params i_sem state [] addr in
 
     <| state with
         instruction_tree = T [(i',T []) | forall (i' MEM is') | true];
@@ -3913,7 +4242,7 @@ let initial_fetch_transition_of_thread
   in
 
   let tl =
-    <|  tl_label = (addr, FK_normal);
+    <|  tl_label = T_init_fetch addr false;
         tl_suppl = Nothing;
         tl_cont  =
           <|  tc_tid  = state.thread;
@@ -3921,8 +4250,7 @@ let initial_fetch_transition_of_thread
               tc_cont = thread_cont |>;
     |>
   in
-  [T_sync (T_fetch tl) ()]
-
+  [T_only tl]
 
 let enumerate_failed_transaction_transition params state = 
   option_guard state.transaction >>= fun (ts,cont) ->
@@ -3963,10 +4291,10 @@ let enumerate_transitions_of_thread params
     catch_thread_errors state.thread iic.iic_instance.instance_ioid $ fun () ->
       enumerate_transitions_of_instruction params i_sem state iic) ++
 
-  (* transitions for fetching successor instructions *)
+  (* transitions for initialising the fetch of successor instructions *)
   (un_old_instructions state >>= fun iic ->
     catch_thread_errors state.thread iic.iic_instance.instance_ioid $ fun () ->
-      enumerate_fetch_transitions_of_instruction params i_sem state iic) ++
+      enumerate_init_fetch_transitions_of_instruction params i_sem state iic) ++
 
   (* failed transaction transitions *)
   enumerate_failed_transaction_transition params state
@@ -3995,6 +4323,46 @@ let thread_receive_transition params (state : thread_state) label =
     in
     Just <| tc_tid = state.thread; tc_ioid = b.b_ioid; tc_cont = state' |>
   in
+  let flat_finish_ic (cmr : cache_maintenance_request) =
+    let state' = fun () ->
+        let iic =
+          ensure_just (find_ioid_instruction_in_context state cmr.cmr_ioid)
+          $ "cannot find the ioid " ^ show cmr.cmr_ioid ^ " in the instruction tree"
+        in
+        let i = iic.iic_instance in
+        match i.micro_op_state with
+        | MOS_wait_IC o ->
+            let i' = <| i with micro_op_state = MOS_plain o |> in
+            <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
+            $> make_thread_cont_res {} {}
+        | _ -> failwith "flat finish IC:  wasn't MOS_wait_IC"
+        end
+    in
+    Just <| tc_tid = state.thread; tc_ioid = cmr.cmr_ioid; tc_cont = state' |>
+  in
+  let flat_ic_clear (cmr : cache_maintenance_request) =
+    let state' = fun () ->
+      let it = state.instruction_tree in
+      let it' =
+        instruction_tree_map
+          (fun _ i _ ->
+            if i.program_loc = cmr.cmr_addr then
+                match i.micro_op_state with
+                | MOS_fetch _ ->
+                    starting_fetch_inst params i.instance_ioid i.program_loc
+                | s -> i
+                end
+            else
+                i)
+          []
+          it
+      in
+      <| state with instruction_tree=it' |>
+      $> make_thread_cont_res {} {}
+    in
+    Just <| tc_tid = state.thread; tc_ioid = cmr.cmr_ioid; tc_cont = state' |>
+  in
+
 
   match label with
   (* PLDI transitions: *)
@@ -4007,6 +4375,9 @@ let thread_receive_transition params (state : thread_state) label =
   (* Flowing transitions: *)
   | SS_Flowing_seg_read_response rr mrs    -> pop_sat_read rr mrs
   | SS_Flowing_mem_read_response rr mrs    -> pop_sat_read rr mrs
+  (* Flat Transitions *)
+  | SS_Flat_ic_finish cmr                  -> flat_finish_ic cmr
+  | SS_Flat_thread_ic cmr _                -> flat_ic_clear  cmr
   end
 
 (* based on CandidateExecution.footprints_of_cex_instruction_instance *)
@@ -4031,6 +4402,7 @@ let machine_thread =
      ts_update_initial_register_state = machine_update_initial_register_state;
      ts_update_initial_fetch_address = machine_update_initial_fetch_address;
      ts_is_final_state = thread_is_final_state;
+     ts_return_address = fun ts -> ts.return_address;
      (* ts_make_ui_thread_state = make_ui_machine_thread_state; *)
  |>
 

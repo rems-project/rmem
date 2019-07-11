@@ -46,9 +46,7 @@ open import MachineDefThreadSubsystem
 open import MachineDefInstructionPredicates
 
 
-
 (** initial system state ********************************************)
-
 
 (* the initial writes should be a list of one write for each address that the program will use *)
 let initial_system_state
@@ -161,8 +159,11 @@ let start_thread
 
 
 (* process a thread-transition and produce a list of system-transitions *)
-let thread_trans_to_trans (s_model : machineStorageSubsystem 'ts 'ss) 
-      (s:  system_state 'ts 'ss) : thread_trans 'ts -> list (trans 'ts 'ss) = 
+let thread_trans_to_trans
+    (params : thread_params)
+    (s_model : machineStorageSubsystem 'ts 'ss)
+    (s:  system_state 'ts 'ss)
+    : thread_trans 'ts -> list (trans 'ts 'ss) = 
   function
   (* for the T_only  transitions, just lift them *)
   | T_only tl -> [(T_trans (T_only tl))]
@@ -191,9 +192,12 @@ let thread_trans_to_trans (s_model : machineStorageSubsystem 'ts 'ss)
           if check_memory_access s write.w_addr then Nothing
           else Just (T_propagate_write <| tl with tl_suppl = Just (MWO_unmapped_address [write]) |>)
       | T_fetch tl ->
-          let (addr, _) = tl.tl_label in
-          let fdo = s.program_memory addr in
-          Just (T_fetch <| tl with tl_suppl = Just fdo |>)
+          if params.thread_fetch_from_ss then
+              Nothing
+            else
+              let addr = tl.tl_label.fr_addr in
+              let fdo = s.program_memory addr in
+              Just (T_fetch <| tl with tl_suppl = Just (Fetched_FDO fdo) |>)
       | _ -> Nothing
       end
       (* if the transition was not handled yet, let storage handle it *)
@@ -277,7 +281,7 @@ let enumerate_transitions_of_system
               | Just ioid ->
                   [t | forall (t MEM thread_transs) | ioid_of_thread_trans t = ioid]
               end
-              $> List.concatMap (thread_trans_to_trans s_model state))
+              $> List.concatMap (thread_trans_to_trans state.model.t s_model state))
           thread_transitions
     in
 
@@ -425,6 +429,7 @@ let system_state_after_transition
     | T_sync tsl ssc ->
       match tsl with
       | T_fetch tl                      -> update_state ssc (Just (next_thread_of_tl tl))
+      | T_propagate_cache_maintenance tl-> update_state ssc (Just (next_thread_of_tl tl))
       | T_mem_read_request tl           -> update_state ssc (Just (next_thread_of_tl tl))
       | T_propagate_write tl            -> update_state ssc (Just (next_thread_of_tl tl))
       | T_propagate_barrier tl          -> update_state ssc (Just (next_thread_of_tl tl))
@@ -646,7 +651,7 @@ let get_dwarf_evaluation_context
   end
 
 let branch_targets_of_state (state: system_state 'ts 'ss) : branch_targets_map =
-  Map.map (ts_branch_targets state.t_model) state.thread_states
+  Map.map (ts_branch_targets state.model.t state.t_model) state.thread_states
 
 
 let shared_memory_of_state
@@ -665,8 +670,28 @@ let shared_memory_of_state
             exists (fp' IN (rfps' union wfps')).
               non_empty_intersection wfp fp'}
 
-
-
+let modified_code_locations_of_state
+    (state: system_state 'ts 'ss)
+    : set footprint
+  =
+  let tid_write_footprints =
+    Map.map
+      (ts_memory_footprints state.t_model)
+      state.thread_states
+    $> Map.toSet
+  in
+  let tid_instrs =
+    Map.map
+      (ts_instructions state.t_model)
+      state.thread_states
+    $> Map.toSet
+  in
+  let write_fps = {wfp  | forall ((tid, (_, wfps)) IN tid_write_footprints) (wfp IN wfps) | true} in
+  let code_locations = {(instr.program_loc,4) | forall ((tid,instrs) IN tid_instrs) (instr IN instrs) | true } in
+  let overlaps wfp =
+    exists (cfp IN code_locations).
+        footprints_overlap wfp cfp in
+  {wfp | forall (wfp IN write_fps) | overlaps wfp}
 
 (** Make a candidate execution *)
 

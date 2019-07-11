@@ -266,6 +266,32 @@
                 <input type="radio" id="force_sc_true" value="true" name="force_sc" data-bind="checked: force_sc">
                 Sequential consistency
             </label>
+            <h3>Flat/Fetch</h3>
+            <label>
+                <input type="checkbox" id="relaxed_fetch" name="relaxed_fetch" checked data-bind="checked: relaxed_fetch">
+                Relaxed Fetch
+            </label>
+            <br>
+            <div id="relaxed_fetch_options">
+            <h4>Relaxed Fetch Options:</h4>
+            <label>
+                <input type="radio" id="sequential_fetch_true" value="true" name="sequential_fetch" data-bind="checked: sequential_fetch">
+                Sequential Fetch
+            </label>
+            <label>
+                <input type="radio" id="sequential_fetch_false" value="false" name="sequential_fetch" data-bind="checked: sequential_fetch">
+                Out-of-Order Fetching
+            </label>
+            <br>
+            <label>
+                <input type="checkbox" id="fetch_flat_idc" name="fetch_flat_idc" data-bind="checked: fetch_flat_idc">
+                IDC=1
+            </label>
+            <label>
+                <input type="checkbox" id="fetch_flat_dic" name="fetch_flat_dic" data-bind="checked: fetch_flat_dic">
+                DIC=1
+            </label>
+            </div>
         </h2>
 
         <h1>Storage model</h1>

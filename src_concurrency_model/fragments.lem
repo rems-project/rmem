@@ -53,6 +53,29 @@ type memory_read_source =
      any distinct slices of any two writes *)
   |>
 
+let mrsCompare mrs1 mrs2 =
+  compare (mrs1.mrs_footprint, mrs1.mrs_value, mrs1.mrs_writes_read_from)
+          (mrs2.mrs_footprint, mrs2.mrs_value, mrs2.mrs_writes_read_from)
+
+instance (Ord memory_read_source)
+  let compare = mrsCompare
+  let (<)  mrs1 mrs2 = mrsCompare mrs1 mrs2 =  LT
+  let (<=) mrs1 mrs2 = mrsCompare mrs1 mrs2 <> GT
+  let (>)  mrs1 mrs2 = mrsCompare mrs1 mrs2 =  GT
+  let (>=) mrs1 mrs2 = mrsCompare mrs1 mrs2 <> LT
+end
+
+let {coq; ocaml} mrsEqual mrs1 mrs2 = compare mrs1 mrs2 = EQ
+let inline {hol; isabelle} mrsEqual = unsafe_structural_equality
+
+let {coq; ocaml} mrsInequal mrs1 mrs2 = not (mrsEqual mrs1 mrs2)
+let inline {hol; isabelle} mrsInequal = unsafe_structural_inequality
+
+instance (Eq memory_read_source)
+  let (=)  = mrsEqual
+  let (<>) = mrsInequal
+end
+
 
 
 (** memory footprint support  ***************************************)
@@ -481,3 +504,12 @@ let possible_mrs_for_read
          ^ "  footprint=" ^ stringFromFootprint footprint ^ "\n"
          ^ "  write_slices=" ^ show write_slices ^ "\n")
   end
+
+let footprints_overlap (fp1 : footprint) (fp2 : footprint) : bool =
+    overlapping_slices (fp1,[complete_slice fp1]) (fp2,[complete_slice fp2])
+
+let write_overlaps_with_addr (fp : footprint) (w : write) =
+    footprints_overlap w.w_addr fp
+
+let write_slices_overlaps_with_addr (fp : footprint) ((w,s) : write * slices) =
+    overlapping_slices (w.w_addr,s) (fp,[complete_slice fp])

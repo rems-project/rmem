@@ -28,6 +28,8 @@ open import Debug
 open import InstructionSemantics
 open import MachineDefTypes
 
+import ArmV8_embed_types
+
 (** read_kind *******************************************************)
 
 let is_AArch64_read_weak_acquire (r: read_kind) : bool =
@@ -991,6 +993,144 @@ let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
+let is_AArch64_isb_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+
+  | IK_barrier Barrier_DSB         -> false
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> true
+  | IK_barrier Barrier_RISCV_i     -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  | IK_cache_op _  -> false
+  end
+
+let is_AArch64_ic_wait_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+
+  | IK_barrier Barrier_DSB         -> true
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DMB         -> false
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  | IK_cache_op _  -> false
+  end
+
+let address_from_AArch64_dc (instruction: instruction_instance) : maybe address =
+  match instruction.instruction_kind with
+  | IK_cache_op Cache_op_D_CVAU  ->
+    match instruction.reg_reads with
+    (* DC CVAU only reads 1 register -- it contains the address *)
+    | [(_, _, v)] ->
+        address_of_register_value v
+    | _ -> Nothing
+    end
+  | _ -> Nothing
+  end
+
+let is_AArch64_dc_wait_barrier (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_barrier Barrier_DSB_LD      -> false
+  | IK_barrier Barrier_DMB_LD      -> false
+
+  | IK_barrier Barrier_DSB         -> true
+  | IK_barrier Barrier_DSB_ST      -> false
+  | IK_barrier Barrier_DMB         -> true
+  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier Barrier_Sync        -> false
+  | IK_barrier Barrier_LwSync      -> false
+  | IK_barrier Barrier_Eieio       -> false
+  | IK_barrier Barrier_Isync       -> false
+  | IK_barrier Barrier_ISB         -> false
+  | IK_barrier Barrier_RISCV_i     -> false
+  | IK_barrier Barrier_MIPS_SYNC   -> false
+  | IK_barrier Barrier_TM_COMMIT   -> fail
+  | IK_barrier Barrier_RISCV_rw_rw -> false
+  | IK_barrier Barrier_RISCV_r_rw  -> false
+  | IK_barrier Barrier_RISCV_w_rw  -> false
+  | IK_barrier Barrier_RISCV_rw_r  -> false
+  | IK_barrier Barrier_RISCV_r_r   -> false
+  | IK_barrier Barrier_RISCV_w_r   -> false
+  | IK_barrier Barrier_RISCV_rw_w  -> false
+  | IK_barrier Barrier_RISCV_r_w   -> false
+  | IK_barrier Barrier_RISCV_w_w   -> false
+  | IK_barrier Barrier_RISCV_tso   -> false
+  | IK_barrier Barrier_x86_MFENCE  -> false
+
+  | IK_mem_write _ -> false
+  | IK_mem_read _  -> false
+  | IK_mem_rmw _   -> false
+  | IK_branch      -> false
+  | IK_trans _     -> false
+  | IK_simple      -> false
+  | IK_cache_op _  -> false
+  end
+
+let is_AArch64_ic_instr (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_cache_op Cache_op_I_IVAU  -> true
+  | _ -> false
+  end
+
+let is_AArch64_dc_instr (instruction: instruction_instance) : bool =
+  match instruction.instruction_kind with
+  | IK_cache_op Cache_op_D_CVAU  -> true
+  | _ -> false
+  end
+
 let is_AArch64_st_barrier (instruction: instruction_instance) : bool =
   match instruction.instruction_kind with
   | IK_barrier Barrier_DSB_ST     -> true
@@ -1065,4 +1205,25 @@ let is_pop_instruction_barrier (instruction: instruction_instance) : bool =
   | IK_trans _     -> false
   | IK_simple      -> false
   | IK_cache_op _  -> false
+  end
+
+let is_AArch64_atomic_fetchable_opcode (op: instruction_ast) : bool =
+  match op with
+  | AArch64_instr i ->
+      match i with
+(*      | ArmV8_embed_types.Barrier3 (ArmV8_embed_types.MemBarrierOp_ISB, _, _) -> true *)
+      | ArmV8_embed_types.Hint (ArmV8_embed_types.SystemHintOp_NOP) -> true
+      | ArmV8_embed_types.BranchImmediate _ -> true
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_AArch64_atomic_fetchable (instruction: instruction_instance) : bool =
+  is_AArch64_atomic_fetchable_opcode instruction.instruction
+
+let AArch64_split_maybe_conditional_branch (op: instruction_ast) =
+  match op with
+  | AArch64_instr (ArmV8_embed_types.BranchConditional (x,y)) -> Just (x,y)
+  | _ -> Nothing
   end

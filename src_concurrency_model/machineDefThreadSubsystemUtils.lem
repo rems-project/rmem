@@ -687,6 +687,56 @@ let analyse_instruction
     end in
   (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
 
+let starting_fetch_inst
+      params
+      (new_ioid: ioid)
+      (loc:      address)
+    : instruction_instance
+  =
+ <| instance_ioid =     new_ioid;
+    instance_id_state = FreshIds.initial_id_state new_ioid;
+    program_loc =       loc;
+    program_opcode =    Nothing;
+    instruction =       Unfetched;
+    instruction_kind =  IK_simple;
+
+    initial_micro_op_state =          MOS_fetch Nothing;
+    initial_regs_in =                 Set.empty;
+    initial_regs_out =                Set.empty;
+    initial_regs_in_feeding_address = Set.empty;
+
+    regs_in =                 Set.empty;
+    regs_out =                Set.empty;
+    regs_in_feeding_address = Set.empty;
+    ioids_feeding_address =   Set.empty;
+    nias =                    Set.empty;
+    mips_dia = DIA_none;
+    reg_reads =  [];
+    reg_writes = [];
+
+    subreads =
+      <|  sr_addr =             Nothing;
+          sr_unsat_slices =     [];
+          sr_writes_read_from = [];
+          sr_requested =        [];
+          sr_assembled_value =  Nothing;
+      |>;
+
+    subwrites =
+      <|  sw_addr =                      Nothing;
+          sw_potential_write_addresses = [];
+          sw_potential_writes =          [];
+          sw_propagated_writes =         [];
+          sw_committed =                 false;
+      |>;
+
+    successful_atomic_store = Nothing;
+    committed_barriers =   [];
+    finished =  false;
+    micro_op_state = MOS_fetch Nothing;
+    rmw_finished_load_snapshot = Nothing;
+|>
+
 let starting_inst_instance_aux
       params
       (i_sem:    instruction_semantics)
@@ -1078,6 +1128,10 @@ let thread_is_final_state _params thread_state = thread_state.instruction_tree =
 
 (** Other *******************************************)
 
+let fdo_from_fetched = function
+    | Fetched_FDO fdo -> fdo
+    | Fetched_Mem mrs fdo -> fdo
+    end
 
 let rec find_propagated_writes (T iits: instruction_tree) (acc: list write) : list write =
   match iits with
@@ -1124,14 +1178,20 @@ let ts_find_instruction tmodel p ts =
   | _ -> Nothing
   end
 
-val ts_branch_targets : forall 'ts. threadSubsystem 'ts -> 'ts -> map address (set address)
-let ts_branch_targets tmodel state  =
+val ts_branch_targets : forall 'ts. thread_params -> threadSubsystem 'ts -> 'ts -> map address (set address)
+let ts_branch_targets params tmodel state  =
   let (old_instructions,instruction_tree) = tmodel.ts_instruction_tree state in
   tree_of_old_and_new_instructions_helper instruction_tree old_instructions
   $> instruction_tree_fold_root
     (fun acc _ i (T its) ->
-      if exists (nia IN i.nias). nia = NIA_indirect_address then
-        acc union {(i.program_loc, i'.program_loc) | forall ((i', _) MEM its) | true}
+      if exists (nia IN i.nias). nia = NIA_indirect_address ||
+         (params.thread_fetch_order = Fetch_Unrestricted)  then
+          match its with
+          | [] ->
+              acc union {(i.program_loc, tmodel.ts_return_address state)}
+          | _ ->
+              acc union {(i.program_loc, i'.program_loc) | forall ((i', _) MEM its) | true}
+          end
       else acc)
     {}
     []

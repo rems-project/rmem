@@ -1168,7 +1168,8 @@ let flowing_ss_enumerate_transitions
   *)
 
 let flowing_ss_receive_transition params state = function
-  | T_fetch _ -> failwith "fetch is handled globally right now"
+  | T_fetch _ -> failwith "fetch not implemented for Flowing"
+  | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for Flowing"
   | T_mem_read_request tl ->
       let tl' = <| tl with tl_suppl = Just true |> in
       match tl.tl_label with

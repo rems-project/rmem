@@ -201,6 +201,7 @@ let cmd_info : ast -> (string * string) list = function
   | SetOption ("eager_thread_start", _)
   | SetOption ("eager", _)
   | SetOption ("eager_local_mem", _)
+  | SetOption ("eager_fetch_unmodified", _)
   | SetOption ("shared-memory", _) ->
       [ ("set eager <bool>",
           "Shortcut to enable/disable all the eager options at once, except that 'set eager on' does not enable eager_fetch_multi (as that can cause infinite loops) and eager_local_mem.");
@@ -226,6 +227,10 @@ let cmd_info : ast -> (string * string) list = function
           "EXPERIMENTAL. Affects searching only. Eagerly take thread-local memory access transitions using an approximation of the shared memory footprint. The approximation is refined at the end of the search, and another search is started, until a fixed-point is reached.");
         ("set shared-memory \"<footprints>\"",
           "EXPERIMENTAL. Sets the initial approximation of the shared memory footprint for eager_local_mem (will be extended by the search until a fixed-point is reached).");
+        ("set eager_fetch_unmodified <bool>",
+          "EXPERIMENTAL. Affects searching only. Eagerly take fetch transitions using an approximation of the set of modified locations. The approximation is refined at the end of the search, and another search is started, until a fixed-point is reached.");
+        ("set memory-writes \"<footprints>\"",
+          "EXPERIMENTAL. Overwrites the approximation of the modified code locations for eager_fetch_unmodified.");
       ]
 
   (** help_interface ************************************************)

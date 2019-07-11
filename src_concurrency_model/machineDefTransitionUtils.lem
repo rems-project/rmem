@@ -66,10 +66,13 @@ let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe footprint =
       | T_POP_subsumed_write _  -> Nothing
       | T_RISCV_atomic_begin    -> Nothing
       | T_RISCV_atomic_end      -> Nothing
+      | T_init_fetch _ _        -> Nothing
+      | T_decode _ _            -> Nothing
       end
   | T_trans (T_sync tsl _) ->
       match tsl with
-      | T_fetch _                 -> Nothing
+      | T_fetch _                 -> Nothing (* TODO: read fp from T_fetch? *)
+      | T_propagate_cache_maintenance _ -> Nothing
       | T_mem_read_request tl ->
           let (r, _, _, _) = tl.tl_label in
           Just r.r_addr
@@ -111,6 +114,8 @@ let write_footprints_of_trans (transition: trans 'ts 'ss) : list footprint =
   | Sys_trans _ _ -> []
   | T_trans (T_only tl) ->
       match tl.tl_label with
+      | T_init_fetch _ _         -> []
+      | T_decode _ _             -> []
       | T_internal_outcome       -> []
       | T_pending_memory_read_request -> []
       | T_pseudoreg_read _ _     -> []
@@ -139,6 +144,7 @@ let write_footprints_of_trans (transition: trans 'ts 'ss) : list footprint =
   | T_trans (T_sync tsl _) ->
       match tsl with
       | T_fetch _                       -> []
+      | T_propagate_cache_maintenance _ -> []
       | T_mem_read_request _            -> []
       | T_propagate_write tl            -> let (w, _, _) = tl.tl_label in [w.w_addr]
       | T_propagate_barrier _           -> []
@@ -175,20 +181,20 @@ let is_rw_transition t =
 
 let is_fetch_single_transition : (trans 'ts 'ss -> bool) = function
   | T_trans (T_sync (T_fetch tl) _) ->
-      match tl.tl_label with
-      | (_, FK_normal)         -> true
-      | (_, FK_multiple_fixed) -> false
-      | (_, FK_unfixed)        -> false
+      match tl.tl_label.fr_kind with
+      | FK_normal         -> true
+      | FK_multiple_fixed -> false
+      | FK_unfixed        -> false
       end
   | _ -> false
   end
 
 let is_fetch_multi_transition : (trans 'ts 'ss -> bool) = function
   | T_trans (T_sync (T_fetch tl) _) ->
-      match tl.tl_label with
-      | (_, FK_normal)         -> false
-      | (_, FK_multiple_fixed) -> true
-      | (_, FK_unfixed)        -> true
+      match tl.tl_label.fr_kind with
+      | FK_normal         -> false
+      | FK_multiple_fixed -> true
+      | FK_unfixed        -> true
       end
   | _ -> false
   end
@@ -226,6 +232,125 @@ let is_register_read_or_write_transition : (trans 'ts 'ss -> bool) = function
   | _ -> false
   end
 
+let is_eager_atomic_fetch_transition : (trans 'ts 'ss -> bool) = function
+  | Sys_trans _ _ -> false
+  | SS_trans ss_trans ->
+      match ss_trans with
+      | SS_only ss_only_trans _ ->
+          match ss_only_trans with
+          | SS_Flat_icache_update -> true
+          | _ -> false
+          end
+      | SS_sync ss_sync_trans _ _ ->
+          match ss_sync_trans with
+          | SS_Flat_thread_ic _ _ -> true
+          | SS_Flat_ic_finish _ -> true
+          | _ -> false
+          end
+      end
+  | T_trans thread_trans ->
+      match thread_trans with
+      | T_only tl ->
+          match tl.tl_label with
+          | T_init_fetch _ m        -> not m
+          | T_decode _ _            -> true
+          | _                       -> false
+          end
+      | T_sync tsl _ ->
+          match tsl with
+          | T_propagate_cache_maintenance _ -> true
+          | T_fetch _                      -> false
+          | _ -> false
+          end
+      | T_thread_start _ -> false
+      end
+  end
+
+let is_eager_relaxed_fetch_speculate_transition params : (trans 'ts 'ss -> bool) =
+  function
+  | T_trans (T_only tl) ->
+      match tl.tl_label with
+      | T_init_fetch addr m -> not m || params.t.thread_allow_tree_speculation
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_eager_relaxed_fetch_fetch_transition params : (trans 'ts 'ss -> bool) =
+  let seen addr =
+      let addr_fp = (addr, 4) in
+      let seen_loc =
+        Set.any (fun fp ->
+          overlapping_slices (fp,[complete_slice fp]) (addr_fp, [complete_slice addr_fp])
+        ) params.t.thread_modified_code_footprints in
+      not seen_loc in
+  function
+  | T_trans thread_trans ->
+      match thread_trans with
+      | T_sync tsl _ ->
+          match tsl with
+          | T_fetch tl ->
+              let fr = tl.tl_label in
+              seen fr.fr_addr
+          | _ -> false
+          end
+      | T_only tl ->
+          match tl.tl_label with
+          | T_decode d_addr _ -> seen d_addr
+          | _ -> false
+          end
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let is_eager_relaxed_fetch_ic_transition : (trans 'ts 'ss -> bool) = function
+  | Sys_trans _ _ -> false
+  | SS_trans ss_trans ->
+      match ss_trans with
+      | SS_only ss_only_trans _ ->
+          match ss_only_trans with
+          | SS_Flat_icache_update -> true
+          | _ -> false
+          end
+      | SS_sync ss_sync_trans _ _ ->
+          match ss_sync_trans with
+          | SS_Flat_thread_ic _ _ -> true
+          | SS_Flat_ic_finish _ -> true
+          | _ -> false
+          end
+      end
+  | T_trans thread_trans ->
+      match thread_trans with
+      | T_only tl ->
+          match tl.tl_label with
+          | T_init_fetch _ _        -> false
+          | T_decode _ _            -> false
+          | _ -> false
+          end
+      | T_sync tsl _ ->
+          match tsl with
+          | T_propagate_cache_maintenance _ -> false
+          | T_fetch _                      -> false
+          | _ -> false
+          end
+      | T_thread_start _ -> false
+      end
+  end
+
+let is_eager_fetch_fetch_transition params t =
+    if is_fetch_relaxed params.ss then
+      is_eager_relaxed_fetch_fetch_transition params t
+    else
+      true
+
+let is_eager_fetch_transition params t =
+    if is_fetch_relaxed params.ss then
+      is_eager_relaxed_fetch_speculate_transition params t
+      || is_eager_relaxed_fetch_ic_transition t
+    else
+      is_eager_atomic_fetch_transition t
+
 let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = function
   | Sys_trans _ _ -> false
   | SS_trans ss_trans ->
@@ -252,6 +377,8 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
           | SS_Flowing_partially_satisfy_read _ _      -> false
           (*** TSO transitions: ***)
           | SS_TSO_propagate_write_to_memory _ -> false
+          (*** Flat ifetch transitions ***)
+          | SS_Flat_icache_update -> (is_flat_model params.t && is_relaxed_icaches params.ss)
           end
 
       | SS_sync ss_sync_trans _ _ ->
@@ -262,6 +389,8 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
           | SS_NOP_read_response_memory _ _ _ _  -> false
           | SS_Flowing_seg_read_response _ _     -> false
           | SS_Flowing_mem_read_response _ _     -> true
+          | SS_Flat_thread_ic _ _                -> true
+          | SS_Flat_ic_finish _                  -> true
           end
       end
 
@@ -296,10 +425,15 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
 
           | T_RISCV_atomic_begin    -> false
           | T_RISCV_atomic_end      -> true
+
+          (* ? *)
+          | T_init_fetch _ _        -> false
+          | T_decode _ _            -> false
           end
       | T_sync tsl _ ->
           match tsl with
           | T_fetch _                      -> false
+          | T_propagate_cache_maintenance _ -> false
           | T_mem_read_request _           -> false
           | T_propagate_write tl           -> false
           | T_propagate_barrier _          -> (is_flat_model params.t)
@@ -366,8 +500,8 @@ let is_eager_transition params
     (t:             trans 'ts 'ss)
     : bool
   =
-     (eager_mode.eager_fetch_single        && is_fetch_single_transition t)
-  || (eager_mode.eager_fetch_multi         && params.t.thread_allow_tree_speculation && is_fetch_multi_transition t)
+     (eager_mode.eager_fetch_single        && is_eager_fetch_transition params t && is_fetch_single_transition t)
+  || (eager_mode.eager_fetch_multi         && is_eager_fetch_transition params t && params.t.thread_allow_tree_speculation && is_fetch_multi_transition t)
   || (eager_mode.eager_pseudocode_internal && is_pseudocode_internal_step_transition t)
   || (eager_mode.eager_constant_reg_read   && is_constant_register_read_transition params t)
   || (eager_mode.eager_reg_rw              && is_register_read_or_write_transition t)
@@ -376,6 +510,8 @@ let is_eager_transition params
   || (eager_mode.eager_fp_recalc           && is_footprint_recalculation_transition t)
   || (eager_mode.eager_thread_start        && is_thread_start_transition t)
   || (eager_mode.eager_local_mem           && is_local_mem_transition eager_mode.em_shared_memory t)
+  || (eager_mode.eager_fetch_unmodified    && is_eager_fetch_fetch_transition params t)
+  || (eager_mode.eager_memory_aux          && is_eager_fetch_transition params t)
 
 
 (** predicates for filtering ****************************************)
@@ -408,6 +544,8 @@ let is_internal : trans 'ts 'ss -> bool = function
       | T_POP_subsumed_write _  -> false
       | T_RISCV_atomic_begin    -> false
       | T_RISCV_atomic_end      -> false
+      | T_init_fetch _ _        -> false
+      | T_decode _ _            -> false
       end
   | _ -> false
   end
@@ -435,7 +573,7 @@ let fetched_address (addr: address) (sst: system_state_and_transitions 'ts 'ss) 
 let trans_fetch_address : trans 'ts 'ss -> maybe address
   = function
   | T_trans (T_sync (T_fetch tl) _) ->
-      let (addr', _) = tl.tl_label in
+      let addr' = tl.tl_label.fr_addr in
       Just addr'
   | _ -> Nothing
   end
@@ -473,8 +611,8 @@ end
 
 let fetch_multi_priority : trans 'ts 'ss -> bool = function
   | T_trans (T_sync (T_fetch tl) _) ->
-    match tl.tl_label with
-    | (_, FK_multiple_fixed) -> true
+    match tl.tl_label.fr_kind with
+    | FK_multiple_fixed -> true
     | _ -> false
     end
   | _ -> false

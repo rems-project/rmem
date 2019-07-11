@@ -77,6 +77,14 @@
                         "n_threads": 3
                     },
                     {
+                        "name": "dcic_test",
+                        "binary_url": "tests/AArch64-elf/basic/build/dcic_test",
+                        "source_urls": [
+                            "tests/AArch64-elf/basic/dcic_test.c"
+                        ],
+                        "n_threads": 1
+                    },
+                    {
                         "name": "function_call_1-O0",
                         "binary_url": "tests/AArch64-elf/basic/build/function_call_1_O0",
                         "source_urls": [

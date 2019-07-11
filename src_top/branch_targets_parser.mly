@@ -22,6 +22,8 @@ module Base = Branch_targets_parser_base
 
 %token LEFT_BRACE
 %token RIGHT_BRACE
+%token LEFT_PAREN
+%token RIGHT_PAREN
 %token COLON
 %token SEMICOLON
 %token COMMA
@@ -70,4 +72,5 @@ location:
   | IDENT           { Base.Label_and_offset ($1, Nat_big_num.zero) }
   | IDENT PLUS NUM  { Base.Label_and_offset ($1, $3) }
   | IDENT MINUS NUM { Base.Label_and_offset ($1, Nat_big_num.negate $3) }
+  | location LEFT_PAREN IDENT RIGHT_PAREN { $1 }
   ;

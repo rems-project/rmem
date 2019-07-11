@@ -198,7 +198,8 @@ let tso_ss_accept_strong_barrier_cand params state (b: barrier) =
 (************** storage system receive transitions ******************)
 
 let tso_ss_receive_transition params state = function
-  | T_fetch                   _ -> failwith "fetch is handled globally right now"
+  | T_fetch _ -> failwith "fetch not implemented for TSO"
+  | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for TSO"
   | T_propagate_write tl ->
       let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
       match tl.tl_label with

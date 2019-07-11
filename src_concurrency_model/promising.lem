@@ -592,9 +592,7 @@ let p_make_cex_candidate s : cex_candidate =
 
 let p_branch_targets_of_state _  : branch_targets_map = Map.empty
 let p_shared_memory_of_state _ : set footprint = Set.empty
-
-
-
+let p_modified_code_locations_of_state _ : set footprint = Set.empty
 
 
 (* To easier refer to these in OCaml .. *)

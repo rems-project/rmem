@@ -193,6 +193,7 @@ module Make (ISAModel: Isa_model.S) (Sys: SYS) : Concurrency_model.S = struct
     MachineDefSystem.is_final_state s.sst_state
 
   let branch_targets_of_state s = MachineDefSystem.branch_targets_of_state s.sst_state
+  let modified_code_locations_of_state s = MachineDefSystem.modified_code_locations_of_state s.sst_state
   let shared_memory_of_state s = MachineDefSystem.shared_memory_of_state s.sst_state
   let memory_value_of_footprints s = MachineDefSystem.memory_value_of_footprints s.sst_state
   let make_cex_candidate s = MachineDefSystem.make_cex_candidate s.sst_state

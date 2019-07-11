@@ -91,6 +91,7 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
     Promising.type_specialised_p_is_final_state s.Promising.pst_state
 
   let branch_targets_of_state = Promising.p_branch_targets_of_state
+  let modified_code_locations_of_state = Promising.p_modified_code_locations_of_state
   let shared_memory_of_state = Promising.p_shared_memory_of_state
   let memory_value_of_footprints s fps = 
     PromisingStorage.pss_memory_value_of_footprints 

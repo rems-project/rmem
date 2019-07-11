@@ -765,6 +765,9 @@ let encodeBitMasks regSize (imm : Nat_big_num.num) =
     if e = 64 then (1, ones-1, rotate)
     else (0, (lnot (e*2 - 1)) lor (ones-1), rotate) in
 
+  let imms = imms land 0b111111 in
+  let immr = immr land 0b111111 in
+
   match decodeBitMasks regSize _N imms immr true with
   | (wmask,_) when Nat_big_num.equal wmask imm -> Some (_N,imms,immr)
   | _ -> None

@@ -48,6 +48,8 @@ module type S = sig
 
   val branch_targets_of_state :
     state -> Params.branch_targets_map
+  val modified_code_locations_of_state :
+    state -> Sail_impl_base.footprint Pset.set
   val shared_memory_of_state :
     state -> Sail_impl_base.footprint Pset.set
   val memory_value_of_footprints :

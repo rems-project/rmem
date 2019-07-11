@@ -894,7 +894,8 @@ let ss_send_read_response
 
 let pldi11_ss_receive_transition params state t_send =
   match t_send with
-  | T_fetch _ -> failwith "fetch is handled globally right now"
+  | T_fetch _ -> failwith "fetch not implemented for PLDI11"
+  | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for PLDI11"
   | T_mem_read_request tl ->
       let tl' = <| tl with tl_suppl = Just true |> in
       match tl.tl_label with

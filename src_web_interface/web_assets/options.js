@@ -39,6 +39,13 @@ var model_options_dialog = $("#options").dialog({
         close: clear_this_errors
     });
 
+function show_hide_relaxed_fetch () {
+    if ($("#relaxed_fetch").is(":checked")) {
+        $("#relaxed_fetch_options").show();
+    } else {
+        $("#relaxed_fetch_options").hide();
+    }
+}
 
 function show_hide_select_topology () {
     if ($("#model_flowing").is(":checked")) {
@@ -575,6 +582,15 @@ $(document).ready(function () {
         show_hide_select_topology();
         show_hide_restrict_promises();
     });
+
+    $("#relaxed_fetch").on("change", function() {
+        show_hide_relaxed_fetch();
+    });
+
+    // Initial State
+    show_hide_select_topology();
+    show_hide_restrict_promises();
+    show_hide_relaxed_fetch();
 });
 
 var option_groups = {}
