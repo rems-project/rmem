@@ -16,6 +16,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+open Js_of_ocaml
+
 module Make (ConcModel: Concurrency_model.S)
     : (GraphBackend.S with type ui_trans = ConcModel.ui_trans)
   = struct

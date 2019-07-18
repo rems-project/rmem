@@ -15,6 +15,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+open Js_of_ocaml
+
 let sources = ref ([] : (string * string array) list)
 
 let update_sources new_sources =
