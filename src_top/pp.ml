@@ -982,12 +982,32 @@ let pp_barrier_kind m = function
   | Barrier_Eieio  -> "Eieio"
   | Barrier_Isync  -> "ISync"
   (* Arch64 barriers *)
-  | Barrier_DMB    -> "DMB"
-  | Barrier_DMB_LD -> "DMB LD"
-  | Barrier_DMB_ST -> "DMB ST"
-  | Barrier_DSB    -> "DSB"
-  | Barrier_DSB_LD -> "DSB LD"
-  | Barrier_DSB_ST -> "DSB ST"
+  | Barrier_DMB (d,t) ->
+      let d = match d with
+        | A64_FullShare  -> if t = A64_barrier_all then "SY" else ""
+        | A64_InnerShare -> "ISH"
+        | A64_OuterShare -> "OSH"
+        | A64_NonShare   -> "NSH"
+      in
+      let t = match t with
+        | A64_barrier_all -> ""
+        | A64_barrier_LD  -> "LD"
+        | A64_barrier_ST  -> "ST"
+      in
+      "DMB " ^ d ^ t
+  | Barrier_DSB (d,t) ->
+      let d = match d with
+        | A64_FullShare  -> if t = A64_barrier_all then "SY" else ""
+        | A64_InnerShare -> "ISH"
+        | A64_OuterShare -> "OSH"
+        | A64_NonShare   -> "NSH"
+      in
+      let t = match t with
+        | A64_barrier_all -> ""
+        | A64_barrier_LD  -> "LD"
+        | A64_barrier_ST  -> "ST"
+      in
+      "DSB " ^ d ^ t
   | Barrier_ISB    -> "ISB"
   | Barrier_TM_COMMIT -> failwith "Barrier_TM_COMMIT is not really a barrier"
   (* MIPS *)

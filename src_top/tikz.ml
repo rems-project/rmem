@@ -180,12 +180,32 @@ let make_tikz_graph
           | Barrier_Eieio     -> "eieio"
           | Barrier_Isync     -> "isync"
           (* AArch64 barriers *)
-          | Barrier_DMB       -> "dmb"
-          | Barrier_DMB_ST    -> "dmb st"
-          | Barrier_DMB_LD    -> "dmb ld"
-          | Barrier_DSB       -> "dsb"
-          | Barrier_DSB_ST    -> "dsb st"
-          | Barrier_DSB_LD    -> "dsb ld"
+          | Barrier_DMB (d,t) ->
+            let d = match d with
+              | A64_FullShare  -> if t = A64_barrier_all then "sy" else ""
+              | A64_InnerShare -> "ish"
+              | A64_OuterShare -> "osh"
+              | A64_NonShare   -> "nsh"
+            in
+            let t = match t with
+              | A64_barrier_all -> ""
+              | A64_barrier_LD  -> "ld"
+              | A64_barrier_ST  -> "st"
+            in
+            "dmb " ^ d ^ t
+          | Barrier_DSB (d,t) ->
+            let d = match d with
+              | A64_FullShare  -> if t = A64_barrier_all then "sy" else ""
+              | A64_InnerShare -> "ish"
+              | A64_OuterShare -> "osh"
+              | A64_NonShare   -> "nsh"
+            in
+            let t = match t with
+              | A64_barrier_all -> ""
+              | A64_barrier_LD  -> "ld"
+              | A64_barrier_ST  -> "st"
+            in
+            "dsb " ^ d ^ t
           | Barrier_ISB       -> "isb"
           | Barrier_TM_COMMIT -> failwith "Barrier_TM_COMMIT is not really a barrier"
           (* MIPS barriers *)

@@ -438,12 +438,20 @@ let run_barrier_instruction params ((s,(ii,view,o)) : iconf 'v) : list (pt_trans
   let (bk,o) = ensure_barrier_outcome o in
   (* let ii = record_barrier_event params s.tid ii bk in *)
   let (Rp,Wp) = match bk with
-    | Barrier_DMB ->    ([s.vRm;s.vWm], [s.vRm;s.vWm])
-    | Barrier_DSB ->    ([s.vRm;s.vWm], [s.vRm;s.vWm])
-    | Barrier_DMB_LD -> ([s.vRm]      , [s.vRm])
-    | Barrier_DSB_LD -> ([s.vRm]      , [s.vRm])
-    | Barrier_DMB_ST -> ([]           , [s.vWm])
-    | Barrier_DSB_ST -> ([]           , [s.vWm])
+    | Barrier_DMB (dom, typ) ->
+        let () = ensure (dom = A64_FullShare || dom = A64_InnerShare) "Barrier domain not supported" in
+        match typ with
+        | A64_barrier_all -> ([s.vRm;s.vWm], [s.vRm;s.vWm])
+        | A64_barrier_LD  -> ([s.vRm]      , [s.vRm])
+        | A64_barrier_ST  -> ([]           , [s.vWm])
+        end
+    | Barrier_DSB (dom, typ) ->
+        let () = ensure (dom = A64_FullShare || dom = A64_InnerShare) "Barrier domain not supported" in
+        match typ with
+        | A64_barrier_all -> ([s.vRm;s.vWm], [s.vRm;s.vWm])
+        | A64_barrier_LD  -> ([s.vRm]      , [s.vRm])
+        | A64_barrier_ST  -> ([]           , [s.vWm])
+        end
     | Barrier_ISB ->    ([s.vCAP]     , [s.vCAP])
 
     | Barrier_RISCV_rw_rw -> ([s.vRm;s.vWm], [s.vRm;s.vWm])

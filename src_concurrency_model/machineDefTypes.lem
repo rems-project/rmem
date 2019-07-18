@@ -381,7 +381,14 @@ let is_fe_barrier_eieio = function
   end
 
 let is_fe_strong_memory_barrier = function
-  | FBarrier b -> b.b_barrier_kind = Barrier_DSB || b.b_barrier_kind = Barrier_DMB || b.b_barrier_kind = Barrier_Sync || b.b_barrier_kind = Barrier_MIPS_SYNC
+  | FBarrier b ->
+      match b.b_barrier_kind with
+      | Barrier_DSB (_, A64_barrier_all) -> true
+      | Barrier_DMB (_, A64_barrier_all) -> true
+      | Barrier_Sync -> true
+      | Barrier_MIPS_SYNC -> true
+      | _ -> false
+      end
   | _ -> false
   end
 

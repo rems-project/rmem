@@ -107,15 +107,15 @@ let is_write_release write =
 
 let is_barrier_ld barrier =
   match barrier.b_barrier_kind with
-  | Barrier_DMB_LD -> true
-  | Barrier_DSB_LD -> true
+  | Barrier_DMB (_, A64_barrier_LD) -> true
+  | Barrier_DSB (_, A64_barrier_LD) -> true
   | _ -> false
   end
 
 let is_barrier_st barrier =
   match barrier.b_barrier_kind with
-  | Barrier_DMB_ST -> true
-  | Barrier_DSB_ST -> true
+  | Barrier_DMB (_, A64_barrier_ST) -> true
+  | Barrier_DSB (_, A64_barrier_ST) -> true
   | _ -> false
   end
 

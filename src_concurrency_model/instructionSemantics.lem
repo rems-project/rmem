@@ -171,33 +171,42 @@ let sail_bv_1to2 vec =
 let riscv_bits_to_sail1_vec bv =
   (Sail_values.Vector (List.map bool_to_bitU (Machine_word.bitlistFromWord bv)) (integerFromNat (Machine_word.word_length bv)) false)
 
+let riscv_a64_bd_to_sail1 = function
+  | Sail2_instr_kinds.A64_FullShare  -> Sail_impl_base.A64_FullShare
+  | Sail2_instr_kinds.A64_InnerShare -> Sail_impl_base.A64_InnerShare
+  | Sail2_instr_kinds.A64_OuterShare -> Sail_impl_base.A64_OuterShare
+  | Sail2_instr_kinds.A64_NonShare   -> Sail_impl_base.A64_NonShare
+end
+
+let riscv_a64_bt_to_sail1 = function
+  | Sail2_instr_kinds.A64_barrier_all -> Sail_impl_base.A64_barrier_all
+  | Sail2_instr_kinds.A64_barrier_LD  -> Sail_impl_base.A64_barrier_LD
+  | Sail2_instr_kinds.A64_barrier_ST  -> Sail_impl_base.A64_barrier_ST
+end
+
 let riscv_bk_to_sail1 bk =
   match bk with
-  | Sail2_instr_kinds.Barrier_Sync        -> Sail_impl_base.Barrier_Sync
-  | Sail2_instr_kinds.Barrier_LwSync      -> Sail_impl_base.Barrier_LwSync
-  | Sail2_instr_kinds.Barrier_Eieio       -> Sail_impl_base.Barrier_Eieio
-  | Sail2_instr_kinds.Barrier_Isync       -> Sail_impl_base.Barrier_Isync
-  | Sail2_instr_kinds.Barrier_DMB         -> Sail_impl_base.Barrier_DMB
-  | Sail2_instr_kinds.Barrier_DMB_ST      -> Sail_impl_base.Barrier_DMB_ST
-  | Sail2_instr_kinds.Barrier_DMB_LD      -> Sail_impl_base.Barrier_DMB_LD
-  | Sail2_instr_kinds.Barrier_DSB         -> Sail_impl_base.Barrier_DSB
-  | Sail2_instr_kinds.Barrier_DSB_ST      -> Sail_impl_base.Barrier_DSB_ST
-  | Sail2_instr_kinds.Barrier_DSB_LD      -> Sail_impl_base.Barrier_DSB_LD
-  | Sail2_instr_kinds.Barrier_ISB         -> Sail_impl_base.Barrier_ISB
-  | Sail2_instr_kinds.Barrier_TM_COMMIT   -> Sail_impl_base.Barrier_TM_COMMIT
-  | Sail2_instr_kinds.Barrier_MIPS_SYNC   -> Sail_impl_base.Barrier_MIPS_SYNC
-  | Sail2_instr_kinds.Barrier_RISCV_rw_rw -> Sail_impl_base.Barrier_RISCV_rw_rw
-  | Sail2_instr_kinds.Barrier_RISCV_r_rw  -> Sail_impl_base.Barrier_RISCV_r_rw
-  | Sail2_instr_kinds.Barrier_RISCV_r_r   -> Sail_impl_base.Barrier_RISCV_r_r
-  | Sail2_instr_kinds.Barrier_RISCV_rw_w  -> Sail_impl_base.Barrier_RISCV_rw_w
-  | Sail2_instr_kinds.Barrier_RISCV_w_w   -> Sail_impl_base.Barrier_RISCV_w_w
-  | Sail2_instr_kinds.Barrier_RISCV_w_rw  -> Sail_impl_base.Barrier_RISCV_w_rw
-  | Sail2_instr_kinds.Barrier_RISCV_rw_r  -> Sail_impl_base.Barrier_RISCV_rw_r
-  | Sail2_instr_kinds.Barrier_RISCV_r_w   -> Sail_impl_base.Barrier_RISCV_r_w
-  | Sail2_instr_kinds.Barrier_RISCV_w_r   -> Sail_impl_base.Barrier_RISCV_w_r
-  | Sail2_instr_kinds.Barrier_RISCV_tso   -> Sail_impl_base.Barrier_RISCV_tso
-  | Sail2_instr_kinds.Barrier_RISCV_i     -> Sail_impl_base.Barrier_RISCV_i
-  | Sail2_instr_kinds.Barrier_x86_MFENCE  -> Sail_impl_base.Barrier_x86_MFENCE
+  | Sail2_instr_kinds.Barrier_Sync ()        -> Sail_impl_base.Barrier_Sync
+  | Sail2_instr_kinds.Barrier_LwSync ()      -> Sail_impl_base.Barrier_LwSync
+  | Sail2_instr_kinds.Barrier_Eieio ()       -> Sail_impl_base.Barrier_Eieio
+  | Sail2_instr_kinds.Barrier_Isync ()       -> Sail_impl_base.Barrier_Isync
+  | Sail2_instr_kinds.Barrier_DMB (d, t)     -> Sail_impl_base.Barrier_DMB (riscv_a64_bd_to_sail1 d, riscv_a64_bt_to_sail1 t)
+  | Sail2_instr_kinds.Barrier_DSB (d, t)     -> Sail_impl_base.Barrier_DSB (riscv_a64_bd_to_sail1 d, riscv_a64_bt_to_sail1 t)
+  | Sail2_instr_kinds.Barrier_ISB ()         -> Sail_impl_base.Barrier_ISB
+  | Sail2_instr_kinds.Barrier_TM_COMMIT ()   -> Sail_impl_base.Barrier_TM_COMMIT
+  | Sail2_instr_kinds.Barrier_MIPS_SYNC ()   -> Sail_impl_base.Barrier_MIPS_SYNC
+  | Sail2_instr_kinds.Barrier_RISCV_rw_rw () -> Sail_impl_base.Barrier_RISCV_rw_rw
+  | Sail2_instr_kinds.Barrier_RISCV_r_rw ()  -> Sail_impl_base.Barrier_RISCV_r_rw
+  | Sail2_instr_kinds.Barrier_RISCV_r_r ()   -> Sail_impl_base.Barrier_RISCV_r_r
+  | Sail2_instr_kinds.Barrier_RISCV_rw_w ()  -> Sail_impl_base.Barrier_RISCV_rw_w
+  | Sail2_instr_kinds.Barrier_RISCV_w_w ()   -> Sail_impl_base.Barrier_RISCV_w_w
+  | Sail2_instr_kinds.Barrier_RISCV_w_rw ()  -> Sail_impl_base.Barrier_RISCV_w_rw
+  | Sail2_instr_kinds.Barrier_RISCV_rw_r ()  -> Sail_impl_base.Barrier_RISCV_rw_r
+  | Sail2_instr_kinds.Barrier_RISCV_r_w ()   -> Sail_impl_base.Barrier_RISCV_r_w
+  | Sail2_instr_kinds.Barrier_RISCV_w_r ()   -> Sail_impl_base.Barrier_RISCV_w_r
+  | Sail2_instr_kinds.Barrier_RISCV_tso ()   -> Sail_impl_base.Barrier_RISCV_tso
+  | Sail2_instr_kinds.Barrier_RISCV_i ()     -> Sail_impl_base.Barrier_RISCV_i
+  | Sail2_instr_kinds.Barrier_x86_MFENCE ()  -> Sail_impl_base.Barrier_x86_MFENCE
 end
 
 let riscv_rk_to_sail1 rk =

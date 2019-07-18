@@ -153,12 +153,8 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       | V_ctor ("Barrier_LwSync", [])      -> Barrier_LwSync
       | V_ctor ("Barrier_Eieio", [])       -> Barrier_Eieio
       | V_ctor ("Barrier_Isync", [])       -> Barrier_Isync
-      | V_ctor ("Barrier_DMB", [])         -> Barrier_DMB
-      | V_ctor ("Barrier_DMB_ST", [])      -> Barrier_DMB_ST
-      | V_ctor ("Barrier_DMB_LD", [])      -> Barrier_DMB_LD
-      | V_ctor ("Barrier_DSB", [])         -> Barrier_DSB
-      | V_ctor ("Barrier_DSB_ST", [])      -> Barrier_DSB_ST
-      | V_ctor ("Barrier_DSB_LD", [])      -> Barrier_DSB_LD
+      (* FIXME: | V_ctor ("Barrier_DMB", [])         -> Barrier_DMB*)
+      (* FIXME: | V_ctor ("Barrier_DSB", [])         -> Barrier_DSB*)
       | V_ctor ("Barrier_ISB", [])         -> Barrier_ISB
       | V_ctor ("Barrier_MIPS_SYNC", [])   -> Barrier_MIPS_SYNC
       | V_ctor ("Barrier_RISCV_rw_rw", []) -> Barrier_RISCV_rw_rw
