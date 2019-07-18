@@ -138,7 +138,7 @@ let quit = fun () -> (exit 0 |> ignore)
 (* Adapted from Lambda-Term examples repl.ml *)
 class read_line ~term ~history ~prompt_str = object(self)
   inherit LTerm_read_line.read_line ~history ()
-  inherit [Zed_utf8.t] LTerm_read_line.term term
+  inherit [Zed_string.t] LTerm_read_line.term term
 
   method show_box = false
 
@@ -156,12 +156,12 @@ let rec prompt ppmode maybe_options prompt_ot _hist (cont: string -> unit) =
             rl#run >|= fun command -> Some (command))
           (function
           | Sys.Break -> return None
-          | LTerm_read_line.Interrupt -> LTerm.fprintl term "quit" >>= (fun () -> return (Some "quit"))
+          | LTerm_read_line.Interrupt -> LTerm.fprintl term "quit" >>= (fun () -> return (Some (Zed_string.of_utf8 "quit")))
           | exn -> Lwt.fail exn))
   |> function
     | Some command ->
         LTerm_history.add history command;
-        cont command
+        cont (Zed_string.to_utf8 command)
     | None -> prompt ppmode maybe_options prompt_ot _hist cont
 
 let interactive = true
