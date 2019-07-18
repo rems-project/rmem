@@ -987,18 +987,14 @@ let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
 
 let is_AArch64_isb_barrier (instruction: instruction_instance) : bool =
   match instruction.instruction_kind with
-  | IK_barrier Barrier_DSB_LD      -> false
-  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier Barrier_ISB         -> true
 
-  | IK_barrier Barrier_DSB         -> false
-  | IK_barrier Barrier_DSB_ST      -> false
-  | IK_barrier Barrier_DMB         -> false
-  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier (Barrier_DSB (_,_)) -> false
+  | IK_barrier (Barrier_DMB (_,_)) -> false
   | IK_barrier Barrier_Sync        -> false
   | IK_barrier Barrier_LwSync      -> false
   | IK_barrier Barrier_Eieio       -> false
   | IK_barrier Barrier_Isync       -> false
-  | IK_barrier Barrier_ISB         -> true
   | IK_barrier Barrier_RISCV_i     -> false
   | IK_barrier Barrier_MIPS_SYNC   -> false
   | IK_barrier Barrier_TM_COMMIT   -> fail
@@ -1025,13 +1021,15 @@ let is_AArch64_isb_barrier (instruction: instruction_instance) : bool =
 
 let is_AArch64_ic_wait_barrier (instruction: instruction_instance) : bool =
   match instruction.instruction_kind with
-  | IK_barrier Barrier_DSB_LD      -> false
-  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier (Barrier_DSB (A64_FullShare,A64_barrier_all))  -> true
+  | IK_barrier (Barrier_DSB (A64_InnerShare,A64_barrier_all)) -> true
 
-  | IK_barrier Barrier_DSB         -> true
-  | IK_barrier Barrier_DSB_ST      -> false
-  | IK_barrier Barrier_DMB         -> false
-  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier (Barrier_DSB (A64_FullShare,_))  -> false
+  | IK_barrier (Barrier_DSB (A64_InnerShare,_)) -> false
+  | IK_barrier (Barrier_DSB (_,_))              -> fail
+  | IK_barrier (Barrier_DMB (A64_FullShare,_))  -> false
+  | IK_barrier (Barrier_DMB (A64_InnerShare,_)) -> false
+  | IK_barrier (Barrier_DMB (_,_))              -> fail
   | IK_barrier Barrier_Sync        -> false
   | IK_barrier Barrier_LwSync      -> false
   | IK_barrier Barrier_Eieio       -> false
@@ -1075,13 +1073,17 @@ let address_from_AArch64_dc (instruction: instruction_instance) : maybe address 
 
 let is_AArch64_dc_wait_barrier (instruction: instruction_instance) : bool =
   match instruction.instruction_kind with
-  | IK_barrier Barrier_DSB_LD      -> false
-  | IK_barrier Barrier_DMB_LD      -> false
+  | IK_barrier (Barrier_DSB (A64_FullShare,A64_barrier_all))  -> true
+  | IK_barrier (Barrier_DSB (A64_InnerShare,A64_barrier_all)) -> true
+  | IK_barrier (Barrier_DMB (A64_FullShare,A64_barrier_all))  -> true
+  | IK_barrier (Barrier_DMB (A64_InnerShare,A64_barrier_all)) -> true
 
-  | IK_barrier Barrier_DSB         -> true
-  | IK_barrier Barrier_DSB_ST      -> false
-  | IK_barrier Barrier_DMB         -> true
-  | IK_barrier Barrier_DMB_ST      -> false
+  | IK_barrier (Barrier_DSB (A64_FullShare,_))  -> false
+  | IK_barrier (Barrier_DSB (A64_InnerShare,_)) -> false
+  | IK_barrier (Barrier_DSB (_,_))              -> fail
+  | IK_barrier (Barrier_DMB (A64_FullShare,_))  -> false
+  | IK_barrier (Barrier_DMB (A64_InnerShare,_)) -> false
+  | IK_barrier (Barrier_DMB (_,_))              -> fail
   | IK_barrier Barrier_Sync        -> false
   | IK_barrier Barrier_LwSync      -> false
   | IK_barrier Barrier_Eieio       -> false
