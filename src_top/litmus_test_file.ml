@@ -943,20 +943,26 @@ let initial_state_record
       prog_in_mem
   in
 
-  let (initial_prog_writes, ist) =
-      Pmap.fold (fun addr instr (ws,ist) ->
-          let addr = (Sail_impl_base.address_of_integer addr) in
-          let footprint = (addr, 4) in  (* TODO: per-arch ... *)
-          let (new_ioid, ist) = FreshIds.gen_fresh_id ist in
-          let ioid_ist = FreshIds.initial_id_state new_ioid in
-          let endianness = Globals.get_endianness () in
-          let value = actually_SAIL_encode instr endianness in
-          let (new_writes, ioid_ist) =
-            Events.make_write_events_big_split
-              ioid_ist init_thread new_ioid footprint value Sail_impl_base.Write_plain in
-          (ws @ new_writes, ist)
-      ) prog_map ([], ist) in
-  let initial_writes = init_write_events @ initial_prog_writes in
+  let (initial_writes, ist) =
+    if Params.is_fetch_atomic model.ss then
+      (init_write_events, ist)
+    else
+      let (initial_prog_writes, ist) =
+        Pmap.fold (fun addr instr (ws,ist) ->
+            let addr = (Sail_impl_base.address_of_integer addr) in
+            let footprint = (addr, 4) in  (* TODO: per-arch ... *)
+            let (new_ioid, ist) = FreshIds.gen_fresh_id ist in
+            let ioid_ist = FreshIds.initial_id_state new_ioid in
+            let endianness = Globals.get_endianness () in
+            let value = actually_SAIL_encode instr endianness in
+            let (new_writes, ioid_ist) =
+              Events.make_write_events_big_split
+                ioid_ist init_thread new_ioid footprint value Sail_impl_base.Write_plain in
+            (ws @ new_writes, ist)
+        ) prog_map ([], ist)
+      in
+      (init_write_events @ initial_prog_writes, ist)
+  in
 
   let prog _ (address: Sail_impl_base.address) : InstructionSemantics.fetch_and_decode_outcome =
     let address' = Sail_impl_base.integer_of_address address in
