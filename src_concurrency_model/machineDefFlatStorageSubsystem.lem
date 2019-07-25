@@ -59,7 +59,7 @@ let flat_ss_coherence params state =
   in
   Relation.transitiveClosure co.relon_rel
 
-let flat_flow_write_into_memory params state write =
+let flat_write_to_memory params state write =
   (* remove slices that will not be visible after adding the new write *)
   let old_mem =
     List.mapMaybe
@@ -75,37 +75,37 @@ let flat_flow_write_into_memory params state write =
       state.flat_ss_memory_writes
   in
 
-  let (_, new_mem) =
-    match_writes
-      write.w_addr
-      [complete_slice write.w_addr]
-      [write_with_complete_slice write]
-      []
-  in
-
-  let st' =
+  (* If we do not have a buffer we need to add the write to old-writes,
+  otherwise, it was already added to old-writes when it was added to
+  the buffer *)
+  let old_writes =
      match params.ss_fetch_type with
-     | Fetch_Atomic -> state
+     | Fetch_Atomic    -> write :: state.flat_ss_old_writes
      | Fetch_Relaxed p ->
          match p.flat_need_dc with
-         | true -> <| state with flat_ss_fetch_buf = write :: state.flat_ss_fetch_buf |>
-         | false -> state
+         | true  -> state.flat_ss_old_writes
+         | false -> write :: state.flat_ss_old_writes
          end
      end
   in
 
-  <| st' with flat_ss_memory_writes = new_mem ++ old_mem;
-      flat_ss_old_writes = write :: state.flat_ss_old_writes;
+  <| state with
+      flat_ss_memory_writes = (write_with_complete_slice write) :: old_mem;
+      flat_ss_old_writes = old_writes;
   |>
 
 
-let flat_write_memory params state write =
+let flat_write_to_storage params state write =
   match params.ss_fetch_type with
-  | Fetch_Atomic -> flat_flow_write_into_memory params state write
+  | Fetch_Atomic -> flat_write_to_memory params state write
   | Fetch_Relaxed p ->
     match p.flat_need_dc with
-    | true -> <| state with flat_ss_fetch_buf = write :: state.flat_ss_fetch_buf |>
-    | false -> flat_flow_write_into_memory params state write
+    | true ->
+        <| state with
+            flat_ss_fetch_buf = write :: state.flat_ss_fetch_buf;
+            flat_ss_old_writes = write :: state.flat_ss_old_writes;
+        |>
+    | false -> flat_write_to_memory params state write
     end
   end
 
@@ -119,7 +119,7 @@ let flat_propagate_write params state tl =
           state.flat_ss_exclusive_reads) >>
   let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
   let state_cont = fun () ->
-    let state = flat_write_memory params state write in
+    let state = flat_write_to_storage params state write in
     let state = List.foldl add_read_exclusive_write_slices state rf in
     match excl with
     | Just read ->
@@ -200,7 +200,7 @@ let flat_try_commit_store_cond params state tl =
   let (write, rf) = tl.tl_label in
   if check_potential_atomicity params state write.w_thread rf then
     let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
-    let state_cont = fun () -> flat_write_memory params state write in
+    let state_cont = fun () -> flat_write_to_storage params state write in
     return (T_Flat_try_commit_store_cond tl', Just state_cont)
   else
     let tl' = <| tl with tl_suppl = Just MWO_exclusive_failed |> in
@@ -442,19 +442,20 @@ let flat_clear_icaches params state addr =
     let icaches = state.flat_ss_icaches in
     Map.map (flat_clear_icache addr) icaches
 
-let flat_propagate_dc params state cmr addr =
-  let fetch_buf = state.flat_ss_fetch_buf in
-  let overlapping = List.filter (write_overlaps_with_addr (addr, 4)) fetch_buf in
-  let newest_write_to_addr = List_extra.head overlapping in
-  let new_fetch_buf =
-    List.filter
-      (fun w -> not (write_overlaps_with_addr (addr, 4) w))
-      fetch_buf
-  in
+let flat_propagate_dc params state _cmr addr =
   (* remove all to that cacheline from buffer *)
-  let st' = <| state with flat_ss_fetch_buf=new_fetch_buf |> in
-  (* flow the latest into memory *)
-  flat_flow_write_into_memory params st' newest_write_to_addr
+  let (overlapping, fetch_buf) =
+    List.partition
+      (write_overlaps_with_addr (cache_line_fp addr))
+      state.flat_ss_fetch_buf
+  in
+  (* flow the overlapping writes into memory *)
+  List.foldr
+    (fun write state ->
+      flat_write_to_memory params state write)
+    (<| state with flat_ss_fetch_buf = fetch_buf |>)
+    overlapping
+
 
 
 let flat_propagate_ic params state cmr addr =
