@@ -222,8 +222,8 @@ let icache_from_writes tid writes =
 let flat_ss_initial_state params tids initial_writes =
   (* TODO: ensure initial writes don't overlap *)
   <|  flat_ss_memory_writes     = complete_writes initial_writes;
-      flat_ss_fetch_buf         = initial_writes;
-      flat_ss_icaches           = Map.fromList [(tid, icache_from_writes tid (complete_writes initial_writes)) | forall (tid MEM (Set_extra.toList tids)) | true];
+      flat_ss_fetch_buf         = [];
+      flat_ss_icaches           = Map.empty;
       flat_ss_ic_writes         = Map.empty;
       flat_ss_old_writes        = initial_writes;
       flat_ss_exclusive_reads   = Map.empty;
