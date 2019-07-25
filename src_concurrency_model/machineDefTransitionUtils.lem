@@ -232,8 +232,36 @@ let is_register_read_or_write_transition : (trans 'ts 'ss -> bool) = function
   | _ -> false
   end
 
+(* Eager Fetchness:
+ *  Atomic:
+ *    By Default:  fetch/decode eager
+ *    if eager_fetch_*  then init_fetch and all cache transitions
+ * Relaxed
+ *    By default:  None
+ *    if eager_fetch  then init_fetch, ic intermediates, i$ update,
+ *    and fetch/decode for non-modified-code locations
+ *)
+
+let is_always_eager_atomic_fetch params = function
+  | T_trans thread_trans ->
+      match thread_trans with
+      | T_only tl ->
+          match tl.tl_label with
+          | T_init_fetch _ m        -> false
+          | T_decode _ _            -> true
+          | _                       -> false
+          end
+      | T_sync tsl _ ->
+          match tsl with
+          | T_fetch _               -> true
+          | _ -> false
+          end
+      | _ -> false
+      end
+  | _ -> false
+  end
+
 let is_eager_atomic_fetch_transition : (trans 'ts 'ss -> bool) = function
-  | Sys_trans _ _ -> false
   | SS_trans ss_trans ->
       match ss_trans with
       | SS_only ss_only_trans _ ->
@@ -253,16 +281,9 @@ let is_eager_atomic_fetch_transition : (trans 'ts 'ss -> bool) = function
       | T_only tl ->
           match tl.tl_label with
           | T_init_fetch _ m        -> not m
-          | T_decode _ _            -> true
           | _                       -> false
           end
-      | T_sync tsl _ ->
-          match tsl with
-          | T_propagate_cache_maintenance _ -> true
-          | T_fetch _                      -> false
-          | _ -> false
-          end
-      | T_thread_start _ -> false
+      | _ -> false
       end
   end
 
@@ -513,6 +534,8 @@ let is_eager_transition params
   || (eager_mode.eager_local_mem           && is_local_mem_transition eager_mode.em_shared_memory t)
   || (eager_mode.eager_fetch_unmodified    && is_eager_fetch_fetch_transition params t)
   || (eager_mode.eager_memory_aux          && is_eager_fetch_transition params t)
+  || ((not (is_fetch_relaxed params.ss))   && is_always_eager_atomic_fetch params t)
+
 
 
 (** predicates for filtering ****************************************)
