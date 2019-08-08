@@ -21,11 +21,12 @@ open import Sail2_operators_mwords
 open import Riscv_types
 open import Sail2_prompt_monad
 
-let decode (_:mword ty64) : ast = failwith "RISCV decode stub"
+let decode (_:mword ty64) : M ast = failwith "RISCV decode stub"
 let execute (_:ast) : M bool = failwith "RISCV execute stub"
 let initial_analysis (_:ast) : M (list regfp * list regfp * list regfp * list niafp * diafp * instruction_kind) = failwith "RISCV initial_analysis stub"
 
-let print_insn (_:ast) : string = failwith "RISCV print_insn stub"                                                                                                              
+let print_insn (_:ast) : M string =
+  failwith "RISCV print_insn stub"
 
 val privLevel_to_bits : Privilege -> mword ty2
 
@@ -36,16 +37,17 @@ let privLevel_to_bits p =
    | Machine -> (vec_of_bits [B1;B1]  : mword ty2)
    end
 
-val privLevel_of_bits : mword ty2 -> Privilege
+val privLevel_of_bits : mword ty2 -> M Privilege
 
 let privLevel_of_bits p =
    let b__0 = p in
    if (let p0_ = access_vec_dec b__0 (1:ii) in
      let p1_ = access_vec_dec b__0 (0:ii) in
      and_bool ((eq p1_ B0)) ((eq p0_ B0))) then
-     User
+     return User
    else if (let p0_ = access_vec_dec b__0 (1:ii) in
      let p1_ = access_vec_dec b__0 (0:ii) in
      and_bool ((eq p1_ B1)) ((eq p0_ B0))) then
-     Supervisor
-   else Machine
+     return Supervisor
+   else
+     return Machine
