@@ -23,4 +23,4 @@ open import Prompt
 let decode _ : M (maybe ast) = failwith "ARMV8 decode stub"
 let execute _ : M unit = failwith "ARMV8 execute stub"
 let initial_analysis _ = failwith "ARMV8 initial_analysis stub"
-
+let supported_instructions _ : maybe ast = failwith "ARMV8 supported_instructions stub"

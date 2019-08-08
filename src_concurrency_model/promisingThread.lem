@@ -672,6 +672,7 @@ let run_addr params isem
         exists (i MEM s.instrs). i.ii_program_loc = addr
      then failwith "found loop"
      else run_instruction params isem s pss_sem pss (addr,opcode,instr) 
+  | FDO_unpredictable_fetch -> failwith "FDO_unpredictable_fetch"
   end
    
 

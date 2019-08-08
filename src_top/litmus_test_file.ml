@@ -505,14 +505,14 @@ let actually_SAIL_encode
         else
             imm
     in
-    let rec lsl1 a shift =
-        match shift with
-        | 0 -> a
-        | n -> lsl1 ((a lsl 1) lor 1) (shift - 1)
-    in
-    let bitslice up low n =
-        (n lsr low) land (lsl1 0 (up - low))
-    in
+    (* let rec lsl1 a shift =
+     *     match shift with
+     *     | 0 -> a
+     *     | n -> lsl1 ((a lsl 1) lor 1) (shift - 1)
+     * in *)
+    (* let bitslice up low n =
+     *     (n lsr low) land (lsl1 0 (up - low))
+     * in *)
     let v =
       begin match instr with
       | AArch64_instr inst ->

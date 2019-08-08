@@ -16,13 +16,23 @@
 (*===============================================================================*)
 
 open import Pervasives
+open import Sail_values
 
 type reg_index = integer
 
+type SystemHintOp =
+  SystemHintOp_NOP
+  | SystemHintOp_YIELD
+  | SystemHintOp_WFE
+  | SystemHintOp_WFI
+  | SystemHintOp_SEV
+  | SystemHintOp_SEVL
+
 type ast =
   | BranchImmediate of unit
-  | BranchConditional of unit
+  | BranchConditional of (vector bitU * vector bitU)
   | CompareAndBranch of unit
   | TestBitAndBranch of unit
   | BranchRegister of (reg_index * unit)
   | AArch64_ast_stub
+  | Hint of SystemHintOp
