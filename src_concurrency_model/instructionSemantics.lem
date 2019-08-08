@@ -339,7 +339,7 @@ let sail1_regval_to_riscv rv =
     | 2 ->
        Riscv_types.Regval_Privilege (continue_to_sail2_done "regval_privilege" (Riscv.privLevel_of_bits (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))))
     | 64 ->
-       Riscv_types.Regval_vector_64_dec_bit (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))
+       Riscv_types.Regval_bitvector_64_dec (Machine_word.wordFromBitlist (List.map bool_from_bitl rv.rv_bits))
     | 65 ->
        Riscv_types.Regval_Medeleg <| Riscv_types.Medeleg_Medeleg_chunk_0 = (Machine_word.wordFromBitlist (List.map bool_from_bitl (List.drop 1 rv.rv_bits))) |>
     | 66 ->
@@ -376,7 +376,7 @@ let riscv_regval_to_sail rv =
   (* | Riscv_types.Regval_Sstatus <| Riscv_types.Sstatus_Sstatus_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 71 70 *)
   | Riscv_types.Regval_Mcause <| Riscv_types.Mcause_Mcause_chunk_0 = w |> -> build_register_value (bl0::bl0::bl0::bl0::bl0::bl0::bl0::bl0::(List.map bool_to_bitl (Machine_word.bitlistFromWord w))) D_decreasing 72 71
 
-  | Riscv_types.Regval_vector_64_dec_bit w -> build_register_value (List.map bool_to_bitl (Machine_word.bitlistFromWord w)) D_decreasing 64 63
+  | Riscv_types.Regval_bitvector_64_dec w -> build_register_value (List.map bool_to_bitl (Machine_word.bitlistFromWord w)) D_decreasing 64 63
   | _ -> failwith "unknown regval given to riscv_regval_to_sail"
   end
 
