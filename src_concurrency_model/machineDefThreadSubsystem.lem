@@ -2915,7 +2915,8 @@ let enumerate_flat_read_satisfy_from_memory_transitions
         <| i.subreads with sr_requested = (rr, unsat_slices) :: i.subreads.sr_requested |>
       in
       let i' = <| i with subreads = subreads' |> in
-      satisfy_read_action params state iic rr mrss
+      let iic' = <| iic with iic_instance = i' |> in
+      satisfy_read_action params state iic' rr mrss
     | Nothing ->
       read_unmapped_memory_action params state iic rr unsat_slices
     end
