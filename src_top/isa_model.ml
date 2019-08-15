@@ -232,15 +232,21 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       | _ -> failwith "invalid interpreter value in bit_to_bit"
     in
 
-    let rec bits_to_bytes = function
+    let rec bits_to_bytes reverse = function
       | [] -> []
-      | (a::b::c::d::e::f::g::h::rest) -> (Sail_impl_base.Byte [a;b;c;d;e;f;g;h])::(bits_to_bytes rest)
+      | (a::b::c::d::e::f::g::h::rest) ->
+         if reverse 
+         then (bits_to_bytes reverse rest)@[Sail_impl_base.Byte [a;b;c;d;e;f;g;h]]
+         else (Sail_impl_base.Byte [a;b;c;d;e;f;g;h])::(bits_to_bytes reverse rest)
       | _ -> failwith "bits_to_bytes given list of bits not divisible by 8"
     in
 
-    let rec bytes_to_bits = function
+    let rec bytes_to_bits reverse = function
       | [] -> []
-      | ((Sail_impl_base.Byte bs)::rest) -> List.map bitc_to_bit bs @ bytes_to_bits rest
+      | ((Sail_impl_base.Byte bs)::rest) ->
+         if reverse
+         then bytes_to_bits reverse rest @ List.map bitc_to_bit bs
+         else List.map bitc_to_bit bs @ bytes_to_bits reverse rest
     in
 
     let interp2__bitlist_to_address v =
@@ -249,7 +255,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       let open Sail_impl_base in
       match v with
       | V_vector bs ->
-         address_of_byte_list (bits_to_bytes (List.map bit_to_bitc bs))
+         address_of_byte_list (bits_to_bytes false (List.map bit_to_bitc bs))
       | _ -> failwith "invalid interpreter value in interp2__bitlist_to_address"
     in
 
@@ -258,7 +264,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       let open Sail_lib in
       let open Sail_impl_base in
       match v with
-      | V_vector bs -> List.map byte_lifted_of_byte (bits_to_bytes (List.map bit_to_bitc bs))
+      | V_vector bs -> List.map byte_lifted_of_byte (bits_to_bytes true (List.map bit_to_bitc bs))
       | _ -> failwith "invalid interpreter value in interp2__bitlist_to_memval"
     in
 
@@ -267,7 +273,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       let open Sail_lib in
       let open Sail_impl_base in
       match (maybe_all (List.map byte_of_memory_byte mv)) with
-      | Some bytes -> V_vector (bytes_to_bits bytes)
+      | Some bytes -> V_vector (bytes_to_bits true bytes)
       | None -> assert false
     in
 
