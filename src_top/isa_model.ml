@@ -149,25 +149,25 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       let open Value in
       let open Sail_impl_base in
       match v with
-      | V_ctor ("Barrier_Sync", [])        -> Barrier_Sync
-      | V_ctor ("Barrier_LwSync", [])      -> Barrier_LwSync
-      | V_ctor ("Barrier_Eieio", [])       -> Barrier_Eieio
-      | V_ctor ("Barrier_Isync", [])       -> Barrier_Isync
+      | V_ctor ("Barrier_Sync", _)        -> Barrier_Sync
+      | V_ctor ("Barrier_LwSync", _)      -> Barrier_LwSync
+      | V_ctor ("Barrier_Eieio", _)       -> Barrier_Eieio
+      | V_ctor ("Barrier_Isync", _)       -> Barrier_Isync
       (* FIXME: | V_ctor ("Barrier_DMB", [])         -> Barrier_DMB*)
       (* FIXME: | V_ctor ("Barrier_DSB", [])         -> Barrier_DSB*)
-      | V_ctor ("Barrier_ISB", [])         -> Barrier_ISB
-      | V_ctor ("Barrier_MIPS_SYNC", [])   -> Barrier_MIPS_SYNC
-      | V_ctor ("Barrier_RISCV_rw_rw", []) -> Barrier_RISCV_rw_rw
-      | V_ctor ("Barrier_RISCV_r_rw", [])  -> Barrier_RISCV_r_rw
-      | V_ctor ("Barrier_RISCV_r_r", [])   -> Barrier_RISCV_r_r
-      | V_ctor ("Barrier_RISCV_rw_w", [])  -> Barrier_RISCV_rw_w
-      | V_ctor ("Barrier_RISCV_w_w", [])   -> Barrier_RISCV_w_w
-      | V_ctor ("Barrier_RISCV_w_rw", [])  -> Barrier_RISCV_w_rw
-      | V_ctor ("Barrier_RISCV_rw_r", [])  -> Barrier_RISCV_rw_r
-      | V_ctor ("Barrier_RISCV_r_w", [])   -> Barrier_RISCV_r_w
-      | V_ctor ("Barrier_RISCV_w_r", [])   -> Barrier_RISCV_w_r
-      | V_ctor ("Barrier_RISCV_i", [])     -> Barrier_RISCV_i
-      | V_ctor ("Barrier_x86_MFENCE", [])  -> Barrier_x86_MFENCE
+      | V_ctor ("Barrier_ISB", _)         -> Barrier_ISB
+      | V_ctor ("Barrier_MIPS_SYNC", _)   -> Barrier_MIPS_SYNC
+      | V_ctor ("Barrier_RISCV_rw_rw", _) -> Barrier_RISCV_rw_rw
+      | V_ctor ("Barrier_RISCV_r_rw", _)  -> Barrier_RISCV_r_rw
+      | V_ctor ("Barrier_RISCV_r_r", _)   -> Barrier_RISCV_r_r
+      | V_ctor ("Barrier_RISCV_rw_w", _)  -> Barrier_RISCV_rw_w
+      | V_ctor ("Barrier_RISCV_w_w", _)   -> Barrier_RISCV_w_w
+      | V_ctor ("Barrier_RISCV_w_rw", _)  -> Barrier_RISCV_w_rw
+      | V_ctor ("Barrier_RISCV_rw_r", _)  -> Barrier_RISCV_rw_r
+      | V_ctor ("Barrier_RISCV_r_w", _)   -> Barrier_RISCV_r_w
+      | V_ctor ("Barrier_RISCV_w_r", _)   -> Barrier_RISCV_w_r
+      | V_ctor ("Barrier_RISCV_i", _)     -> Barrier_RISCV_i
+      | V_ctor ("Barrier_x86_MFENCE", _)  -> Barrier_x86_MFENCE
       | _                                  -> failwith "unknown barrier kind in interp2__bk_to_bk"
     in
 
