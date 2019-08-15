@@ -497,6 +497,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
             let primops = StringMap.add "Platform.clint_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
             let primops = StringMap.add "Platform.enable_dirty_update" (fun _ -> V_bool false) primops in
             let primops = StringMap.add "Platform.enable_misaligned_access" (fun _ -> V_bool false) primops in
+            let primops = StringMap.add "Platform.enable_pmp" (fun _ -> V_bool false) primops in
             let primops = StringMap.add "Platform.mtval_has_illegal_inst_bits" (fun _ -> V_bool false) primops in
             let primops = StringMap.add "Platform.insns_per_tick" (fun _ -> V_int (Nat_big_num.of_string "100")) primops in
             let primops = StringMap.add "Platform.load_reservation" (fun _ -> V_unit) primops in
