@@ -1912,7 +1912,6 @@ let pp_t_thread_start_label ?(graph=false) m tl =
 
 let pp_trans_label_only ?(graph=false) m (t: ('ts,'ss) trans) =
   begin match t with
-  | Sys_trans _ -> "Finalise Promising execution"
   | SS_trans (SS_only (t, _))    -> fst (pp_ss_only_label ~graph m t)
   | SS_trans (SS_sync (t, _, _)) -> fst (pp_ss_sync_label ~graph m t)
   | T_trans (T_only tl)          -> fst (pp_t_only_label ~graph m tl)
@@ -1952,7 +1951,6 @@ let pp_t_thread_start_trans ?(graph=false) m tl =
 
 let pp_trans ?(graph=false) m (t: ('ts,'ss) trans) =
   match t with
-  | Sys_trans _ -> "Finalise Promising execution"
   | SS_trans (SS_only (t', _))    -> pp_ss_only_trans ~graph m t'
   | SS_trans (SS_sync (t', _, _)) -> pp_ss_sync_trans ~graph m t'
   | T_trans (T_only tl)           -> pp_t_only_trans ~graph m tl

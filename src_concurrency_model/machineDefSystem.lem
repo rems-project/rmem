@@ -397,11 +397,6 @@ let system_state_after_transition
     | SS_sync ss_sync_trans ssc (Just tc) -> update_state (Just ssc) (Just (tc.tc_cont ()))
     end
 
-  | Sys_trans tss ss -> 
-     let all_tids = Set_extra.toList (Map.domain state.thread_states) in
-     let state' = <| state with thread_states = tss; storage_subsystem = ss |> in
-     TO_system_state (state', true, all_tids, false, false)
-
   | T_trans label ->
     match label with
     | T_only tl ->

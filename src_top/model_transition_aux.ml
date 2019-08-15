@@ -449,8 +449,9 @@ let fuzzy_compare_transitions trans1 trans2 =
                  ]
         in
         cmp_tl cmp tl1 tl2
-    | (T_propagate_cache_maintenance _, _) -> 1
-    | (_, T_propagate_cache_maintenance _) -> -1
+    (* unused case (last): *)
+    (* | (T_propagate_cache_maintenance _, _) -> 1
+     * | (_, T_propagate_cache_maintenance _) -> -1 *)
 
     (* | (T_Promising_mem_satisfy_read tl1, T_Promising_mem_satisfy_read tl2) -> -1
      *     (\* let cmp (read1,_) (read2,_) = read_requestCompare read1 read2 in
@@ -527,6 +528,4 @@ let fuzzy_compare_transitions trans1 trans2 =
   | (_, T_trans _) -> -1
   *)
     
-  | (Sys_trans _, _) -> 1
-  | (_, Sys_trans _) -> -1
   end
