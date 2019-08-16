@@ -546,8 +546,8 @@ let is_pop_strong_memory_barrier (instruction: instruction_kind) : bool =
   | IK_barrier Barrier_RISCV_rw_rw -> true
   | IK_barrier Barrier_x86_MFENCE  -> true
 
-  | IK_barrier (Barrier_DSB (_,_))                            -> fail
-  | IK_barrier (Barrier_DMB (_,_))                            -> fail
+  (* | IK_barrier (Barrier_DSB (_,_))                            -> fail
+   * | IK_barrier (Barrier_DMB (_,_))                            -> fail *)
 
   | _ -> false
   end
@@ -559,8 +559,8 @@ let is_AArch64_ld_barrier (instruction: instruction_kind) : bool =
   | IK_barrier (Barrier_DMB (A64_FullShare,  A64_barrier_LD)) -> true
   | IK_barrier (Barrier_DMB (A64_InnerShare, A64_barrier_LD)) -> true
 
-  | IK_barrier (Barrier_DSB (_, _))                            -> fail
-  | IK_barrier (Barrier_DMB (_, _))                            -> fail
+  (* | IK_barrier (Barrier_DSB (_, _))                            -> fail
+   * | IK_barrier (Barrier_DMB (_, _))                            -> fail *)
   | IK_barrier Barrier_TM_COMMIT   -> fail
   | _ -> false
   end
@@ -577,8 +577,8 @@ let is_AArch64_ic_wait_barrier (instruction: instruction_kind) : bool =
   | IK_barrier (Barrier_DSB (A64_FullShare,A64_barrier_all))  -> true
   | IK_barrier (Barrier_DSB (A64_InnerShare,A64_barrier_all)) -> true
 
-  | IK_barrier (Barrier_DSB (_,_))              -> fail
-  | IK_barrier (Barrier_DMB (_,_))              -> fail
+  (* | IK_barrier (Barrier_DSB (_,_))              -> fail
+   * | IK_barrier (Barrier_DMB (_,_))              -> fail *)
 
   | IK_barrier Barrier_TM_COMMIT   -> fail
   | _ -> false
@@ -591,8 +591,8 @@ let is_AArch64_dc_wait_barrier (instruction: instruction_kind) : bool =
   | IK_barrier (Barrier_DMB (A64_FullShare,A64_barrier_all))  -> true
   | IK_barrier (Barrier_DMB (A64_InnerShare,A64_barrier_all)) -> true
 
-  | IK_barrier (Barrier_DSB (_,_))              -> fail
-  | IK_barrier (Barrier_DMB (_,_))              -> fail
+  (* | IK_barrier (Barrier_DSB (_,_))              -> fail
+   * | IK_barrier (Barrier_DMB (_,_))              -> fail *)
   | IK_barrier Barrier_TM_COMMIT   -> fail
 
   | _ -> false
@@ -617,8 +617,8 @@ let is_AArch64_st_barrier (instruction: instruction_kind) : bool =
   | IK_barrier (Barrier_DMB (A64_FullShare,  A64_barrier_ST))  -> true
   | IK_barrier (Barrier_DMB (A64_InnerShare, A64_barrier_ST))  -> true
 
-  | IK_barrier (Barrier_DSB (_,_))                             -> fail
-  | IK_barrier (Barrier_DMB (_,_))                             -> fail
+  (* | IK_barrier (Barrier_DSB (_,_))                             -> fail
+   * | IK_barrier (Barrier_DMB (_,_))                             -> fail *)
 
   | IK_barrier Barrier_TM_COMMIT   -> fail
   | _ -> false
