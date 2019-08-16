@@ -32,10 +32,17 @@ open import RegUtils
      import Map
 open import PromisingViews
 open import PromisingTransitions
-open import PromisingUtils
 open ListMonad
 
+let is_branch i = is_AArch64_branch i || is_RISCV_branch i
+let is_amo = is_RISCV_amo
 
+
+let is_RISC params =
+  match params.t.thread_isa_info.ism with
+  | RISCV_ism -> true
+  | _ -> false
+  end
 
 
 

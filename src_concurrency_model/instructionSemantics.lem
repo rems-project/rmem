@@ -701,3 +701,49 @@ let interp_nias_of_instruction
 
   | _ -> failwith "unexpected 'instruction' in interp_nias_of_instruction"
   end
+
+
+
+(* TODO: ISA specific things that we'll move out of here *)
+
+let is_AArch64_atomic_fetchable_opcode (op: instruction_ast) : bool =
+  match op with
+  | AArch64_instr i ->
+      match i with
+(*      | ArmV8_embed_types.Barrier3 (ArmV8_embed_types.MemBarrierOp_ISB, _, _) -> true *)
+      | ArmV8_embed_types.Hint (ArmV8_embed_types.SystemHintOp_NOP) -> true
+      | ArmV8_embed_types.BranchImmediate _ -> true
+      | _ -> false
+      end
+  | _ -> false
+  end
+
+let AArch64_split_maybe_conditional_branch (op: instruction_ast) =
+  match op with
+  | AArch64_instr (ArmV8_embed_types.BranchConditional (x,y)) -> Just (x,y)
+  | _ -> Nothing
+  end
+
+let AArch64_make_conditional_branch (x,y) = 
+  AArch64_instr (ArmV8_embed_types.BranchConditional (x, y))
+
+
+                        
+let is_AArch64_branch = function
+  | AArch64_instr (ArmV8_embed_types.CompareAndBranch _) -> true
+  | AArch64_instr (ArmV8_embed_types.BranchConditional _) -> true
+  | AArch64_instr (ArmV8_embed_types.TestBitAndBranch _) -> true
+  | AArch64_instr (ArmV8_embed_types.BranchImmediate _) -> true
+  | AArch64_instr (ArmV8_embed_types.BranchRegister _) -> true
+  | _ -> false
+end
+
+let is_RISCV_branch = function
+  | RISCV_instr (Riscv_types.BTYPE _) -> true
+  | _ -> false
+end
+
+let is_RISCV_amo = function
+  | RISCV_instr (Riscv_types.AMO _) -> true
+  | _ -> false
+end

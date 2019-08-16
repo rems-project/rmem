@@ -37,6 +37,12 @@ open MaybeMonad
 
 let slice_of_write w = (w.w_addr, [complete_slice w.w_addr])
 
+
+
+
+
+
+
 let add_read_exclusive_write_slices state (read, writes_and_slices, se_ioids) =
   let (writes_and_slices', se_ioids') = Map.findWithDefault read ([],{}) state.flat_ss_exclusive_reads in
   let exclusive_reads =

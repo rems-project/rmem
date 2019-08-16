@@ -148,6 +148,13 @@ type model_params =
      shared_memory:  maybe (set footprint)
   |>
 
+let in_shared_memory params fp =
+  match params.shared_memory with
+  | Just sm -> exists (fp' IN sm). sub_footprint fp fp'
+  | Nothing -> true
+  end
+
+
 (* this property holds if the model params are valid wrt dc/ic values
  * i.e. this property holds if the params describe something equivalent to or stronger
  *  than some DC/IC configuration

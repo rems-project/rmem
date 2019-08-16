@@ -704,31 +704,6 @@ end
 let inline ik ii = ii.instruction_kind
 
 
-let is_AArch64_atomic_fetchable_opcode (op: instruction_ast) : bool =
-  match op with
-  | AArch64_instr i ->
-      match i with
-(*      | ArmV8_embed_types.Barrier3 (ArmV8_embed_types.MemBarrierOp_ISB, _, _) -> true *)
-      | ArmV8_embed_types.Hint (ArmV8_embed_types.SystemHintOp_NOP) -> true
-      | ArmV8_embed_types.BranchImmediate _ -> true
-      | _ -> false
-      end
-  | _ -> false
-  end
-
-let AArch64_split_maybe_conditional_branch (op: instruction_ast) =
-  match op with
-  | AArch64_instr (ArmV8_embed_types.BranchConditional (x,y)) -> Just (x,y)
-  | _ -> Nothing
-  end
-
-let AArch64_make_conditional_branch (x,y) = 
-  AArch64_instr (ArmV8_embed_types.BranchConditional (x, y))
-
-
-
-let is_AArch64_atomic_fetchable (instruction: instruction_instance) : bool =
-  is_AArch64_atomic_fetchable_opcode instruction.instruction
 
 
 

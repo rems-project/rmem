@@ -134,7 +134,6 @@ let rec paired_atomic_stores (i: instruction_instance) (it: instruction_tree) : 
   if is_memory_rmw (ik i) then [i]
   else paired_atomic_stores_helper it
 
-
 (* registers_final_state: find the registers state when thread has reached its
    final state.
    NOTE: 'state' might be a deadlock state, hence we find a registers snapshot

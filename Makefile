@@ -830,7 +830,6 @@ MACHINEFILES-PRE=\
   src_concurrency_model/machineDefTransitionUtils.lem\
   src_concurrency_model/promisingViews.lem\
   src_concurrency_model/promisingTransitions.lem\
-  src_concurrency_model/promisingUtils.lem\
   src_concurrency_model/promisingThread.lem\
   src_concurrency_model/promisingStorage.lem\
   src_concurrency_model/promising.lem\
