@@ -35,8 +35,6 @@ open import MachineDefInstructionPredicates
 open import InstructionSemantics
 open MaybeMonad
 
-import ArmV8_embed_types
-
 let slice_of_write w = (w.w_addr, [complete_slice w.w_addr])
 
 let add_read_exclusive_write_slices state (read, writes_and_slices, se_ioids) =
@@ -338,21 +336,14 @@ let mapUpdateWith (f : 'v -> 'v) (k : 'k) (v : 'v) (m : map 'k 'v) : map 'k 'v =
     | Just x  -> Map.insert k (f x) m
     end
 
-let icache_update params (icache) (w : (write * slices)) state =
-    fun () ->
-        let ic_memory' =
-            w :: icache.ic_memory in
-        let icache' =
-            <| icache with
-                ic_memory = ic_memory';
-            |>
-        in
-        <| state with
-            flat_ss_icaches = Map.insert icache.ic_tid icache' (state.flat_ss_icaches);
-        |>
+let icache_update params (icache) (w : (write * slices)) state () =
+  let ic_memory' = w :: icache.ic_memory in
+  let icache' = <| icache with ic_memory = ic_memory' |> in
+  let icaches' = Map.insert icache.ic_tid icache' (state.flat_ss_icaches) in
+  <| state with flat_ss_icaches = icaches' |>
 
 let flat_make_cbranch_fetch_from_pair params state tl (x, y) =
-  let cbranch = ArmV8_embed_types.BranchConditional (x, y) in
+  let cbranch = AArch64_make_conditional_branch (x,y) in
   let addr = tl.tl_label.fr_addr in
   let op = Nothing in  (* TODO: BS: re-construct new opcode from cbranch ... *)
   let fdo = FDO_success addr op (AArch64_instr cbranch) in
@@ -392,7 +383,6 @@ let _flat_try_fetch_relaxed params state tl =
 let flat_try_fetch_relaxed params state tl =
   let fetches = _flat_try_fetch_relaxed params state tl in
   let fdo_from_fetch (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) = fdo in
-  let ast_from_fdo (FDO_success _ _ ast) = ast in
   let maybe_cbranch_from_ast = AArch64_split_maybe_conditional_branch in
   let fdos = List.map fdo_from_fetch fetches in
   let (successful_fdos,unsuccessful_fdos) = List.partition is_fdo_success fdos in

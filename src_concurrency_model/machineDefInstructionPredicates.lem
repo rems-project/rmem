@@ -1225,3 +1225,6 @@ let AArch64_split_maybe_conditional_branch (op: instruction_ast) =
   | AArch64_instr (ArmV8_embed_types.BranchConditional (x,y)) -> Just (x,y)
   | _ -> Nothing
   end
+
+let AArch64_make_conditional_branch (x,y) = 
+  ArmV8_embed_types.BranchConditional (x, y)
