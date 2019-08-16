@@ -392,16 +392,10 @@ let _flat_try_fetch_relaxed params state tl =
 let flat_try_fetch_relaxed params state tl =
   let fetches = _flat_try_fetch_relaxed params state tl in
   let fdo_from_fetch (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) = fdo in
-  let is_fdo_success fdo =
-    match fdo with
-    | FDO_success _ _ _ -> true
-    | _ -> false
-    end in
   let ast_from_fdo (FDO_success _ _ ast) = ast in
   let maybe_cbranch_from_ast = AArch64_split_maybe_conditional_branch in
   let fdos = List.map fdo_from_fetch fetches in
-  let successful_fdos = List.filter is_fdo_success fdos in
-  let unsuccessful_fdos = List.filter (fun f -> not (is_fdo_success f)) fdos in
+  let (successful_fdos,unsuccessful_fdos) = List.partition is_fdo_success fdos in
   let asts = List.map ast_from_fdo successful_fdos in
   let cbranches = List.mapMaybe maybe_cbranch_from_ast asts in
   if List.length fetches = 1 || List.all is_AArch64_atomic_fetchable_opcode asts then

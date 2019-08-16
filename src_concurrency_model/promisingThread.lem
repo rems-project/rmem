@@ -32,7 +32,6 @@ open import RegUtils
 open import PromisingViews
 open import PromisingTransitions
 open import PromisingUtils
-     import ArmV8_embed_types
 open ListMonad
 
 

@@ -88,6 +88,18 @@ type fetch_and_decode_outcome =
   | FDO_unpredictable_fetch
   | FDO_decode_error of decode_error_t
 
+
+let is_fdo_success = function
+  | FDO_success _ _ _ -> true
+  | _ -> false
+end
+
+let ast_from_fdo = function
+  | FDO_success _ _ ast -> ast
+  | _ -> fail
+end
+
+
 let decode_error_compare e1 e2 =
   match (e1, e2) with
   (* we assume 'opcode' deterministically defines 'instruction_ast' so we only

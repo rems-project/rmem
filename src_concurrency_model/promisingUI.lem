@@ -31,7 +31,6 @@ open import RegUtils
 open import UiTypes
      import Map
 open import MachineDefUI
-     import ArmV8_embed_types
 open ListMonad
 open import PromisingViews
 open import PromisingTransitions
