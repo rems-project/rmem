@@ -1,2 +1,2 @@
 #!/bin/sh
-./rmem -model flat -shallow_embedding true -eager true -hash_prune true -priority_reduction true -model fetch-relaxed -eager_fetch_unmodified true -loop_limit 2 -thread_fetch_limit 10 "$@"
+$(dirname "$0")/rmem -model flat -shallow_embedding true -eager true -hash_prune true -priority_reduction true -model fetch-relaxed -eager_fetch_unmodified true -loop_limit 2 -thread_fetch_limit 10 "$@"

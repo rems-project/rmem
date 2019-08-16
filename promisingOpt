@@ -1,2 +1,2 @@
 #!/bin/sh
-./rmem -model promising -shallow_embedding true -model promise_first "$@" -hash_prune false -model promising_parallel_thread_state_search
+$(dirname "$0")/rmem -model promising -shallow_embedding true -model promise_first "$@" -hash_prune false -model promising_parallel_thread_state_search

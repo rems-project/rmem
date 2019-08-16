@@ -167,6 +167,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
       | V_ctor ("Barrier_RISCV_r_w", _)   -> Barrier_RISCV_r_w
       | V_ctor ("Barrier_RISCV_w_r", _)   -> Barrier_RISCV_w_r
       | V_ctor ("Barrier_RISCV_i", _)     -> Barrier_RISCV_i
+      | V_ctor ("Barrier_RISCV_tso", _)   -> Barrier_RISCV_tso
       | V_ctor ("Barrier_x86_MFENCE", _)  -> Barrier_x86_MFENCE
       | _                                  -> failwith "unknown barrier kind in interp2__bk_to_bk"
     in

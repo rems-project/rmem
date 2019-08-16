@@ -1,2 +1,2 @@
 #!/bin/sh
-./rmem -hash_prune false -model promising -shallow_embedding true "$@"
+$(dirname "$0")/rmem -hash_prune false -model promising -shallow_embedding true "$@"

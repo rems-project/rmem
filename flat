@@ -1,2 +1,2 @@
 #!/bin/sh
-./rmem -model flat "$@"
+$(dirname "$0")/rmem -model flat "$@"
