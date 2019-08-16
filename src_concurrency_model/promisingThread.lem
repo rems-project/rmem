@@ -22,6 +22,7 @@ open import Sail_impl_base
 open import InstructionSemantics
 open import FreshIds
 open import Events
+open import InstructionKindPredicates
 open import Fragments
 open import Debug
 open import Utils
