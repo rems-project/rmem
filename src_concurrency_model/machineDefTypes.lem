@@ -40,16 +40,7 @@ open import UiTypes
 open import Params
 open import Utils
 open import InstructionSemantics
-import Power_embed
-import ArmV8_embed
-import Mips_embed
-import Riscv
-import X86_embed
-import Power_embed_types
-import ArmV8_embed_types
-import Mips_embed_types
-import Riscv_types
-import X86_embed_types
+
 
 
 

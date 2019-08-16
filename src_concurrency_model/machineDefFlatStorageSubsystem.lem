@@ -351,20 +351,45 @@ let icache_update params (icache) (w : (write * slices)) state =
             flat_ss_icaches = Map.insert icache.ic_tid icache' (state.flat_ss_icaches);
         |>
 
-let rec _flat_try_fetch_relaxed params state tl =
-  match params.flat_need_ic with
-  | true -> flat_try_fetch_relaxed_from_icache params state tl
-  | false -> flat_try_fetch_relaxed_from_buffer_only params state tl  (* TODO: impl ... *)
-  end
-
-and flat_make_cbranch_fetch_from_pair params state tl (x, y) =
+let flat_make_cbranch_fetch_from_pair params state tl (x, y) =
   let cbranch = ArmV8_embed_types.BranchConditional (x, y) in
   let addr = tl.tl_label.fr_addr in
   let op = Nothing in  (* TODO: BS: re-construct new opcode from cbranch ... *)
   let fdo = FDO_success addr op (AArch64_instr cbranch) in
   (T_fetch <| tl with tl_suppl = Just (Fetched_FDO fdo) |>, Just (fun() -> state))
 
-and flat_try_fetch_relaxed params state tl =
+let flat_try_fetch_relaxed_from_icache params state tl =
+  let addr = tl.tl_label.fr_addr in
+  match Map.lookup tl.tl_label.fr_tid state.flat_ss_icaches with
+  | Nothing     -> failwith "flat_try_fetch_relaxed unknown thread"
+  | Just icache ->
+      let fp = (addr, 4) in
+      let overlaps ((w,s) : write*slices) : bool =
+          overlapping_slices (w.w_addr,s) (fp,[complete_slice fp]) in
+      let matched_ws = [w | forall (w MEM icache.ic_memory) | overlaps w] in
+      let mrss = possible_fetches_from_write_slices fp matched_ws in
+      let makeFetch mrs =
+          let fdo = tl.tl_label.fr_decode addr mrs in
+          (T_fetch (<| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |>), Just (fun() -> state)) in
+      List.map makeFetch mrss
+  end
+
+let flat_try_fetch_relaxed_from_buffer_only params state tl =
+  let addr = tl.tl_label.fr_addr in
+  let mrss = flat_fetch_from_buffer_relaxed params state addr in
+  let makeFetch mrs =
+      let fdo = tl.tl_label.fr_decode addr mrs in
+      (T_fetch (<| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |>), Just (fun() -> state)) in
+  List.map makeFetch mrss
+
+
+let _flat_try_fetch_relaxed params state tl =
+  match params.flat_need_ic with
+  | true -> flat_try_fetch_relaxed_from_icache params state tl
+  | false -> flat_try_fetch_relaxed_from_buffer_only params state tl  (* TODO: impl ... *)
+  end
+
+let flat_try_fetch_relaxed params state tl =
   let fetches = _flat_try_fetch_relaxed params state tl in
   let fdo_from_fetch (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) = fdo in
   let is_fdo_success fdo =
@@ -390,30 +415,6 @@ and flat_try_fetch_relaxed params state tl =
     List.map make_fetch unsuccessful_fdos ++ List.map (flat_make_cbranch_fetch_from_pair params state tl) combinations
   else
       [(T_fetch <| tl with tl_suppl = Just (Fetched_FDO FDO_unpredictable_fetch) |>, Just (fun() -> state))]
-
-and flat_try_fetch_relaxed_from_buffer_only params state tl =
-  let addr = tl.tl_label.fr_addr in
-  let mrss = flat_fetch_from_buffer_relaxed params state addr in
-  let makeFetch mrs =
-      let fdo = tl.tl_label.fr_decode addr mrs in
-      (T_fetch (<| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |>), Just (fun() -> state)) in
-  List.map makeFetch mrss
-
-and flat_try_fetch_relaxed_from_icache params state tl =
-  let addr = tl.tl_label.fr_addr in
-  match Map.lookup tl.tl_label.fr_tid state.flat_ss_icaches with
-  | Nothing     -> failwith "flat_try_fetch_relaxed unknown thread"
-  | Just icache ->
-      let fp = (addr, 4) in
-      let overlaps ((w,s) : write*slices) : bool =
-          overlapping_slices (w.w_addr,s) (fp,[complete_slice fp]) in
-      let matched_ws = [w | forall (w MEM icache.ic_memory) | overlaps w] in
-      let mrss = possible_fetches_from_write_slices fp matched_ws in
-      let makeFetch mrs =
-          let fdo = tl.tl_label.fr_decode addr mrs in
-          (T_fetch (<| tl with tl_suppl = Just (Fetched_Mem mrs fdo) |>), Just (fun() -> state)) in
-      List.map makeFetch mrss
-  end
 
 let flat_try_fetch params state tl =
     match params.ss_fetch_type with
