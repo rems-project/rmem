@@ -39,11 +39,11 @@ open import BasicTypes
 open import Params
 open import DwarfTypes
 open import InstructionSemantics
+open import InstructionKindPredicates
 open import CandidateExecution
 open import MachineDefTypes
 open import MachineDefThreadSubsystemUtils
 open import MachineDefThreadSubsystem
-open import MachineDefInstructionPredicates
 
 
 (** initial system state ********************************************)
@@ -733,7 +733,7 @@ let rec find_control_dependencies prefix =
   match prefix with
   | [] -> {}
   | i :: prefix ->
-      if is_cond_branch_instruction i || is_indirect_branch_instruction i then
+      if is_cond_branch_ii i || is_indirect_branch_ii i then
         (* FIXME: should we add i.instance_ioid to the set? *)
         (ioids_influencing_reg_reads prefix i.reg_reads)
         union (find_control_dependencies prefix)
@@ -808,7 +808,7 @@ let make_cex_instruction_instance
     cex_control_dependencies = find_control_dependencies prefix;
 
     cex_paired_atomic_load =
-      if is_memory_rmw i || is_atomic_store i
+      if is_memory_rmw (ik i) || is_atomic_store (ik i)
       then Maybe.map
              (fun ii -> ii.instance_ioid)
              (paired_atomic_load_aux i prefix)

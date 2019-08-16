@@ -32,9 +32,9 @@ open import Params
 open import BasicTypes
 open import RegUtils
 open import UiTypes
+open import InstructionKindPredicates
 
 open import MachineDefTypes
-open import MachineDefInstructionPredicates
 open import MachineDefUI
 
 import Power_embed_types
@@ -1042,8 +1042,8 @@ let potential_next_addresses_of_instruction
        (* no previous instruction, ergo not a branch delay XXX unless likely...  *)
        { successor_fetch_address iic.iic_instance }
     | prev_inst :: _ ->
-       if prev_inst.finished && is_branch_instruction prev_inst then
-         let () = ensure (not (is_branch_instruction iic.iic_instance))
+       if prev_inst.finished && is_branch_instruction (ik prev_inst) then
+         let () = ensure (not (is_branch_instruction (ik iic.iic_instance)))
               "undefined behaviour: branch in branch delay slot" in (* XXX could be likely... *)
 
          (* Use nextNextPC of finished instruction (may be branch delay) *)

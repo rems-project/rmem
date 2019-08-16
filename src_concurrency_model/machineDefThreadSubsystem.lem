@@ -35,7 +35,7 @@ open import Params
 open import InstructionSemantics
 open import BasicTypes
 open import RegUtils
-open import MachineDefInstructionPredicates
+open import InstructionKindPredicates
 open import MachineDefThreadSubsystemUtils
 open import MachineDefTypes
 open ListMonad
@@ -111,12 +111,12 @@ let current_reg_write_dependencies
 let paired_atomic_load_aux
       (iic_instance : instruction_instance)
       prefix : maybe instruction_instance =
-  if is_memory_rmw iic_instance then Just iic_instance 
+  if is_memory_rmw (ik iic_instance) then Just iic_instance 
   else
     (* let prefix = iic.active_prefix ++ iic.old_prefix in *)
     let atomic i = (is_atomic_load i || is_atomic_store i) && not (is_memory_rmw i) in
-    Maybe.bind (List.find atomic prefix) $ fun inst ->
-    if is_atomic_load inst then Just inst else Nothing
+    Maybe.bind (List.find (fun i -> atomic (ik i)) prefix) $ fun inst ->
+    if is_atomic_load (ik inst) then Just inst else Nothing
 
 let paired_atomic_load (iic: instruction_in_context) : maybe instruction_instance =
   paired_atomic_load_aux
@@ -126,12 +126,12 @@ let paired_atomic_load (iic: instruction_in_context) : maybe instruction_instanc
 
 let rec paired_atomic_stores_helper (T its: instruction_tree) : list instruction_instance =
   its >>= fun (i, it) ->
-  if is_atomic_load i && not (is_memory_rmw i) then []
-  else if is_atomic_store i && not (is_memory_rmw i) then [i]
+  if is_atomic_load (ik i) && not (is_memory_rmw (ik i)) then []
+  else if is_atomic_store (ik i) && not (is_memory_rmw (ik i)) then [i]
   else paired_atomic_stores_helper it
 
 let rec paired_atomic_stores (i: instruction_instance) (it: instruction_tree) : list instruction_instance =
-  if is_memory_rmw i then [i]
+  if is_memory_rmw (ik i) then [i]
   else paired_atomic_stores_helper it
 
 
@@ -169,6 +169,24 @@ let registers_final_state (state: thread_state) : list (reg_base_name * maybe re
           (rbn, Nothing))
       s
 
+(** Instruction instance predicates *)
+
+(* A failed store-conditional/exclusive is not considered a memory access after it is finished *)
+let is_viable_memory_store_ii (i: instruction_instance) : bool =
+  is_memory_store_instruction (ik i) &&
+  not (i.successful_atomic_store = Just false && i.finished)
+
+let is_viable_memory_access_ii (i: instruction_instance) : bool =
+  is_memory_load_instruction (ik i) || is_viable_memory_store_ii i
+
+let is_cond_branch_ii (i: instruction_instance) : bool =
+  Set.size i.nias > 1
+
+let is_indirect_branch_ii (i: instruction_instance) : bool =
+  exists (nia IN i.nias). nia = NIA_indirect_address
+
+
+
 (** Possible Reads and Writes of Instruction ************************)
 
 (* Return Nothing if the read footprint is not determined yet, or Just
@@ -196,7 +214,7 @@ let possibly_reads_address
     (fps:         set footprint)
     : bool
   =
-  is_memory_load_instruction instruction &&
+  is_memory_load_instruction (ik instruction) &&
   match read_footprint_of_load instruction with
   | Just fp -> non_empty_intersection_set fps {fp}
   | Nothing -> exists ((_, s) IN fps). s <> 0
@@ -208,7 +226,7 @@ let possibly_writes_address
     (fps:         set footprint)
     : bool
   =
-  is_viable_memory_store_instruction instruction &&
+  is_viable_memory_store_ii instruction &&
   match instruction.subwrites.sw_addr with
   | Just fp -> non_empty_intersection_set fps {fp}
   | Nothing -> exists ((_, s) IN fps). s <> 0
@@ -233,11 +251,11 @@ let possibly_reads_or_writes_address _params
    the instruction. This guarantees that the instruction's memory read is
    recorded in the instruction_instance state. *)
 let all_reads_are_calculated params inst : bool =
-  is_memory_load_instruction inst --> inst.subreads.sr_addr <> Nothing
+  is_memory_load_instruction (ik inst) --> inst.subreads.sr_addr <> Nothing
 
 
 let all_writes_are_calculated params inst : bool =
-  is_viable_memory_store_instruction inst -->
+  is_viable_memory_store_ii inst -->
     inst.subwrites.sw_addr <> Nothing
 
 (* return true iff the sail code has already generated all the memory-read/write
@@ -255,6 +273,9 @@ let is_entirely_satisfied_load (params: thread_params) (i: instruction_instance)
 
 let finished_load_part inst : bool =
   inst.finished || inst.rmw_finished_load_snapshot <> Nothing
+
+
+
 
 
 (** Instruction restart machinery ***********************************)
@@ -292,33 +313,33 @@ let dependent_suffix_to_restart
     in
 
     let after_load_acquire = fun () ->
-      is_memory_load_instruction inst &&
+      is_memory_load_instruction (ik inst) &&
       exists (prev_inst MEM prefix).
-        (is_AArch64_load_acquire prev_inst || is_RISCV_load_acquire prev_inst)
+        (is_AArch64_load_acquire (ik prev_inst) || is_RISCV_load_acquire (ik prev_inst))
         && not (finished_load_part prev_inst)
         && prev_inst.instance_ioid IN restarts
     in
 
     let after_RISCV_fence_sr = fun () ->
-      is_memory_load_instruction inst &&
+      is_memory_load_instruction (ik inst) &&
       exists_iprev_with_prefix prefix $ fun prev_inst prev_active_prefix ->
-        is_RISCV_fence_sr prev_inst
-        && is_RISCV_fence_pr prev_inst
-        && not (is_RISCV_fence_pw prev_inst)
+        is_RISCV_fence_sr (ik prev_inst)
+        && is_RISCV_fence_pr (ik prev_inst)
+        && not (is_RISCV_fence_pw (ik prev_inst))
         && not prev_inst.finished
         && exists (prev_prev_inst MEM prev_active_prefix).
-            is_memory_load_instruction prev_prev_inst
+            is_memory_load_instruction (ik prev_prev_inst)
             && not (finished_load_part prev_prev_inst)
             && prev_prev_inst.instance_ioid IN restarts
     in
 
     let after_RISCV_fence_tso = fun () ->
-      is_memory_load_instruction inst &&
+      is_memory_load_instruction (ik inst) &&
       exists_iprev_with_prefix prefix $ fun prev_inst prev_active_prefix ->
-        is_RISCV_fence_tso prev_inst
+        is_RISCV_fence_tso (ik prev_inst)
         && not prev_inst.finished
         && exists (prev_prev_inst MEM prev_active_prefix).
-            is_memory_load_instruction prev_prev_inst
+            is_memory_load_instruction (ik prev_prev_inst)
             && not (finished_load_part prev_prev_inst)
             && prev_prev_inst.instance_ioid IN restarts
     in
@@ -566,11 +587,11 @@ let pop_might_be_restarted_roots params
     if instruction.finished then {} else
 
     let store_roots =
-      if is_viable_memory_store_instruction instruction then
+      if is_viable_memory_store_ii instruction then
         let potential_footprint =
           instruction.subwrites.sw_potential_writes ++
             instruction.subwrites.sw_potential_write_addresses in
-        if is_atomic_store instruction then
+        if is_atomic_store (ik instruction) then
           match instruction.successful_atomic_store with
           | Nothing ->
               (propagate_write_action_restart_roots inst_tree potential_footprint)
@@ -589,7 +610,7 @@ let pop_might_be_restarted_roots params
     in
 
     let load_roots =
-      if is_memory_load_instruction instruction then
+      if is_memory_load_instruction (ik instruction) then
         Set.bigunionMap
           (fun rr -> pop_memory_read_action_restart_roots params state inst_tree rr Nothing)
           (Set.fromList (read_requests_of_subreads instruction.subreads))
@@ -682,7 +703,7 @@ let fully_determined_address params
   =
   (* for efficiency, first check if 'instruction' is finished or not a memory access *)
   instruction.finished ||
-  not (is_viable_memory_access instruction) ||
+  not (is_viable_memory_access_ii instruction) ||
 
   (* the value read from registers that feed directly into a memory
   access address of 'instruction' cannot change *)
@@ -692,9 +713,9 @@ let fully_determined_address params
   $> fully_determined_reg_reads active_prefix &&
 
   (* the pseudocode has made enough steps to make the address visible *)
-  (is_viable_memory_store_instruction instruction -->
+  (is_viable_memory_store_ii instruction -->
     instruction.subwrites.sw_addr <> Nothing) &&
-  (is_memory_load_instruction instruction -->
+  (is_memory_load_instruction (ik instruction) -->
     read_footprint_of_load instruction <> Nothing)
 
 let commitDataflow (iic: instruction_in_context) : bool =
@@ -703,15 +724,15 @@ let commitDataflow (iic: instruction_in_context) : bool =
 
 let commitControlflow (iic: instruction_in_context) : bool =
   (forall (iprev MEM iic.active_prefix).
-      is_cond_branch_instruction iprev --> iprev.finished) &&
+      is_cond_branch_ii iprev --> iprev.finished) &&
 
   (forall (iprev MEM iic.active_prefix).
-      is_indirect_branch_instruction iprev --> iprev.finished) &&
+      is_indirect_branch_ii iprev --> iprev.finished) &&
 
   (* Additions for AArch64 transactional memory *)
   (forall (iprev MEM iic.active_prefix).
-      (is_tstart iprev --> iprev.finished) &&
-      (is_tcommit iprev --> iprev.finished))
+      (is_tstart (ik iprev) --> iprev.finished) &&
+      (is_tcommit (ik iprev) --> iprev.finished))
 
 
 let finish_action params state iic =
@@ -719,7 +740,7 @@ let finish_action params state iic =
 
   let (it_subtree', discarded_ioids) =
     if params.thread_isa_info.ism = MIPS_ism then
-      if is_branch_instruction iic.iic_instance then
+      if is_branch_instruction (ik iic.iic_instance) then
         match iic.subtree with
         | T [(successor, T iiits)] ->
            (* Prune tree of branch delay instruction *)
@@ -771,12 +792,26 @@ let finish_action params state iic =
   $> make_old_instructions params
   $> make_thread_cont_res {} discarded_ioids
 
+
+
+let address_from_AArch64_dc_ii (instruction: instruction_instance) : maybe address =
+  match instruction.instruction_kind with
+  | IK_cache_op Cache_op_D_CVAU  ->
+    match instruction.reg_reads with
+    (* DC CVAU only reads 1 register -- it contains the address *)
+    | [(_, _, v)] ->
+        address_of_register_value v
+    | _ -> Nothing
+    end
+  | _ -> Nothing
+  end
+
 (* Update an instruction (sub)tree to restart dcs to some address:
  * TODO: when we get DC; po; (R|W)  ordering then this needs updating *)
 let handle_restart_dc fp it =
   instruction_tree_map
     (fun prefix i _ ->
-      match address_from_AArch64_dc i with
+      match address_from_AArch64_dc_ii i with
       | Just addr ->
           (* TODO: dc cache line overlap *)
           if footprints_overlap fp (addr, 4) then
@@ -884,7 +919,7 @@ let failed_write_action
 
 let pldi11_commitPrevMightSameAddress params active_prefix footprints =
   forall (iprev MEM active_prefix).
-    is_viable_memory_access iprev -->
+    is_viable_memory_access_ii iprev -->
       (iprev.finished ||
           (* all the instructions that write registers feeding directly into
             a memory access address of iprev are committed*)
@@ -920,32 +955,32 @@ let pldi11_commit_cand params
   (* commitControlflow *)
   commitControlflow iic &&
   (* commitPrevMightSameAddress *)
-  (is_memory_load_instruction i -->
+  (is_memory_load_instruction (ik i) -->
       pldi11_commitLoadPrevMightSameAddress params iic) &&
    (* commitPrevBarrLS *)
-   (is_viable_memory_access i -->
+   (is_viable_memory_access_ii i -->
       ((forall (iprev MEM iic.active_prefix).
-        (is_sync iprev || is_lwsync iprev || is_isync iprev) --> iprev.finished) &&
+        (is_sync (ik iprev) || is_lwsync (ik iprev) || is_isync (ik iprev)) --> iprev.finished) &&
       Set.null pldi11_substate.unacknowledged_syncs)) &&
    (* commitPrevBarrSEIEIO *)
-   (is_memory_store_instruction i -->
+   (is_memory_store_instruction (ik i) -->
      forall (iprev MEM iic.active_prefix).
-         is_eieo iprev --> iprev.finished) &&
+         is_eieo (ik iprev) --> iprev.finished) &&
    (* commitPrevBarrB *)
-   (is_barrier i --> (* this includes isync *)
+   (is_barrier (ik i) --> (* this includes isync *)
       ((forall (iprev MEM iic.active_prefix).
-         is_barrier iprev --> iprev.finished) &&
+         is_barrier (ik iprev) --> iprev.finished) &&
       Set.null pldi11_substate.unacknowledged_syncs)) &&
    (* commitMemoryAccessBeforeBarrier *)
-   ((is_sync i || is_lwsync i) -->
+   ((is_sync (ik i) || is_lwsync (ik i)) -->
      forall (iprev MEM iic.active_prefix).
-       is_viable_memory_access iprev --> iprev.finished) &&
+       is_viable_memory_access_ii iprev --> iprev.finished) &&
    (* commitMemoryAccessBeforeBarrierEIEIO *)
-   (is_eieio i -->
+   (is_eieio (ik i) -->
      forall (iprev MEM iic.active_prefix).
-       is_memory_store_instruction iprev --> iprev.finished) &&
+       is_memory_store_instruction (ik iprev) --> iprev.finished) &&
    (* commitAddressesBeforeIsyncDetermined *)
-   (is_isync i -->
+   (is_isync (ik i) -->
       forall_iprev_with_prefix iic.active_prefix $ fun iprev prev_active_prefix ->
           fully_determined_address params prev_active_prefix iprev
      (*
@@ -968,17 +1003,17 @@ let pldi11_commit_cand params
    else true
    *)) &&
    (* commitPrevLoadAcquire *)
-   (is_memory_store_instruction i -->
+   (is_memory_store_instruction (ik i) -->
      forall (iprev MEM iic.active_prefix).
-      is_AArch64_load_acquire iprev --> finished_load_part iprev) &&
+      is_AArch64_load_acquire (ik iprev) --> finished_load_part iprev) &&
    (* commitStoreRelease *)
-   (is_AArch64_store_release i -->
+   (is_AArch64_store_release (ik i) -->
      forall (iprev MEM iic.active_prefix).
-       is_viable_memory_access iprev --> iprev.finished) &&
+       is_viable_memory_access_ii iprev --> iprev.finished) &&
    (* commitLRSC *)
-   ((is_PPC_load_reserve i || is_PPC_store_conditional i) -->
+   ((is_PPC_load_reserve (ik i) || is_PPC_store_conditional (ik i)) -->
      forall (iprev MEM iic.active_prefix).
-       (is_PPC_load_reserve iprev || is_PPC_store_conditional iprev) --> iprev.finished)
+       (is_PPC_load_reserve (ik iprev) || is_PPC_store_conditional (ik iprev)) --> iprev.finished)
 
 
 (** pldi11 commit actions *******************************************)
@@ -1044,9 +1079,9 @@ let pop_write_co_check
 
     if iprev.successful_atomic_store = Just false then true
     else if params.thread_allow_write_subsumption &&
-        not (is_AArch64_store_release iprev) &&
-        not (is_RISCV_store_release iprev) &&
-        not (is_atomic_store iprev)
+        not (is_AArch64_store_release (ik iprev)) &&
+        not (is_RISCV_store_release (ik iprev)) &&
+        not (is_atomic_store (ik iprev))
     then
       (* if write-subsumption is allowed, we make sure the write we are propagating
       covers all po-previous unpropagated writes that intersect with it *)
@@ -1072,8 +1107,8 @@ let pop_write_co_check
       (((List.elem write (List.unzip writes $> fst)) &&
         (unsat_slices <> [] ||
            (not (is_flat_model params) &&
-              (is_AArch64_load_acquire iafter || is_RISCV_load_strong_acquire iafter
-              || is_atomic_load iafter))))
+              (is_AArch64_load_acquire (ik iafter) || is_RISCV_load_strong_acquire (ik iafter)
+              || is_atomic_load (ik iafter)))))
       -->
         List.lookup read_request iafter.subreads.sr_requested <> Nothing)
   in
@@ -1113,8 +1148,8 @@ let rec pop_load_finish_co_check_helper
       let writes_read_from =
         let is_fixed =
           not inst.finished && (* for efficiency (propagated_writes covers the propagated case) *)
-          not (is_PPC_store_conditional inst) && (* PPC store-conditional can fail spontaneously *)
-          not (is_RISCV_store_conditional inst) && (* RISC-V store-conditional can fail spontaneously *)
+          not (is_PPC_store_conditional (ik inst)) && (* PPC store-conditional can fail spontaneously *)
+          not (is_RISCV_store_conditional (ik inst)) && (* RISC-V store-conditional can fail spontaneously *)
 
           (* all data dependencies (including address) are determined *)
           fully_determined_reg_reads active_prefix inst.reg_reads
@@ -1234,86 +1269,86 @@ let pop_commit_barrier_cand
   match params.thread_isa_info.ism with
   | AARCH64_ism _ ->
       if is_flat_model params then
-        (is_pop_strong_memory_barrier inst -->
+        (is_pop_strong_memory_barrier (ik inst) -->
           (forall (iprev MEM iic.active_prefix).
-            (is_pop_memory_barrier iprev || is_pop_instruction_barrier iprev)
+            (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
               --> iprev.finished)) &&
 
         (forall (iprev MEM iic.active_prefix).
-          is_pop_strong_memory_barrier iprev --> iprev.finished)
+          is_pop_strong_memory_barrier (ik iprev) --> iprev.finished)
       else
         forall (iprev MEM iic.active_prefix).
-          (is_pop_memory_barrier iprev || is_pop_instruction_barrier iprev)
+          (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
             --> iprev.finished
 
   | PPCGEN_ism    ->
       forall (iprev MEM iic.active_prefix).
-        (is_pop_memory_barrier iprev || is_pop_instruction_barrier iprev)
+        (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
           --> iprev.finished
 
   | MIPS_ism      ->
       forall (iprev MEM iic.active_prefix).
-        (is_pop_memory_barrier iprev || is_pop_instruction_barrier iprev)
+        (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
           --> iprev.finished
 
   | RISCV_ism     -> true
   | X86_ism       -> true
   end &&
 
-  (is_pop_strong_memory_barrier inst -->
+  (is_pop_strong_memory_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access iprev --> iprev.finished) &&
+        is_viable_memory_access_ii iprev --> iprev.finished) &&
 
-  (is_pop_instruction_barrier inst -->
+  (is_pop_instruction_barrier (ik inst) -->
       forall_iprev_with_prefix iic.active_prefix $ fun iprev prev_active_prefix ->
           fully_determined_address params prev_active_prefix iprev) &&
 
   (* Additions for barrier.st/ld: *)
-  (is_AArch64_ld_barrier inst -->
+  (is_AArch64_ld_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_memory_load_instruction iprev --> finished_load_part iprev) &&
+        is_memory_load_instruction (ik iprev) --> finished_load_part iprev) &&
 
-  (is_AArch64_st_barrier inst -->
+  (is_AArch64_st_barrier (ik inst) -->
     (forall (iprev MEM iic.active_prefix).
-        is_memory_store_instruction iprev --> iprev.finished)) &&
+        is_memory_store_instruction (ik iprev) --> iprev.finished)) &&
 
   (* Additions for lwsync: *)
-  (is_lwsync inst -->
+  (is_lwsync (ik inst) -->
     (forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access iprev --> iprev.finished)) &&
+        is_viable_memory_access_ii iprev --> iprev.finished)) &&
 
   (* Additions for eieio: *)
-  (is_eieio inst -->
+  (is_eieio (ik inst) -->
     (forall (iprev MEM iic.active_prefix).
-        is_memory_store_instruction iprev --> iprev.finished)) &&
+        is_memory_store_instruction (ik iprev) --> iprev.finished)) &&
 
   (* Additions for load-reserve/store-conditional: *)
   (* none *)
 
   (** Additions for RISC-V *)
-  (is_RISCV_fence_pr inst -->
+  (is_RISCV_fence_pr (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_memory_load_instruction iprev --> finished_load_part iprev) &&
+        is_memory_load_instruction (ik iprev) --> finished_load_part iprev) &&
 
-  (is_RISCV_fence_pw inst -->
+  (is_RISCV_fence_pw (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_memory_store_instruction iprev --> iprev.finished) &&
+        is_memory_store_instruction (ik iprev) --> iprev.finished) &&
 
   (* we commit fence.tso only after all po-previous memory accesses are finished;
   po-later stores can be committed only after the fence.tso is finished;
   po-later loads can be satisfied only after all loads preceding the fence.tso are satisfied *)
-  (is_RISCV_fence_tso inst -->
+  (is_RISCV_fence_tso (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access iprev --> iprev.finished) &&
+        is_viable_memory_access_ii iprev --> iprev.finished) &&
 
   (* for IC/DC *)
-  (is_AArch64_dc_wait_barrier inst -->
+  (is_AArch64_dc_wait_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_AArch64_dc_instr iprev --> iprev.finished) &&
+        is_AArch64_dc_instr (ik iprev) --> iprev.finished) &&
 
-  (is_AArch64_ic_wait_barrier inst -->
+  (is_AArch64_ic_wait_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_AArch64_ic_instr iprev --> iprev.finished)
+        is_AArch64_ic_instr (ik iprev) --> iprev.finished)
 
 let pop_commit_store_cand
     (params: thread_params)
@@ -1335,26 +1370,26 @@ let pop_commit_store_cand
   commitControlflow iic &&
 
   (forall (iprev MEM iic.active_prefix).
-      (is_pop_strong_memory_barrier iprev || is_pop_instruction_barrier iprev)
+      (is_pop_strong_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
       --> iprev.finished) &&
 
   (* Additions for barrier.st/ld: *)
   (forall (iprev MEM iic.active_prefix).
-      (is_AArch64_st_barrier iprev --> iprev.finished) &&
-      (is_AArch64_ld_barrier iprev --> iprev.finished)) &&
+      (is_AArch64_st_barrier (ik iprev) --> iprev.finished) &&
+      (is_AArch64_ld_barrier (ik iprev) --> iprev.finished)) &&
 
   (* Additions for load.acquire/store.release: *)
   (* TODO: the following might be too strong, a previous read only
   needs to be issued and non-restartable. *)
-  (is_AArch64_store_release instruction -->
+  (is_AArch64_store_release (ik instruction) -->
     (forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access iprev --> iprev.finished)) &&
+        is_viable_memory_access_ii iprev --> iprev.finished)) &&
 
   (forall (iprev MEM iic.active_prefix).
-      is_AArch64_load_acquire iprev --> finished_load_part iprev) &&
+      is_AArch64_load_acquire (ik iprev) --> finished_load_part iprev) &&
 
   (* Additions for load/store-exclusive: *)
-  (is_AArch64_store_exclusive instruction -->
+  (is_AArch64_store_exclusive (ik instruction) -->
       let atomic_load = ensure_just (paired_atomic_load iic)
           "can't find the paired load of a successful atomic store"
           (* failed store-exclusive uses a different _cand function *)
@@ -1368,37 +1403,37 @@ let pop_commit_store_cand
 
   (* Additions for lwsync: *)
   (forall (iprev MEM iic.active_prefix).
-      is_lwsync iprev --> iprev.finished) &&
+      is_lwsync (ik iprev) --> iprev.finished) &&
 
   (* Additions for eieio: *)
   (forall (iprev MEM iic.active_prefix).
-      is_eieio iprev --> iprev.finished) &&
+      is_eieio (ik iprev) --> iprev.finished) &&
 
   (* Additions for load-reserve/store-conditional: *)
-  (is_PPC_store_conditional instruction -->
+  (is_PPC_store_conditional (ik instruction) -->
       paired_atomic_load iic <> Nothing &&
       (forall (iprev MEM iic.active_prefix).
-          (is_PPC_load_reserve iprev || is_PPC_store_conditional iprev)
+          (is_PPC_load_reserve (ik iprev) || is_PPC_store_conditional (ik iprev))
             --> iprev.finished)) &&
 
   (*** Additions for RISC-V ***)
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_fence_sw iprev --> iprev.finished) &&
+      is_RISCV_fence_sw (ik iprev) --> iprev.finished) &&
 
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_fence_tso iprev --> iprev.finished) &&
+      is_RISCV_fence_tso (ik iprev) --> iprev.finished) &&
 
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_load_acquire iprev --> finished_load_part iprev) &&
+      is_RISCV_load_acquire (ik iprev) --> finished_load_part iprev) &&
 
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_store_acquire iprev --> iprev.finished) &&
+      is_RISCV_store_acquire (ik iprev) --> iprev.finished) &&
 
-  (is_RISCV_store_release instruction -->
+  (is_RISCV_store_release (ik instruction) -->
     (forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access iprev --> iprev.finished)) &&
+        is_viable_memory_access_ii iprev --> iprev.finished)) &&
 
-  ((is_RISCV_store_conditional instruction && not (is_RISCV_AMO instruction)) -->
+  ((is_RISCV_store_conditional (ik instruction) && not (is_RISCV_AMO (ik instruction))) -->
       let atomic_load = ensure_just (paired_atomic_load iic)
           "can't find the paired load of a successful atomic store"
           (* failed store-conditional uses a different _cand function *)
@@ -1434,28 +1469,28 @@ let pop_finish_load_cand_barrier_part
   =
   (* Additions for load.acquire/store.release: *)
   (forall (iprev MEM iic.active_prefix).
-      is_AArch64_load_acquire iprev --> finished_load_part iprev) &&
+      is_AArch64_load_acquire (ik iprev) --> finished_load_part iprev) &&
 
   (* Additions for load-reserve/store-conditional: *)
-  (is_PPC_load_reserve iic.iic_instance -->
+  (is_PPC_load_reserve (ik iic.iic_instance) -->
     (forall (iprev MEM iic.active_prefix).
-        (is_PPC_load_reserve iprev || is_PPC_store_conditional iprev)
+        (is_PPC_load_reserve (ik iprev) || is_PPC_store_conditional (ik iprev))
         --> iprev.finished)) &&
 
   (*** Additions for RISCV ***)
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_load_acquire iprev --> finished_load_part iprev) &&
+      is_RISCV_load_acquire (ik iprev) --> finished_load_part iprev) &&
 
   (* this is just to make sure "fence r,r" and "fence r,rw" are finished
   (the other fences will already be finished, see read-req-cand) *)
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_fence_sr iprev --> iprev.finished) &&
+      is_RISCV_fence_sr (ik iprev) --> iprev.finished) &&
 
   (forall_iprev_with_prefix iic.active_prefix $ fun prev_inst prev_active_prefix ->
-      is_RISCV_fence_tso prev_inst -->
+      is_RISCV_fence_tso (ik prev_inst) -->
         (prev_inst.finished ||
         forall (prev_prev_inst MEM prev_active_prefix).
-            is_memory_load_instruction prev_prev_inst
+            is_memory_load_instruction (ik prev_prev_inst)
               --> finished_load_part prev_prev_inst))
 
 let pop_finish_load_cand
@@ -1470,9 +1505,10 @@ let pop_finish_load_cand
 
 
 let pop_finish_cand params state (iic: instruction_in_context) : bool =
-  if is_memory_load_instruction iic.iic_instance then
+  if is_memory_load_instruction (ik iic.iic_instance) then
     pop_finish_load_cand params state iic
-  else if is_RISCV_fence_pr iic.iic_instance || is_RISCV_fence_pw iic.iic_instance then
+  else if is_RISCV_fence_pr (ik iic.iic_instance)
+          || is_RISCV_fence_pw (ik iic.iic_instance) then
     true
   else
     pop_finish_simple_cand params state iic
@@ -1480,7 +1516,7 @@ let pop_finish_cand params state (iic: instruction_in_context) : bool =
 
 let pop_propagate_tmstart_cand (iic: instruction_in_context) : bool =
   let instruction = iic.iic_instance in
-  let () = ensure (is_tstart instruction) "not a tstart instruction" in
+  let () = ensure (is_tstart (ik instruction)) "not a tstart instruction" in
 
   commitDataflow iic &&
   commitControlflow iic &&
@@ -1492,7 +1528,7 @@ let pop_propagate_tmstart_cand (iic: instruction_in_context) : bool =
 
 let pop_propagate_tmcommit_cand (iic: instruction_in_context) : bool =
   let instruction = iic.iic_instance in
-  let () = ensure (is_tcommit instruction) "not a tcommit instruction" in
+  let () = ensure (is_tcommit (ik instruction)) "not a tcommit instruction" in
 
   commitDataflow iic &&
   commitControlflow iic &&
@@ -1504,7 +1540,7 @@ let pop_propagate_tmcommit_cand (iic: instruction_in_context) : bool =
 
 let pop_propagate_tmabort_cand (iic: instruction_in_context) : bool =
   let instruction = iic.iic_instance in
-  let () = ensure (is_tabort instruction) "not a tabort instruction" in
+  let () = ensure (is_tabort (ik instruction)) "not a tabort instruction" in
 
   commitDataflow iic &&
   commitControlflow iic
@@ -1520,11 +1556,11 @@ let pldi11_memory_read_storage_cand (state: thread_state) (iic: instruction_in_c
   let i = iic.iic_instance in
   (*let program_order_prefix_full = iic.active_prefix ++ iic.committed_prefix in*)
   (forall (iprev MEM iic.active_prefix).
-    (is_sync iprev || is_isync iprev || is_lwsync iprev) --> iprev.finished) &&
+    (is_sync (ik iprev) || is_isync (ik iprev) || is_lwsync (ik iprev)) --> iprev.finished) &&
   (Set.null (get_pldi11_thread_substate state.thread_substate).unacknowledged_syncs) &&
-  (is_PPC_load_reserve i -->
+  (is_PPC_load_reserve (ik i) -->
       (forall (iprev MEM iic.active_prefix).
-        (is_PPC_load_reserve iprev || is_PPC_store_conditional iprev) --> iprev.finished))
+        (is_PPC_load_reserve (ik iprev) || is_PPC_store_conditional (ik iprev)) --> iprev.finished))
 
 
 
@@ -1534,78 +1570,78 @@ let pop_memory_read_request_cand params (inst_context: instruction_in_context) :
   (* NOTE: we don't check po-previous instructions to the same address.
      See also private comment THREAD1 *)
   (forall (prev_inst MEM inst_context.active_prefix).
-      is_pop_strong_memory_barrier prev_inst --> prev_inst.finished) &&
+      is_pop_strong_memory_barrier (ik prev_inst) --> prev_inst.finished) &&
 
   (* See private comment THREAD2 *)
   (forall (prev_inst MEM inst_context.active_prefix).
-       is_pop_instruction_barrier prev_inst --> prev_inst.finished) &&
+       is_pop_instruction_barrier (ik prev_inst) --> prev_inst.finished) &&
 
   (* Additions for barrier.st/ld: *)
   (forall (prev_inst MEM inst_context.active_prefix).
-      is_AArch64_ld_barrier prev_inst --> prev_inst.finished) &&
+      is_AArch64_ld_barrier (ik prev_inst) --> prev_inst.finished) &&
 
   (* Additions for load.acquire/store.release: *)
   (* A Store-Release followed by a Load-Acquire is observed in program order *)
-  (is_AArch64_load_acquire instruction -->
+  (is_AArch64_load_acquire (ik instruction) -->
       forall (prev_inst MEM inst_context.active_prefix).
-          is_AArch64_store_release prev_inst --> prev_inst.finished) &&
+          is_AArch64_store_release (ik prev_inst) --> prev_inst.finished) &&
   (* All po-previous Load-acquires must issue their requests before the
   read request. Also see private note THREAD3 *)
   (forall (prev_inst MEM inst_context.active_prefix).
-      is_AArch64_load_acquire prev_inst
+      is_AArch64_load_acquire (ik prev_inst)
       -->
       (finished_load_part prev_inst ||
       is_entirely_satisfied_load params prev_inst)) &&
 
   (* Additions for transactional memory: *)
   (forall (prev_inst MEM inst_context.active_prefix).
-      (is_tstart prev_inst  --> prev_inst.finished) &&
-      (is_tcommit prev_inst --> prev_inst.finished)) &&
+      (is_tstart (ik prev_inst)  --> prev_inst.finished) &&
+      (is_tcommit (ik prev_inst) --> prev_inst.finished)) &&
 
   (* Additions for lwsync: *)
   (* all loads that are po-followed by lwsync in active_prefix are finished *)
-  List.dropWhile (fun i -> not (is_lwsync i)) inst_context.active_prefix
-  $> List.dropWhile (fun i -> is_memory_load_instruction i --> finished_load_part i)
+  List.dropWhile (fun i -> not (is_lwsync (ik i))) inst_context.active_prefix
+  $> List.dropWhile (fun i -> is_memory_load_instruction (ik i) --> finished_load_part i)
   $> List.null &&
 
   (* Additions for load-reserve/store-conditional: *)
-  (is_PPC_load_reserve instruction -->
+  (is_PPC_load_reserve (ik instruction) -->
       forall (prev_inst MEM inst_context.active_prefix).
-          (is_PPC_load_reserve prev_inst || is_PPC_store_conditional prev_inst)
+          (is_PPC_load_reserve (ik prev_inst) || is_PPC_store_conditional (ik prev_inst))
           --> prev_inst.finished) &&
 
   (*** Additions for RISCV ***)
   (forall_iprev_with_prefix inst_context.active_prefix $ fun prev_inst prev_active_prefix ->
-      is_RISCV_fence_sr prev_inst -->
+      is_RISCV_fence_sr (ik prev_inst) -->
         (prev_inst.finished ||
-        (is_RISCV_fence_pr prev_inst
-          && not (is_RISCV_fence_pw prev_inst)
+        (is_RISCV_fence_pr (ik prev_inst)
+          && not (is_RISCV_fence_pw (ik prev_inst))
           && forall (prev_prev_inst MEM prev_active_prefix).
-                is_memory_load_instruction prev_prev_inst
+                is_memory_load_instruction (ik prev_prev_inst)
                   --> is_entirely_satisfied_load params prev_prev_inst))) &&
 
   (forall_iprev_with_prefix inst_context.active_prefix $ fun prev_inst prev_active_prefix ->
-      is_RISCV_fence_tso prev_inst -->
+      is_RISCV_fence_tso (ik prev_inst) -->
         (prev_inst.finished ||
         forall (prev_prev_inst MEM prev_active_prefix).
-            is_memory_load_instruction prev_prev_inst
+            is_memory_load_instruction (ik prev_prev_inst)
               --> is_entirely_satisfied_load params prev_prev_inst)) &&
 
-  (is_RISCV_load_strong_acquire instruction -->
+  (is_RISCV_load_strong_acquire (ik instruction) -->
       forall (prev_inst MEM inst_context.active_prefix).
-          is_RISCV_store_strong_release prev_inst --> prev_inst.finished) &&
+          is_RISCV_store_strong_release (ik prev_inst) --> prev_inst.finished) &&
 
-  (is_RISCV_load_release instruction -->
+  (is_RISCV_load_release (ik instruction) -->
       forall (prev_inst MEM inst_context.active_prefix). prev_inst.finished) &&
 
   (forall (prev_inst MEM inst_context.active_prefix).
-      is_RISCV_load_acquire prev_inst
+      is_RISCV_load_acquire (ik prev_inst)
       -->
       (finished_load_part prev_inst ||
       is_entirely_satisfied_load params prev_inst)) &&
 
   (forall (prev_inst MEM inst_context.active_prefix).
-      is_RISCV_store_acquire prev_inst --> prev_inst.finished)
+      is_RISCV_store_acquire (ik prev_inst) --> prev_inst.finished)
 
 (** Action *)
 
@@ -1639,7 +1675,7 @@ let pending_memory_read_request_action params
   in
 
   let mos =
-    if is_RISCV_AMO iic.iic_instance then MOS_AMO_lock inst_cont
+    if is_RISCV_AMO (ik iic.iic_instance) then MOS_AMO_lock inst_cont
     else MOS_pending_mem_read inst_cont
   in
 
@@ -1984,9 +2020,10 @@ let pop_possible_write_forwarding
     Set.fromList
       (List.concatMap
           (fun i ->
-            if  (is_AArch64_load_acquire iic.iic_instance && is_AArch64_store_exclusive i)
-                || is_RISCV_store_conditional i
-                || is_PPC_store_conditional i
+            if  (is_AArch64_load_acquire (ik iic.iic_instance) && 
+                   is_AArch64_store_exclusive (ik i))
+                || is_RISCV_store_conditional (ik i)
+                || is_PPC_store_conditional (ik i)
             then
               (* AArch64: don't forward store-exclusives to load-acquire.
                     See also private note THREAD6. *)
@@ -2358,7 +2395,7 @@ let cache_maintenance_trans_ic
     (o: outcome_S) =
   guard (
         forall (iprev MEM iic.active_prefix).
-          (is_AArch64_ic_wait_barrier iprev --> iprev.finished)
+          (is_AArch64_ic_wait_barrier (ik iprev) --> iprev.finished)
   ) >>
 
   let i = iic.iic_instance in
@@ -2386,7 +2423,7 @@ let cache_maintenance_trans_dc
   (* wait for po-previous DMB/DSB *)
   guard (
         forall (iprev MEM iic.active_prefix).
-          (is_AArch64_dc_wait_barrier iprev --> iprev.finished)
+          (is_AArch64_dc_wait_barrier (ik iprev) --> iprev.finished)
   ) >>
 
   let i = iic.iic_instance in
@@ -2437,7 +2474,7 @@ let handle_barrier_outcome
       |>
     in
     let sub' = 
-        if is_AArch64_isb_barrier i then
+        if is_AArch64_isb_barrier (ik i) then
             instruction_tree_map
               (fun _ i _ ->
                 match i.micro_op_state with
@@ -2463,9 +2500,11 @@ let handle_barrier_outcome
   in
 
   if is_flat_model params
-    || is_pop_instruction_barrier i
-    || is_AArch64_ld_barrier i
-    || (params.thread_model = TSO_thread_model && params.thread_isa_info.ism = RISCV_ism && not (is_RISCV_fence_pw i))
+    || is_pop_instruction_barrier (ik i)
+    || is_AArch64_ld_barrier (ik i)
+    || (params.thread_model = TSO_thread_model && 
+          params.thread_isa_info.ism = RISCV_ism && 
+            not (is_RISCV_fence_pw (ik i)))
     || params.thread_model = Relaxed_thread_model
   then
     (* barriers that are not sent to storage *)
@@ -2674,11 +2713,13 @@ let handle_done_outcome
          | Relaxed_thread_model   -> true
          end) >>
 
-  guard (is_AArch64_dc_instr i --> flat_can_finish_dc params iic) >>
+  guard (is_AArch64_dc_instr (ik i) --> flat_can_finish_dc params iic) >>
 
   if params.thread_isa_info.is_thread_start_instruction i.instruction then
     (* special case for thread creation pseudo-instruction *)
-    guard (forall (iprev MEM iic.active_prefix). if is_pop_strong_memory_barrier iprev then iprev.finished else true) >>
+    guard (forall (iprev MEM iic.active_prefix). 
+           if is_pop_strong_memory_barrier (ik iprev)
+           then iprev.finished else true) >>
     thread_start params state iic
   else
     let state' = fun () -> finish_action params state iic in
@@ -2817,7 +2858,7 @@ let enumerate_read_request_transitions
   let i = iic.iic_instance in
 
   let successful_exclusives =
-    if is_atomic_load i then
+    if is_atomic_load (ik i) then
       let s = paired_atomic_stores i iic.subtree in
       let s = {i.instance_ioid | forall (i MEM s) | i.successful_atomic_store = Just true} in
       if s <> {} then Just s else Nothing
@@ -2830,8 +2871,9 @@ let enumerate_read_request_transitions
      need the satisfied read to act as a token, and for load-exclusive where
      we need storage to know it needs to guarantee atomicity *)
   guard (unsat_slices <> []
-        || is_AArch64_load_acquire i || is_RISCV_load_strong_acquire i
-        || is_atomic_load i) >>
+        || is_AArch64_load_acquire (ik i)
+        || is_RISCV_load_strong_acquire (ik i)
+        || is_atomic_load (ik i)) >>
   guard (List.lookup rr i.subreads.sr_requested = Nothing) >>
 
   let state' = function
@@ -2898,7 +2940,7 @@ let enumerate_flat_read_satisfy_from_memory_transitions
   let i = iic.iic_instance in
 
   let successful_atomic_stores =
-    if is_AArch64_load_exclusive i then
+    if is_AArch64_load_exclusive (ik i) then
       let s = paired_atomic_stores i iic.subtree in
       let s = {i.instance_ioid | forall (i MEM s) | i.successful_atomic_store = Just true} in
       if s <> {} then Just s else Nothing
@@ -3062,13 +3104,13 @@ let enumerate_actually_satisfy_transitions
     (* All the writes have their values (in case they were propagated without it) *)
   guard (forall ((_, wss) MEM i.subreads.sr_writes_read_from) ((w,_) MEM wss). w.w_value <> Nothing) >>
     (* and for load-acquire, all the read-requests were issued (for the token) *)
-  guard (((is_AArch64_load_acquire i || is_RISCV_load_strong_acquire i)
+  guard (((is_AArch64_load_acquire (ik i) || is_RISCV_load_strong_acquire (ik i))
               && not (is_flat_model params))
           -->
           (* by the following I mean the domains of the lists are identical *)
           List.length i.subreads.sr_requested = List.length i.subreads.sr_unsat_slices) >>
     (* and for load-exclusive, all the read-requests were issued (for atomicity) *)
-  guard ((is_atomic_load i && not (is_flat_model params)) -->
+  guard ((is_atomic_load (ik i) && not (is_flat_model params)) -->
           (* by the following I mean the domains of the lists are identical *)
           List.length i.subreads.sr_requested = List.length i.subreads.sr_unsat_slices) >>
 
@@ -3113,7 +3155,7 @@ let handle_AMO_lock
   =
   let i = iic.iic_instance in
 
-  let () = ensure (is_RISCV_AMO i) $
+  let () = ensure (is_RISCV_AMO (ik i)) $
     "atomic_begin in a non-RISC-V-AMO instruction (ioid " ^ show i.instance_ioid ^ ")" in
   let _ = ensure_singleton i.subreads.sr_writes_read_from $
     "AMO (ioid " ^ show i.instance_ioid ^ ") should have exactly one read-request" in
@@ -3196,7 +3238,7 @@ let enumerate_commit_store_transition
     : list (thread_trans thread_state)
   =
   let i = iic.iic_instance in
-  let () = ensure (not (is_RISCV_store_conditional i))
+  let () = ensure (not (is_RISCV_store_conditional (ik i)))
       "must not be a RISC-V store-conditional" in
       (* RISC-V store-conditional is handled elsewhere as it needs to
       commit and propagate at the same time *)
@@ -3227,7 +3269,7 @@ let enumerate_propagate_write_transitions
     : list (thread_trans thread_state)
   =
   let i = iic.iic_instance in
-  let () = ensure (not (is_RISCV_store_conditional i))
+  let () = ensure (not (is_RISCV_store_conditional (ik i)))
       "must not be a RISC-V store-conditional" in
       (* RISC-V store-conditional is handled elsewhere as it needs to
       commit and propagate at the same time *)
@@ -3251,7 +3293,7 @@ let enumerate_propagate_write_transitions
         guard (is_flat_model params) >>
         let successful_atomic_pairings =
           instruction_tree_fold_root (fun found _prefix ii it ->
-            if is_atomic_load ii then
+            if is_atomic_load (ik ii) then
               let s = paired_atomic_stores ii it in
               let s = {i.instance_ioid | forall (i MEM s) | i.successful_atomic_store = Just true} in
               if s <> {} then Set.insert (ii, s) found else found
@@ -3299,7 +3341,7 @@ let enumerate_propagate_write_transitions
       T_sync (T_propagate_write (make_label state iic (write, Nothing, rf) state')) ()
   in
 
-  if is_atomic_store i then
+  if is_atomic_store (ik i) then
     let paired_load =
       ensure_just (paired_atomic_load iic)
       "trying to propagate the writes of atomic store that is not paired with atomic load"
@@ -3325,7 +3367,7 @@ let enumerate_commit_and_prop_RISCV_store_cond_transition
     : list (thread_trans thread_state)
   =
   let i = iic.iic_instance in
-  let () = ensure (is_RISCV_store_conditional i) $
+  let () = ensure (is_RISCV_store_conditional (ik i)) $
       "expected a RISC-V store-conditional (ioid " ^ show i.instance_ioid ^ ")" in
 
   let () = ensure (i.subwrites.sw_potential_write_addresses = []) $
@@ -3388,7 +3430,7 @@ let enumerate_complete_store_transition
 
   let state' = fun () ->
     let i' =
-      if is_RISCV_AMO i then
+      if is_RISCV_AMO (ik i) then
         let () = ensure (pop_finish_load_cand params state iic)
                    "completed AMO cannot finish load part" in
         <| i with micro_op_state = MOS_AMO_unlock (c true) |>
@@ -3411,7 +3453,7 @@ let handle_memory_write
     : list (thread_trans thread_state)
   =
   if (not iic.iic_instance.subwrites.sw_committed) then
-    if is_RISCV_store_conditional iic.iic_instance then
+    if is_RISCV_store_conditional (ik iic.iic_instance) then
       enumerate_commit_and_prop_RISCV_store_cond_transition params i_sem state iic c
     else
       enumerate_commit_store_transition params i_sem state iic c
@@ -3781,10 +3823,11 @@ let enumerate_finish_load_part_of_rmw
     (iic:    instruction_in_context)
     : list (thread_trans thread_state)
   =
-  guard (is_memory_rmw iic.iic_instance && not (is_RISCV_AMO iic.iic_instance)) >>
-  guard (iic.iic_instance.rmw_finished_load_snapshot = Nothing) >>
-  guard (is_entirely_satisfied_load params iic.iic_instance) >>
-  guard (pop_finish_load_cand params state iic) >>
+  guard (is_memory_rmw (ik iic.iic_instance) && 
+         not (is_RISCV_AMO (ik iic.iic_instance)) &&
+         iic.iic_instance.rmw_finished_load_snapshot = Nothing &&
+         is_entirely_satisfied_load params iic.iic_instance &&
+         pop_finish_load_cand params state iic) >>
 
   let state' = fun () ->
     let snapshot =
@@ -3850,7 +3893,9 @@ let handle_thread_start
       | Relaxed_thread_model   -> true
       end >>
 
-    guard (forall (iprev MEM iic.active_prefix). if is_pop_strong_memory_barrier iprev then iprev.finished else true) >>
+    guard (forall (iprev MEM iic.active_prefix). 
+           if is_pop_strong_memory_barrier (ik iprev)
+           then iprev.finished else true) >>
 
     let addr_v =
       List.find (fun (r, _, _) -> r = start_info.tsi_addr) i.reg_reads
@@ -3982,7 +4027,7 @@ let enumerate_decode_transitions_of_instruction params
   (* only decode if program-order previous decoded ISBs are finished *)
   guard (
         forall (iprev MEM iic.active_prefix).
-          (is_AArch64_isb_barrier iprev --> iprev.finished)
+          (is_AArch64_isb_barrier (ik iprev) --> iprev.finished)
   ) >>
 
   (* Can only decode after parent has decoded or initial fetch *)

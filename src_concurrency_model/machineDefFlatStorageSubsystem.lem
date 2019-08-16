@@ -29,10 +29,10 @@ open import Events
 open import Fragments
 open import Utils
 open import UiTypes
+open import InstructionSemantics
+open import InstructionKindPredicates
 open import MachineDefUI
 open import MachineDefTypes
-open import MachineDefInstructionPredicates
-open import InstructionSemantics
 open MaybeMonad
 
 let slice_of_write w = (w.w_addr, [complete_slice w.w_addr])
@@ -346,7 +346,7 @@ let flat_make_cbranch_fetch_from_pair params state tl (x, y) =
   let cbranch = AArch64_make_conditional_branch (x,y) in
   let addr = tl.tl_label.fr_addr in
   let op = Nothing in  (* TODO: BS: re-construct new opcode from cbranch ... *)
-  let fdo = FDO_success addr op (AArch64_instr cbranch) in
+  let fdo = FDO_success addr op cbranch in
   (T_fetch <| tl with tl_suppl = Just (Fetched_FDO fdo) |>, Just (fun() -> state))
 
 let flat_try_fetch_relaxed_from_icache params state tl =

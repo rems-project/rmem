@@ -20,15 +20,6 @@
 open import Pervasives_extra
 
 open import Sail_impl_base
-open import Utils
-open import Fragments
-     import FreshIds
-     import Events
-open import Debug
-open import InstructionSemantics
-open import MachineDefTypes
-
-import ArmV8_embed_types
 
 (** read_kind *******************************************************)
 
@@ -323,8 +314,8 @@ let is_atomic_write (w: write_kind) : bool =
 
 (** instruction_instance ********************************************)
 
-let is_memory_load_instruction (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_memory_load_instruction (i : instruction_kind) = 
+  match i with
   | IK_barrier _   -> false
   | IK_mem_read _  -> true
   | IK_mem_write _ -> false
@@ -337,8 +328,8 @@ let is_memory_load_instruction (i: instruction_instance) : bool =
 
 (* see is_viable_memory_store_instruction for cases where it's important
 to destinguish failed store-conditional/exclusive *)
-let is_memory_store_instruction (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_memory_store_instruction (i: instruction_kind) : bool =
+  match i with
   | IK_barrier _   -> false
   | IK_mem_read _  -> false
   | IK_mem_write _ -> true
@@ -349,14 +340,9 @@ let is_memory_store_instruction (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-(* A failed store-conditional/exclusive is not considered a memory access after it is finished *)
-let is_viable_memory_store_instruction (i: instruction_instance) : bool =
-  is_memory_store_instruction i &&
-  not (i.successful_atomic_store = Just false && i.finished)
-
 (* is_memory_rmw does not mean the memory accesses are atomic *)
-let is_memory_rmw (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_memory_rmw (i: instruction_kind) : bool =
+  match i with
   | IK_barrier _   -> false
   | IK_mem_read _  -> false
   | IK_mem_write _ -> false
@@ -367,12 +353,9 @@ let is_memory_rmw (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_viable_memory_access (i: instruction_instance) : bool =
-  is_memory_load_instruction i || is_viable_memory_store_instruction i
 
-
-let is_branch_instruction (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_branch_instruction (i: instruction_kind) : bool =
+  match i with
   | IK_barrier _   -> false
   | IK_mem_read _  -> false
   | IK_mem_write _ -> false
@@ -383,14 +366,8 @@ let is_branch_instruction (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_cond_branch_instruction (i: instruction_instance) : bool =
-  Set.size i.nias > 1
-
-let is_indirect_branch_instruction (i: instruction_instance) : bool =
-  exists (nia IN i.nias). nia = NIA_indirect_address
-
-let is_barrier (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_barrier (i: instruction_kind) : bool =
+  match i with
   | IK_barrier _   -> true
   | IK_mem_read _  -> false
   | IK_mem_write _ -> false
@@ -401,39 +378,39 @@ let is_barrier (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_sync (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_sync (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_Sync  -> true
   | _ -> false
   end
 
-let is_lwsync (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_lwsync (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_LwSync  -> true
   | _ -> false
   end
 
-let is_eieio (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_eieio (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_Eieio -> true
   | _ -> false
   end
 
-let is_eieo (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_eieo (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_Eieo -> true
   | _ -> false
   end
 
-let is_isync (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_isync (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_Isync  -> true
   | _ -> false
   end
 
 
-let is_AArch64_load_acquire (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_AArch64_load_acquire (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_AArch64_read_acquire r
   | IK_mem_rmw (r, _) -> is_AArch64_read_acquire r
   | IK_barrier _      -> false
@@ -444,8 +421,8 @@ let is_AArch64_load_acquire (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_AArch64_load_exclusive (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_AArch64_load_exclusive (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_AArch64_read_exclusive r
   | IK_mem_rmw (r, _) -> is_AArch64_read_exclusive r
   | IK_barrier _      -> false
@@ -457,8 +434,8 @@ let is_AArch64_load_exclusive (i: instruction_instance) : bool =
   end
 
 
-let is_PPC_load_reserve (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_PPC_load_reserve (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_PPC_read_reserve r
   | IK_mem_rmw (r, _) -> is_PPC_read_reserve r
   | IK_barrier _      -> false
@@ -469,8 +446,8 @@ let is_PPC_load_reserve (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_RISCV_load_reserved (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_load_reserved (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_RISCV_read_reserved r
   | IK_mem_rmw (r, _) -> is_RISCV_read_reserved r
   | IK_barrier _      -> false
@@ -481,8 +458,8 @@ let is_RISCV_load_reserved (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_atomic_load (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_atomic_load (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_atomic_read r
   | IK_mem_rmw (r, _) -> is_atomic_read r
   | IK_barrier _      -> false
@@ -493,8 +470,8 @@ let is_atomic_load (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_load_acquire (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_load_acquire (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_RISCV_read_acquire r
   | IK_mem_rmw (r, _) -> is_RISCV_read_acquire r
   | IK_barrier _      -> false
@@ -505,8 +482,8 @@ let is_RISCV_load_acquire (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_load_strong_acquire (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_load_strong_acquire (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_RISCV_read_strong_acquire r
   | IK_mem_rmw (r, _) -> is_RISCV_read_strong_acquire r
   | IK_barrier _      -> false
@@ -517,8 +494,8 @@ let is_RISCV_load_strong_acquire (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_load_release (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_load_release (i: instruction_kind) : bool =
+  match i with
   | IK_mem_read r     -> is_RISCV_read_release r
   | IK_mem_rmw (r, _) -> is_RISCV_read_release r
   | IK_barrier _      -> false
@@ -529,8 +506,8 @@ let is_RISCV_load_release (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_AArch64_store_release (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_AArch64_store_release (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_AArch64_write_release w
   | IK_mem_rmw (_, w) -> is_AArch64_write_release w
   | IK_mem_read _     -> false
@@ -541,8 +518,8 @@ let is_AArch64_store_release (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_store_release (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_store_release (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_RISCV_write_release w
   | IK_mem_rmw (_, w) -> is_RISCV_write_release w
   | IK_mem_read _     -> false
@@ -553,8 +530,8 @@ let is_RISCV_store_release (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_store_strong_release (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_store_strong_release (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_RISCV_write_strong_release w
   | IK_mem_rmw (_, w) -> is_RISCV_write_strong_release w
   | IK_mem_read _     -> false
@@ -565,8 +542,8 @@ let is_RISCV_store_strong_release (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_store_acquire (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_store_acquire (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_RISCV_write_acquire w
   | IK_mem_rmw (_, w) -> is_RISCV_write_acquire w
   | IK_mem_read _     -> false
@@ -577,8 +554,8 @@ let is_RISCV_store_acquire (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_AArch64_store_exclusive (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_AArch64_store_exclusive (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_AArch64_write_exclusive w
   | IK_mem_rmw (_, w) -> is_AArch64_write_exclusive w
   | IK_mem_read _     -> false
@@ -590,8 +567,8 @@ let is_AArch64_store_exclusive (i: instruction_instance) : bool =
   end
 
 
-let is_PPC_store_conditional (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_PPC_store_conditional (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_PPC_write_conditional w
   | IK_mem_rmw (_, w) -> is_PPC_write_conditional w
   | IK_mem_read _     -> false
@@ -602,8 +579,8 @@ let is_PPC_store_conditional (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_store_conditional (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_store_conditional (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_RISCV_write_conditional w
   | IK_mem_rmw (_, w) -> is_RISCV_write_conditional w
   | IK_mem_read _     -> false
@@ -614,8 +591,8 @@ let is_RISCV_store_conditional (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_atomic_store (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_atomic_store (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write w    -> is_atomic_write w
   | IK_mem_rmw (_, w) -> is_atomic_write w
   | IK_mem_read _     -> false
@@ -626,11 +603,11 @@ let is_atomic_store (i: instruction_instance) : bool =
   | IK_cache_op _     -> false
   end
 
-let is_RISCV_AMO (i: instruction_instance) : bool =
+let is_RISCV_AMO (i: instruction_kind) : bool =
   is_RISCV_load_reserved i && is_RISCV_store_conditional i
 
-let is_tstart (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_tstart (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write _ -> false
   | IK_mem_read _  -> false
   | IK_mem_rmw _   -> false
@@ -643,8 +620,8 @@ let is_tstart (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_tcommit (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_tcommit (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write _ -> false
   | IK_mem_read _  -> false
   | IK_mem_rmw _   -> false
@@ -657,8 +634,8 @@ let is_tcommit (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_tabort (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_tabort (i: instruction_kind) : bool =
+  match i with
   | IK_mem_write _ -> false
   | IK_mem_read _  -> false
   | IK_mem_rmw _   -> false
@@ -671,8 +648,8 @@ let is_tabort (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_RISCV_fence_pr  (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_fence_pr  (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_RISCV_rw_rw -> true
   | IK_barrier Barrier_RISCV_r_rw  -> true
   | IK_barrier Barrier_RISCV_w_rw  -> false
@@ -708,8 +685,8 @@ let is_RISCV_fence_pr  (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_RISCV_fence_pw  (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_fence_pw  (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_RISCV_rw_rw -> true
   | IK_barrier Barrier_RISCV_r_rw  -> false
   | IK_barrier Barrier_RISCV_w_rw  -> true
@@ -745,8 +722,8 @@ let is_RISCV_fence_pw  (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_RISCV_fence_sr  (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_fence_sr  (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_RISCV_rw_rw -> true
   | IK_barrier Barrier_RISCV_r_rw  -> true
   | IK_barrier Barrier_RISCV_w_rw  -> true
@@ -782,8 +759,8 @@ let is_RISCV_fence_sr  (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_RISCV_fence_sw  (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_fence_sw  (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_RISCV_rw_rw -> true
   | IK_barrier Barrier_RISCV_r_rw  -> true
   | IK_barrier Barrier_RISCV_w_rw  -> true
@@ -819,8 +796,8 @@ let is_RISCV_fence_sw  (i: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_RISCV_fence_tso (i: instruction_instance) : bool =
-  match i.instruction_kind with
+let is_RISCV_fence_tso (i: instruction_kind) : bool =
+  match i with
   | IK_barrier Barrier_RISCV_tso   -> true
 
   | IK_barrier Barrier_RISCV_rw_rw -> false
@@ -859,8 +836,8 @@ let is_RISCV_fence_tso (i: instruction_instance) : bool =
 (** The is_pop_... functions are abstractions for handling barriers
 uniformly when possible *)
 
-let is_pop_memory_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_pop_memory_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier (Barrier_DSB (_,_)) -> true
   | IK_barrier (Barrier_DMB (_,_)) -> true
   | IK_barrier Barrier_Sync        -> true
@@ -893,8 +870,8 @@ let is_pop_memory_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_pop_strong_memory_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_pop_strong_memory_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier (Barrier_DSB (A64_FullShare,  A64_barrier_all)) -> true
   | IK_barrier (Barrier_DSB (A64_InnerShare, A64_barrier_all)) -> true
   | IK_barrier (Barrier_DMB (A64_FullShare,  A64_barrier_all)) -> true
@@ -939,8 +916,8 @@ let is_pop_strong_memory_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_ld_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier (Barrier_DSB (A64_FullShare,  A64_barrier_LD)) -> true
   | IK_barrier (Barrier_DSB (A64_InnerShare, A64_barrier_LD)) -> true
   | IK_barrier (Barrier_DMB (A64_FullShare,  A64_barrier_LD)) -> true
@@ -985,8 +962,8 @@ let is_AArch64_ld_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_AArch64_isb_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_isb_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier Barrier_ISB         -> true
 
   | IK_barrier (Barrier_DSB (_,_)) -> false
@@ -1019,8 +996,8 @@ let is_AArch64_isb_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_AArch64_ic_wait_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_ic_wait_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier (Barrier_DSB (A64_FullShare,A64_barrier_all))  -> true
   | IK_barrier (Barrier_DSB (A64_InnerShare,A64_barrier_all)) -> true
 
@@ -1059,20 +1036,8 @@ let is_AArch64_ic_wait_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let address_from_AArch64_dc (instruction: instruction_instance) : maybe address =
-  match instruction.instruction_kind with
-  | IK_cache_op Cache_op_D_CVAU  ->
-    match instruction.reg_reads with
-    (* DC CVAU only reads 1 register -- it contains the address *)
-    | [(_, _, v)] ->
-        address_of_register_value v
-    | _ -> Nothing
-    end
-  | _ -> Nothing
-  end
-
-let is_AArch64_dc_wait_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_dc_wait_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier (Barrier_DSB (A64_FullShare,A64_barrier_all))  -> true
   | IK_barrier (Barrier_DSB (A64_InnerShare,A64_barrier_all)) -> true
   | IK_barrier (Barrier_DMB (A64_FullShare,A64_barrier_all))  -> true
@@ -1113,20 +1078,20 @@ let is_AArch64_dc_wait_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_AArch64_ic_instr (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_ic_instr (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_cache_op Cache_op_I_IVAU  -> true
   | _ -> false
   end
 
-let is_AArch64_dc_instr (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_dc_instr (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_cache_op Cache_op_D_CVAU  -> true
   | _ -> false
   end
 
-let is_AArch64_st_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_AArch64_st_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier (Barrier_DSB (A64_FullShare,  A64_barrier_ST))  -> true
   | IK_barrier (Barrier_DSB (A64_InnerShare, A64_barrier_ST))  -> true
   | IK_barrier (Barrier_DMB (A64_FullShare,  A64_barrier_ST))  -> true
@@ -1171,8 +1136,8 @@ let is_AArch64_st_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_pop_instruction_barrier (instruction: instruction_instance) : bool =
-  match instruction.instruction_kind with
+let is_pop_instruction_barrier (instruction: instruction_kind) : bool =
+  match instruction with
   | IK_barrier Barrier_ISB         -> true
   | IK_barrier Barrier_Isync       -> true
   | IK_barrier Barrier_RISCV_i     -> true
@@ -1205,26 +1170,4 @@ let is_pop_instruction_barrier (instruction: instruction_instance) : bool =
   | IK_cache_op _  -> false
   end
 
-let is_AArch64_atomic_fetchable_opcode (op: instruction_ast) : bool =
-  match op with
-  | AArch64_instr i ->
-      match i with
-(*      | ArmV8_embed_types.Barrier3 (ArmV8_embed_types.MemBarrierOp_ISB, _, _) -> true *)
-      | ArmV8_embed_types.Hint (ArmV8_embed_types.SystemHintOp_NOP) -> true
-      | ArmV8_embed_types.BranchImmediate _ -> true
-      | _ -> false
-      end
-  | _ -> false
-  end
 
-let is_AArch64_atomic_fetchable (instruction: instruction_instance) : bool =
-  is_AArch64_atomic_fetchable_opcode instruction.instruction
-
-let AArch64_split_maybe_conditional_branch (op: instruction_ast) =
-  match op with
-  | AArch64_instr (ArmV8_embed_types.BranchConditional (x,y)) -> Just (x,y)
-  | _ -> Nothing
-  end
-
-let AArch64_make_conditional_branch (x,y) = 
-  ArmV8_embed_types.BranchConditional (x, y)

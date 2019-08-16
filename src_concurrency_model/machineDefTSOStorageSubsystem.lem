@@ -24,6 +24,7 @@ open import Assert_extra
 import Map_extra
 
 open import Sail_impl_base
+     import InstructionKindPredicates
 open import Events
 open import Fragments
 open import UiTypes
@@ -31,7 +32,6 @@ open import Utils
 open import Params
 open import MachineDefTypes
 open import MachineDefUI
-import MachineDefInstructionPredicates
 open MaybeMonad
 
 (************************* propagate write *************************)
@@ -41,7 +41,7 @@ let tso_ss_propagate_write_action _params state tid buffer' write =
 
   let lock' =
     if state.tso_ss_lock <> Nothing &&
-       buffer' = [] && MachineDefInstructionPredicates.is_atomic_write write.w_write_kind then
+       buffer' = [] && InstructionKindPredicates.is_atomic_write write.w_write_kind then
       Nothing (* release the lock *)
     else state.tso_ss_lock
   in
@@ -119,7 +119,7 @@ let tso_ss_accept_write_action params state write =
   let buffers' = Map.insert write.w_thread writes' buffers in
   let state' = <| state with tso_ss_buffers = buffers' |> in
 
-  if MachineDefInstructionPredicates.is_atomic_write write.w_write_kind then
+  if InstructionKindPredicates.is_atomic_write write.w_write_kind then
     let () = ensure (tso_ss_propagate_write_cand params state' write.w_thread = Just ([], write)) "fail" in
     tso_ss_propagate_write_action params state' write.w_thread [] write
   else
@@ -131,7 +131,7 @@ let tso_ss_accept_write_cand params state write : bool =
   | Nothing  -> true
   | Just tid ->
       tid = write.w_thread
-      && (MachineDefInstructionPredicates.is_atomic_write write.w_write_kind -->
+      && (InstructionKindPredicates.is_atomic_write write.w_write_kind -->
             match Map.lookup write.w_thread state.tso_ss_buffers with
             | Nothing     -> failwith "tso_ss_accept_write_action thread not found"
             | Just buffer -> buffer = []
@@ -147,7 +147,7 @@ let tso_ss_accept_write params state write =
 
 let tso_ss_accept_read_action _params state read =
   let lock' =
-    if MachineDefInstructionPredicates.is_atomic_read read.r_read_kind then
+    if InstructionKindPredicates.is_atomic_read read.r_read_kind then
       Just read.r_thread
     else
       state.tso_ss_lock
@@ -168,10 +168,10 @@ let tso_ss_accept_read_cand _params state read : maybe memory_read_source =
   in
 
   let writes_slices =
-    if MachineDefInstructionPredicates.is_RISCV_read_strong_acquire read.r_read_kind &&
-        exists ((w, _) MEM buffer). MachineDefInstructionPredicates.is_RISCV_write_strong_release w.w_write_kind
+    if InstructionKindPredicates.is_RISCV_read_strong_acquire read.r_read_kind &&
+        exists ((w, _) MEM buffer). InstructionKindPredicates.is_RISCV_write_strong_release w.w_write_kind
     then
-      List.takeWhile (fun (w, _) -> not (MachineDefInstructionPredicates.is_RISCV_write_strong_release w.w_write_kind)) buffer
+      List.takeWhile (fun (w, _) -> not (InstructionKindPredicates.is_RISCV_write_strong_release w.w_write_kind)) buffer
     else
       buffer ++ state.tso_ss_memory_writes
   in

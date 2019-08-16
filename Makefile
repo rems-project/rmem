@@ -814,6 +814,7 @@ MACHINEFILES-PRE=\
   src_concurrency_model/uiTypes.lem\
   src_concurrency_model/params.lem\
   src_concurrency_model/dwarfTypes.lem\
+  src_concurrency_model/instructionKindPredicates.lem\
   src_concurrency_model/candidateExecution.lem\
   src_concurrency_model/machineDefTypes.lem\
   src_concurrency_model/machineDefUI.lem\
@@ -823,7 +824,6 @@ MACHINEFILES-PRE=\
   src_concurrency_model/machineDefPOPStorageSubsystem.lem\
   src_concurrency_model/machineDefNOPStorageSubsystem.lem\
   src_concurrency_model/machineDefTSOStorageSubsystem.lem\
-  src_concurrency_model/machineDefInstructionPredicates.lem\
   src_concurrency_model/machineDefThreadSubsystemUtils.lem\
   src_concurrency_model/machineDefThreadSubsystem.lem\
   src_concurrency_model/machineDefSystem.lem\
