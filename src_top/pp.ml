@@ -828,14 +828,11 @@ let pp_opcode m (op:Sail_impl_base.opcode) =
 let pp_reg m r =
   Printing_functions.reg_name_to_string r
 
-let rec pp_instruction m
+let pp_instruction_ast m
       (symbol_table: ((address * size) * string) list)
       (inst: instruction_ast)
       (program_loc: Sail_impl_base.address) =
   begin match inst with
-  | Fetch_error -> "fetch error"
-  | Unfetched -> "unknown"
-  | Fetched ast -> sprintf "fetched %s" (pp_instruction m symbol_table ast program_loc)
   | PPCGEN_instr _ ->
      let i = PPCGenTransSail.shallow_ast_to_herdtools_ast inst in
      PPCGenBase.pp_instruction (PPMode.Ascii) i
@@ -888,6 +885,16 @@ let rec pp_instruction m
       X86HGenBase.pp_instruction (PPMode.Ascii) i'
   end
 
+let pp_instruction m
+      (symbol_table: ((address * size) * string) list)
+      (inst: instruction)
+      (program_loc: Sail_impl_base.address) =
+  begin match inst with
+  | Fetch_error -> "fetch error"
+  | Unfetched -> "unknown"
+  | Fetched ast -> sprintf "fetched %s" (pp_instruction_ast m symbol_table ast program_loc)
+  end
+
 let pp_instruction_state
       indent (m:Globals.ppmode)
       (instruction_state_pp : unit -> (string * string)) =
@@ -928,7 +935,7 @@ let pp_bool m b =
 
 let pp_decode_error m de addr = match de with
   | Unsupported_instruction_error0 (_opcode, (i:instruction_ast)) ->
-     sprintf "Unsupported instruction (%s)" (pp_instruction m m.pp_symbol_table i addr)
+     sprintf "Unsupported instruction (%s)" (pp_instruction_ast m m.pp_symbol_table i addr)
   | Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
   | Internal_decode_error (s:string) -> "Internal error "^s
 
@@ -1465,7 +1472,7 @@ let pp_fdo ?(suppress_opcode=false) m fdo addr =
   match fdo with
   | FDO_success (a,mop,inst) ->
       sprintf "%s%s"
-        (pp_instruction m m.pp_symbol_table inst addr)
+        (pp_instruction_ast m m.pp_symbol_table inst addr)
         (if not suppress_opcode then " " ^ (pp_maybe_opcode m mop) else "")
   | FDO_illegal_fetch_address ->
         let _ = Debug.print_log () in
@@ -1701,7 +1708,7 @@ let pp_t_only_label ?(graph=false) m tl =
       ("instantiate memory write values of store instruction", Some info)
 
   | T_finish (addr, instr) ->
-      let instr_pped = pp_instruction m m.pp_symbol_table instr addr in
+      let instr_pped = pp_instruction_ast m m.pp_symbol_table instr addr in
       ("finish instruction: " ^ instr_pped, None)
 
   | T_finish_load_of_rmw ->
@@ -1987,7 +1994,7 @@ let pp_pt_trans_aux ?(graph=false) m t =
       end
 
   | PT_finish (_, (addr, instr), _) ->
-      let instr_pped = pp_instruction m m.pp_symbol_table instr addr in
+      let instr_pped = pp_instruction_ast m m.pp_symbol_table instr addr in
       ("finish instruction: " ^ instr_pped, None)
 
   | PT_failed_store_excl (_, _) ->
@@ -2928,7 +2935,7 @@ let pp_ui_instruction_info tid indent (m:Globals.ppmode)
       indent
       (pad 2 (pp_pretty_ioid_padded i.ii_ioid))
       (pp_address m (Some i.ii_ioid) i.ii_program_loc)
-      (pad pad_instruction (pp_instruction m m.pp_symbol_table i.ii_instruction i.ii_program_loc))
+      (pad pad_instruction (pp_instruction_ast m m.pp_symbol_table i.ii_instruction i.ii_program_loc))
       (if not (m.pp_style = Globals.Ppstyle_screenshot) then pp_maybe_opcode m i.ii_program_opcode ^ " " else "\n") in
 
   let indent' = indent ^ "  " in
@@ -2971,7 +2978,7 @@ let pp_ui_instruction_info tid indent (m:Globals.ppmode)
       ^ (pp_pretty_ioid_padded i.ii_ioid)
       ^ " " ^  (let ppd_loc = let s = (pp_address m (Some i.ii_ioid) i.ii_program_loc) in (if String.length s > !compact_loc_max_width then compact_loc_max_width := String.length s else ()); pad (!compact_loc_max_width) s in ppd_loc)
       ^ " " ^
-       (pad pad_instruction (pp_instruction m m.pp_symbol_table i.ii_instruction i.ii_program_loc))
+       (pad pad_instruction (pp_instruction_ast m m.pp_symbol_table i.ii_instruction i.ii_program_loc))
       ^ "  " ^
       pad 0  (* was pad 2, to indent reg r/w iff there are no mem r/w  *)
         (
@@ -3005,7 +3012,7 @@ let pp_ui_instruction_info tid indent (m:Globals.ppmode)
              indent
              (pad 2 (pp_pretty_ioid_padded i.ii_ioid))
              (pp_address m (Some i.ii_ioid) i.ii_program_loc)
-             (colour_bold m (pad pad_instruction (pp_instruction m m.pp_symbol_table i.ii_instruction i.ii_program_loc)))
+             (colour_bold m (pad pad_instruction (pp_instruction_ast m m.pp_symbol_table i.ii_instruction i.ii_program_loc)))
            ^ sprintf "%s%s\n"
 
                (pad

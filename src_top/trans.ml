@@ -28,8 +28,8 @@ module type TransSail = sig
   val shallow_ast_to_herdtools_ast : instruction_ast -> instruction
   val herdtools_ast_to_shallow_ast : instruction -> instruction_ast
 
-  val herdtools_ast_to_interp_instruction : instruction -> Interp_interface.instruction
-  val interp_instruction_to_herdtools_ast : Interp_interface.instruction -> instruction
+  val herdtools_ast_to_interp_instruction : instruction -> Interp_interface.interp_instruction
+  val interp_instruction_to_herdtools_ast : Interp_interface.interp_instruction -> instruction
 
   val unlabelize_ins :
       (string -> int) (** global variable lookup function *)
@@ -68,7 +68,6 @@ let instruction_to_interp_instruction = function
  | MIPS_instr instr -> Mips_toFromInterp.astToInterpValue1 instr
  | RISCV_instr instr -> failwith "not implemented yet"
  | X86_instr instr -> X86_toFromInterp.astToInterpValue3 instr
- | Fetch_error -> failwith "fetch error"
 
 
 let interp_instruction_to_instruction ism instr = match ism with

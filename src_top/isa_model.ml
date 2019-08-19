@@ -337,7 +337,6 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
 
     let instruction_to_interp2_instruction = function
       | RISCV_instr instr -> Riscv_toFromInterp2.astToInterpValue instr
-      | Fetch_error -> failwith "fetch error"
       | _ -> failwith "not implemented yet"
     in
 

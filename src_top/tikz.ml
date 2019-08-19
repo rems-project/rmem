@@ -369,7 +369,7 @@ let make_tikz_graph
       instructions_path_from_tree [] state.cex_instruction_tree
       |> List.map (fun inst ->
           let pp_instruction =
-            Pp.pp_instruction m m.pp_symbol_table inst.cex_instruction inst.cex_program_loc
+            Pp.pp_instruction_ast m m.pp_symbol_table inst.cex_instruction inst.cex_program_loc
             (* escape some characters; see the documentation of the
             LaTeX listings package (6.1 Listins inside arguments) *
             |> replace '\\' "\\\\"

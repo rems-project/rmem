@@ -750,7 +750,7 @@ let make_cex_instruction_instance
     cex_instance_ioid = i.instance_ioid;
     cex_program_loc = i.program_loc;
     cex_program_opcode = i.program_opcode;
-    cex_instruction = i.instruction; 
+    cex_instruction = ensure_fetched i.instruction; 
     cex_instruction_kind = i.instruction_kind;
     (* register part *)
     cex_regs_in = i.regs_in;

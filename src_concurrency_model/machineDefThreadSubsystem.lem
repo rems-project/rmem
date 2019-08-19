@@ -2714,7 +2714,9 @@ let handle_done_outcome
 
   guard (is_AArch64_dc_instr (ik i) --> flat_can_finish_dc params iic) >>
 
-  if params.thread_isa_info.is_thread_start_instruction i.instruction then
+  let instr = ensure_fetched i.instruction in
+
+  if params.thread_isa_info.is_thread_start_instruction instr then
     (* special case for thread creation pseudo-instruction *)
     guard (forall (iprev MEM iic.active_prefix). 
            if is_pop_strong_memory_barrier (ik iprev)
@@ -2722,8 +2724,7 @@ let handle_done_outcome
     thread_start params state iic
   else
     let state' = fun () -> finish_action params state iic in
-    let addr = iic.iic_instance.program_loc in
-    let instr = iic.iic_instance.instruction in
+    let addr = i.program_loc in
     [T_only (make_label state iic (T_finish addr instr) state')]
 
 
@@ -4119,10 +4120,10 @@ let enumerate_transitions_of_instruction
     | Internal descr o     -> handle_internal_outcome     params i_sem s iic descr o
     | Footprint o          -> handle_footprint_outcome    params i_sem s iic is o
     | Done ()              ->
-        if params.thread_isa_info.is_thread_start_instruction iic.iic_instance.instruction then
-                              handle_thread_start         params i_sem s iic is
-        else
-                              handle_done_outcome         params i_sem s iic
+       let instr = ensure_fetched iic.iic_instance.instruction in
+       if params.thread_isa_info.is_thread_start_instruction instr
+       then handle_thread_start params i_sem s iic is
+       else handle_done_outcome params i_sem s iic
 
     | Escape (Just msg)    -> handle_sail_termination     params s iic $ "Escape: " ^ msg
     | Escape Nothing       -> handle_sail_termination     params s iic $ "Escape"

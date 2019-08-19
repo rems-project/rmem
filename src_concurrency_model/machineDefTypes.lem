@@ -617,7 +617,7 @@ type instruction_instance =
           instance_id_state: id_state ioid; (*: generating unique IDs for events :*)
           program_loc: address;  (*: record fetched address :*)
           program_opcode: maybe opcode;  (*: record fetched opcode :*)
-          instruction: instruction_ast; (*:  assembly AST instruction,:*)
+          instruction: instruction; (*:  assembly AST instruction,:*)
 
           (* statically analysed data about the instruction*)
           instruction_kind: instruction_kind;
@@ -1341,7 +1341,7 @@ type ui_instruction_instance 'ts 'ss =
     ui_instance_ioid: ioid; 
     ui_program_loc: address; 
     ui_program_opcode: maybe opcode;  
-    ui_instruction: instruction_ast;
+    ui_instruction: instruction;
     ui_instruction_kind: instruction_kind;
     ui_initial_micro_op_state: micro_op_state;
     ui_regs_in: list (changed3 reg_name);    

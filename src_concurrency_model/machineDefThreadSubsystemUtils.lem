@@ -753,7 +753,7 @@ let starting_inst_instance_aux
     instance_id_state = FreshIds.initial_id_state new_ioid;
     program_loc =       loc;
     program_opcode =    mop;
-    instruction =       inst;
+    instruction =       Fetched inst;
     instruction_kind =  ik;
 
     initial_micro_op_state =          MOS_plain initial_outcome_S;
@@ -966,7 +966,7 @@ let recalculate_register_footprint params
     (is: list instruction_instance)
     : instruction_instance
   =
-  let instr = i.instruction in
+  let instr = ensure_fetched (i.instruction) in
 
   let analysis_function = match instr with
     | PPCGEN_instr (Power_embed_types.Lswx _) -> Just "recalculate_lswx_reg_footprint"
@@ -1354,7 +1354,7 @@ let make_ui_machine_thread_state (_s : 'storage_subsystem_state)
 let make_read_request_events_ii params tid iic_instance footprint read_kind = 
   params.thread_isa_info.make_read_request_events
     tid 
-    iic_instance.instruction
+    (ensure_fetched iic_instance.instruction)
     iic_instance.instance_id_state
     iic_instance.instance_ioid
     footprint
@@ -1364,7 +1364,7 @@ let make_read_request_events_ii params tid iic_instance footprint read_kind =
 let make_empty_write_events_ii params tid iic_instance footprint write_kind = 
   params.thread_isa_info.make_empty_write_events
     tid
-    iic_instance.instruction
+    (ensure_fetched iic_instance.instruction)
     iic_instance.instance_id_state
     iic_instance.instance_ioid
     footprint
