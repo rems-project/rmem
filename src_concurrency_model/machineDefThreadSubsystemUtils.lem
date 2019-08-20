@@ -639,13 +639,7 @@ let analyse_instruction
       params.thread_isa_info.fixed_pseudo_registers) ++ environment in
 
   let (regs_in,regs_out,regs_feeding_address,nias,dia,ik) =
-    i_sem.instruction_analysis
-      old_outcome
-      inst
-      analysis_function
-      (reg_info params)
-      params.thread_isa_info.nia_reg
-      environment in
+    i_sem.instruction_analysis inst analysis_function (reg_info params) environment in
 
   let (regs_in,regs_out,regs_feeding_address,nias) =
     (non_pseudo_registers params (fromList regs_in),

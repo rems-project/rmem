@@ -133,11 +133,9 @@ end
 type instruction_semantics =
   <| initial_outcome_s_of_instruction: instruction_ast -> outcome_S;
      instruction_analysis :
-       outcome_S (* the current outcome for the interpreter *) ->
        instruction_ast ->
        string (*analysis function*) ->
        (string -> (Maybe.maybe string) -> (nat*nat*direction*(nat*nat))) (* reginfo*) ->
-       reg_name (* nia_reg *) ->
        list (reg_name * register_value) ->
        (list reg_name * list reg_name * list reg_name * list nia * dia * instruction_kind);
      decode_to_instruction : address -> opcode -> fetch_and_decode_outcome;
@@ -552,7 +550,7 @@ let initialise_shallow_embedding_semantics endianness ism =
     | X86_instr instr ->      (X86_embed.execute instr,Nothing)
     end in
 
-  let shallow_embedding__instruction_analysis _ instr analysis_function reginfo _ environment =
+  let shallow_embedding__instruction_analysis instr analysis_function reginfo environment =
     let (input_regs,output_regs,address_feeding_address_regs,nias,dia,instruction_kind) =
       (handle_reg_reads environment)
         match (instr, analysis_function) with

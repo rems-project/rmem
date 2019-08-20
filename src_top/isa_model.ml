@@ -59,8 +59,8 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
         Printing_functions.pp_instruction_state context (interp_mode eager) instruction in
 
 
-    let interp__instruction_analysis outcome_s instruction analysis_function
-          reg_info nia_reg environment =
+    let interp__instruction_analysis instruction analysis_function
+          reg_info environment =
       let instruction = instruction_to_interp_instruction instruction in
       Interp_inter_imp.interp_handwritten_instruction_analysis 
         context endianness instruction analysis_function reg_info environment
@@ -437,7 +437,7 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
     in
 
 
-    let interp2__instruction_analysis outcome_s instruction analysis_function reg_info nia_reg environment =
+    let interp2__instruction_analysis instruction analysis_function reg_info environment =
       assert (analysis_function = "initial_analysis");
       interp2__analysis_to_analysis reg_info (frame_handle_reg_reads environment (Interpreter.analyse_instruction state (instruction_to_interp2_instruction instruction)))
     in
