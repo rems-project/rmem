@@ -61,32 +61,10 @@ module Make (ISADefs: ISADefs) (TransSail: Trans.TransSail) : S = struct
 
     let interp__instruction_analysis outcome_s instruction analysis_function
           reg_info nia_reg environment =
-
-      let nias_function = InstructionSemantics.interp_nias_of_instruction instruction in
       let instruction = instruction_to_interp_instruction instruction in
-      let interp_exhaustive = match outcome_s with
-        | (_,Some (_,interp_exhaustive)) -> interp_exhaustive
-        | _ -> failwith "interp__instruction_analysis outcome_s does not contain Some in snd" in
-      let ism_s = match ism with
-        | PPCGEN_ism -> "PPCGEN_ism"
-        | AARCH64_ism AArch64HandSail -> "AArch64HandSail"
-        | AARCH64_ism AArch64GenSail -> "AArch64GenSail"
-        | MIPS_ism -> "MIPS_ism"
-        | RISCV_ism -> "RISCV_ism"
-        | X86_ism -> "X86_ism"
-      in
-
-      if compare_analyses then
-        let open Params in
-        Interp_inter_imp.interp_compare_analyses
-          print_endline
-          (RegUtils.non_pseudo_registers (!Globals.model_params.t))
-          context endianness interp_exhaustive instruction nia_reg nias_function ism_s environment
-          analysis_function reg_info
-
-      else
-        Interp_inter_imp.interp_instruction_analysis context interp_exhaustive instruction
-          nia_reg nias_function ism_s environment in
+      Interp_inter_imp.interp_handwritten_instruction_analysis 
+        context endianness instruction analysis_function reg_info environment
+    in
 
 
     let interp__decode_to_instruction (address : Sail_impl_base.address) (opcode : Sail_impl_base.opcode) =
