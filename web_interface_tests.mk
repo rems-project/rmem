@@ -16,6 +16,7 @@
 
 PPCTESTSDIR = ../litmus-tests-power-private
 AArch64TESTSDIR = ../litmus-tests-armv8a-private
+AArch64SystemTESTSDIR = ../litmus-tests-armv8a-system
 RISCVTESTSDIR = ../litmus-tests-riscv
 x86TESTSDIR = ../litmus-tests-x86-private
 # MIPSTESTSDIR = ../litmus-tests-mips-private
@@ -29,10 +30,15 @@ $(INSTALLDIR)/tests/PPC-elf:
 
 $(INSTALLDIR)/tests/AArch64:
 	cp -ar $(AArch64TESTSDIR)/tests $@
+# since litmus-tests-armv8a-system is separated from -private,
+# there could be clash of names (e.g. @all),
+# so put the system tests in a subdir.
+	cp -ar $(AArch64SystemTESTSDIR)/tests $@/AArch64_System
 
 install_AArch64_tests: | $(INSTALLDIR)/tests/AArch64-elf
 $(INSTALLDIR)/tests/AArch64-elf:
 	cp -ar $(AArch64TESTSDIR)/elf-tests $@
+
 
 $(INSTALLDIR)/tests/RISCV:
 	cp -ar $(RISCVTESTSDIR)/tests $@
@@ -153,6 +159,7 @@ $(eval $(call gen-at,AArch64,tutorial.files,Tutorial,  non-mixed-size/TUTORIAL/@
 $(eval $(call gen-at,AArch64,POPL16.files,Modelling the ARMv8 architecture (POPL16),non-mixed-size/@popl16))
 $(eval $(call gen-at,AArch64,POPL17.files,Mixed-size Concurrency (POPL17),mixed-size/HAND/@popl17))
 $(eval $(call gen-at,AArch64,POPL18.files,Simplifying ARM Concurrency (POPL18),@popl18))
+$(eval $(call gen-at,AArch64,POPL20.files,Systems concurrency (POPL20),AArch64_System/@popl2020))
 $(eval $(call gen-at,AArch64,HAND.files,Hand-written,non-mixed-size/HAND/@all))
 $(eval $(call gen-at,AArch64,SHAKED.files,More hand-written,non-mixed-size/SHAKED/@all))
 $(eval $(call gen-at,AArch64,linuxComp.files,Linux compiled,non-mixed-size/LinuxCompiled/@all))
