@@ -30,6 +30,7 @@ module IInt = Sail_impl_base
 module IImp = Interp_inter_imp
 
 type instruction = AArch64HGenBase.instruction
+type instruction_ast = ArmV8_embed_types.ast1
 
 (* #include "build_isa_models/aarch64/gen/types_trans_sail.hgen" *)
 
@@ -44,7 +45,15 @@ let herdtools_ast_to_interp_instruction (i : instruction) =
   (instr,parms)
 
 
+let instruction_to_interp_instruction = ArmV8_toFromInterp.astToInterpValue0
+let interp_instruction_to_instruction = ArmV8_toFromInterp.astFromInterpValue0
 
+
+let instruction_to_interp2_instruction _ = failwith "not implemented"
+let interp2_instruction_to_instruction _ = failwith "not implemented"
+
+
+let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
 (* #include "build_isa_models/aarch64/gen/herdtools_types_to_shallow_types.hgen" *)
 
@@ -58,20 +67,17 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
         failwith "Translation failure"
       end
   in
-  InstructionSemantics.AArch64_instr instr
+  instr
 
 
 (* #include "build_isa_models/aarch64/gen/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open ArmV8_embed_types in
-  match instr with
-  | InstructionSemantics.AArch64_instr instr ->
-     begin match instr with
-       (* #include "build_isa_models/aarch64/gen/shallow_ast_to_herdtools_ast.hgen" *)
-     | _ -> failwith "couldn't translate instruction"
-     end
-  | _ -> failwith "not an AArch64 instruction"
+  begin match instr with
+  (* #include "build_isa_models/aarch64/gen/shallow_ast_to_herdtools_ast.hgen" *)
+  | _ -> failwith "couldn't translate instruction"
+  end
 
 
 

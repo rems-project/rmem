@@ -19,20 +19,23 @@
 (* Abstraction of operational concurrency model *)
 module type S = sig
 
+  type instruction_ast
   type state
   type trans
   type ui_state
   type ui_trans = int * trans
 
+  module ISA : Isa_model.S with type instruction_ast = instruction_ast
+
   val initial_state :
     InstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
-    Params.initial_state_record ->
+    instruction_ast Params.initial_state_record ->
     state
 
   val transitions : state -> trans list
   val state_after_trans :
-    state -> trans -> (state BasicTypes.transition_outcome)
+    state -> trans -> ((instruction_ast,state) BasicTypes.transition_outcome)
 
   val model_params     : state -> Params.model_params
   val set_model_params : Params.model_params -> state -> state
@@ -60,7 +63,7 @@ module type S = sig
 
   val make_cex_candidate :
     state ->
-    CandidateExecution.cex_candidate
+    instruction_ast CandidateExecution.cex_candidate
 
   val number_finished_instructions    : state -> int
   val number_constructed_instructions : state -> int
@@ -88,6 +91,12 @@ module type S = sig
     Globals.ppmode ->
     ?filter:(trans -> bool) ->
     ui_state ->
+    string
+  val pp_instruction_ast :
+    Globals.ppmode ->
+    ((Sail_impl_base.address * Sail_impl_base.size) * string) list ->
+    instruction_ast ->
+    (Sail_impl_base.address) ->
     string
   val pp_instruction :
     Globals.ppmode ->
@@ -135,4 +144,5 @@ module type S = sig
     Test.info ->
     (state -> trans -> bool) list
 end
+
 

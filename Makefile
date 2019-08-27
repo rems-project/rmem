@@ -801,10 +801,10 @@ MACHINEFILES-PRE=\
   build_sail2_shallow_embedding/sail2_string.lem\
   src_concurrency_model/utils.lem\
   src_concurrency_model/freshIds.lem\
+  $(RISCV_FILES)\
   $(POWER_FILES)\
   $(AARCH64_FILES)\
   $(MIPS_FILES)\
-  $(RISCV_FILES)\
   $(X86_FILES)\
   src_concurrency_model/instructionSemantics.lem\
   src_concurrency_model/events.lem\
@@ -834,7 +834,8 @@ MACHINEFILES-PRE=\
   src_concurrency_model/promisingStorage.lem\
   src_concurrency_model/promising.lem\
   src_concurrency_model/promisingDwarf.lem\
-  src_concurrency_model/promisingUI.lem
+  src_concurrency_model/promisingUI.lem\
+  src_concurrency_model/sail_1_2_convert.lem
 
 MACHINEFILES=\
   $(wildcard build_sail_interp/*.lem)\

@@ -24,12 +24,22 @@ open Interp_interface
 open Sail_impl_base
 
 type instruction = X86HGenBase.instruction
+type instruction_ast = X86_embed_types.ast3
 
 type labelmap = (string * int) list
 
 module IInt = Sail_impl_base
 module IImp = Interp_inter_imp
 
+let instruction_to_interp2_instruction _ = failwith "not implemented"
+let interp2_instruction_to_instruction _ = failwith "not implemented"
+
+
+let instruction_to_interp_instruction = X86_toFromInterp.astToInterpValue3
+let interp_instruction_to_instruction = X86_toFromInterp.astFromInterpValue3
+
+
+let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
 open X86_embed_types
 (* #include "build_isa_models/x86/gen/herdtools_types_to_shallow_types.hgen" *)
@@ -43,7 +53,7 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
         failwith "Translation failure"
       end
   in
-  InstructionSemantics.X86_instr instr
+  instr
 
 (* sneakily reuse map.hgen to find Sym address we need to resolve syms *)
 let unsym_ins lookup_loc =
@@ -114,13 +124,10 @@ let trans_out_reg flv =
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open X86_embed_types in
-  match instr with
-  | InstructionSemantics.X86_instr instr ->
-     begin match instr with
-     (* #include "build_isa_models/x86/gen/shallow_ast_to_herdtools_ast.hgen" *)
-     (*| i -> failwith "cannot translate instruction"*)
-     end
-  | _ -> failwith "not a POWER instruction"
+  begin match instr with
+    (* #include "build_isa_models/x86/gen/shallow_ast_to_herdtools_ast.hgen" *)
+    (*| i -> failwith "cannot translate instruction"*)
+  end
 
 
 

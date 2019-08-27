@@ -48,7 +48,7 @@ type pss = list (write * t * maybe thread_id)
 
 (* initial state *)
 
-let pss_initial_state params threads iws = 
+let pss_initial_state threads iws = 
   let make_write i w = (w, List.length iws - i, Nothing) in
   List.mapi make_write iws
 

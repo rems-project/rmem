@@ -38,40 +38,39 @@ open import PromisingStorage
 
 
 
-type p_state 'ts 'ss 'v =
-  <| p_program_memory:        (address -> fetch_and_decode_outcome);
+type p_state 'i 'ts 'ss 'v =
+  <| p_program_memory:        (address -> fetch_and_decode_outcome 'i);
      p_initial_writes:        list write;
      p_thread_states:         map thread_id 'ts;
      p_storage_state:         'ss;
      p_model:                 model_params;
-     p_instruction_semantics: instruction_semantics;
+     p_isa:                   isa 'i;
      p_stopped_promising:     bool;
      p_pss_sem:               pss_sem 'ss 'v;
      
-     p_follow_trace:          pt_follow_trace 'v;
+     p_follow_trace:          pt_follow_trace 'i 'v;
   |>
 
 
-type pts' = pts t
+(* type pts' 'i = pts 'i t *)
 
 let p_initial_state
-    (instruction_semantics:   instruction_semantics)
     (register_data:           registerdata)
-    (state_record:            initial_state_record)
-    : p_state (pts t) pss t
+    (state_record:            initial_state_record 'i)
+    : p_state 'i (pts 'i t) pss t
   =
-  let prog = state_record.isr_program instruction_semantics in
+  let prog = state_record.isr_program state_record.isr_isa.instruction_semantics in
 
   let initial_thread_states = 
     let init tid =
       PromisingThread.p_initial_thread_state
-        state_record.isr_params.t
+        state_record.isr_isa
         tid
         prog
         (ensure_just (List.lookup tid state_record.isr_return_addr) "missing return address for thread")
         register_data
         (state_record.isr_register_data tid)
-        (state_record.isr_register_values tid)
+        (state_record.isr_register_values register_data tid)
         (state_record.isr_first_instruction tid)
         state_record.isr_memory
     in
@@ -80,11 +79,11 @@ let p_initial_state
   <| p_program_memory    = prog;
      p_initial_writes    = state_record.isr_memory;
      p_thread_states     = Map.fromList initial_thread_states;
-     p_storage_state     = PromisingStorage.pss_initial_state state_record.isr_params
+     p_storage_state     = PromisingStorage.pss_initial_state
                                (Set.fromList state_record.isr_thread_ids)
                                state_record.isr_memory;
      p_model             = state_record.isr_params;
-     p_instruction_semantics = instruction_semantics;
+     p_isa = state_record.isr_isa;
      p_stopped_promising = false;
      p_pss_sem = pss_sem;
 
@@ -95,8 +94,13 @@ let p_initial_state
 
 (*** System ********************************************************************)
 
-let promise_write (pss_sem : pss_sem 'pss 'v) (pts : pts 'v) (pss : 'pss) (wd : writedata 'v) shared 
-    : list (pt_trans (pts 'v) ('pss) 'v) = 
+let promise_write 
+      (pss_sem : pss_sem 'pss 'v)
+      (pts : pts 'i 'v)
+      (pss : 'pss)
+      (wd : writedata 'v)
+      shared 
+    : list (pt_trans 'i (pts 'i 'v) ('pss) 'v) = 
   pss_sem.handle_write pss wd shared >>= fun (v,pss') ->
   let pts' = 
     let promise = (wd.wd_w.weiid,v,fst wd.wd_w.w_addr) in
@@ -123,12 +127,10 @@ let promisable = (le)
 
 
 
-let certprom_t params
-    (isem : instruction_semantics)
-    (pss_sem : pss_sem 'pss 'v)
-    (cj : certjob (pts 'v) 'pss 'v)
-    (trans : pt_trans (pts 'v) 'pss 'v)
-  : certjob (pts 'v) 'pss 'v
+let certprom_t
+    (cj : certjob (pts 'i 'v) 'pss 'v)
+    (trans : pt_trans 'i (pts 'i 'v) 'pss 'v)
+  : certjob (pts 'i 'v) 'pss 'v
   = 
   let (pts',pss') = tconf_after_pt_trans (cj.CJpts,cj.CJpss) trans in
   let shared_wds = Set.fromList (wd_of_shared_pt_write_trans trans) in
@@ -152,9 +154,9 @@ let warn_empty_fuel () =
   print_endline "\nWarning: ran out of fuel\n"
 
 let rec certprom_s params
-    (isem : instruction_semantics)
+    (isa : isa 'i)
     (pss_sem : pss_sem 'pss 'v)
-    (cjs : list (certjob (pts 'v) 'pss 'v))
+    (cjs : list (certjob (pts 'i 'v) 'pss 'v))
     (cert : cert 'v)
   : cert 'v =
   match cjs with
@@ -166,14 +168,14 @@ let rec certprom_s params
         let () = warn_empty_fuel () in []
       else
         next_instruction_transitions_of_thread params
-          isem cj.CJpts pss_sem cj.CJpss
+          isa cj.CJpts pss_sem cj.CJpss
     in 
     if not (List.null next_transitions) then
       let cj = <| cj with CJfulfilled = fulfilled |> in
-      let new_cjs = List.map (certprom_t params isem pss_sem cj) next_transitions in
-      certprom_s params isem pss_sem (new_cjs ++ cjs) cert
+      let new_cjs = List.map (certprom_t cj) next_transitions in
+      certprom_s params isa pss_sem (new_cjs ++ cjs) cert
     else if not fulfilled then
-      certprom_s params isem pss_sem cjs cert
+      certprom_s params isa pss_sem cjs cert
     else
       let cert = 
         match cert with
@@ -182,7 +184,7 @@ let rec certprom_s params
            Certified (cert_no_write || cj.CJcert_no_write) 
                      (promises union cj.CJpromises)
         end in
-      certprom_s params isem pss_sem cjs cert
+      certprom_s params isa pss_sem cjs cert
   end
 
 
@@ -190,7 +192,7 @@ let rec certprom_s params
 
 let certprom_transition params isem
       (pss_sem : pss_sem 'pss 'v)
-      (pts : pts 'v)
+      (pts : pts 'i 'v)
       (pss : 'pss) tr = 
   (* let fulfilled = Set.null pts.promises in *)
   let no_write = List.null (wd_of_shared_pt_write_trans tr) in
@@ -230,17 +232,17 @@ let prune_promises promises =
 
 let p_enumerate_transitions_of_thread
     (params : model_params)
-    (isem : instruction_semantics)
-    (pts : pts 'v)
+    (isa : isa 'i)
+    (pts : pts 'i 'v)
     (pss_sem : pss_sem 'pss 'v)
     (pss : 'pss)
-    : list (pt_trans (pts 'v) 'pss 'v * bool) = 
+    : list (pt_trans 'i (pts 'i 'v) 'pss 'v * bool) = 
 
-  let trs = next_instruction_transitions_of_thread params isem pts pss_sem pss in
+  let trs = next_instruction_transitions_of_thread params isa pts pss_sem pss in
   let (transitions,promises) = 
     List.foldl 
       (fun (trs,prms) tr ->
-        match certprom_transition params isem pss_sem pts pss tr with
+        match certprom_transition params isa pss_sem pts pss tr with
         | NotCertified -> (trs,prms)
         | Certified cert_no_write promises ->
            ((tr,cert_no_write) :: trs, prms union promises)
@@ -260,21 +262,21 @@ let p_enumerate_transitions_of_thread
 
 let rec enumerate_possible_final_states
     (params : model_params)
-    (isem : instruction_semantics)
+    (isa : isa 'i)
     (pss_sem : pss_sem 'pss 'v)
-    (pts : pts 'v)
+    (pts : pts 'i 'v)
     (pss : 'pss)
-    (trace_so_far : pt_follow_trace 'v)
-      : list (pts 'v * 'pss * pt_follow_trace 'v)
+    (trace_so_far : pt_follow_trace 'i 'v)
+      : list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)
   =
   if is_final_tstate params.t pts then return (pts,pss,List.reverse trace_so_far) else
     (* guard (quick_detect_deadlock pss pts) >> *)
-    next_instruction_transitions_of_thread params isem pts pss_sem pss >>= fun tr ->
+    next_instruction_transitions_of_thread params isa pts pss_sem pss >>= fun tr ->
     guard (not (is_shared_pt_write_trans tr)) >>
     let (pts,pss) = tconf_after_pt_trans (pts,pss) tr in
     let follow_label = pt_follow_label_of_pt_trans tr in
     let trace_so_far' = follow_label :: trace_so_far in
-    enumerate_possible_final_states params isem pss_sem pts pss trace_so_far'
+    enumerate_possible_final_states params isa pss_sem pts pss trace_so_far'
 
 
 
@@ -283,9 +285,10 @@ let rec enumerate_possible_final_states
 
 
 val merge_combination :
-  forall 'v 'pss. pss_sem 'pss 'v ->
-  list (thread_id * (pts 'v * 'pss * pt_follow_trace 'v)) ->
-  map thread_id (pts 'v) * 'pss * pt_follow_trace 'v
+  forall 'i 'v 'pss.
+  pss_sem 'pss 'v ->
+  list (thread_id * (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)) ->
+  map thread_id (pts 'i 'v) * 'pss * pt_follow_trace 'i 'v
 let merge_combination pss_sem combination =
   match combination with
     | [] -> failwith "merge_combinations"
@@ -310,35 +313,35 @@ let rec all_combinations l =
   end
 
 
-let enumerate_finalise_transitions isem
-      (state : p_state (pts 'v) 'pss 'v) : list (p_trans (pts 'v) 'pss 'v)
+let enumerate_finalise_transitions
+      (state : p_state 'i (pts 'i 'v) 'pss 'v) : list (p_trans 'i (pts 'i 'v) 'pss 'v)
   = 
   if Map.all (fun _ ts -> is_final_tstate state.p_model.t ts) state.p_thread_states
   then []
   else
     let pss = state.p_storage_state in
     let ptss = Map_extra.toList state.p_thread_states in
-    let (final_states_per_thread : list (thread_id * (list (pts 'v * 'pss * pt_follow_trace 'v)))) =
+    let (final_states_per_thread : list (thread_id * (list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)))) =
       List.map (fun (tid,pts) ->
-          (tid, enumerate_possible_final_states state.p_model isem
+          (tid, enumerate_possible_final_states state.p_model state.p_isa
                   state.p_pss_sem pts pss [])) ptss
     in
-    let (combs : list (list (thread_id * (pts 'v * 'pss * pt_follow_trace 'v)))) = 
+    let (combs : list (list (thread_id * (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)))) = 
       all_combinations final_states_per_thread in
     let merged_combs = List.map (merge_combination state.p_pss_sem) combs in
     List.map (fun (ptss, pss, trace) -> PSys_finish ptss pss trace) merged_combs
 
 
 let p_enumerate_follow_transition
-  (state : p_state (pts 'v) 'pss 'v) (l : pt_follow_label 'v)
-    : list (p_trans (pts 'v) 'pss 'v) =
+  (state : p_state 'i (pts 'i 'v) 'pss 'v) (l : pt_follow_label 'i 'v)
+    : list (p_trans 'i (pts 'i 'v) 'pss 'v) =
 
   let tid = tid_of_pt_trans l in
   let ts = Map_extra.find tid state.p_thread_states in
   let pt_trans =
     next_instruction_transitions_of_thread
       state.p_model
-      state.p_instruction_semantics
+      state.p_isa
       ts
       state.p_pss_sem
       state.p_storage_state
@@ -355,15 +358,15 @@ let p_enumerate_transitions_of_threads state =
     (fun ts ->
       p_enumerate_transitions_of_thread
         state.p_model
-        state.p_instruction_semantics 
+        state.p_isa
         ts
         state.p_pss_sem
         state.p_storage_state 
     )
     state.p_thread_states
 
-let p_normally_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
-    : list (p_trans (pts 'v) 'pss 'v)
+let p_normally_enumerate_transitions (state: p_state 'i (pts 'i 'v) 'pss 'v)
+    : list (p_trans 'i (pts 'i 'v) 'pss 'v)
   =
 
   let map_thread_transitions = p_enumerate_transitions_of_threads state in
@@ -398,13 +401,13 @@ let p_normally_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
    
 
 
-let p_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
-    : list (p_trans (pts 'v) 'pss 'v)
+let p_enumerate_transitions (state: p_state 'i (pts 'i 'v) 'pss 'v)
+    : list (p_trans 'i (pts 'i 'v) 'pss 'v)
   =
   match state.p_follow_trace with
   | [] ->
     if state.p_stopped_promising && state.p_model.t.p_par_pts_search
-    then enumerate_finalise_transitions state.p_instruction_semantics state
+    then enumerate_finalise_transitions state
     else p_normally_enumerate_transitions state
   | t :: _ ->  p_enumerate_follow_transition state t
   end
@@ -413,7 +416,7 @@ let p_enumerate_transitions (state: p_state (pts 'v) 'pss 'v)
 
 
 let p_priority_transitions s (_: eager_mode) :
-      list ((p_trans 'ts 'ss 'v -> bool) * bool) =
+      list ((p_trans 'i 'ts 'ss 'v -> bool) * bool) =
   match s.p_model.t.thread_model with
   | Promising_thread_model -> (* also see optimised transition enumeration *)
      if s.p_stopped_promising then [(fun t -> true, true)]  else []
@@ -436,9 +439,9 @@ let p_is_ioid_finished (target_ioid : ioid) s : bool =
   isJust (List.find (fun i -> i.ii_ioid = target_ioid) thread.instrs)
 
 
-type pst 'ts 'ss 'v =
-  <| pst_state: p_state 'ts 'ss 'v;
-     pst_trans: list (p_trans 'ts 'ss 'v);
+type pst 'i 'ts 'ss 'v =
+  <| pst_state: p_state 'i 'ts 'ss 'v;
+     pst_trans: list (p_trans 'i 'ts 'ss 'v);
   |>
 
 
@@ -449,8 +452,10 @@ let pst_of_state s =
 
 
 
-let pstate_after_transition (s : p_state (pts 'v) 'pss 'v) (t: p_trans (pts 'v) 'pss 'v)
-    : p_state (pts 'v) 'pss 'v =
+let pstate_after_transition 
+      (s : p_state 'i (pts 'i 'v) 'pss 'v)
+      (t: p_trans 'i (pts 'i 'v) 'pss 'v)
+    : p_state 'i (pts 'i 'v) 'pss 'v =
   let s' = 
     match t with
     | PSys_thread_start _ _ _ _ -> fail
@@ -476,14 +481,14 @@ let pstate_after_transition (s : p_state (pts 'v) 'pss 'v) (t: p_trans (pts 'v) 
 
 
 let pst_after_transition
-    (s:         pst (pts 'v) 'pss 'v)
-    (t:         p_trans (pts 'v) 'pss 'v)
-    : transition_outcome (pst (pts 'v) 'pss 'v)
+    (s:         pst 'i (pts 'i 'v) 'pss 'v)
+    (t:         p_trans 'i (pts 'i 'v) 'pss 'v)
+    : transition_outcome 'i (pst 'i (pts 'i 'v) 'pss 'v)
   =
   TO_system_state (pst_of_state (pstate_after_transition s.pst_state t))
   
 
-let p_is_final_state (s : p_state (pts 'v) 'pss 'v) : bool =
+let p_is_final_state (s : p_state 'i (pts 'i 'v) 'pss 'v) : bool =
   s.p_model.t.p_promise_first --> s.p_stopped_promising &&
   (* quantify over list rather than set to avoid needing set type for thread states *)
   (forall ((_,ts) MEM (Map_extra.toList s.p_thread_states)).
@@ -495,9 +500,9 @@ let p_is_final_state (s : p_state (pts 'v) 'pss 'v) : bool =
 (* This does not produce all the information cex would like to have,
    should fix later *)
 let p_make_cex_instruction_info
-    (* (_prefix: list instruction_info) *)
-    (i:      instruction_info)
-    : cex_instruction_instance
+    (* (_prefix: list (instruction_info 'i)) *)
+    (i:      instruction_info 'i)
+    : cex_instruction_instance 'i
   =
   <|
     cex_instance_ioid = i.ii_ioid;
@@ -542,11 +547,11 @@ let p_make_cex_instruction_info
   |>
 
 
-let p_make_cex_instruction_tree (iis:list instruction_info) : cex_instruction_tree =
+let p_make_cex_instruction_tree (iis:list (instruction_info 'i)) : cex_instruction_tree 'i =
   List.foldr (fun ii t -> CEX_T [(p_make_cex_instruction_info ii,t)]) (CEX_T []) iis
 
 
-let p_make_cex_thread_state (t : pts 'v) : cex_thread_state = 
+let p_make_cex_thread_state (t : pts 'i 'v) : cex_thread_state 'i = 
   <| cex_thread = t.tid;
      cex_register_data = t.regdata;
      cex_initial_register_state = t.initRegS;
@@ -554,8 +559,8 @@ let p_make_cex_thread_state (t : pts 'v) : cex_thread_state =
      cex_instruction_tree = p_make_cex_instruction_tree t.instrs;
   |>
 
-val p_make_cex_candidate : forall 'v. p_state (pts 'v) pss 'v -> cex_candidate
-let p_make_cex_candidate s : cex_candidate =
+val p_make_cex_candidate : forall 'i 'v. p_state 'i (pts 'i 'v) pss 'v -> cex_candidate 'i
+let p_make_cex_candidate s : cex_candidate 'i =
   let rf =
     let instructions =
       Map.map (fun t -> Set.fromList t.instrs) s.p_thread_states $>
@@ -596,9 +601,9 @@ let p_modified_code_locations_of_state _ : set footprint = Set.empty
 
 
 (* To easier refer to these in OCaml .. *)
-let type_specialised_p_pst_of_state (s : p_state (pts t) pss t) = pst_of_state s
-let type_specialised_p_is_final_state (s : p_state (pts t) pss t) = p_is_final_state s
+let type_specialised_p_pst_of_state (s : p_state 'i (pts 'i t) pss t) = pst_of_state s
+let type_specialised_p_is_final_state (s : p_state 'i (pts 'i t) pss t) = p_is_final_state s
 let type_specialised_pst_after_transition
-      (s:         pst (pts t) pss t)
-      (t:         p_trans (pts t) pss t)
+      (s:         pst 'i (pts 'i t) pss t)
+      (t:         p_trans 'i (pts 'i t) pss t)
   = pst_after_transition s t

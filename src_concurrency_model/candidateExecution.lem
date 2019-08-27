@@ -52,12 +52,12 @@ open import BasicTypes
 open import InstructionSemantics
 
 
-type cex_instruction_instance = 
+type cex_instruction_instance 'i = 
     <| 
     cex_instance_ioid: ioid; 
     cex_program_loc: address;  
     cex_program_opcode: maybe opcode; 
-    cex_instruction: instruction_ast;
+    cex_instruction: 'i;
     cex_instruction_kind: instruction_kind;
     (*cex_aarch64_write_kind: maybe write_kind;*)
     (* register part *)
@@ -89,23 +89,23 @@ type cex_instruction_instance =
   |>
 
 
-type cex_instruction_tree =
-  | CEX_T of list (cex_instruction_instance * cex_instruction_tree)
+type cex_instruction_tree 'i =
+  | CEX_T of list (cex_instruction_instance 'i * cex_instruction_tree 'i)
 
-type cex_thread_state = 
+type cex_thread_state 'i = 
     <| 
     cex_thread: thread_id;
     cex_register_data: registerdata;
     cex_initial_register_state: (reg_base_name -> register_value); (*TODO?*)
     cex_initial_fetch_address: maybe address;
-    cex_instruction_tree: cex_instruction_tree;
+    cex_instruction_tree: cex_instruction_tree 'i;
   |>
 
-type cex_candidate = 
+type cex_candidate 'i = 
     <| 
-    cex_program_memory: (address -> fetch_and_decode_outcome);
+    cex_program_memory: (address -> fetch_and_decode_outcome 'i);
     cex_initial_writes: list write;
-    cex_threads: map thread_id cex_thread_state;
+    cex_threads: map thread_id (cex_thread_state 'i);
     cex_rf: Relation.rel (write * slices) read_request;
     cex_co: Relation.rel write write;
     cex_fr: Relation.rel read_request write;
@@ -115,7 +115,7 @@ type cex_candidate =
 
 (** cutting down graphs to the concurrent accesses *)
 
-let footprints_of_cex_instruction_instance (i:cex_instruction_instance) : set footprint =
+let footprints_of_cex_instruction_instance (i:cex_instruction_instance 'i) : set footprint =
   { w.w_addr | forall ((w,sls) IN  i.cex_writes_read_from) | true }
     union (Set.fromList [w.w_addr | forall (w MEM i.cex_potential_write_addresses) | true])
     union (Set.fromList [w.w_addr | forall (w MEM i.cex_potential_writes) | true])
@@ -123,7 +123,7 @@ let footprints_of_cex_instruction_instance (i:cex_instruction_instance) : set fo
     union (Set.fromList [r.r_addr | forall (r MEM i.cex_requested_unsatisfied_reads) | true])
     union (Set.fromList [r.r_addr | forall ((r,_) MEM i.cex_satisfied_reads) | true])
 
-let rec footprints_of_cex_instruction_tree (it:cex_instruction_tree) : set footprint =
+let rec footprints_of_cex_instruction_tree (it:cex_instruction_tree 'i) : set footprint =
   match it with
   | CEX_T iits ->
      bigunionListMap 
@@ -131,10 +131,10 @@ let rec footprints_of_cex_instruction_tree (it:cex_instruction_tree) : set footp
         iits
   end
 
-let footprints_of_cex_thread_state (t:cex_thread_state) : set footprint =
+let footprints_of_cex_thread_state (t:cex_thread_state 'i) : set footprint =
   footprints_of_cex_instruction_tree t.cex_instruction_tree
 
-let footprints_of_cex_candidate (cex:cex_candidate) : list (set footprint) =
+let footprints_of_cex_candidate (cex:cex_candidate 'i) : list (set footprint) =
   List.map (fun (tid,t)->footprints_of_cex_thread_state t) (Map_extra.toList cex.cex_threads)
 
 let rec shared_memory_footprints_aux (acc: set footprint) (fpss: list (set footprint)) =
@@ -147,7 +147,7 @@ let rec shared_memory_footprints_aux (acc: set footprint) (fpss: list (set footp
   end
 
 
-let shared_memory_footprints (cex:cex_candidate) : set footprint = 
+let shared_memory_footprints (cex:cex_candidate 'i) : set footprint = 
   let fpss = footprints_of_cex_candidate cex in
   shared_memory_footprints_aux {} fpss
   
@@ -158,7 +158,7 @@ let is_shared_memory_write (fp_shared: set footprint) (w: write) =
 let is_shared_memory_read (fp_shared: set footprint) (r: read_request) =
   Fragments.non_empty_intersection_set fp_shared { r.r_addr }
 
-let is_shared_memory_instruction (fp_shared: set footprint) (i: cex_instruction_instance) =
+let is_shared_memory_instruction (fp_shared: set footprint) (i: cex_instruction_instance 'i) =
   match i.cex_instruction_kind with
   | IK_barrier _ -> true
   | _ -> false
@@ -166,7 +166,7 @@ let is_shared_memory_instruction (fp_shared: set footprint) (i: cex_instruction_
 || Fragments.non_empty_intersection_set fp_shared (footprints_of_cex_instruction_instance i)
 
 
-let rec filter_instruction_tree (pi: cex_instruction_instance -> bool) (it: cex_instruction_tree) : cex_instruction_tree =
+let rec filter_instruction_tree (pi: cex_instruction_instance 'i -> bool) (it: cex_instruction_tree 'i) : cex_instruction_tree 'i =
   match it with
   | CEX_T iits -> 
       CEX_T 
@@ -185,8 +185,8 @@ let rec filter_instruction_tree (pi: cex_instruction_instance -> bool) (it: cex_
 
 (* more abstract notion of candidate execution *)
 
-let rec cex_instruction_tree_to_list (CEX_T iits: cex_instruction_tree) :
-          list cex_instruction_instance =
+let rec cex_instruction_tree_to_list (CEX_T iits: cex_instruction_tree 'i) :
+          list (cex_instruction_instance 'i) =
   match iits with
   | [] -> []
   | [(i,it)] -> i :: cex_instruction_tree_to_list it
@@ -259,7 +259,7 @@ let acex_union acex1 acex2 =
   |>
 
 
-let events_of_instruction_instance (ii : cex_instruction_instance) : set acex_event = 
+let events_of_instruction_instance (ii : cex_instruction_instance 'i) : set acex_event = 
   { ACEX_read r | forall ((r,_) MEM ii.cex_satisfied_reads) | true } union
   { ACEX_write w | forall (w MEM ii.cex_propagated_writes) | true } union
   { ACEX_barrier b | forall (b MEM ii.cex_committed_barriers) | true }
@@ -267,7 +267,7 @@ let events_of_instruction_instance (ii : cex_instruction_instance) : set acex_ev
   
 let rec thread_local_acex_data_of_instructions 
       (acex_so_far : acex)
-      (iis : list cex_instruction_instance) : acex =
+      (iis : list (cex_instruction_instance 'i)) : acex =
   match iis with
   | [] ->
      let ids = Set.map eiid_of_acex_event acex_so_far.acex_events in
@@ -317,7 +317,7 @@ let rec thread_local_acex_data_of_instructions
    end
 
 let thread_local_acex_data_of_thread_state
-      ((_tid : thread_id), (thread : cex_thread_state)) : acex = 
+      ((_tid : thread_id), (thread : cex_thread_state 'i)) : acex = 
   let instructions = cex_instruction_tree_to_list thread.cex_instruction_tree in
   thread_local_acex_data_of_instructions empty_acex instructions
 
@@ -349,7 +349,7 @@ let fixup acex =
   |>
 
 (* only call for final states/finished traces *)
-val acex_of_cex : cex_candidate -> acex
+val acex_of_cex : forall 'i. cex_candidate 'i -> acex
 let acex_of_cex cex = 
   let thread_states = Map_extra.toList cex.cex_threads in
   let thread_local_acex_data =

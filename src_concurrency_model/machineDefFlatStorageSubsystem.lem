@@ -31,6 +31,7 @@ open import Utils
 open import UiTypes
 open import InstructionSemantics
 open import InstructionKindPredicates
+open import BasicTypes
 open import MachineDefUI
 open import MachineDefTypes
 open MaybeMonad
@@ -348,8 +349,8 @@ let icache_update params (icache) (w : (write * slices)) state () =
   let icaches' = Map.insert icache.ic_tid icache' (state.flat_ss_icaches) in
   <| state with flat_ss_icaches = icaches' |>
 
-let flat_make_cbranch_fetch_from_pair params state tl (x, y) =
-  let cbranch = AArch64_make_conditional_branch (x,y) in
+let flat_make_cbranch_fetch_from_pair isa params state tl (x, y) =
+  let cbranch = isa.make_conditional_branch (x,y) in
   let addr = tl.tl_label.fr_addr in
   let op = Nothing in  (* TODO: BS: re-construct new opcode from cbranch ... *)
   let fdo = FDO_success addr op cbranch in
@@ -386,15 +387,15 @@ let _flat_try_fetch_relaxed params state tl =
   | false -> flat_try_fetch_relaxed_from_buffer_only params state tl  (* TODO: impl ... *)
   end
 
-let flat_try_fetch_relaxed params state tl =
+let flat_try_fetch_relaxed isa params state tl =
   let fetches = _flat_try_fetch_relaxed params state tl in
   let fdo_from_fetch (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) = fdo in
-  let maybe_cbranch_from_ast = AArch64_split_maybe_conditional_branch in
+  let maybe_cbranch_from_ast = isa.maybe_split_conditional_branch in
   let fdos = List.map fdo_from_fetch fetches in
   let (successful_fdos,unsuccessful_fdos) = List.partition is_fdo_success fdos in
   let asts = List.map ast_from_fdo successful_fdos in
   let cbranches = List.mapMaybe maybe_cbranch_from_ast asts in
-  if List.length fetches = 1 || List.all is_AArch64_atomic_fetchable_opcode asts then
+  if List.length fetches = 1 || List.all isa.is_atomically_fetchable_instruction asts then
       fetches
   else if List.length cbranches = List.length fetches then
     let conds = List.map fst cbranches in
@@ -402,14 +403,14 @@ let flat_try_fetch_relaxed params state tl =
     let combinations = product conds dests in
     let make_fetch fdo =
       (T_fetch (<| tl with tl_suppl = Just (Fetched_FDO fdo) |>), Just (fun() -> state)) in
-    List.map make_fetch unsuccessful_fdos ++ List.map (flat_make_cbranch_fetch_from_pair params state tl) combinations
+    List.map make_fetch unsuccessful_fdos ++ List.map (flat_make_cbranch_fetch_from_pair isa params state tl) combinations
   else
       [(T_fetch <| tl with tl_suppl = Just (Fetched_FDO FDO_unpredictable_fetch) |>, Just (fun() -> state))]
 
-let flat_try_fetch params state tl =
+let flat_try_fetch isa params state tl =
     match params.ss_fetch_type with
     | Fetch_Atomic -> flat_try_fetch_atomic params state tl
-    | Fetch_Relaxed fp -> flat_try_fetch_relaxed fp state tl
+    | Fetch_Relaxed fp -> flat_try_fetch_relaxed isa fp state tl
     end
 
 (* TODO: Move this to somewhere better ... *)
@@ -482,8 +483,8 @@ let flat_ss_receive_transition_guarded params state = function
   | T_fetch _ -> failwith "T_fetch is not guarded"
 end
 
-let flat_ss_receive_transition params state = function
-  | T_fetch tl -> flat_try_fetch params state tl
+let flat_ss_receive_transition isa params state = function
+  | T_fetch tl -> flat_try_fetch isa params state tl
   | trans -> ListMonad.option_guard (flat_ss_receive_transition_guarded params state trans)
 end
 
@@ -616,8 +617,8 @@ let flat_ui_ic_writes_unchanged icw =
 let flat_make_ui_storage_subsystem_state
     (ss: maybe flat_storage_subsystem_state)
     (ss': flat_storage_subsystem_state)
-    (transitions: list (ui_trans 'ts 'ss))
-    : ui_storage_subsystem_state 'ts 'ss
+    (transitions: list (ui_trans 'i 'ts 'ss))
+    : ui_storage_subsystem_state 'i 'ts 'ss
   =
   Flat_UI_storage
     <|  ui_flat_ss_memory_writes =
@@ -664,19 +665,14 @@ let flat_make_ui_storage_subsystem_state
 
 
 
-val flat_storage : storageSubsystem flat_storage_subsystem_state
-let flat_storage =
+val flat_storage : forall 'i 'ts. storageSubsystem 'i 'ts flat_storage_subsystem_state
+let flat_storage = 
   <| ss_thread_memory_value_of_footprint = flat_ss_thread_memory_value_of_footprint;
      ss_initial_state                     = flat_ss_initial_state;
      ss_is_final_state                    = flat_ss_is_final_state ;
      ss_coherence                         = flat_ss_coherence ;
      ss_clean_reads                       = flat_ss_remove_old_read_requests;
- |>
-
-
-val flat_machine_storage : forall 'ts. machineStorageSubsystem 'ts flat_storage_subsystem_state
-let flat_machine_storage =
- <| ss_enumerate_transitions = enumerate_transitions_ss;
+     ss_enumerate_transitions = enumerate_transitions_ss;
      ss_receive_transition = 
          fun p s tl -> flat_ss_receive_transition p s tl;
      ss_enumerate_final_transitions = fun s -> [];

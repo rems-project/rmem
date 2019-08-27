@@ -55,10 +55,10 @@ let diff_subreads subreads subreads' =
 
 
 let make_ui_instruction_instance
-    (i: instruction_instance)
-    (i': instruction_instance)
-    (ncands: list (ui_trans 'ts 'ss))
-    : ui_instruction_instance 'ts 'ss =
+    (i: instruction_instance 'i)
+    (i': instruction_instance 'i)
+    (ncands: list (ui_trans 'i 'ts 'ss))
+    : ui_instruction_instance 'i 'ts 'ss =
     <|
     ui_instance_ioid = i.instance_ioid; 
     ui_program_loc = i.program_loc;
@@ -121,9 +121,9 @@ let nocompare_subreads subreads' =
 
 
 let make_ui_instruction_instance_nocompare
-    (i': instruction_instance)
-    (ncands: list (ui_trans 'ts 'ss))
-    : ui_instruction_instance 'ts 'ss =
+    (i': instruction_instance 'i)
+    (ncands: list (ui_trans 'i 'ts 'ss))
+    : ui_instruction_instance 'i 'ts 'ss =
     <|
     ui_instance_ioid = i'.instance_ioid; 
     ui_program_loc = i'.program_loc;
@@ -162,16 +162,16 @@ let make_ui_instruction_instance_nocompare
 
 
 let rec c3ify 
-    (f : ui_instruction_instance 'ts 'ss -> changed3 (ui_instruction_instance 'ts 'ss))
-    (it0 : (instruction_tree))
-    (ncands: list (ui_trans 'ts 'ss))
-    : ui_instruction_tree 'ts 'ss =
+    (f : ui_instruction_instance 'i 'ts 'ss -> changed3 (ui_instruction_instance 'i 'ts 'ss))
+    (it0 : (instruction_tree 'i))
+    (ncands: list (ui_trans 'i 'ts 'ss))
+    : ui_instruction_tree 'i 'ts 'ss =
   match it0 with
   | T its ->
       UI_T (List.map (fun (i,it) -> (f (make_ui_instruction_instance i i ncands),c3ify f it ncands)) its)
   end 
 
-let rec make_ui_instruction_tree it0 it0' (ncands: list (ui_trans 'ts 'ss)) : (ui_instruction_tree 'ts 'ss) =
+let rec make_ui_instruction_tree it0 it0' (ncands: list (ui_trans 'i 'ts 'ss)) : (ui_instruction_tree 'i 'ts 'ss) =
   match (it0,it0') with
   | (T its, T its') ->
       let gone = List.mapMaybe
@@ -194,7 +194,7 @@ let rec make_ui_instruction_tree it0 it0' (ncands: list (ui_trans 'ts 'ss)) : (u
   end
 
 
-let rec make_ui_instruction_tree_nocompare it0' (ncands: list (ui_trans 'ts 'ss)) : (ui_instruction_tree 'ts 'ss) =
+let rec make_ui_instruction_tree_nocompare it0' (ncands: list (ui_trans 'i 'ts 'ss)) : (ui_instruction_tree 'i 'ts 'ss) =
   let (T its') = it0' in
   let rest = List.map
       (fun (i',it') ->
@@ -205,7 +205,7 @@ let rec make_ui_instruction_tree_nocompare it0' (ncands: list (ui_trans 'ts 'ss)
   UI_T rest
 
 
-let make_ui_instruction_list is is' (ncands: list (ui_trans 'ts 'ss)) : (ui_instruction_list 'ts 'ss) =
+let make_ui_instruction_list is is' (ncands: list (ui_trans 'i 'ts 'ss)) : (ui_instruction_list 'i 'ts 'ss) =
    let gone = List.mapMaybe
        (fun i -> 
          if not (List.any (fun i' -> i'.instance_ioid = i.instance_ioid) is') then 
@@ -279,13 +279,13 @@ let lookup_ui_instructions ioid ui_instructions =
 let make_ui_system_state 
       (* allow ui_thread_state to depend on storage state for Promising *)
       (make_ui_thread_state : 'ss -> maybe 'ts -> 'ts -> 
-                              list (ui_trans 'ts 'ss) -> ui_thread_state 'ts 'ss)
+                              list (ui_trans 'i 'ts 'ss) -> ui_thread_state 'i 'ts 'ss)
       (make_ui_storage_state : maybe 'ss -> 'ss -> 
-                               list (ui_trans 'ts 'ss) -> ui_storage_subsystem_state 'ts 'ss)
-      (s : maybe (system_state 'ts 'ss))
-      (s' : system_state 'ts 'ss)
-      (ncands : list (ui_trans 'ts 'ss)) 
-    : (ui_system_state 'ts 'ss) =
+                               list (ui_trans 'i 'ts 'ss) -> ui_storage_subsystem_state 'i 'ts 'ss)
+      (s : maybe (system_state 'i 'ts 'ss))
+      (s' : system_state 'i 'ts 'ss)
+      (ncands : list (ui_trans 'i 'ts 'ss)) 
+    : (ui_system_state 'i 'ts 'ss) =
   let threads : list thread_id = Set_extra.toList (Map.domain s'.thread_states) in
   <| 
   ui_program_memory = s'.program_memory; 

@@ -4,7 +4,7 @@ open import InstructionSemantics
 open import Events
 open import Fragments
 open import BasicTypes
-     import IsaInfoPPCGen
+
 
 (** model parameters *)
 (*: \subsection{Model Parameters} :*)
@@ -36,7 +36,7 @@ type icache_type =
   | Icache_Flat  (* a single write per address per icache *)
   | Icache_Many  (* many writes per address per icache *)
 
-type Fetch_params =
+type fetch_params =
   <| flat_need_ic : bool;
      flat_need_dc : bool;
      flat_icache_type : icache_type;
@@ -44,7 +44,7 @@ type Fetch_params =
 
 type fetch_type =  (* Enable/Disable fetching for self-modifying examples *)
   | Fetch_Atomic
-  | Fetch_Relaxed of Fetch_params
+  | Fetch_Relaxed of fetch_params
 
 type ss_params =
   <| ss_model: storage_model;
@@ -125,7 +125,6 @@ type thread_params =
      thread_allow_tree_speculation:  bool;
      thread_allow_write_subsumption: bool;
      thread_fail_on_loop:            bool;
-     thread_isa_info :               isa_info;
      thread_loop_unroll_limit:       maybe nat;
      thread_fetch_limit:             maybe nat;
      thread_fetch_from_ss:           bool;
@@ -251,14 +250,15 @@ type eager_mode =
 
 
 
-type initial_state_record =
-  <|  isr_params:            model_params;
+type initial_state_record 'i =
+  <|  isr_isa:               isa 'i;
+      isr_params:            model_params;
       (* TODO: remove isr_program *)
-      isr_program:           instruction_semantics -> address -> fetch_and_decode_outcome;
+      isr_program:           instruction_semantics 'i -> address -> fetch_and_decode_outcome 'i;
       isr_return_addr:       list (thread_id * address);
       isr_thread_ids:        list thread_id;
       isr_register_data:     thread_id -> list (reg_base_name * register_value);
-      isr_register_values:   thread_id -> reg_base_name -> register_value;
+      isr_register_values:   registerdata -> thread_id -> reg_base_name -> register_value;
       isr_first_instruction: thread_id -> maybe address;
       isr_memory:            list write;
   |>
@@ -369,7 +369,6 @@ let default_model_params =
         thread_allow_tree_speculation  = true;
         thread_allow_write_subsumption = false;
         thread_fail_on_loop            = false;
-        thread_isa_info                = IsaInfoPPCGen.ppcgen_ism;
         thread_loop_unroll_limit       = Nothing;
         thread_fetch_limit             = Nothing;
         thread_fetch_from_ss           = false;

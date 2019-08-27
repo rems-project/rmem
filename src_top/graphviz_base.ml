@@ -29,6 +29,9 @@ open Globals
 module Make (ConcModel: Concurrency_model.S)
   = struct
 
+type i = ConcModel.instruction_ast
+
+
 (** ******************** pp of graphs **************** *)
 
  (*
@@ -126,20 +129,20 @@ module Make (ConcModel: Concurrency_model.S)
  let str_to_read_request_portid (str: string) : string = dquote_str ("r"  ^ str)
  let str_to_out_reg_portid      (str: string) : string = dquote_str ("ro" ^ str)
 
- let baseid_of_instruction (i:cex_instruction_instance) : baseid = Pp.pp_pretty_ioid i.cex_instance_ioid
+ let baseid_of_instruction (i:i cex_instruction_instance) : baseid = Pp.pp_pretty_ioid i.cex_instance_ioid
 
- let nodeid_of_instruction (i:cex_instruction_instance) : string = str_to_instruction_nodeid (baseid_of_instruction i)
+ let nodeid_of_instruction (i:i cex_instruction_instance) : string = str_to_instruction_nodeid (baseid_of_instruction i)
 
  let nodeid_of_ioid ioid : string = str_to_instruction_nodeid (Pp.pp_pretty_ioid ioid)
 
- let portid_of_instruction (i:cex_instruction_instance) : string = str_to_instruction_portid (baseid_of_instruction i)
+ let portid_of_instruction (i:i cex_instruction_instance) : string = str_to_instruction_portid (baseid_of_instruction i)
 
- let label_of_instruction m (i:cex_instruction_instance) =
+ let label_of_instruction m (i:i cex_instruction_instance) =
    (* for barriers, we pun the instruction and event in the graph output *)
    (match i.cex_instruction_kind with
    | IK_barrier _ -> String.concat "" (List.map (fun b -> Pp.pp_pretty_eiid m b.beiid) i.cex_committed_barriers)
    | _ -> "")
-   (*^ "i"*) ^ baseid_of_instruction i ^ " " ^ Pp.pp_instruction_ast m m.pp_symbol_table i.cex_instruction i.cex_program_loc
+   (*^ "i"*) ^ baseid_of_instruction i ^ " " ^ ConcModel.pp_instruction_ast m m.pp_symbol_table i.cex_instruction i.cex_program_loc
 
 
  let portid_of_write (w:write) = str_to_write_portid (Pp.pp_eiid w.weiid)
@@ -398,7 +401,7 @@ let pp_html_dep_edge m label i1 ioid2 =
   n2 ^ " -> " ^ n1 ^ " [weight=0, constraint=false color=\"indigo\", fontcolor=\"indigo\", label=\"" ^ label ^ "\",fontsize=10 fontname=\"helvetica\" ]" ^ arrowsz ^ ";\n"
 
 
-let pp_html_node_of_instruction  m pi pw render_edges positions thread_node (i:cex_instruction_instance) prefix ioid_trans_lookup =
+let pp_html_node_of_instruction  m pi pw render_edges positions thread_node (i:i cex_instruction_instance) prefix ioid_trans_lookup =
   let n_regs_in = Pset.cardinal i.cex_regs_in in
   let n_regs_out = Pset.cardinal i.cex_regs_out in
   let colspan = (max 1 n_regs_in) * (max 1 n_regs_out) in
@@ -497,7 +500,7 @@ let pp_html_node_of_instruction  m pi pw render_edges positions thread_node (i:c
        "")
 
 
-let pp_html_initial_writes  m pw positions (cex: cex_candidate) =
+let pp_html_initial_writes  m pw positions (cex: i cex_candidate) =
   let cex_initial_writes = List.filter pw cex.cex_initial_writes in
   match cex_initial_writes with
   | [] -> ""
@@ -516,7 +519,7 @@ let pp_html_initial_writes  m pw positions (cex: cex_candidate) =
                    rows
       ^ "}\n"
 
-let rec tree_edges (i_parent: cex_instruction_instance option) it : (cex_instruction_instance * cex_instruction_instance * bool (* true if single*) ) list =
+let rec tree_edges (i_parent: i cex_instruction_instance option) it : (i cex_instruction_instance * i cex_instruction_instance * bool (* true if single*) ) list =
   match it with
   | CEX_T iits ->
       let single = (List.length iits = 1) in
@@ -530,7 +533,7 @@ let rec tree_edges (i_parent: cex_instruction_instance option) it : (cex_instruc
            )
            iits)
 
-let rec tree_instructions (pi : cex_instruction_instance -> bool) it : (cex_instruction_instance list) =
+let rec tree_instructions (pi : i cex_instruction_instance -> bool) it : (i cex_instruction_instance list) =
   match it with
   | CEX_T iits ->
       List.flatten
@@ -558,7 +561,7 @@ let prefix_list l =
   |> List.rev
 
 let pp_html_nodes_of_thread m pi pw render_edges positions
-      (cex_t:cex_thread_state) cex_it
+      (cex_t:i cex_thread_state) cex_it
       (ioid_trans_lookup : Events.ioid -> (ConcModel.ui_trans) list) =
   let thread_node = nodeid_of_thread_id m cex_t.cex_thread in
   pp_html_node_of_thread_id m positions cex_t ioid_trans_lookup
@@ -575,7 +578,7 @@ let pp_html_tree_edge m (i1,i2,single) =
 (*  ^ " [label=\"po\" fontsize=10 fontname=\"helvetica\" ]"*)
   ^ " " ^ arrowsz ^ "" ^";\n"
 
-let pp_html_tree_edges_of_thread m pi (cex_t:cex_thread_state) cex_it =
+let pp_html_tree_edges_of_thread m pi (cex_t:i cex_thread_state) cex_it =
   let top_edges =
     (match cex_it with
     | CEX_T iiits ->
@@ -585,7 +588,7 @@ let pp_html_tree_edges_of_thread m pi (cex_t:cex_thread_state) cex_it =
     let edges = tree_edges None cex_it in
     String.concat "" (List.map (pp_html_tree_edge m) edges)
 
-let pp_html_thread m pi pw render_edges positions (cex_t:cex_thread_state) ioid_trans_lookup =
+let pp_html_thread m pi pw render_edges positions (cex_t:i cex_thread_state) ioid_trans_lookup =
   let cex_it = CandidateExecution.filter_instruction_tree pi cex_t.cex_instruction_tree in
   "/* thread " ^( sprintf "%i" cex_t.cex_thread) ^ " */\n"
   ^ "subgraph cluster" ^ sprintf "%i" cex_t.cex_thread ^ " {\n"
@@ -599,7 +602,7 @@ let pp_html_thread m pi pw render_edges positions (cex_t:cex_thread_state) ioid_
  *)
   ^ "}\n"
 
-let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_candidate)
+let pp_html_candidate_execution m legend_opt render_edges positions (cex: i cex_candidate)
       (ioid_trans_lookup : Events.ioid -> (ConcModel.ui_trans) list) =
   let iwi (*initial_write_ioids*) = List.map (function w -> w.w_ioid) cex.cex_initial_writes in
   let m = { m with pp_initial_write_ioids = iwi } in
@@ -608,12 +611,12 @@ let pp_html_candidate_execution m legend_opt render_edges positions (cex: cex_ca
     match m.ppg_shared with
     | true ->
         let fp_shared = CandidateExecution.shared_memory_footprints cex in
-        let pi = function (i:cex_instruction_instance) -> CandidateExecution.is_shared_memory_instruction fp_shared i in
+        let pi = function (i:i cex_instruction_instance) -> CandidateExecution.is_shared_memory_instruction fp_shared i in
         let pw = function (w:write) -> CandidateExecution.is_shared_memory_write fp_shared w in
         let pr = function (r:read_request) -> CandidateExecution.is_shared_memory_read fp_shared r in
         (pi,pw,pr)
     | false ->
-        let pi = function (i:cex_instruction_instance) -> true in
+        let pi = function (i:i cex_instruction_instance) -> true in
         let pw = function (w:write) -> true in
         let pr = function (r:read_request) -> true in
         (pi,pw,pr)

@@ -40,14 +40,14 @@ open import Promising
 
 
 
-type ui_p_trans 'ts 'ss 'v = nat * p_trans 'ts 'ss 'v
+type ui_p_trans 'i 'ts 'ss 'v = nat * p_trans 'i 'ts 'ss 'v
 
 type pss_ui_state = list (changed3 (write * t * maybe thread_id))
 
 
-type ui_instruction_info_list = list (changed2 instruction_info)
+type ui_instruction_info_list 'i = list (changed2 (instruction_info 'i))
 
-type pts_ui_state' 'ui_view =
+type pts_ui_state' 'i 'ui_view =
     <|
     ui_promising_reg: list (changed3 (reg_base_name * register_value));
     ui_promising_vReg: list (changed3 (reg_base_name * 'ui_view));
@@ -69,13 +69,13 @@ type pts_ui_state' 'ui_view =
 
     ui_promising_initAddr: changed2b (maybe address);
     ui_promising_promises: list (changed3 w_eiid);
-    ui_promising_instrs: ui_instruction_info_list;
+    ui_promising_instrs: ui_instruction_info_list 'i;
     ui_promising_initRegS: (reg_base_name -> register_value);
 
     ui_promising_last_ioid : maybe ioid;
     |>
 
-type pts_ui_state = pts_ui_state' t
+type pts_ui_state 'i = pts_ui_state' 'i t
 
 
 
@@ -92,18 +92,18 @@ let make_pss_ui_state (ss: maybe pss) (ss': pss) : pss_ui_state
   end
 
 
-type p_ui_state 'ts 'ss 'v =
-  <| p_ui_program_memory:        (address -> fetch_and_decode_outcome);
+type p_ui_state 'i 'ts 'ss 'v =
+  <| p_ui_program_memory:        (address -> fetch_and_decode_outcome 'i);
      p_ui_initial_writes:        list write;
      p_ui_thread_states:         list (thread_id * 'ts);
      p_ui_storage_state:         'ss;
      p_ui_model:                 model_params;
      p_ui_stopped_promising:     changed2b bool;
-     p_ui_follow_trace:          pt_follow_trace 'v;
+     p_ui_follow_trace:          pt_follow_trace 'i 'v;
   |>
 
-val make_pts_ui_state_1 : pts t -> pts_ui_state
-let make_pts_ui_state_1 (t' : pts t) = 
+val make_pts_ui_state_1 : forall 'i. pts 'i t -> pts_ui_state 'i
+let make_pts_ui_state_1 (t' : pts 'i t) = 
   <| ui_promising_reg = List.map C3_unchanged (Map_extra.toList t'.reg);
      ui_promising_vReg = 
        List.map (fun (rbn,v) -> C3_unchanged (rbn,v))
@@ -143,8 +143,8 @@ let rec ui_diff_instrs instrs instrs' =
   end
 
 
-val make_pts_ui_state_2 : pts t -> pts t -> list (ui_p_trans (pts t) pss t) ->
-  pts_ui_state
+val make_pts_ui_state_2 : forall 'i. pts 'i t -> pts 'i t -> list (ui_p_trans 'i (pts 'i t) pss t) ->
+  pts_ui_state 'i
 let make_pts_ui_state_2 t t' ncands = 
   <| ui_promising_reg = ui_list_diff3 (Map_extra.toList t.reg) (Map_extra.toList t'.reg);
      ui_promising_vReg = 
@@ -182,10 +182,10 @@ let make_pts_ui_state_2 t t' ncands =
 
 let make_pts_ui_state 
       (s : pss)
-      (t : maybe (pts t)) 
-      (t' : pts t) 
-      (ncands: list (ui_p_trans (pts t) pss t))
-    : pts_ui_state =
+      (t : maybe (pts 'i t)) 
+      (t' : pts 'i t) 
+      (ncands: list (ui_p_trans 'i (pts 'i t) pss t))
+    : pts_ui_state 'i =
   match (s,t,t') with
   | (_, Nothing, t') ->
      make_pts_ui_state_1 t'
@@ -195,10 +195,10 @@ let make_pts_ui_state
 
 
 let make_p_ui_state 
-      (s : maybe (p_state (pts t) pss t))
-      (s' : p_state (pts t) pss t)
-      (ncands : list (ui_p_trans (pts t) pss t)) 
-    : (p_ui_state pts_ui_state pss_ui_state t) =
+      (s : maybe (p_state 'i (pts 'i t) pss t))
+      (s' : p_state 'i (pts 'i t) pss t)
+      (ncands : list (ui_p_trans 'i (pts 'i t) pss t)) 
+    : (p_ui_state 'i (pts_ui_state 'i) pss_ui_state t) =
   let threads : list thread_id = Set_extra.toList (Map.domain s'.p_thread_states) in
   <| p_ui_program_memory = s'.p_program_memory; 
      p_ui_initial_writes = s'.p_initial_writes;

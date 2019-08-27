@@ -26,11 +26,41 @@ open import Events
 open import InstructionSemantics
 open import BasicTypes
 import Mips_embed_types
+import Mips_embed
 
-let mips_is_system_call_instruction (_: instruction_ast) = Nothing
+
+
+let mips_shallow_embedding : instruction_semantics Mips_embed_types.ast = 
+  
+  let decode_to_instruction (address : address) (opcode : opcode) =
+    let (Opcode bytes) = opcode in
+    let opcode_bitv = Sail_values.bitv_of_bytes false bytes in
+    match Mips_embed.decode opcode_bitv with
+    | Nothing -> FDO_decode_error (Not_an_instruction_error opcode)
+    | Just instr -> FDO_success address (Just opcode) instr
+    end
+  in
+
+  let initial_outcome_of_instruction instr = (Mips_embed.execute instr,Nothing) in
+
+  let analysis instr reanalyse reginfo environment =
+    if reanalyse then
+      failwith "instruction_re_analysis: MIPS instruction"
+    else
+      let a = handle_reg_reads environment (Mips_embed.initial_analysis instr) in
+      process_analysis reginfo a
+  in
+
+  <| decode_to_instruction = decode_to_instruction;
+     instruction_analysis = analysis;
+     initial_outcome_of_instruction = initial_outcome_of_instruction;
+     encode_instruction = fun _ -> failwith "not implemented yet"; |>
+
+
+let mips_is_system_call_instruction (_: Mips_embed_types.ast) = Nothing
 
 let mips_is_thread_start_instruction = function
-  | MIPS_instr (Mips_embed_types.SYSCALL_THREAD_START) -> true
+  | Mips_embed_types.SYSCALL_THREAD_START -> true
   | _ -> false
   end
 
@@ -115,7 +145,7 @@ let mips_thread_start_info =
 
 let mips_make_empty_write_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: Mips_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -131,9 +161,20 @@ let mips_make_empty_write_events
   in
   make_empty_write_events' id_state tid ioid addr size write_size write_kind
 
+
+let mips_is_atomically_fetchable_instruction _i : bool =
+  failwith "not implemented"
+
+let mips_maybe_split_conditional_branch _i =
+  failwith "not implemented"
+
+let mips_make_conditional_branch (x,y) = 
+  failwith "not implemented"
+
+
 let mips_make_read_request_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: Mips_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -149,11 +190,18 @@ let mips_make_read_request_events
   in
   make_read_request_events' id_state tid ioid addr size read_size read_kind
 
-let mips_ism : isa_info =
+let mips_ism : isa Mips_embed_types.ast =
   <|  ism                         = MIPS_ism;
+      instruction_semantics       = mips_shallow_embedding;
 
       is_system_call_instruction  = mips_is_system_call_instruction;
       is_thread_start_instruction = mips_is_thread_start_instruction;
+      is_atomically_fetchable_instruction = mips_is_atomically_fetchable_instruction;
+      is_branch = fun _ -> failwith "not implemented yet";
+      is_amo = fun _ -> failwith "not implemented yet";
+
+      maybe_split_conditional_branch = mips_maybe_split_conditional_branch;
+      make_conditional_branch = mips_make_conditional_branch;
 
       thread_start_info           = mips_thread_start_info;
 
@@ -166,3 +214,5 @@ let mips_ism : isa_info =
       make_empty_write_events     = mips_make_empty_write_events;
       make_read_request_events    = mips_make_read_request_events;
   |>
+
+

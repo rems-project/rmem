@@ -109,11 +109,8 @@ module Make : S =
 
     (* translate from Sail register name to litmus register name *)
     let pp_reg r =
-      let open Params in
       let open InstructionSemantics in
-      let open BasicTypes in
-      let params = !Globals.model_params in
-      begin match params.t.thread_isa_info.ism with
+      begin match !Globals.ism with
       | PPCGEN_ism ->
           if String.length r > 3 &&
             r.[0] = 'G' && r.[1] = 'P' && r.[2] = 'R'

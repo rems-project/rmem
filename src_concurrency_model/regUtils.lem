@@ -26,34 +26,34 @@ let register_state_zero
   register_value_zeros dir width start_index
 
 
-let is_nia_register params (reg: reg_name) : bool =
-  register_base_name params.thread_isa_info.nia_reg = register_base_name reg
+let is_nia_register isa (reg: reg_name) : bool =
+  register_base_name isa.nia_reg = register_base_name reg
 
-let is_cia_register params (reg: reg_name) : bool =
-  register_base_name params.thread_isa_info.cia_reg = register_base_name reg
+let is_cia_register isa (reg: reg_name) : bool =
+  register_base_name isa.cia_reg = register_base_name reg
 
 (* 'is_pseudo_register params reg' is true iff 'reg' is a pseudo register *)
-let is_pseudo_register params : (reg_name -> bool) =
-  let (fixed_pseudo_regs, _) = List.unzip params.thread_isa_info.fixed_pseudo_registers in
+let is_pseudo_register isa : (reg_name -> bool) =
+  let (fixed_pseudo_regs, _) = List.unzip isa.fixed_pseudo_registers in
   (fun (reg: reg_name) ->
-      is_nia_register params reg ||
-      is_cia_register params reg ||
+      is_nia_register isa reg ||
+      is_cia_register isa reg ||
       exists (reg' MEM fixed_pseudo_regs).
         register_base_name reg' = register_base_name reg)
 
 
-let non_pseudo_registers params (regs: set reg_name) : set reg_name =
-  let is_pseudo_register' = is_pseudo_register params in
+let non_pseudo_registers isa (regs: set reg_name) : set reg_name =
+  let is_pseudo_register' = is_pseudo_register isa in
   {reg | forall (reg IN regs) | not (is_pseudo_register' reg)}
 
 
-let pseudo_register_value params cia_address reg =
+let pseudo_register_value isa cia_address reg =
   let pseudo_register_values =
-    let cia_reg = params.thread_isa_info.cia_reg in
-    let nia_reg = params.thread_isa_info.nia_reg in
+    let cia_reg = isa.cia_reg in
+    let nia_reg = isa.nia_reg in
     (cia_reg, register_value_of_address cia_address (direction_of_reg_name cia_reg)) ::
       (nia_reg, register_value_of_address (address_of_integer ((integer_of_address cia_address)+4)) (direction_of_reg_name nia_reg)) :: (* FIXME HACK *)
-      params.thread_isa_info.fixed_pseudo_registers
+      isa.fixed_pseudo_registers
   in
 
   let (needed, found) =

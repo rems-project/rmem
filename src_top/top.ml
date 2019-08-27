@@ -39,29 +39,9 @@ let rec range from until =
   else
     from :: (range (from + 1) until)
 
-let make_concurrency_model
-    (isaModel: (module Isa_model.S))
-    (ts:       Params.thread_model)
-    (ss:       Params.storage_model)
-    : (module Concurrency_model.S)
-  =
-  match (ts,ss) with
-    | (Params.Promising_thread_model,_)
-    | (_,Params.Promising_storage_model) ->
-       (module (Promising_concurrency_model.Make (val isaModel)))
-    | _ ->
-       let open Machine_concurrency_model in
-       let (module Sys : SYS) = match (ts,ss) with
-         | (_,Params.PLDI11_storage_model)    -> (module MachineSYS(PLDI11SS))
-         | (_,Params.Flowing_storage_model)   -> (module MachineSYS(FlowingSS))
-         | (_,Params.Flat_storage_model)      -> (module MachineSYS(FlatSS))
-         | (_,Params.POP_storage_model)       -> (module MachineSYS(POPSS))
-         | (_,Params.NOP_storage_model)       -> (module MachineSYS(NOPSS))
-         | (_,Params.TSO_storage_model)       -> (module MachineSYS(TSOSS))
-         | _ -> failwith "not possible"
-       in
-       
-       (module (Make ((val isaModel)) (Sys)) : Concurrency_model.S)
+
+
+
 
 
 
@@ -71,10 +51,10 @@ module Run_test (Test_file: Test_file.S) = struct
   the test if data is provided *)
   let run (run_options: RunOptions.t) (name: string) (data: Test_file.data option) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : unit =
     (* read the file/data *)
-    let (test_info, test) =
+    let (module CII) =
       begin match data with
-      | Some data -> Test_file.read_data name data isa_callback
-      | None      -> Test_file.read_file name isa_callback
+      | Some data -> Test_file.read_data run_options name data isa_callback
+      | None      -> Test_file.read_file run_options name isa_callback
       end
     in
 
@@ -91,15 +71,17 @@ module Run_test (Test_file: Test_file.S) = struct
       | None -> run_options
     in
 
-    let module ISAModel = (val (Isa_model.make test_info.Test.ism)) in
+    let (module ISAModel) = 
+      let open Test_file in 
+      let open Concurrency_model in
+      (module (CII.ConcModel.ISA) : Isa_model.S)
+    in
+
+    let test_info = CII.info in
+
+
     if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] && run_options.RunOptions.interpreter then
       print_endline ("Warning: the interpreter ISA defs are missing");
-    let module ConcModel  =
-      (val (make_concurrency_model
-              (module ISAModel)
-              !Globals.model_params.t.thread_model
-              !Globals.model_params.ss.ss_model))
-    in
 
     (* calculate list of initial states (paired with their topology options) *)
     let initial_state_records =
@@ -113,11 +95,12 @@ module Run_test (Test_file: Test_file.S) = struct
                  not (List.for_all (fun tid -> List.mem tid top_thread_ids) thread_ids))
                topologies then
             failwith "at least one flowing topology didn't have all threads of this test";
-          let params_of_topo t = {!Globals.model_params with ss = {!Globals.model_params.ss with flowing_topology = t}} in
+          let params_of_topo t =
+            {!Globals.model_params with ss = {!Globals.model_params.ss with flowing_topology = t}} in
           let ps = List.map params_of_topo topologies in
-          List.map (Test_file.initial_state_record test (module ISAModel.ISADefs)) ps
+          List.map CII.initial_state_record_maker ps
 
-      | _ -> [Test_file.initial_state_record test (module ISAModel.ISADefs) !Globals.model_params]
+      | _ -> [CII.initial_state_record_maker !Globals.model_params]
       end
     in
 
@@ -143,7 +126,7 @@ module Run_test (Test_file: Test_file.S) = struct
           }
     in
 
-    let module Interact = New_interact.Make (ConcModel) in
+    let module Interact = New_interact.Make (CII.ConcModel) in
     if run_options.RunOptions.interactive then
       (* interactive mode *)
       Interact.run_interactive run_options ppmode test_info initial_state_records

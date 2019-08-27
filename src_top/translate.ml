@@ -73,14 +73,21 @@ let calc_size_alignment =
 
 module type S =
   sig
+    type instruction_ast
+
     module A : Arch_litmus.S
 
-    val translate_test : A.pseudo MiscParser.t -> Test.test
+    val translate_test : A.pseudo MiscParser.t -> instruction_ast Test.test
   end
 
-module Make (A: Arch_litmus.S with type V.Scalar.t = string) (Trans : Trans.TransSail with type instruction = A.instruction)
-    : S with module A = A =
+module Make (A: Arch_litmus.S with type V.Scalar.t = string) 
+         (Trans : Trans.TransSail with type instruction = A.instruction)
+    : S with module A = A with type instruction_ast = Trans.instruction_ast =
+
   struct
+
+    type instruction_ast = Trans.instruction_ast
+
     module A = A
     module C = MoreConstraints.Make
     module T = Test

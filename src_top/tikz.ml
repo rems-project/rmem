@@ -56,9 +56,10 @@ let pp_tex_header out test_info =
   fprintf out "%%\n"
 
 let make_tikz_graph
+      pp_instruction_ast
     (m:         Globals.ppmode)
     (test_info: Test.info)
-    (cex:       CandidateExecution.cex_candidate)
+    (cex:       'i CandidateExecution.cex_candidate)
     : unit
   =
   let replace (c: char) (n: string) (str: string) : string =
@@ -127,7 +128,7 @@ let make_tikz_graph
   let pp_tikz_instruction_pic
       (prev_instructions: ioid list)
       (labels:          StringSet.t)
-      (instance:        cex_instruction_instance)
+      (instance:        'i cex_instruction_instance)
       : (ioid list * StringSet.t * string option * string option)
     =
     let pp_deps pp_ioid =
@@ -339,8 +340,10 @@ let make_tikz_graph
     end
   in
 
-  let rec instructions_path_from_tree acc
-      : CandidateExecution.cex_instruction_tree -> CandidateExecution.cex_instruction_instance list
+  let rec instructions_path_from_tree
+            acc 
+          : 'i CandidateExecution.cex_instruction_tree ->
+            ('i CandidateExecution.cex_instruction_instance) list
     = function
     | CEX_T []             -> List.rev acc
     | CEX_T [(inst, tree)] -> instructions_path_from_tree (inst :: acc) tree
@@ -369,7 +372,7 @@ let make_tikz_graph
       instructions_path_from_tree [] state.cex_instruction_tree
       |> List.map (fun inst ->
           let pp_instruction =
-            Pp.pp_instruction_ast m m.pp_symbol_table inst.cex_instruction inst.cex_program_loc
+            pp_instruction_ast m m.pp_symbol_table inst.cex_instruction inst.cex_program_loc
             (* escape some characters; see the documentation of the
             LaTeX listings package (6.1 Listins inside arguments) *
             |> replace '\\' "\\\\"
@@ -495,7 +498,7 @@ module TidMap = Map.Make(struct
   let compare t1 t2 = Pervasives.compare t1 t2
 end)
 
-let make_init_state (info: Test.info) (test: Test.test) : unit =
+let make_init_state (info: Test.info) (test: 'i Test.test) : unit =
   let init_state =
     let big_num_to_int64 i : Int64.t =
       if Nat_big_num.greater i (Nat_big_num.of_int64 Int64.max_int) then
@@ -577,15 +580,20 @@ let make_final_state (test_info: Test.info) (state: string) : unit =
   fprintf states_out "\\newcommand{\\finalstate}{%s}%%\n" state;
   close_out states_out
 
-module Make (ConcModel: Concurrency_model.S) = struct
+module Make (ConcModel: Concurrency_model.S) :
+  (GraphBackend.S with type ui_trans = ConcModel.ui_trans
+                  and type instruction_ast = ConcModel.instruction_ast)= struct
 (** implements GraphBackend.S with type ui_trans = ConcModel.ui_trans *)
+
 type ui_trans = ConcModel.ui_trans
+type instruction_ast = ConcModel.instruction_ast
+
 let make_graph m test_info cex (nc: ui_trans list) =
   let m = { m with pp_kind=Ascii;
                     pp_colours=false;
                     pp_trans_prefix=false } in
 
-  make_tikz_graph m test_info cex;
+  make_tikz_graph ConcModel.pp_instruction_ast m test_info cex;
 
   (* hack to terminate after finding the first "final" graph *)
   begin match !Globals.run_dot with

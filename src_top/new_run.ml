@@ -52,7 +52,7 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = Events.thread_id * Events.ioid * BasicTypes.exception_type
+  type t = Events.thread_id * Events.ioid * (ConcModel.instruction_ast BasicTypes.exception_type)
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
     | (0, 0) -> BasicTypes.exception_type_compare e1 e2

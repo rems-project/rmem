@@ -125,14 +125,14 @@ end
 
 module Make_litmus_parser
     (Arch: Arch_litmus.S with type V.Scalar.t = string)
-    (TransSail: Isa_model.TransSail with type instruction = Arch.instruction)
+    (TransSail: Trans.TransSail with type instruction = Arch.instruction)
     (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo)
     =
 struct
   module Parser = GenParser.Make(GenParserConfig)(Arch)(LexParse)
   module Translator = Translate.Make(Arch)(TransSail)
 
-  let parse (in_chan: lex_input) (test_splitted: Splitter.result) : Test.test =
+  let parse (in_chan: lex_input) (test_splitted: Splitter.result) : TransSail.instruction_ast Test.test =
     (* parse splitted test *)
     let parsedt =
       begin match in_chan with
@@ -145,10 +145,10 @@ struct
 
 end
 
-type test = Test.test
+type 'i test = 'i Test.test
 type data = string
 
-let test_info (test: Test.test) (name: string) : Test.info =
+let test_info (test: 'i Test.test) (name: string) : Test.info =
   let ism =
     let open InstructionSemantics in
     begin match test.arch with
@@ -271,607 +271,15 @@ let test_info (test: Test.test) (name: string) : Test.info =
     Test.constr         = test.Test.constr;
   }
 
-let read_channel 
-      (name: string)
-      (in_chan: lex_input)
-      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) 
-    : Test.info * test =
-  (* First split the input file in sections *)
-  let module SPL = Splitter.Make(Splitter.Default) in
-  let test_splitted =
-    begin match in_chan with
-    | LexInChannel c -> SPL.split name c
-    | LexInString s  -> SPL.split_string name s
-    end
-  in
-
-  (* extract the architecture from the litmus file *)
-  begin match test_splitted.Splitter.arch with
-  | `PPC           -> IsaInfoPPCGen.ppcgen_ism
-  | `AArch64 when !Globals.aarch64gen ->
-                      IsaInfoAArch64.aarch64gen_ism
-  | `AArch64 when not !Globals.aarch64gen ->
-                      IsaInfoAArch64.aarch64hand_ism
-  | `MIPS          -> IsaInfoMIPS.mips_ism
-  | `RISCV         -> IsaInfoRISCV.riscv_ism
-  | `X86           -> IsaInfoX86.x86_ism
-  | _ -> Warn.fatal "Can only do %s, %s, %s, %s and %s" (Archs.pp `PPC) (Archs.pp `AArch64) (Archs.pp `MIPS) (Archs.pp `RISCV) (Archs.pp `X86)
-  end
-  |> Globals.set_model_ism;
-
-  let open Params in
-  let open InstructionSemantics in
-  let open BasicTypes in
-
-  begin match isa_callback with
-  | Some f -> f (!Globals.model_params).t.thread_isa_info.ism
-  | _ -> ()
-  end;
-
-  (* parse and translate the litmus test *)
-  let test =
-    let open Params in
-    let open Globals in
-    let params = !Globals.model_params in
-    begin match (params.t.thread_isa_info.ism, params.ss.ss_model, params.t.thread_model) with
-    | (AARCH64_ism AArch64HandSail, POP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, Flowing_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, Flat_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, NOP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, Promising_storage_model, Promising_thread_model)
-    | (AARCH64_ism AArch64HandSail, Flat_storage_model, Relaxed_thread_model) ->
-
-        (* the following code uses diy/litmus parser to generate the hash for the test:
-        let module Make_hasher
-            (Arch: Arch.S)
-            (LexParse: GenParser.LexParse with type instruction = Arch.parsedPseudo)
-          =
-          struct
-            module Parser = GenParser.Make(GenParser.DefaultConfig)(Arch)(LexParse)
-
-            let get_hash (in_chan: lex_input) (test_splitted: Splitter.result) : string option =
-              (* parse splitted test *)
-              let parsedt =
-                begin match in_chan with
-                | LexInChannel c -> Parser.parse c test_splitted
-                | LexInString s  -> Parser.parse_string s test_splitted
-                end
-              in
-              MiscParser.get_hash parsedt
-
-          end
-        in
-
-        let module AArch64 = AArch64Arch.Make(Arch_config)(SymbConstant) in
-        let module AArch64LexParse =
-          struct
-            type instruction = AArch64.parsedPseudo
-            type token = AArch64Parser.token
-
-            module LexConfig = struct let debug = false end
-            module Lexer = AArch64Lexer.Make(LexConfig)
-            let lexer = Lexer.token
-            let parser = MiscParser.mach2generic AArch64Parser.main
-          end
-        in
-
-        let module Litmus_hasher = Make_hasher(AArch64)(AArch64LexParse) in
-
-        begin match Litmus_hasher.get_hash in_chan test_splitted with
-        | Some s -> Printf.printf "HASH IS: %s\n" s
-        end;
-        *)
-
-        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
-        Parser.parse in_chan test_splitted
-
-    | (AARCH64_ism AArch64GenSail, POP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, Flowing_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, Flat_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, NOP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, Promising_storage_model, Promising_thread_model)
-    | (AARCH64_ism AArch64GenSail, Flat_storage_model, Relaxed_thread_model) ->
-        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
-        Parser.parse in_chan test_splitted
-
-    | (AARCH64_ism _, PLDI11_storage_model, PLDI11_thread_model) ->
-        Printf.eprintf "The pldi11 model does not support the AArch64 architecture\n";
-        exit 1
-
-    | (PPCGEN_ism, POP_storage_model, POP_thread_model _)
-    | (PPCGEN_ism, Flat_storage_model, POP_thread_model _)
-    | (PPCGEN_ism, PLDI11_storage_model, PLDI11_thread_model)
-    | (PPCGEN_ism, Flat_storage_model, Relaxed_thread_model) ->
-        let module Parser = Make_litmus_parser(PPC)(PPCGenTransSail)(PPCLexParse) in
-        Parser.parse in_chan test_splitted
-
-    | (PPCGEN_ism, Flowing_storage_model, POP_thread_model _) ->
-        Printf.eprintf "The flowing model does not support the PPC architecture\n";
-        exit 1
-    | (PPCGEN_ism, NOP_storage_model, POP_thread_model _) ->
-        Printf.eprintf "The nop model does not support the PPC architecture\n";
-        exit 1
-
-    | (MIPS_ism, POP_storage_model, POP_thread_model _)
-    | (MIPS_ism, Flowing_storage_model, POP_thread_model _)
-    | (MIPS_ism, Flat_storage_model, POP_thread_model _)
-    | (MIPS_ism, NOP_storage_model, POP_thread_model _)
-    | (MIPS_ism, Flat_storage_model, Relaxed_thread_model) ->
-        let module Parser = Make_litmus_parser(MIPSHGen)(MIPSHGenTransSail)(MIPSHGenLexParse) in
-        Parser.parse in_chan test_splitted
-    | (MIPS_ism, PLDI11_storage_model, PLDI11_thread_model) ->
-        Printf.eprintf "The pldi11 model does not support the MIPS architecture\n";
-        exit 1
-
-    | (RISCV_ism, POP_storage_model, POP_thread_model _)
-    | (RISCV_ism, Flowing_storage_model, POP_thread_model _)
-    | (RISCV_ism, Flat_storage_model, POP_thread_model _)
-    | (RISCV_ism, NOP_storage_model, POP_thread_model _)
-    | (RISCV_ism, Promising_storage_model, Promising_thread_model)
-    | (RISCV_ism, TSO_storage_model, TSO_thread_model)
-    | (RISCV_ism, Flat_storage_model, Relaxed_thread_model) ->
-       (* failwith "no litmus parser for riscv yet" *)
-        let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
-        Parser.parse in_chan test_splitted
-
-    | (X86_ism, TSO_storage_model, TSO_thread_model)
-    | (X86_ism, Flat_storage_model, Relaxed_thread_model) ->
-        begin match List.assoc "Syntax" test_splitted.Splitter.info with
-        | "gas" ->
-            Globals.x86syntax := Some X86_gas;
-            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseGas) in
-            Parser.parse in_chan test_splitted
-        | "intel" ->
-            Globals.x86syntax := Some X86_intel;
-            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
-            Parser.parse in_chan test_splitted
-        | _ ->
-            Printf.eprintf "Unknown x86 Syntax (expected 'gas' or 'intel')\n";
-            exit 1
-        | exception Not_found -> (* intel by default *)
-            Globals.x86syntax := Some X86_intel;
-            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
-            Parser.parse in_chan test_splitted
-        end
-    | _ ->
-        Printf.eprintf "Unsupported model and architecture configuration\n";
-        exit 1
-    end
-  in
-
-  let info = test_info test test_splitted.Splitter.name.Name.name in
-
-  if !Globals.branch_targets = None then begin
-    match List.assoc "Branch-targets" info.Test.info with
-    | branch_targets ->
-        begin try Globals.branch_targets := Some (Model_aux.branch_targets_parse_from_string branch_targets) with
-        | Model_aux.BranchTargetsParsingError msg ->
-            Printf.eprintf "%s\n" msg;
-            exit 1
-        end
-    | exception Not_found -> ()
-  end;
-
-  if !Globals.shared_memory = None then begin
-    match List.assoc "Shared-memory" info.Test.info with
-    | shared_memory ->
-        begin try Globals.shared_memory := Some (Model_aux.shared_memory_parse_from_string shared_memory) with
-        | Model_aux.SharedMemoryParsingError msg ->
-            Printf.eprintf "%s" msg;
-            exit 1
-        end
-    | exception Not_found -> ()
-  end;
-
-  Globals.add_bt_and_sm_to_model_params info.symbol_table;
-
-  (* HACK: *)
-  (* CP: I'm commenting out because I don't know what to do with
-     it. It makes no sense to call the tikz module from here *)
-
-  if !Globals.graph_backend = Globals.Tikz then
-    begin match !Globals.run_dot with
-    | Some Globals.RD_final
-    | Some Globals.RD_final_ok
-    | Some Globals.RD_final_not_ok
-        -> Tikz.make_init_state info test
-    | None
-    | Some Globals.RD_step
-        -> ()
-    end;
-
-  (info, test)
 
 
-let read_data (name: string) (data: data) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
-  read_channel name (LexInString data) isa_callback
-
-let read_file (name: string) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
-  Misc.input_protect begin
-      fun (in_chan: in_channel) ->
-        read_channel name (LexInChannel in_chan) isa_callback
-  end name
-
-let actually_SAIL_encode
-        (instr : Test.instruction_ast)
-        (endianness: Sail_impl_base.end_flag)
-        : memory_value
-    =
-    let unsigned_shifted_from_offset sz imm =
-        let sign = if imm > 0 then 1 else -1 in
-        let imm = sign * (abs imm lsr 2) in
-        if imm < 0 then
-            imm + (1 lsl sz)
-        else
-            imm
-    in
-    (* let rec lsl1 a shift =
-     *     match shift with
-     *     | 0 -> a
-     *     | n -> lsl1 ((a lsl 1) lor 1) (shift - 1)
-     * in *)
-    (* let bitslice up low n =
-     *     (n lsr low) land (lsl1 0 (up - low))
-     * in *)
-    let v =
-      begin match instr with
-      | AArch64_instr inst ->
-           begin match inst with
-            (* MOV Xn,#IMM *)
-           | MoveWide (d, datasize, imm, pos, MoveWideOp_Z) ->
-                let reg = Nat_big_num.to_int d in
-                let imm16 = Nat_big_num.to_int (Sail_values.unsigned_big imm) in
-                (3531603968 lor reg) lor (imm16 lsl 5)
-            (* NOP *)
-           | Hint (SystemHintOp_NOP) ->
-                 3573751839
-           (* (LDR|STR) (X|W)t, [Xn,Xm] *)
-           | LoadRegister
-              (n,t2,m2,_,memOp,_,_,_,_,_,regsize,datasize)
-              (* (n, t, m, acctype, memop, signed, wback, postindex, extend_type, shift, regsize, datasize) -> *)
-           ->
-                let regt = Nat_big_num.to_int t2 in
-                let regn = Nat_big_num.to_int n in
-                let regm = Nat_big_num.to_int m2 in
-                let sf = 3 in
-                let load = (match memOp with
-                    | MemOp_STORE -> 0
-                    | MemOp_LOAD -> 1
-                    | _ -> failwith "instruction encoder: unsupported memOp") in
-                let sz = (if (Nat_big_num.to_int regsize) = 64 then 1 else 0) in
-                (3089106944
-                    lor regt
-                    lor (regn lsl 5)
-                    lor (sf lsl 13)
-                    lor (load lsl 22)
-                    lor (regm lsl 16)
-                    lor (sz lsl 30))
-           | LoadImmediate
-              (n,t2,_,memOp,_,_,_,_,regsize,datasize)
-           ->
-                let regt = Nat_big_num.to_int t2 in
-                let regn = Nat_big_num.to_int n in
-                let load = (match memOp with
-                    | MemOp_STORE -> 0
-                    | MemOp_LOAD -> 1
-                    | _ -> failwith "instruction encoder: unsupported memOp") in
-                let sz = (if (Nat_big_num.to_int regsize) = 64 then 3 else 2) in
-                (3087010816
-                    lor regt
-                    lor (regn lsl 5)
-                    lor (load lsl 22)
-                    lor (sz lsl 30))
-           | CompareAndBranch
-              (t2, datasize, iszero, offset)
-           ->
-                let regt = Nat_big_num.to_int t2 in
-                let sf = (if (Nat_big_num.to_int datasize) = 64 then 1 else 0) in
-                let imm = Nat_big_num.to_int (Sail_values.signed_big offset) in
-                let imm = unsigned_shifted_from_offset 19 imm in
-                let zero = (match iszero with
-                    | B0 -> 1
-                    | B1 -> 0
-                    | _ -> failwith "unknown zero bit") in
-                (872415232
-                    lor regt
-                    lor (imm lsl 5)
-                    lor (zero lsl 24)
-                    lor (sf lsl 31))
-           | BranchImmediate
-              (branch_type, offset)
-           ->
-                let op =
-                    match branch_type with
-                    | BranchType_JMP  -> 0
-                    | BranchType_CALL -> 1
-                    | _ -> failwith "Unknown branch type when assembling BranchImmediate"
-                in
-                let imm = Nat_big_num.to_int (Sail_values.signed_big offset) in
-                (335544320
-                    lor (unsigned_shifted_from_offset 26 imm)
-                    lor (op lsl 31))
-           | BranchConditional
-              (offset, cond)
-           ->
-                let cond = Nat_big_num.to_int (Sail_values.unsigned_big cond) in
-                let label = Nat_big_num.to_int (Sail_values.signed_big offset) in
-                (1409286144
-                    lor cond
-                    lor ((unsigned_shifted_from_offset 19 label) lsl 5))
-           | BranchRegister
-              (n, branch_type)
-           ->
-                let op =
-                    match branch_type with
-                    | BranchType_JMP  -> 0
-                    | BranchType_CALL -> 1
-                    | BranchType_RET  -> 2
-                    | _ -> failwith "Unknown branch type when assembling BranchRegister"
-                in
-                let regn = Nat_big_num.to_int n in
-                (3592355840
-                    lor (regn   lsl 5)
-                    lor (op     lsl 21))
-           | AddSubImmediate
-             (d, n, datasize, sub_op, setflags, imm)
-           ->
-                let op = if (Sail_values.bitU_to_bool sub_op) then 1 else 0 in
-                let sflags = if (Sail_values.bitU_to_bool setflags) then 1 else 0 in
-                let regd = Nat_big_num.to_int d in
-                let regn = Nat_big_num.to_int n in
-                let sf = (if (Nat_big_num.to_int datasize) = 64 then 1 else 0) in
-                let imm = Nat_big_num.to_int (Sail_values.unsigned_big imm) in
-                (285212672
-                    lor (sf     lsl 31)
-                    lor (op     lsl 30)
-                    lor (sflags lsl 29)
-                    lor (imm    lsl 10)
-                    lor (regn   lsl 5)
-                    lor (regd   lsl 0))
-           | AddSubExtendRegister
-             (d, n, m, datasize, sub_op, setflags, extend_type, shift)
-           ->
-                let regd = Nat_big_num.to_int d in
-                let regn = Nat_big_num.to_int n in
-                let regm = Nat_big_num.to_int m in
-                let imm3 = Nat_big_num.to_int shift in
-                let op = if (Sail_values.bitU_to_bool sub_op) then 1 else 0 in
-                let sflags = if (Sail_values.bitU_to_bool setflags) then 1 else 0 in
-                let opt =
-                    match extend_type with
-                        | ExtendType_UXTB -> 0
-                        | ExtendType_UXTH -> 1
-                        | ExtendType_UXTW -> 2
-                        | ExtendType_UXTX -> 3
-                        | ExtendType_SXTB -> 4
-                        | ExtendType_SXTH -> 5
-                        | ExtendType_SXTW -> 6
-                        | ExtendType_SXTX -> 7
-                in
-                let sf = (if (Nat_big_num.to_int datasize) = 64 then 1 else 0) in
-                (186646528
-                    lor (sf     lsl 31)
-                    lor (op     lsl 30)
-                    lor (sflags lsl 29)
-                    lor (regm   lsl 16)
-                    lor (opt    lsl 13)
-                    lor (imm3   lsl 10)
-                    lor (regn   lsl 5)
-                    lor (regd   lsl 0))
-           | LogicalShiftedRegister
-              (d, n, m, datasize, setflags, op, shift_type, shift_amount, invert)
-           ->
-                let regd = Nat_big_num.to_int d in
-                let regn = Nat_big_num.to_int n in
-                let regm = Nat_big_num.to_int m in
-                let imm6 = Nat_big_num.to_int shift_amount in
-                let shift =
-                  match shift_type with
-                  | ShiftType_LSL -> 0
-                  | ShiftType_LSR -> 1
-                  | ShiftType_ASR -> 2
-                  | ShiftType_ROR -> 3
-                  in
-                let bop =
-                  match op with
-                  | LogicalOp_AND -> 0
-                  | LogicalOp_ORR -> 1
-                  | LogicalOp_EOR -> 2
-                  in
-                let sf = (if (Nat_big_num.to_int datasize) = 64 then 1 else 0) in
-                (167772160
-                    lor regd
-                    lor (regn   lsl 5)
-                    lor (imm6   lsl 10)
-                    lor (regm   lsl 16)
-                    lor (shift  lsl 22)
-                    lor (bop    lsl 29)
-                    lor (sf     lsl 31))
-           | Barrier3
-              (barrierOp,domain,types)
-           ->
-                let op = (match barrierOp with
-                    | MemBarrierOp_DSB -> 0
-                    | MemBarrierOp_DMB -> 1
-                    | MemBarrierOp_ISB -> 2) in
-                let dom = (match domain with
-                    | MBReqDomain_OuterShareable -> 0
-                    | MBReqDomain_Nonshareable -> 1
-                    | MBReqDomain_InnerShareable -> 2
-                    | MBReqDomain_FullSystem -> 3) in
-                let ty = (match types with
-                    | MBReqTypes_Reads -> 1
-                    | MBReqTypes_Writes -> 2
-                    | MBReqTypes_All -> 3) in
-                (3573756063
-                    lor (op lsl 5)
-                    lor (ty lsl 8)
-                    lor (dom lsl 10))
-           | DataCache
-              (t,dcOp)
-           ->
-                let regt = Nat_big_num.to_int t in
-                let (op1,crm,op2) = (match dcOp with
-                    | CVAU -> (3,11,1)
-                    | _ -> failwith "unsupported DC operation") in
-                (3574099968
-                    lor regt
-                    lor (op1 lsl 16)
-                    lor (op2 lsl 5)
-                    lor (crm lsl 8))
-           | InstructionCache
-              (t,icOp)
-           ->
-                let regt = Nat_big_num.to_int t in
-                let (op1,crm,op2) = (match icOp with
-                    | IVAU -> (3,5,1)
-                    | _ -> failwith "unsupported IC operation") in
-                (3574099968
-                    lor regt
-                    lor (op1 lsl 16)
-                    lor (op2 lsl 5)
-                    lor (crm lsl 8))
-           | Address0
-              (d,op,imm)
-           ->
-                let regd = Nat_big_num.to_int d in
-                let vecimmlo =
-                    Sail_values.slice_raw
-                        imm
-                        (Nat_big_num.of_int 0)
-                        (Nat_big_num.of_int 1) in
-                let vecimmhi =
-                    Sail_values.slice_raw
-                        imm
-                        (Nat_big_num.of_int 2)
-                        (Nat_big_num.of_int 21) in
-                let immlo = Nat_big_num.to_int (Sail_values.unsigned_big vecimmlo) in
-                let immhi = Nat_big_num.to_int (Sail_values.unsigned_big vecimmhi) in
-                (268435456
-                    lor regd
-                    lor (immhi lsl 5)
-                    lor (immlo lsl 29))
-
-           | LogicalImmediate (d,n,datasize,setflags,op,imm) ->
-              let datasize = Nat_big_num.to_int datasize in
-              let setflags = Sail_values.bitU_to_bool setflags in
-              let imm = Sail_values.unsigned_big imm in
-
-              let sf = if datasize = 64 then 1 else 0 in
-              let opc =
-                match (op, setflags) with
-                | (LogicalOp_AND, false) -> 0b00
-                | (LogicalOp_ORR, false) -> 0b01
-                | (LogicalOp_EOR, false) -> 0b10
-                | (LogicalOp_AND, true)  -> 0b11
-                | _ -> assert false
-              in
-              let (_N,imms,immr) =
-                match AArch64HGenBase.encodeBitMasks datasize imm with
-                | Some (_N,imms,immr) -> (_N,imms,immr)
-                | None -> assert false
-              in
-              let _Rn = Nat_big_num.to_int n in
-              let _Rd = Nat_big_num.to_int d in
-
-              (sf       lsl 31) lor
-              (opc      lsl 29) lor
-              (0b100100 lsl 23) lor
-              (_N       lsl 22) lor
-              (immr     lsl 16) lor
-              (imms     lsl 10) lor
-              (_Rn      lsl 5)  lor
-              _Rd
-
-           | ConditionalSelect (d,n,m,datasize,condition,else_inv,else_inc) ->
-              let datasize = Nat_big_num.to_int datasize in
-              let else_inv = Sail_values.bitU_to_bool else_inv in
-              let else_inc = Sail_values.bitU_to_bool else_inc in
-              let condition = Sail_values.unsigned_big condition in
-
-              let sf = if datasize = 64 then 1 else 0 in
-              let op = if else_inv then 1 else 0 in
-              let o2 = if else_inc then 1 else 0 in
-              let _cond = Nat_big_num.to_int condition in
-              let _Rm = Nat_big_num.to_int m in
-              let _Rn = Nat_big_num.to_int n in
-              let _Rd = Nat_big_num.to_int d in
-
-              (sf         lsl 31) lor
-              (op         lsl 30) lor
-              (0          lsl 29) lor
-              (0b11010100 lsl 21) lor
-              (_Rm        lsl 16) lor
-              (_cond      lsl 12) lor
-              (0          lsl 11) lor
-              (o2         lsl 10) lor
-              (_Rn        lsl 5)  lor
-              _Rd
-
-           | LoadStoreAcqExc (n,t,t2,s,acctype,excl,pair,memop,elsize,regsize,datasize) ->
-              let excl = Sail_values.bitU_to_bool excl in
-              let pair = Sail_values.bitU_to_bool pair in
-              let elsize = Nat_big_num.to_int elsize in
-
-              let size =
-                match elsize with
-                | 64 -> 3
-                | 32 -> 2
-                | 16 -> 1
-                | 8  -> 0
-                | _  -> assert false
-              in
-              let o2 = if excl then 0 else 1 in
-              let _L =
-                match memop with
-                | MemOp_LOAD -> 1
-                | MemOp_STORE -> 0
-                | _ -> assert false
-              in
-              let o1 = if pair then 1 else 0 in
-              let o0 =
-                match acctype with
-                | AccType_ORDERED -> 1
-                | AccType_ATOMIC -> 0
-                | _ -> assert false
-              in
-
-              let _Rn = Nat_big_num.to_int n in
-              let _Rt = Nat_big_num.to_int t in
-              let _Rt2 = Nat_big_num.to_int t2 in
-              let _Rs = Nat_big_num.to_int s in
-
-              (size     lsl 30) lor
-              (0b001000 lsl 24) lor
-              (o2       lsl 23) lor
-              (_L       lsl 22) lor
-              (o1       lsl 21) lor
-              (_Rs      lsl 16) lor
-              (o0       lsl 15) lor
-              (_Rt2     lsl 10) lor
-              (_Rn      lsl 5)  lor
-              _Rt
-
-           | ImplementationDefinedStopFetching -> 0
-           | ImplementationDefinedThreadStart  -> 0
-           | inst ->
-                let i' = (AArch64HGenTransSail.shallow_ast_to_herdtools_ast (AArch64_instr inst)) in
-                let p = AArch64HGenBase.pp_instruction (PPMode.Ascii) i' in
-                failwith ("instruction encoder: instruction not supported: " ^ p)
-           end
-      | _ -> failwith "instruction encoder: only ARM supported"
-    end
-  in
-      Sail_impl_base.memory_value_of_integer
-        endianness
-        4
-        (Nat_big_num.of_int v)
 
 
 let initial_state_record
-    (test:      test)
-    (isa_defs:  (module Isa_model.ISADefs))
+    (test:      'i test)
+    (isa:       'i BasicTypes.isa)
     (model:     Params.model_params)
+  : 'i Params.initial_state_record
   =
 
   let open Params in
@@ -954,7 +362,7 @@ let initial_state_record
             let (new_ioid, ist) = FreshIds.gen_fresh_id ist in
             let ioid_ist = FreshIds.initial_id_state new_ioid in
             let endianness = Globals.get_endianness () in
-            let value = actually_SAIL_encode instr endianness in
+            let value = isa.instruction_semantics.encode_instruction instr endianness in
             let (new_writes, ioid_ist) =
               Events.make_write_events_big_split
                 ioid_ist init_thread new_ioid footprint value Sail_impl_base.Write_plain in
@@ -964,7 +372,7 @@ let initial_state_record
       (init_write_events @ initial_prog_writes, ist)
   in
 
-  let prog _ (address: Sail_impl_base.address) : InstructionSemantics.fetch_and_decode_outcome =
+  let prog _ (address: Sail_impl_base.address) : 'i InstructionSemantics.fetch_and_decode_outcome =
     let address' = Sail_impl_base.integer_of_address address in
     begin match Pmap.lookup address' prog_map with
     | None -> InstructionSemantics.FDO_illegal_fetch_address
@@ -985,8 +393,6 @@ let initial_state_record
           (tid, Sail_impl_base.address_of_integer aval))
       test.prog
   in
-
-  let module ISADefs = (val isa_defs) in
 
   (* Set up TPIDR registers -- used for thread local storage, specifically
      seems to be a pointer to the TCB. For now, just put the thread id there *)
@@ -1030,12 +436,12 @@ let initial_state_record
   in
 
   (* initial values for registers based on test (default is 0) *)
-  let init_reg_value t r =
+  let init_reg_value reg_data t r =
     begin try List.assoc (t, r) reg_values with
     | Not_found ->
         (* currently all registers that are not explicitly initialised
         in test are set to zero *)
-        RegUtils.register_state_zero ISADefs.reg_data t r
+        RegUtils.register_state_zero reg_data t r
     end
   in
 
@@ -1045,10 +451,10 @@ let initial_state_record
     List.map snd init_reg_data' in
 
 
-  let model' =
+  let isa' =
     let fixed_pseudo_registers' =
       let open Sail_impl_base in
-      match model.t.thread_isa_info.ism with
+      match isa.ism with
       | PPCGEN_ism ->
           let endianness =
             match Globals.get_endianness () with
@@ -1056,7 +462,7 @@ let initial_state_record
             | E_big_endian    -> register_value_ones  D_increasing 1 0
           in
           (Reg_slice ("bigendianmode", 0, D_increasing, (0,0)), endianness) ::
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
 
       | AARCH64_ism _ ->
           let endianness =
@@ -1066,26 +472,24 @@ let initial_state_record
           in
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "E0E", (24,24)), endianness) ::
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "EE",  (25,25)), endianness) ::
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
 
       | MIPS_ism ->
           (* TODO: set endianness? *)
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
       | RISCV_ism ->
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
       | X86_ism ->
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
     in
 
-    let thread_isa_info' =
-      { model.t.thread_isa_info with fixed_pseudo_registers = fixed_pseudo_registers' }
-    in
-    let t' = {model.t with thread_isa_info = thread_isa_info'} in
-    {model with t = t'}
+    let isa' = { isa with fixed_pseudo_registers = fixed_pseudo_registers' } in
+    isa'
   in
 
   let open Params in
-  { isr_params            = model';
+  { isr_params            = model;
+    isr_isa               = isa';
     isr_program           = prog;
     isr_return_addr       = return_addresses;
     isr_thread_ids        = tids;
@@ -1094,6 +498,300 @@ let initial_state_record
     isr_first_instruction = initial_fetch_address;
     isr_memory            = initial_writes;
   }
+
+
+
+
+
+
+
+
+let do_graph_init test info () = 
+  if !Globals.graph_backend = Globals.Tikz then
+    begin match !Globals.run_dot with
+    | Some Globals.RD_final
+    | Some Globals.RD_final_ok
+    | Some Globals.RD_final_not_ok
+        -> Tikz.make_init_state info test
+    | None
+    | Some Globals.RD_step
+        -> ()
+    end
+
+let read_channel 
+      (runOptions: RunOptions.t)
+      (name: string)
+      (in_chan: lex_input)
+      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) 
+    : (module Test_file.ConcModel_Info_Init) =
+  (* First split the input file in sections *)
+  let module SPL = Splitter.Make(Splitter.Default) in
+  let test_splitted =
+    begin match in_chan with
+    | LexInChannel c -> SPL.split name c
+    | LexInString s  -> SPL.split_string name s
+    end
+  in
+
+  (* extract the architecture from the litmus file *)
+  let ism =
+    let open InstructionSemantics in
+    begin match test_splitted.Splitter.arch with
+    | `PPC           -> PPCGEN_ism
+    | `AArch64 when !Globals.aarch64gen ->
+                        AARCH64_ism AArch64GenSail
+    | `AArch64 when not !Globals.aarch64gen ->
+                        AARCH64_ism AArch64HandSail
+    | `MIPS          -> MIPS_ism
+    | `RISCV         -> RISCV_ism
+    | `X86           -> X86_ism
+    | _ -> Warn.fatal "Can only do %s, %s, %s, %s and %s" (Archs.pp `PPC) (Archs.pp `AArch64) (Archs.pp `MIPS) (Archs.pp `RISCV) (Archs.pp `X86)
+    end 
+  in
+  Globals.set_model_ism ism;
+
+  let open Params in
+  let open InstructionSemantics in
+  let open BasicTypes in
+
+  begin match isa_callback with
+  | Some f -> f ism
+  | _ -> ()
+  end;
+
+  let make_info test = test_info test test_splitted.Splitter.name.Name.name in
+
+  (* parse and translate the litmus test *)
+  let (do_graph_init_function, (module CII : Test_file.ConcModel_Info_Init)) =
+    let open Params in
+    let open Isa_model in
+    let module IsShallowEmbedding = 
+      (struct let b = not runOptions.RunOptions.interpreter end)
+    in
+    (* let open Globals in *)
+    let params = !Globals.model_params in
+
+    begin match (ism, params.ss.ss_model, params.t.thread_model) with
+    | (AARCH64_ism AArch64HandSail, POP_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64HandSail, Flowing_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64HandSail, Flat_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64HandSail, NOP_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64HandSail, Flat_storage_model, Relaxed_thread_model) -> 
+        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
+        let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
+        let test = Parser.parse in_chan test_splitted in
+        let info = make_info test in
+        let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+        (do_graph_init test info, (module struct
+           type instruction_ast = ISA.instruction_ast
+           let initial_state_record_maker = initial_state_record test ISA.isa
+           let info = info
+           module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+         end))
+
+    | (AARCH64_ism AArch64HandSail, Promising_storage_model, Promising_thread_model) ->
+       let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
+       let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
+       let test = Parser.parse in_chan test_splitted in
+       let info = make_info test in
+       (do_graph_init test info, (module struct
+          type instruction_ast = ISA.instruction_ast
+          let initial_state_record_maker = initial_state_record test ISA.isa
+          let info = make_info test
+          module ConcModel = Promising_concurrency_model.Make(ISA)
+        end))
+
+    | (AARCH64_ism AArch64GenSail, POP_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64GenSail, Flowing_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64GenSail, Flat_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64GenSail, NOP_storage_model, POP_thread_model _)
+    | (AARCH64_ism AArch64GenSail, Flat_storage_model, Relaxed_thread_model) ->
+       let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
+       let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
+       let test = Parser.parse in_chan test_splitted in
+       let info = make_info test in
+       let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+       (do_graph_init test info, (module struct
+          type instruction_ast = ISA.instruction_ast
+          let initial_state_record_maker = initial_state_record test ISA.isa
+          let info = make_info test
+          module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+        end))
+
+    | (AARCH64_ism AArch64GenSail, Promising_storage_model, Promising_thread_model) ->
+
+       let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
+       let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
+       let test = Parser.parse in_chan test_splitted in
+        let info = make_info test in
+       (do_graph_init test info, (module struct
+          type instruction_ast = ISA.instruction_ast
+          let initial_state_record_maker = initial_state_record test ISA.isa
+          let info = make_info test
+          module ConcModel = Promising_concurrency_model.Make(ISA)
+        end))
+
+    | (PPCGEN_ism, POP_storage_model, POP_thread_model _)
+    | (PPCGEN_ism, Flat_storage_model, POP_thread_model _)
+    | (PPCGEN_ism, PLDI11_storage_model, PLDI11_thread_model)
+    | (PPCGEN_ism, Flat_storage_model, Relaxed_thread_model) ->
+        let module Parser = Make_litmus_parser(PPC)(PPCGenTransSail)(PPCLexParse) in
+        let module ISA = Make (IsShallowEmbedding) (PPCGEN_ISA) (PPCGenISADefs) in
+        let test = Parser.parse in_chan test_splitted in
+        let info = make_info test in
+        let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+        (do_graph_init test info, (module struct
+          type instruction_ast = ISA.instruction_ast
+          let initial_state_record_maker = initial_state_record test ISA.isa
+          let info = make_info test
+          module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+        end))
+
+    | (MIPS_ism, POP_storage_model, POP_thread_model _)
+    | (MIPS_ism, Flowing_storage_model, POP_thread_model _)
+    | (MIPS_ism, Flat_storage_model, POP_thread_model _)
+    | (MIPS_ism, NOP_storage_model, POP_thread_model _)
+    | (MIPS_ism, Flat_storage_model, Relaxed_thread_model) ->
+        let module Parser = Make_litmus_parser(MIPSHGen)(MIPSHGenTransSail)(MIPSHGenLexParse) in
+        let module ISA = Make(IsShallowEmbedding)(MIPS_ISA)(MIPS64ISADefs) in
+        let test = Parser.parse in_chan test_splitted in
+        let info = make_info test in
+        let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+        (do_graph_init test info, (module struct
+           type instruction_ast = ISA.instruction_ast
+           let initial_state_record_maker = initial_state_record test ISA.isa
+           let info = make_info test
+           module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+         end))
+    | (MIPS_ism, PLDI11_storage_model, PLDI11_thread_model) ->
+        Printf.eprintf "The pldi11 model does not support the MIPS architecture\n";
+        exit 1
+
+    | (RISCV_ism, POP_storage_model, POP_thread_model _)
+    | (RISCV_ism, Flowing_storage_model, POP_thread_model _)
+    | (RISCV_ism, Flat_storage_model, POP_thread_model _)
+    | (RISCV_ism, NOP_storage_model, POP_thread_model _)
+    | (RISCV_ism, TSO_storage_model, TSO_thread_model)
+    | (RISCV_ism, Flat_storage_model, Relaxed_thread_model) ->
+       let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
+       let module ISA = Make(IsShallowEmbedding)(RISCV_ISA)(RISCVISADefs) in
+       let test = Parser.parse in_chan test_splitted in
+        let info = make_info test in
+        let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+        (do_graph_init test info, (module struct
+          type instruction_ast = ISA.instruction_ast
+          let initial_state_record_maker = initial_state_record test ISA.isa
+          let info = make_info test
+          module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+        end))
+
+    | (RISCV_ism, Promising_storage_model, Promising_thread_model) ->
+       let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
+       let module ISA = Make(IsShallowEmbedding)(RISCV_ISA)(RISCVISADefs) in
+       let test = Parser.parse in_chan test_splitted in
+        let info = make_info test in
+       (do_graph_init test info, (module struct
+          type instruction_ast = ISA.instruction_ast
+          let initial_state_record_maker = initial_state_record test ISA.isa
+          let info = make_info test
+          module ConcModel = Promising_concurrency_model.Make(ISA)
+        end))
+
+    | (X86_ism, TSO_storage_model, TSO_thread_model)
+    | (X86_ism, Flat_storage_model, Relaxed_thread_model) ->
+        begin match List.assoc "Syntax" test_splitted.Splitter.info with
+        | "gas" ->
+            Globals.x86syntax := Some X86_gas;
+            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseGas) in
+            let module ISA = Make(IsShallowEmbedding)(X86_ISA)(X86ISADefs) in
+            let test = Parser.parse in_chan test_splitted in
+            let info = make_info test in
+            let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+            (do_graph_init test info, (module struct
+               type instruction_ast = ISA.instruction_ast
+               let initial_state_record_maker = initial_state_record test ISA.isa
+               let info = make_info test
+               module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+             end))
+        | "intel" ->
+            Globals.x86syntax := Some X86_intel;
+            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
+            let module ISA = Make(IsShallowEmbedding)(X86_ISA)(X86ISADefs) in
+            let test = Parser.parse in_chan test_splitted in
+            let info = make_info test in
+            let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+            (do_graph_init test info, (module struct
+               type instruction_ast = ISA.instruction_ast
+               let initial_state_record_maker = initial_state_record test ISA.isa
+               let info = make_info test
+               module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+             end))
+        | _ ->
+            Printf.eprintf "Unknown x86 Syntax (expected 'gas' or 'intel')\n";
+            exit 1
+        | exception Not_found -> (* intel by default *)
+            Globals.x86syntax := Some X86_intel;
+            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
+            let module ISA = Make(IsShallowEmbedding)(X86_ISA)(X86ISADefs) in
+            let test = Parser.parse in_chan test_splitted in
+            let info = make_info test in
+            let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
+            (do_graph_init test info, (module struct
+               type instruction_ast = ISA.instruction_ast
+               let initial_state_record_maker = initial_state_record test ISA.isa
+               let info = make_info test
+               module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
+             end))
+        end
+    | _ ->
+        Printf.eprintf "Unsupported model and architecture configuration\n";
+        exit 1
+    end
+  in
+
+  (* let info = test_info TestAndConcModel.test test_splitted.Splitter.name.Name.name in *)
+
+  if !Globals.branch_targets = None then begin
+    match List.assoc "Branch-targets" CII.info.Test.info with
+    | branch_targets ->
+        begin try Globals.branch_targets := Some (Model_aux.branch_targets_parse_from_string branch_targets) with
+        | Model_aux.BranchTargetsParsingError msg ->
+            Printf.eprintf "%s\n" msg;
+            exit 1
+        end
+    | exception Not_found -> ()
+  end;
+
+  if !Globals.shared_memory = None then begin
+    match List.assoc "Shared-memory" CII.info.Test.info with
+    | shared_memory ->
+        begin try Globals.shared_memory := Some (Model_aux.shared_memory_parse_from_string shared_memory) with
+        | Model_aux.SharedMemoryParsingError msg ->
+            Printf.eprintf "%s" msg;
+            exit 1
+        end
+    | exception Not_found -> ()
+  end;
+
+  Globals.add_bt_and_sm_to_model_params CII.info.symbol_table;
+
+  (* HACK: *)
+
+  do_graph_init_function ();
+
+  (module CII)
+
+
+let read_data (runOptions : RunOptions.t) (name: string) (data: data) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : (module Test_file.ConcModel_Info_Init) =
+  read_channel runOptions name (LexInString data) isa_callback
+
+let read_file (runOptions : RunOptions.t) (name: string) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : (module Test_file.ConcModel_Info_Init) =
+  Misc.input_protect begin
+      fun (in_chan: in_channel) ->
+        read_channel runOptions name (LexInChannel in_chan) isa_callback
+  end name
+
+
 
 (********************************************************************)
 

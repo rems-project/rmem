@@ -28,6 +28,50 @@ open import InstructionSemantics
 
 import Sail_values
 import Power_embed_types
+import Power_embed
+
+
+
+let ppcgen_shallow_embedding : instruction_semantics Power_embed_types.ast = 
+  
+  let decode_to_instruction (address : address) (opcode : opcode) =
+    let (Opcode bytes) = opcode in
+    let opcode_bitv = Sail_values.bitv_of_bytes true bytes in
+
+    match Power_embed.decode opcode_bitv with
+    | Nothing -> FDO_decode_error (Not_an_instruction_error opcode)
+    | Just instr ->
+       match Power_embed.supported_instructions instr with
+       | Nothing -> FDO_decode_error(Unsupported_instruction_error opcode instr)
+       | Just _ ->  FDO_success address (Just opcode) instr
+       end
+    end in
+
+  let initial_outcome_of_instruction instr = (Power_embed.execute instr,Nothing) in
+
+  let analysis instr reanalyse reginfo environment =
+    if reanalyse then
+      let a = (handle_reg_reads environment)
+        match instr with
+        | Power_embed_types.Lswx _ ->
+           Power_embed.recalculate_lswx_reg_footprint instr
+        | Power_embed_types.Stswx _ ->
+           Power_embed.recalculate_stswx_reg_footprint instr
+        | _ -> failwith "instruction_re_analysis: unsupported instruction"
+       end
+      in
+      process_analysis reginfo a
+    else
+      let a = handle_reg_reads environment (Power_embed.initial_analysis instr) in
+      process_analysis reginfo a
+  in
+
+  <| decode_to_instruction = decode_to_instruction;
+     instruction_analysis = analysis;
+     initial_outcome_of_instruction = initial_outcome_of_instruction;
+     encode_instruction = fun _ -> failwith "not implemented yet";
+ |>
+
 
 (* registers used in the thread_start() C function *)
 let ppcgen_reg_of_base_name s = Reg s 0 64 D_increasing
@@ -49,11 +93,11 @@ let ppcgen_function_result_reg =
   ppcgen_reg_of_base_name ppcgen_function_result_reg_base_name
 
 let ppcgen_is_system_call_instruction = function
-  | PPCGEN_instr (Power_embed_types.Sc lev) -> Just (Sail_values.unsigned lev)
+  | Power_embed_types.Sc lev -> Just (Sail_values.unsigned lev)
   | _ -> Nothing
   end
 
-let ppcgen_is_thread_start_instruction (instruction : instruction_ast) =
+let ppcgen_is_thread_start_instruction instruction =
   ppcgen_is_system_call_instruction instruction = Just 60
 
 let ppcgen_register_data_info : registerdata = [
@@ -259,12 +303,12 @@ let ppcgen_thread_start_info =
   |>
 
 let ppcgen_is_store_multiple_instruction = function
-  | PPCGEN_instr (Power_embed_types.Stmw _) -> true
+  | Power_embed_types.Stmw _ -> true
   | _ -> false
   end
 
 let ppcgen_is_load_multiple_instruction = function
-  | PPCGEN_instr (Power_embed_types.Lmw _) -> true
+  | Power_embed_types.Lmw _ -> true
   | _ -> false
   end
 
@@ -280,7 +324,7 @@ let ppcgen_is_load_multiple_instruction = function
    assume so *)
 let ppcgen_make_empty_write_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: Power_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -299,7 +343,7 @@ let ppcgen_make_empty_write_events
 
 let ppcgen_make_read_request_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: Power_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -316,10 +360,27 @@ let ppcgen_make_read_request_events
   in
   make_read_request_events' id_state tid ioid addr size read_size read_kind
 
-let ppcgen_ism : isa_info =
+let ppcgen_is_atomically_fetchable_instruction _i : bool =
+  failwith "not implemented"
+
+let ppcgen_maybe_split_conditional_branch _i =
+  failwith "not implemented"
+
+let ppcgen_make_conditional_branch (x,y) = 
+  failwith "not implemented"
+
+let ppcgen_ism : isa Power_embed_types.ast =
   <|  ism = PPCGEN_ism;
+      instruction_semantics = ppcgen_shallow_embedding;
+  
       is_system_call_instruction = ppcgen_is_system_call_instruction;
       is_thread_start_instruction = ppcgen_is_thread_start_instruction;
+      is_branch = fun _ -> failwith "not implemented yet";
+      is_amo = fun _ -> failwith "not implemented yet";
+
+      is_atomically_fetchable_instruction = ppcgen_is_atomically_fetchable_instruction;
+      maybe_split_conditional_branch = ppcgen_maybe_split_conditional_branch;
+      make_conditional_branch = ppcgen_make_conditional_branch;
 
       thread_start_info = ppcgen_thread_start_info;
       register_data_info = ppcgen_register_data_info;
@@ -331,3 +392,4 @@ let ppcgen_ism : isa_info =
       make_empty_write_events  = ppcgen_make_empty_write_events;
       make_read_request_events = ppcgen_make_read_request_events;
   |>
+

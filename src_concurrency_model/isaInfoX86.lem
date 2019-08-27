@@ -28,11 +28,40 @@ open import Events
 open import BasicTypes
 open import InstructionSemantics
 import X86_embed_types
+import X86_embed
 
-let x86_is_system_call_instruction (_: instruction_ast) = Nothing
+
+
+let x86_shallow_embedding : instruction_semantics X86_embed_types.ast = 
+  
+  let decode_to_instruction (address : address) (opcode : opcode) = 
+    (* let (Opcode bytes) = opcode in
+     * let opcode_bitv = Sail_values.bitv_of_bytes false bytes in *)
+    failwith "x86 decode not implemented"
+  in
+
+  let initial_outcome_of_instruction instr = (X86_embed.execute instr,Nothing) in
+
+  let analysis instr reanalyse reginfo environment =
+    if reanalyse then
+      failwith "instruction_re_analysis: X86 instruction"
+    else
+      let a =  handle_reg_reads environment (X86_embed.initial_analysis instr) in
+      process_analysis reginfo a
+  in
+
+
+  <| decode_to_instruction = decode_to_instruction;
+     instruction_analysis = analysis;
+     initial_outcome_of_instruction = initial_outcome_of_instruction;
+     encode_instruction = fun _ -> failwith "not implemented yet" |>
+
+
+
+let x86_is_system_call_instruction (_: X86_embed_types.ast) = Nothing
 
 let x86_is_thread_start_instruction = function
-(*  | X86_instr (X86_embed_types.SYSCALL_THREAD_START) -> true*)
+(*  | X86_embed_types.SYSCALL_THREAD_START -> true*)
   | _ -> false
   end
 
@@ -97,7 +126,7 @@ let x86_thread_start_info =
 
 let x86_make_empty_write_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: X86_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -115,7 +144,7 @@ let x86_make_empty_write_events
 
 let x86_make_read_request_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: X86_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -130,11 +159,27 @@ let x86_make_read_request_events
   in
   make_read_request_events' id_state tid ioid addr size read_size read_kind
 
-let x86_ism : isa_info =
+let x86_is_atomically_fetchable_instruction _i : bool =
+  failwith "not implemented"
+
+let x86_maybe_split_conditional_branch _i =
+  failwith "not implemented"
+
+let x86_make_conditional_branch (x,y) = 
+  failwith "not implemented"
+
+let x86_ism : isa X86_embed_types.ast =
   <|  ism                         = X86_ism;
+      instruction_semantics       = x86_shallow_embedding;
 
       is_system_call_instruction  = x86_is_system_call_instruction;
       is_thread_start_instruction = x86_is_thread_start_instruction;
+      is_branch = fun _ -> failwith "not implemented yet";
+      is_amo = fun _ -> failwith "not implemented yet";
+
+      is_atomically_fetchable_instruction = x86_is_atomically_fetchable_instruction;
+      maybe_split_conditional_branch = x86_maybe_split_conditional_branch;
+      make_conditional_branch = x86_make_conditional_branch;
 
       thread_start_info           = x86_thread_start_info;
 
@@ -147,3 +192,5 @@ let x86_ism : isa_info =
       make_empty_write_events     = x86_make_empty_write_events;
       make_read_request_events    = x86_make_read_request_events;
   |>
+
+

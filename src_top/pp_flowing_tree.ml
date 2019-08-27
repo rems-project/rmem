@@ -123,7 +123,7 @@ let mk_rendered_tree ss stem =
 let segment_height_min = 3
 let event_width_min = 12
 
-let rec height : flowing_tree -> (flowing_segment -> (('ts,'ss) MachineDefTypes.ui_trans list * flowing_event) list) -> int =
+let rec height : flowing_tree -> (flowing_segment -> (('i,'ts,'ss) MachineDefTypes.ui_trans list * flowing_event) list) -> int =
   fun tree lookup ->
     match tree with
     | FT_join(seg,trees) ->
@@ -151,7 +151,7 @@ let pp_ui_transs m external_pps uits =
   else (s^" ",i+1)
 
 
-let render_lower_part : Globals.ppmode -> external_pps -> int (* height *) -> int (* stem indent *) -> (('ts,'ss) MachineDefTypes.ui_trans list * flowing_event) list -> (string*int) list =
+let render_lower_part : Globals.ppmode -> external_pps -> int (* height *) -> int (* stem indent *) -> (('i,'ts,'ss) MachineDefTypes.ui_trans list * flowing_event) list -> (string*int) list =
   fun m external_pps h stem fes ->
     let lhs = make_lengthed_string (String.make stem ' ' ^ "|") in
     List.map
@@ -162,7 +162,7 @@ let render_lower_part : Globals.ppmode -> external_pps -> int (* height *) -> in
       fes
     @ list_make lhs (max 0 (h - List.length fes))
 
-let rec render_tree : Globals.ppmode -> external_pps -> int (* total height to render at *) -> flowing_tree -> (flowing_segment -> (('ts,'ss) MachineDefTypes.ui_trans list*flowing_event) list) -> (flowing_segment -> thread_id) -> rendered_tree =
+let rec render_tree : Globals.ppmode -> external_pps -> int (* total height to render at *) -> flowing_tree -> (flowing_segment -> (('i,'ts,'ss) MachineDefTypes.ui_trans list*flowing_event) list) -> (flowing_segment -> thread_id) -> rendered_tree =
   fun m external_pps h (FT_join (seg,trees)) lookup seg_to_tid ->
       match trees with
       | [] ->

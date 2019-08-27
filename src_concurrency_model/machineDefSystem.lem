@@ -50,26 +50,24 @@ open import MachineDefThreadSubsystem
 
 (* the initial writes should be a list of one write for each address that the program will use *)
 let initial_system_state
-    (instruction_semantics:   instruction_semantics)
-    (thread_model:            threadSubsystem 'ts)
-    (storage_model:           storageSubsystem 'ss)
-    (system_model:            system 'ts 'ss)
+    (thread_model:            threadSubsystem 'i 'ts)
+    (storage_model:           storageSubsystem 'i 'ts 'ss)
+    (system_model:            system 'i 'ts 'ss)
     (register_data:           registerdata)
-    (state_record:            initial_state_record)
-    : system_state 'ts 'ss
+    (state_record:            initial_state_record 'i)
+    : system_state 'i 'ts 'ss
   =
-  let prog = state_record.isr_program instruction_semantics in
+  let prog = state_record.isr_program state_record.isr_isa.instruction_semantics in
 
   let initial_thread_states = 
     let init tid =
       thread_model.ts_initial_thread_state 
-        state_record.isr_params
+        state_record.isr_params.t
         tid
         prog
         (ensure_just (List.lookup tid state_record.isr_return_addr) "missing return address for thread")
         register_data
-        (state_record.isr_register_data tid)
-        (state_record.isr_register_values tid)
+        (state_record.isr_register_values register_data tid)
         (state_record.isr_first_instruction tid)
         state_record.isr_memory
     in
@@ -78,14 +76,15 @@ let initial_system_state
   <| program_memory        = prog;
      initial_writes        = state_record.isr_memory;
      thread_states         = Map.fromList initial_thread_states;
-     storage_subsystem     = storage_model.ss_initial_state state_record.isr_params
+     storage_subsystem     = storage_model.ss_initial_state 
+                               state_record.isr_params.ss
                                (Set.fromList state_record.isr_thread_ids)
                                state_record.isr_memory;
      model                 = state_record.isr_params;
      t_model = thread_model;
      s_model = storage_model;
+     isa = state_record.isr_isa;
      system_model = system_model;
-     instruction_semantics = instruction_semantics;
      transition_history = [];
 
      riscv_AMO_lock = Nothing;
@@ -98,7 +97,7 @@ let thread_memory_value_of_footprints s fps thread =
   List.map (fun addr -> (addr,s.s_model.ss_thread_memory_value_of_footprint s.model.ss
                                 s.storage_subsystem tid addr)) fps
 
-let memory_value_of_footprints (s: system_state 'ts 'ss) (fps: list footprint) : list (footprint * memory_value) =
+let memory_value_of_footprints (s: system_state 'i 'ts 'ss) (fps: list footprint) : list (footprint * memory_value) =
   let thread_values = Map.map (thread_memory_value_of_footprints s fps) s.thread_states in
   (* make sure all threads got the same value *)
   let () = Assert_extra.ensure (Set.size (Map.range thread_values) = 1) "non unique memory value" in
@@ -120,16 +119,14 @@ let check_memory_access state footprint =
   unsat_slices = []
 
 let start_thread
-    (thread_model : threadSubsystem 'ts)
-    (thread_params:      thread_params)
-    (threads:            map thread_id 'ts)
+    state
     ((r_address, r_toc): Sail_impl_base.register_value * maybe Sail_impl_base.register_value)
     (new_tid:            thread_id)
     : 'ts
   =
   let address = ensure_just (address_of_register_value r_address)
                             "'r_address' is not an address" in
-  let thread_state = ensure_just (Map.lookup new_tid threads)
+  let thread_state = ensure_just (Map.lookup new_tid state.thread_states)
                                  ("'" ^ show new_tid ^ "' is not in 'thread_states'") in
   (* fix up: *)
   (* GPR2 to toc of OPD for function pointer *)
@@ -138,32 +135,29 @@ let start_thread
 
   let new_tid_rv =
     integerFromNat new_tid
-    $> register_value_for_reg_of_integer
-          thread_params.thread_isa_info.thread_start_info.tsi_f_tid
+    $> register_value_for_reg_of_integer state.isa.thread_start_info.tsi_f_tid
   in
 
   let updates =
-    [(register_base_name thread_params.thread_isa_info.thread_start_info.tsi_f_tid, new_tid_rv)] in
-  let updates = match (r_toc, thread_params.thread_isa_info.thread_start_info.tsi_f_toc) with
+    [(register_base_name state.isa.thread_start_info.tsi_f_tid, new_tid_rv)] in
+  let updates = match (r_toc, state.isa.thread_start_info.tsi_f_toc) with
   | (Just toc_v, Just toc_reg) -> (register_base_name toc_reg, toc_v) :: updates
   | _ -> updates 
   end in
-  let updates = match thread_params.thread_isa_info.thread_start_info.tsi_f_addr with
+  let updates = match state.isa.thread_start_info.tsi_f_addr with
   | Just addr_reg -> (register_base_name addr_reg, r_address) :: updates
   | _ -> updates
   end in
 
-  let t = thread_model.ts_update_initial_register_state thread_state updates in
-  thread_model.ts_update_initial_fetch_address thread_params t address
+  let t = state.t_model.ts_update_initial_register_state thread_state updates in
+  state.t_model.ts_update_initial_fetch_address t address
 
 
 
 (* process a thread-transition and produce a list of system-transitions *)
 let thread_trans_to_trans
-    (params : thread_params)
-    (s_model : machineStorageSubsystem 'ts 'ss)
-    (s:  system_state 'ts 'ss)
-    : thread_trans 'ts -> list (trans 'ts 'ss) = 
+    (s:  system_state 'i 'ts 'ss)
+    : thread_trans 'i 'ts -> list (trans 'i 'ts 'ss) = 
   function
   (* for the T_only  transitions, just lift them *)
   | T_only tl -> [(T_trans (T_only tl))]
@@ -192,7 +186,7 @@ let thread_trans_to_trans
           if check_memory_access s write.w_addr then Nothing
           else Just (T_propagate_write <| tl with tl_suppl = Just (MWO_unmapped_address [write]) |>)
       | T_fetch tl ->
-          if params.thread_fetch_from_ss then
+          if s.model.t.thread_fetch_from_ss then
               Nothing
             else
               let addr = tl.tl_label.fr_addr in
@@ -203,7 +197,7 @@ let thread_trans_to_trans
       (* if the transition was not handled yet, let storage handle it *)
       $> function
       | Nothing ->
-          s_model.ss_receive_transition s.model.ss s.storage_subsystem label
+          s.s_model.ss_receive_transition s.isa s.model.ss s.storage_subsystem label
           $> List.map (fun (t, ss) -> T_trans (T_sync t ss))
       | Just t -> [(T_trans (T_sync t Nothing))]
       end
@@ -228,13 +222,14 @@ let thread_trans_to_trans
 
 (* process a storage-transition (type ss_trans) and produce a
 system-transitions (type trans). *)
-let storage_trans_to_trans model threads ss_trans : trans thread_state 'ss =
+let storage_trans_to_trans state ss_trans : trans 'i (thread_state 'i) 'ss =
   match ss_trans with
   | SS_only l ssc -> SS_trans (SS_only l ssc)
   | SS_sync label ss_cont () ->
       let tid = tid_of_ss_sync_trans label in
-      let thread = Map_extra.find tid threads in
-      let t_cont = MachineDefThreadSubsystem.thread_receive_transition model.t thread label in
+      let thread = Map_extra.find tid state.thread_states in
+      let t_cont = MachineDefThreadSubsystem.thread_receive_transition
+                     state.model.t state.isa thread label in
       SS_trans (SS_sync label ss_cont t_cont)
   end
 
@@ -242,46 +237,46 @@ let storage_trans_to_trans model threads ss_trans : trans thread_state 'ss =
    if tid appears in cached_thread_trans, these will be used as the transitions
    for thread tid *)
 let enumerate_transitions_of_system
-    (s_model:             machineStorageSubsystem thread_state 'ss)
     (* current system state *)
-    (state:               system_state thread_state 'ss)
+    (state:               system_state 'i (thread_state 'i) 'ss)
     (* cached transitions *)
     (cached_ss_trans:     maybe (list (ss_trans 'ss)))
-    (cached_thread_trans: map thread_id (list (thread_trans thread_state)))
-    (cached_thread_sys_trans: map thread_id (list (trans thread_state 'ss * bool)))
-    : (list (trans thread_state 'ss)) * (list (ss_trans 'ss)) * 
-        (map thread_id (list (thread_trans thread_state))) *
-          (map thread_id (list (trans 'ts 'ss * bool)))
+    (cached_thread_trans: map thread_id (list (thread_trans 'i (thread_state 'i))))
+    (cached_thread_sys_trans: map thread_id (list (trans 'i (thread_state 'i) 'ss * bool)))
+    : (list (trans 'i (thread_state 'i) 'ss)) * (list (ss_trans 'ss)) * 
+        (map thread_id (list (thread_trans 'i (thread_state 'i)))) *
+          (map thread_id (list (trans 'i 'ts 'ss * bool)))
   =
   let ss_transitions =
     match cached_ss_trans with
     | Just ts -> ts
-    | Nothing -> s_model.ss_enumerate_transitions state.model.ss state.storage_subsystem
+    | Nothing -> state.s_model.ss_enumerate_transitions state.model.ss state.storage_subsystem
     end
   in
 
-  let thread_transitions : map thread_id (list (thread_trans thread_state)) =
-    let enumerate_transitions thread_state : list (thread_trans thread_state) =
+  let thread_transitions : map thread_id (list (thread_trans 'i (thread_state 'i))) =
+    let enumerate_transitions thread_state : list (thread_trans 'i (thread_state 'i)) =
       match Map.lookup (state.t_model.ts_tid thread_state) cached_thread_trans with
       | Just ts -> ts
       | Nothing -> 
-         enumerate_transitions_of_thread state.model.t state.instruction_semantics thread_state
+         enumerate_transitions_of_thread
+           state.model.t state.isa thread_state
       end
     in
     Map.map enumerate_transitions state.thread_states
   in
 
   (* lift thread transitions to system transitions *)
-  let threads_sys_trans : list (trans thread_state 'ss) =
+  let threads_sys_trans : list (trans 'i (thread_state 'i) 'ss) =
     let tid_to_transs =
       Map.map
-          (fun (thread_transs: list (thread_trans thread_state)) ->
+          (fun (thread_transs: list (thread_trans 'i (thread_state 'i))) ->
               match state.riscv_AMO_lock with
               | Nothing -> thread_transs
               | Just ioid ->
                   [t | forall (t MEM thread_transs) | ioid_of_thread_trans t = ioid]
               end
-              $> List.concatMap (thread_trans_to_trans state.model.t s_model state))
+              $> List.concatMap (thread_trans_to_trans state))
           thread_transitions
     in
 
@@ -298,14 +293,14 @@ let enumerate_transitions_of_system
       Flat model which has no ss transitions *)
       [t | forall (t MEM ss_transitions) | principal_ioid_of_ss_trans t = ioid]
     end
-    $> List.map (storage_trans_to_trans state.model state.thread_states)
+    $> List.map (storage_trans_to_trans state)
   in
 
   let transitions = threads_sys_trans ++ storage_sys_trans in
 
   if threads_sys_trans = [] && storage_sys_trans = [] then
     (* this is just for NOP *)
-    match s_model.ss_enumerate_final_transitions state.storage_subsystem with
+    match state.s_model.ss_enumerate_final_transitions state.storage_subsystem with
     | [] -> (transitions, ss_transitions, thread_transitions, Map.empty)
     | ts -> (ts, [], Map.empty, Map.empty)
     end
@@ -328,9 +323,9 @@ tids for which the transition changed the thread state, 'restarted' is
 true iff instructions were restarted, and 'discarded' is true iff
 instructions were discarded (discarded branch) *)
 let system_state_after_transition
-    (state: system_state 'ts 'ss)
-    (t: trans 'ts 'ss)
-    : transition_outcome (system_state 'ts 'ss * bool * list thread_id * bool * bool)
+    (state: system_state 'i 'ts 'ss)
+    (t: trans 'i 'ts 'ss)
+    : transition_outcome 'i (system_state 'i 'ts 'ss * bool * list thread_id * bool * bool)
   =
   let update_state storage thread =
     let (restarted, discarded) = match thread with
@@ -445,7 +440,7 @@ let system_state_after_transition
           let (state', changed_threads') =
             match Maybe_extra.fromJust tl.tl_suppl with
             | Just new_tid ->
-                let t = start_thread state.t_model state.model.t state.thread_states tl.tl_label new_tid in
+                let t = start_thread state tl.tl_label new_tid in
                 let thread_states' = Map.insert new_tid t state.thread_states in
                 (<| state with thread_states = thread_states' |>, new_tid :: changed_threads)
             | Nothing ->
@@ -466,19 +461,19 @@ let clean_cached_ss_trans
   if changed_storage then Nothing else Just ss_trans
 
 let clean_cached_thread_trans
-    (thread_trans:    map thread_id (list (thread_trans 'ts)))
+    (thread_trans:    map thread_id (list (thread_trans 'i 'ts)))
     (changed_threads: list thread_id)
-    : map thread_id (list (thread_trans 'ts))
+    : map thread_id (list (thread_trans 'i 'ts))
   =
   List.foldl
     (fun thread_trans tid -> Map.delete tid thread_trans)
     thread_trans changed_threads
 
 let clean_cached_sys_thread_trans 
-  (thread_sys_trans : map thread_id (list (trans 'ts 'ss * bool)))
+  (thread_sys_trans : map thread_id (list (trans 'i 'ts 'ss * bool)))
   (changed_threads: list thread_id)
   (changed_storage: bool)
-    : map thread_id (list (trans 'ts 'ss * bool))
+    : map thread_id (list (trans 'i 'ts 'ss * bool))
   =
   if changed_storage then Map.empty
   else
@@ -488,9 +483,9 @@ let clean_cached_sys_thread_trans
 
 
 let sst_after_transition
-    (s:         system_state_and_transitions 'ts 'ss)
-    (t:         trans 'ts 'ss)
-    : transition_outcome (system_state_and_transitions 'ts 'ss)
+    (s:         system_state_and_transitions 'i 'ts 'ss)
+    (t:         trans 'i 'ts 'ss)
+    : transition_outcome 'i (system_state_and_transitions 'i 'ts 'ss)
   =
   match system_state_after_transition s.sst_state t with
   | TO_system_state (system_state', changed_storage, changed_threads, restarted,
@@ -518,8 +513,8 @@ let sst_after_transition
   end
 
 let sst_of_state
-    (system_state:  system_state 'ts 'ss)
-    : system_state_and_transitions 'ts 'ss
+    (system_state:  system_state 'i 'ts 'ss)
+    : system_state_and_transitions 'i 'ts 'ss
   =
   let (system_trans, ss_trans, thread_trans, thread_sys_trans) =
     system_state.system_model.s_enumerate_transitions_of_system
@@ -555,22 +550,22 @@ let count_instruction_instances_finished system_state : nat =
          Set.size {i | forall (i IN instrs) | i.finished})
   $> sum_list
 
-val is_final_state : forall 'ts 'ss. system_state 'ts 'ss -> bool
+val is_final_state : forall 'i 'ts 'ss. system_state 'i 'ts 'ss -> bool
 let is_final_state system_state : bool =
   (* quantify over list rather than set to avoid needing set type for thread states *)
   (forall ((_,thread_state) MEM (Map_extra.toList system_state.thread_states)).
-   system_state.t_model.ts_is_final_state system_state.model.t thread_state)
+   system_state.t_model.ts_is_final_state thread_state)
   &&
     system_state.s_model.ss_is_final_state system_state.model.ss
       system_state.storage_subsystem
 
 
-let machine_system (ms_model : machineStorageSubsystem thread_state 'ss) 
-    : system thread_state 'ss = 
+let machine_system (ms_model : storageSubsystem 'i (thread_state 'i) 'ss) 
+    : system 'i (thread_state 'i) 'ss = 
   <| s_make_ui_system_state = MachineDefUI.make_ui_system_state 
                                 make_ui_machine_thread_state
                                 ms_model.ss_make_ui_storage_state;
-     s_enumerate_transitions_of_system = enumerate_transitions_of_system ms_model;
+     s_enumerate_transitions_of_system = enumerate_transitions_of_system;
   |>
 
 
@@ -580,7 +575,7 @@ let machine_system (ms_model : machineStorageSubsystem thread_state 'ss)
 
 let get_dwarf_evaluation_context
     (endianness: end_flag)
-    (state:      system_state 'ts 'ss)
+    (state:      system_state 'i 'ts 'ss)
     (tid:        thread_id)
     (ioid:       ioid)
     : maybe (natural (* the ioid address*) * dwarf_evaluation_context)
@@ -594,9 +589,9 @@ let get_dwarf_evaluation_context
 
       (* given the po-before (prefix) and the instruction (i), return dwarf_evaluation_context *)
       let context prefix i =
-        let reg_data = state.model.t.thread_isa_info.register_data_info in
+        let reg_data = state.isa.register_data_info in
         let dec_read_register (reg: natural) : dwarf_register_read_result =
-          match reg_name_of_dwarf state.model.t.thread_isa_info.ism reg_data reg with
+          match reg_name_of_dwarf state.isa.ism reg_data reg with
           | Nothing       -> DRRR_bad_register_number
           | Just reg_name ->
               match
@@ -645,12 +640,12 @@ let get_dwarf_evaluation_context
        end
   end
 
-let branch_targets_of_state (state: system_state 'ts 'ss) : branch_targets_map =
+let branch_targets_of_state (state: system_state 'i 'ts 'ss) : branch_targets_map =
   Map.map (ts_branch_targets state.model.t state.t_model) state.thread_states
 
 
 let shared_memory_of_state
-    (state: system_state 'ts 'ss)
+    (state: system_state 'i 'ts 'ss)
     : set footprint
   =
   let tid_footprints =
@@ -666,7 +661,7 @@ let shared_memory_of_state
               non_empty_intersection wfp fp'}
 
 let modified_code_locations_of_state
-    (state: system_state 'ts 'ss)
+    (state: system_state 's 'ts 'ss)
     : set footprint
   =
   let tid_write_footprints =
@@ -713,7 +708,7 @@ let rec ioids_influencing_reg_reads_helper prefix ioid reg_names =
   end
 
 let ioids_influencing_reg_reads
-    (prefix:    list instruction_instance)
+    (prefix:    list (instruction_instance 'i))
     (reg_reads: list (reg_name * register_read_sources * register_value))
     : set ioid
   =
@@ -742,9 +737,9 @@ let rec find_control_dependencies prefix =
 
 
 let make_cex_instruction_instance
-    (prefix: list instruction_instance)
-    (i:      instruction_instance)
-    : cex_instruction_instance
+    (prefix: list (instruction_instance 'i))
+    (i:      instruction_instance 'i)
+    : cex_instruction_instance 'i
   =
   <|
     cex_instance_ioid = i.instance_ioid;
@@ -816,13 +811,13 @@ let make_cex_instruction_instance
   |>
 
 
-let rec entree_old (is: list instruction_instance) (it:cex_instruction_tree) : cex_instruction_tree =
+let rec entree_old (is: list (instruction_instance 'i)) (it:cex_instruction_tree 'i) : cex_instruction_tree 'i =
   match is with
   | [] -> it
   | i::is' -> entree_old is' (CEX_T [(make_cex_instruction_instance is' i,it)])
   end
 
-let rec make_cex_instruction_tree (prefix: list instruction_instance) (it:instruction_tree) : cex_instruction_tree =
+let rec make_cex_instruction_tree (prefix: list (instruction_instance 'i)) (it:instruction_tree 'i) : cex_instruction_tree 'i =
   match it with
   | T iits -> 
       CEX_T (List.map (fun (i,it) -> (make_cex_instruction_instance prefix i, make_cex_instruction_tree (i :: prefix) it)) iits)
@@ -830,10 +825,10 @@ let rec make_cex_instruction_tree (prefix: list instruction_instance) (it:instru
 
 
 
-let make_cex_thread_state tparams (thread_model : threadSubsystem 'ts) (t : 'ts) : cex_thread_state = 
+let make_cex_thread_state isa (thread_model : threadSubsystem 'i 'ts) (t : 'ts) : cex_thread_state 'i = 
     <| 
     cex_thread = thread_model.ts_tid t;
-    cex_register_data = tparams.thread_isa_info.register_data_info;
+    cex_register_data = isa.register_data_info;
     cex_initial_register_state = thread_model.ts_initial_reg_state t;
     cex_initial_fetch_address = thread_model.ts_initial_fetch_address t;
     cex_instruction_tree = 
@@ -841,8 +836,8 @@ let make_cex_thread_state tparams (thread_model : threadSubsystem 'ts) (t : 'ts)
       entree_old old_instructions (make_cex_instruction_tree old_instructions instruction_tree);
   |>
 
-val make_cex_candidate : forall 'ts 'ss. system_state 'ts 'ss -> cex_candidate
-let make_cex_candidate (s: system_state 'ts 'ss) : cex_candidate =
+val make_cex_candidate : forall 'i 'ts 'ss. system_state 'i 'ts 'ss -> cex_candidate 'i
+let make_cex_candidate (s: system_state 'i 'ts 'ss) : cex_candidate 'i =
   let rf =
     let instructions =
       (Map.map (ts_instructions s.t_model) s.thread_states) $>
@@ -869,7 +864,7 @@ let make_cex_candidate (s: system_state 'ts 'ss) : cex_candidate =
   <|
     cex_program_memory = s.program_memory;
     cex_initial_writes = s.initial_writes;
-    cex_threads = Map.map (make_cex_thread_state s.model.t s.t_model) s.thread_states;
+    cex_threads = Map.map (make_cex_thread_state s.isa s.t_model) s.thread_states;
     cex_rf = rf;
     cex_co = Relation.withoutTransitiveEdges co;
     cex_fr = fr;

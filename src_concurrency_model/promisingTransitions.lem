@@ -57,15 +57,15 @@ type pss_sem 'pss 'v =
   |>
 
 
-type pt_trans 'ts 'ss 'v = 
+type pt_trans 'i 'ts 'ss 'v = 
   (* thread sync transitions *)
   | PT_Write of (thread_id * ioid) * (writedata 'v * promised * shared) * 'v * ('ts * 'ss)
   | PT_Fulfil of (thread_id * ioid) * (writedata 'v) * ('v) * 'ts
   | PT_Read of (thread_id * ioid) * (read_request * 'v) * (write * 'v) * 'ts (* second view is view of write read *)
   (* thread only transitions *)
-  | PT_finish of (thread_id * ioid) * (address * instruction_ast) * 'ts
+  | PT_finish of (thread_id * ioid) * (address * 'i) * 'ts
   | PT_failed_store_excl of (thread_id * ioid) * 'ts
-  | PT_exception of (thread_id * ioid) * exception_type * 'ts
+  | PT_exception of (thread_id * ioid) * exception_type 'i * 'ts
 
 
 
@@ -84,15 +84,15 @@ let show_pt_trans = function
      "PT_failed_store_excl " ^ show ids ^ " " ^ show e
 end
 
-instance forall 'v 'ts 'ss. Show 'v => (Show (pt_trans 'ts 'ss 'v))
+instance forall 'i 'v 'ts 'ss. Show 'v => (Show (pt_trans 'i 'ts 'ss 'v))
   let show = show_pt_trans
 end
 
 
-type pt_follow_label 'v = pt_trans unit unit 'v
-type pt_follow_trace 'v = list (pt_follow_label 'v)
+type pt_follow_label 'i 'v = pt_trans 'i unit unit 'v
+type pt_follow_trace 'i 'v = list (pt_follow_label 'i 'v)
 
-let pt_follow_label_of_pt_trans (t : pt_trans 'ts 'ss 'v) : pt_trans unit unit 'v =
+let pt_follow_label_of_pt_trans (t : pt_trans 'i 'ts 'ss 'v) : pt_trans 'i unit unit 'v =
   match t with
   | PT_Write ids req repl _ -> PT_Write ids req repl ((),())
   | PT_Fulfil ids req repl _ -> PT_Fulfil ids req repl ()
@@ -109,8 +109,8 @@ let pt_trans_matches_pt_follow_label follow_label t =
 
 (* thread transitions which involve interaction with the storage
    subsystem *)
-type p_trans 'ts 'ss 'v =
-  | PT of pt_trans 'ts 'ss 'v
+type p_trans 'i 'ts 'ss 'v =
+  | PT of pt_trans 'i 'ts 'ss 'v
   (* system transition *)
   | PSys_thread_start of
       (thread_id * ioid) * 
@@ -118,7 +118,7 @@ type p_trans 'ts 'ss 'v =
         (maybe thread_id) * (* the thread_id of the new thread *)
         'ts
   | PSys_stop_promising
-  | PSys_finish of (map thread_id 'ts) * 'ss * pt_follow_trace 'v
+  | PSys_finish of (map thread_id 'ts) * 'ss * pt_follow_trace 'i 'v
 
 
 let ids_of_pt_trans = function
@@ -143,7 +143,7 @@ let ioid_of_p_trans = function
 end
 
 
-let p_is_storage_transition (_ : p_trans 'ts 'ss 'v) = false
+let p_is_storage_transition (_ : p_trans 'i 'ts 'ss 'v) = false
 let p_is_thread_transition = function
   | PT _ -> true
   | _ -> false
@@ -178,32 +178,32 @@ let wd_of_shared_pt_write_trans t =
 
 let unlockA_of_wd wd = option_guard wd.wd_rexinfo
 
-let is_shared_pt_write_trans (t : pt_trans 'ts 'ss 'v) : bool =
+let is_shared_pt_write_trans (t : pt_trans 'i 'ts 'ss 'v) : bool =
   not (List.null (wd_of_shared_pt_write_trans t))
-let is_shared_p_write_trans (t : p_trans 'ts 'ss 'v) : bool =
+let is_shared_p_write_trans (t : p_trans 'i 'ts 'ss 'v) : bool =
   not (List.null (wd_of_shared_p_write_trans t))
 
-let is_pt_write_trans (t : pt_trans 'ts 'ss 'v) : bool =
+let is_pt_write_trans (t : pt_trans 'i 'ts 'ss 'v) : bool =
   not (List.null (wd_of_pt_write_trans t))
-let is_p_write_trans (t : p_trans 'ts 'ss 'v) : bool =
+let is_p_write_trans (t : p_trans 'i 'ts 'ss 'v) : bool =
   not (List.null (wd_of_p_write_trans t))
 
-let is_stop_promising_p_trans : p_trans 'ts 'ss 'v -> bool = function
+let is_stop_promising_p_trans : p_trans 'i 'ts 'ss 'v -> bool = function
   | PSys_stop_promising -> true
   | _ -> false
 end
 
 
-let p_trans_fetch_address : p_trans 'ts 'ss 'v -> maybe address = function
+let p_trans_fetch_address : p_trans 'i 'ts 'ss 'v -> maybe address = function
   | _ -> Nothing
   end
 
-let read_footprint_of_pt_trans (t: pt_trans 'ts 'ss 'v) : maybe footprint =
+let read_footprint_of_pt_trans (t: pt_trans 'i 'ts 'ss 'v) : maybe footprint =
   match t with
   | PT_Read _ (rr,_) _ _ -> Just rr.r_addr
   | _ -> Nothing
   end
-let read_footprint_of_p_trans (t: p_trans 'ts 'ss 'v) : maybe footprint =
+let read_footprint_of_p_trans (t: p_trans 'i 'ts 'ss 'v) : maybe footprint =
   match t with
   | PT t -> read_footprint_of_pt_trans t
   | _ -> Nothing
@@ -211,7 +211,7 @@ let read_footprint_of_p_trans (t: p_trans 'ts 'ss 'v) : maybe footprint =
 
 let ptrans_reads_footprint
     (footprint:  footprint)
-    (transition: p_trans 'ts 'ss 't)
+    (transition: p_trans 'i 'ts 'ss 't)
     : bool
   =
   read_footprint_of_p_trans transition
@@ -222,14 +222,14 @@ let ptrans_reads_footprint
 
 (* NOTE: write_footprints_of_trans is (also) used to determine if the
 transition can be taken eagerly when eager_local_mem is enabled *)
-let write_footprints_of_pt_trans (t: pt_trans 'ts 'ss 'v) : list footprint =
+let write_footprints_of_pt_trans (t: pt_trans 'i 'ts 'ss 'v) : list footprint =
   List.map (fun wd -> wd.wd_w.w_addr) (wd_of_pt_write_trans t)
-let write_footprints_of_p_trans (t: p_trans 'ts 'ss 'v) : list footprint =
+let write_footprints_of_p_trans (t: p_trans 'i 'ts 'ss 'v) : list footprint =
   List.map (fun wd -> wd.wd_w.w_addr) (wd_of_p_write_trans t)
 
 let ptrans_writes_footprint
     (footprint:  footprint)
-    (transition: p_trans 'ts 'ss 'v)
+    (transition: p_trans 'i 'ts 'ss 'v)
     : bool
   =
   exists (fp MEM (write_footprints_of_p_trans transition)).
@@ -241,7 +241,7 @@ let ptrans_writes_footprint
   
 
 
-let tconf_after_pt_trans (pts,pss) : pt_trans 'pts 'pss 'v -> ('pts * 'pss) = 
+let tconf_after_pt_trans (pts,pss) : pt_trans 'i 'pts 'pss 'v -> ('pts * 'pss) = 
   function
   (* thread sync transitions *)
   | PT_Write _ _ _ (pts,pss)    -> (pts,pss)

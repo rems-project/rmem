@@ -31,6 +31,14 @@ module IInt = Interp_interface
 module IImp = Interp_inter_imp
 
 type instruction = PPCGenBase.instruction
+type instruction_ast = Power_embed_types.ast0
+
+let instruction_to_interp2_instruction _ = failwith "not implemented"
+let interp2_instruction_to_instruction _ = failwith "not implemented"
+
+
+let instruction_to_interp_instruction = Power_toFromInterp.astToInterpValue
+let interp_instruction_to_instruction = Power_toFromInterp.astFromInterpValue
 
 let ireg_to_num r = match r with
 | GPR0 -> 0
@@ -142,19 +150,21 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
         failwith "Translation failure"
       end
   in
-  InstructionSemantics.PPCGEN_instr instr
+  instr
 
 
 (* #include "build_isa_models/power/gen/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Power_embed_types in
-  match instr with
-  | InstructionSemantics.PPCGEN_instr instr ->
-     begin match instr with
-     (* #include "build_isa_models/power/gen/shallow_ast_to_herdtools_ast.gen" *)
-       (* | i -> failwith "cannot translate instruction" *)
-     end
-  | _ -> failwith "not a POWER instruction"
+  begin match instr with
+  (* #include "build_isa_models/power/gen/shallow_ast_to_herdtools_ast.gen" *)
+    (* | i -> failwith "cannot translate instruction" *)
+  end
 
 
+let instruction_to_reanalylsis_function_name = function
+  | Power_embed_types.Lswx _ -> "recalculate_lswx_reg_footprint"
+  | Power_embed_types.Stswx _ -> "recalculate_stswx_reg_footprint"
+  | _ -> failwith "instruction_re_analysis: unsupported instruction"
+           

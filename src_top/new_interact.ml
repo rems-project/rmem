@@ -51,8 +51,14 @@ let parse (str: string) : parser_outcome =
 
 module Make (ConcModel: Concurrency_model.S) = struct
   module Runner = New_run.Make (ConcModel)
-  module GraphvizBackend = Graphviz.Make (ConcModel)
-  module TikzBackend = Tikz.Make (ConcModel)
+  module GraphvizBackend : 
+    (GraphBackend.S with type ui_trans = ConcModel.ui_trans 
+                     and type instruction_ast = ConcModel.instruction_ast) = Graphviz.Make (ConcModel)
+  module TikzBackend : 
+    (GraphBackend.S with type ui_trans = ConcModel.ui_trans 
+                     and type instruction_ast = ConcModel.instruction_ast) = Tikz.Make (ConcModel)
+
+  type instruction_ast = ConcModel.instruction_ast
 
 type interact_node =
   {
@@ -111,7 +117,8 @@ let filtered_out_transitions node =
   |> List.split
   |> snd
 
-let get_graph_backend () : (module GraphBackend.S with type ui_trans = ConcModel.ui_trans) =
+let get_graph_backend () : (module GraphBackend.S with type instruction_ast = ConcModel.instruction_ast 
+                                                   and type ui_trans = ConcModel.ui_trans) =
   match !Globals.graph_backend with
   | Globals.Dot  -> (module GraphvizBackend)
   | Globals.Tikz -> (module TikzBackend)
@@ -992,7 +999,7 @@ let print_observed_exceptions interact_state observed_exceptions : SO.t =
                 Printf.sprintf "could not reconstruct trace (%s)" s
           in
           SO.line @@ SO.Concat [SO.str "%-6d:>" count;
-                              SO.str "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception interact_state.ppmode ioid exception_type);
+                              SO.str "thread %d instruction %s: %s" tid (Pp.pp_pretty_ioid ioid) (Pp.pp_exception ConcModel.pp_instruction_ast interact_state.ppmode ioid exception_type);
                               SO.Concat [
                                   SO.String " via ";
                                   SO.strClass SO.FollowList "%S" ui_choices;
@@ -2367,7 +2374,7 @@ let run_interactive
     (options:        RunOptions.t)
     (ppmode:         Globals.ppmode)
     (test_info:      Test.info)
-    (state_records:  Params.initial_state_record list)
+    (state_records:  instruction_ast Params.initial_state_record list)
     : unit
   =
   let interact_state =
@@ -2539,7 +2546,7 @@ let run_search
     (options:        RunOptions.t)
     (ppmode:         Globals.ppmode)
     (test_info:      Test.info)
-    (state_records:  Params.initial_state_record list)
+    (state_records:  (instruction_ast Params.initial_state_record) list)
     : unit
   =
   (* breakpoint predicates and handlers *)

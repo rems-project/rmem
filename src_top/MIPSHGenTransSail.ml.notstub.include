@@ -25,6 +25,14 @@ open Interp_interface
 open Sail_impl_base
 
 type instruction = MIPSHGenBase.instruction
+type instruction_ast = Mips_embed_types.ast2
+
+let instruction_to_interp2_instruction = failwith "not implemented"
+let interp2_instruction_to_instruction = failwith "not implemented"
+
+
+let instruction_to_interp_instruction _ = Mips_toFromInterp.astToInterpValue1
+let interp_instruction_to_instruction _ = Mips_toFromInterp.astFromInterpValue1
 
 type labelmap = (string * int) list
 
@@ -44,7 +52,7 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
         failwith "Translation failure"
       end
   in
-  InstructionSemantics.MIPS_instr instr
+  instr
 
 
 let unlabelize_ins lookup_loc label_map i ins =
@@ -107,13 +115,10 @@ let trans_out_reg flv =
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Mips_embed_types in
-  match instr with
-  | InstructionSemantics.MIPS_instr instr ->
-     begin match instr with
-     (* #include "build_isa_models/mips/gen/shallow_ast_to_herdtools_ast.hgen" *)
-     | i -> failwith "cannot translate instruction"
-     end
-  | _ -> failwith "not a POWER instruction"
+  begin match instr with
+  (* #include "build_isa_models/mips/gen/shallow_ast_to_herdtools_ast.hgen" *)
+  | i -> failwith "cannot translate instruction"
+  end
 
 
 

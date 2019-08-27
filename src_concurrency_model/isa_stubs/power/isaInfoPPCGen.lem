@@ -17,4 +17,4 @@
 
 open import BasicTypes
 
-let ppcgen_ism = isa_info_stub
+let ppcgen_ism = isa_stub

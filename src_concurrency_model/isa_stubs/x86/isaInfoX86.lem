@@ -16,5 +16,6 @@
 (*===============================================================================*)
 
 open import BasicTypes
+import X86_embed_types
 
-let x86_ism : isa_info = isa_info_stub
+let x86_ism : isa X86_embed_types.ast = isa_stub

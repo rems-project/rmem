@@ -54,6 +54,10 @@ open Globals
 (*open Printing_functions *)  (* the interpreter printing functions *)
 
 
+
+let init_thread = 1000
+
+
 (** ******************* *)
 (** dwarf location info *)
 (** ******************* *)
@@ -828,66 +832,87 @@ let pp_opcode m (op:Sail_impl_base.opcode) =
 let pp_reg m r =
   Printing_functions.reg_name_to_string r
 
-let pp_instruction_ast m
+let pp_ppcgen_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: instruction_ast)
+      (inst: Power_embed_types.ast0)
       (program_loc: Sail_impl_base.address) =
-  begin match inst with
-  | PPCGEN_instr _ ->
-     let i = PPCGenTransSail.shallow_ast_to_herdtools_ast inst in
-     PPCGenBase.pp_instruction (PPMode.Ascii) i
-  | AArch64_instr _ ->
-      let (i': AArch64HGenBase.instruction) =
-        if !Globals.aarch64gen then
-          AArch64GenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc
-            (AArch64GenTransSail.shallow_ast_to_herdtools_ast inst)
-        else
-          AArch64HGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc
-            (AArch64HGenTransSail.shallow_ast_to_herdtools_ast inst)
-      in
-      (* Shaked's pp from the AArch64 AST *)
-      AArch64HGenBase.pp_instruction (PPMode.Ascii) i'
-  | MIPS_instr _->
-      let (i': MIPSHGenBase.instruction) =
-        (MIPSHGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
-          (MIPSHGenTransSail.shallow_ast_to_herdtools_ast inst) in
-      MIPSHGenBase.pp_instruction (PPMode.Ascii) i'
-  | RISCV_instr ast ->
+  let i = PPCGenTransSail.shallow_ast_to_herdtools_ast inst in
+  PPCGenBase.pp_instruction (PPMode.Ascii) i
+
+let pp_aarch64_instruction m
+      (symbol_table: ((address * size) * string) list)
+      (inst: ArmV8_embed_types.ast1)
+      (program_loc: Sail_impl_base.address) =
+  let (i': AArch64HGenBase.instruction) =
+    if !Globals.aarch64gen then
+      AArch64GenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc
+        (AArch64GenTransSail.shallow_ast_to_herdtools_ast inst)
+    else
+      AArch64HGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc
+        (AArch64HGenTransSail.shallow_ast_to_herdtools_ast inst)
+  in
+  (* Shaked's pp from the AArch64 AST *)
+  AArch64HGenBase.pp_instruction (PPMode.Ascii) i'
+
+let pp_mips_instruction m
+      (symbol_table: ((address * size) * string) list)
+      (inst: Mips_embed_types.ast2)
+      (program_loc: Sail_impl_base.address) =
+  let (i': MIPSHGenBase.instruction) =
+    (MIPSHGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
+      (MIPSHGenTransSail.shallow_ast_to_herdtools_ast inst) in
+  MIPSHGenBase.pp_instruction (PPMode.Ascii) i'
+
+let pp_riscv_instruction m
+      (symbol_table: ((address * size) * string) list)
+      (inst: Riscv_types.ast)
+      (program_loc: Sail_impl_base.address) =
+  let s = Sail_1_2_convert.continue_to_sail2_done "print_insn" (Riscv.print_insn inst) in
+  begin
       (* let (i': RISCVHGenBase.instruction) =
        *   (RISCVHGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
        *     (RISCVHGenTransSail.shallow_ast_to_herdtools_ast inst) in
        * RISCVHGenBase.pp_instruction (PPMode.Ascii) i' *)
-     let s = InstructionSemantics.continue_to_sail2_done "print_insn" (Riscv.print_insn ast) in
-     begin
-         (* Massive hack to show labels *)
-         match ast with
-         | Riscv_types.RISCV_JAL _
-           | Riscv_types.RISCV_JALR _
-           | Riscv_types.BTYPE _ ->
-            begin try
-              let last_comma = String.rindex s ',' in
-              let offset_s = (String.trim (String.sub s (last_comma + 1) (String.length s - last_comma - 1))) in
-              let offset = int_of_string offset_s in
-              let addr = add_address_nat program_loc offset in
-              let s_without_imm = String.sub s 0 last_comma in
-              begin match lookup_symbol symbol_table addr with
-              | Some sym -> s_without_imm ^ ", " ^ sym
-              | None -> s
-              end
-              with Failure _ -> s
-            end
-         | _ -> s
-       end
-  | X86_instr _->
-      let (i': X86HGenBase.instruction) =
-        (X86HGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
-          (X86HGenTransSail.shallow_ast_to_herdtools_ast inst) in
-      X86HGenBase.pp_instruction (PPMode.Ascii) i'
-  end
+      (* Massive hack to show labels *)
+      match inst with
+      | Riscv_types.RISCV_JAL _
+        | Riscv_types.RISCV_JALR _
+        | Riscv_types.BTYPE _ ->
+         begin try
+           let last_comma = String.rindex s ',' in
+           let offset_s = (String.trim (String.sub s (last_comma + 1) (String.length s - last_comma - 1))) in
+           let offset = int_of_string offset_s in
+           let addr = add_address_nat program_loc offset in
+           let s_without_imm = String.sub s 0 last_comma in
+           begin match lookup_symbol symbol_table addr with
+           | Some sym -> s_without_imm ^ ", " ^ sym
+           | None -> s
+           end
+           with Failure _ -> s
+         end
+      | _ -> s
+    end
 
-let pp_instruction m
+
+let pp_x86_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: instruction)
+      (inst: X86_embed_types.ast3)
+      (program_loc: Sail_impl_base.address) =
+  let (i': X86HGenBase.instruction) =
+    (X86HGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
+      (X86HGenTransSail.shallow_ast_to_herdtools_ast inst) in
+  X86HGenBase.pp_instruction (PPMode.Ascii) i'
+
+(* let pp_instruction_ast m
+ *       (symbol_table: ((address * size) * string) list)
+ *       (inst: 'i)
+ *       (program_loc: Sail_impl_base.address) = *)
+
+let pp_instruction
+      pp_instruction_ast
+      m
+      (symbol_table: ((address * size) * string) list)
+      (inst: 'i)
       (program_loc: Sail_impl_base.address) =
   begin match inst with
   | Fetch_error -> "fetch error"
@@ -933,8 +958,8 @@ let pp_bool m b =
   | false -> "false"
 
 
-let pp_decode_error m de addr = match de with
-  | Unsupported_instruction_error0 (_opcode, (i:instruction_ast)) ->
+let pp_decode_error pp_instruction_ast m de addr = match de with
+  | Unsupported_instruction_error0 (_opcode, (i: 'i)) ->
      sprintf "Unsupported instruction (%s)" (pp_instruction_ast m m.pp_symbol_table i addr)
   | Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
   | Internal_decode_error (s:string) -> "Internal error "^s
@@ -1434,7 +1459,7 @@ let pp_logfile m (ioid, rs, ms) (ioid', rs', ms') =
 (** pp of transitions *)
 (** ***************** *)
 
-let pp_exception m ioid (e: exception_type) =
+let pp_exception pp_instruction_ast m ioid (e: 'i exception_type) =
   begin match e with
   | ET_read_from_unmapped_memory (read_request, slices) ->
       sprintf "unmapped memory read exception: %s"
@@ -1450,7 +1475,7 @@ let pp_exception m ioid (e: exception_type) =
   | ET_fetch_and_decode (FDE_illegal_fetch_address_error address) ->
       sprintf "illegal fetch address exception: %s" (pp_address m (Some ioid) address)
   | ET_fetch_and_decode (FDE_decode_error (decode_error, address)) ->
-      sprintf "decode error: %s" (pp_decode_error m decode_error address)
+      sprintf "decode error: %s" (pp_decode_error pp_instruction_ast m decode_error address)
   | ET_loop_limit_reached ->
       "reached loop limit"
   | ET_ISA_termination msg ->
@@ -1468,7 +1493,7 @@ let pp_maybe_opcode m mop =
   | None -> ""
   | Some op -> sprintf "(opcode: %s)" (pp_opcode m op)
 
-let pp_fdo ?(suppress_opcode=false) m fdo addr =
+let pp_fdo pp_instruction_ast ?(suppress_opcode=false) m fdo addr =
   match fdo with
   | FDO_success (a,mop,inst) ->
       sprintf "%s%s"
@@ -1477,7 +1502,7 @@ let pp_fdo ?(suppress_opcode=false) m fdo addr =
   | FDO_illegal_fetch_address ->
         let _ = Debug.print_log () in
      "illegal fetch address"
-  | FDO_decode_error de -> "decode error: " ^ pp_decode_error m de addr
+  | FDO_decode_error de -> "decode error: " ^ pp_decode_error pp_instruction_ast m de addr
   | FDO_address_not_concrete -> "decode error: address is not concrete"
   | FDO_unpredictable_fetch -> "fetch error: unpredictable result"
 
@@ -1649,19 +1674,19 @@ let pp_thread_trans_prefix ?(graph=false) m tid ioid =
   else ""
 
 
-let pp_fetched ?(graph=false) m addr ioid f =
+let pp_fetched pp_instruction_ast ?(graph=false) m addr ioid f =
   let addr_info = pp_address m (Some ioid) addr in
   match f with
    | Fetched_FDO fdo ->
-        sprintf "%s %s" addr_info (pp_fdo ~suppress_opcode:graph m fdo addr)
+        sprintf "%s %s" addr_info (pp_fdo pp_instruction_ast ~suppress_opcode:graph m fdo addr)
    | Fetched_Mem (mrs, fdo) ->
         sprintf "%s %s |%s|"
             addr_info
             (pp_mrs_uncoloured m ioid mrs)
-            (pp_fdo ~suppress_opcode:graph m fdo addr)
+            (pp_fdo pp_instruction_ast ~suppress_opcode:graph m fdo addr)
 
 
-let pp_t_only_label ?(graph=false) m tl =
+let pp_t_only_label pp_instruction_ast ?(graph=false) m tl =
   let ioid = tl.tl_cont.tc_ioid in
   match tl.tl_label with
   | T_register_read (r,rrs,v) ->
@@ -1714,7 +1739,7 @@ let pp_t_only_label ?(graph=false) m tl =
   | T_finish_load_of_rmw ->
       ("finish the load part of RMW instruction", None)
   | T_exception exception_type ->
-      ("raise exception", Some (pp_exception m ioid exception_type))
+      ("raise exception", Some (pp_exception pp_instruction_ast m ioid exception_type))
 
   | T_mem_write_footprint writes ->
       let info =
@@ -1732,7 +1757,7 @@ let pp_t_only_label ?(graph=false) m tl =
   | T_potential_store_cond -> ("potential store-conditional", None)
 
   | T_failed_store_excl ->
-      begin match !(Globals.model_params).t.thread_isa_info.ism with
+      begin match !ism with
       | AARCH64_ism _ -> ("failed store-exclusive instruction", None)
       | RISCV_ism     -> ("failed store-conditional instruction", None)
       | PPCGEN_ism    -> failwith "not implemented for PPC"
@@ -1760,10 +1785,10 @@ let pp_t_only_label ?(graph=false) m tl =
       let info = (pp_address m (Some ioid) addr) in
       ("init fetch next instruction", Some info)
   | T_decode (addr, f) ->
-      let info = pp_fetched ~graph m addr ioid f in
+      let info = pp_fetched pp_instruction_ast ~graph m addr ioid f in
       ("decode", Some info)
 
-let pp_t_sync_label ?(graph=false) m t =
+let pp_t_sync_label pp_instruction_ast ?(graph=false) m t =
   match t with
   | T_try_store_excl {tl_suppl = None} -> assert false
   | T_try_store_excl _ ->
@@ -1853,7 +1878,7 @@ let pp_t_sync_label ?(graph=false) m t =
   | T_fetch {tl_suppl = None} -> assert false
   | T_fetch {tl_label = tl; tl_suppl = (Some f); tl_cont = tc} ->
       let a = tl.fr_addr in
-      let info = pp_fetched ~graph m a (tc.tc_ioid) f in
+      let info = pp_fetched pp_instruction_ast ~graph m a (tc.tc_ioid) f in
       ("fetch instruction", Some info)
 
   | T_propagate_cache_maintenance {tl_label=cmr} ->
@@ -1917,12 +1942,12 @@ let pp_t_thread_start_label ?(graph=false) m tl =
 
 
 
-let pp_trans_label_only ?(graph=false) m (t: ('ts,'ss) trans) =
+let pp_trans_label_only pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss) trans) =
   begin match t with
   | SS_trans (SS_only (t, _))    -> fst (pp_ss_only_label ~graph m t)
   | SS_trans (SS_sync (t, _, _)) -> fst (pp_ss_sync_label ~graph m t)
-  | T_trans (T_only tl)          -> fst (pp_t_only_label ~graph m tl)
-  | T_trans (T_sync (t, _))      -> fst (pp_t_sync_label ~graph m t)
+  | T_trans (T_only tl)          -> fst (pp_t_only_label pp_instruction_ast ~graph m tl)
+  | T_trans (T_sync (t, _))      -> fst (pp_t_sync_label pp_instruction_ast ~graph m t)
   | T_trans (T_thread_start tl)  -> fst (pp_t_thread_start_label ~graph m tl)
   end
 
@@ -1936,17 +1961,17 @@ let pp_ss_sync_trans ?(graph=false) m t =
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
-let pp_t_only_trans ?(graph=false) m tl =
+let pp_t_only_trans pp_instruction_ast ?(graph=false) m tl =
   pp_thread_trans_prefix ~graph m tl.tl_cont.tc_tid tl.tl_cont.tc_ioid  ^
-  match pp_t_only_label ~graph m tl with
+  match pp_t_only_label pp_instruction_ast ~graph m tl with
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
-let pp_t_sync_trans ?(graph=false) m t =
+let pp_t_sync_trans pp_instruction_ast ?(graph=false) m t =
   let tid = MachineDefTypes.tid_of_thread_sync_trans t in
   let ioid = ioid_of_thread_sync_trans t in
   pp_thread_trans_prefix ~graph m tid ioid  ^
-  match pp_t_sync_label ~graph m t with
+  match pp_t_sync_label pp_instruction_ast ~graph m t with
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
@@ -1956,12 +1981,12 @@ let pp_t_thread_start_trans ?(graph=false) m tl =
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
-let pp_trans ?(graph=false) m (t: ('ts,'ss) trans) =
+let pp_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss) trans) =
   match t with
   | SS_trans (SS_only (t', _))    -> pp_ss_only_trans ~graph m t'
   | SS_trans (SS_sync (t', _, _)) -> pp_ss_sync_trans ~graph m t'
-  | T_trans (T_only tl)           -> pp_t_only_trans ~graph m tl
-  | T_trans (T_sync (t', _))      -> pp_t_sync_trans ~graph m t'
+  | T_trans (T_only tl)           -> pp_t_only_trans pp_instruction_ast ~graph m tl
+  | T_trans (T_sync (t', _))      -> pp_t_sync_trans pp_instruction_ast ~graph m t'
   | T_trans (T_thread_start tl)   -> pp_t_thread_start_trans ~graph m tl
 
 
@@ -1970,7 +1995,7 @@ let pp_trans ?(graph=false) m (t: ('ts,'ss) trans) =
 
 
 
-let pp_pt_trans_aux ?(graph=false) m t =
+let pp_pt_trans_aux pp_instruction_ast ?(graph=false) m t =
   match t with
 
   | PT_Read (_, (r,t), (w,wt), _) ->
@@ -1998,7 +2023,7 @@ let pp_pt_trans_aux ?(graph=false) m t =
       ("finish instruction: " ^ instr_pped, None)
 
   | PT_failed_store_excl (_, _) ->
-      begin match !(Globals.model_params).t.thread_isa_info.ism with
+      begin match !ism with
       | AARCH64_ism _ -> ("failed store-exclusive instruction", None)
       | RISCV_ism     -> ("failed store-conditional instruction", None)
       | PPCGEN_ism    -> failwith "not implemented for PPC"
@@ -2007,14 +2032,14 @@ let pp_pt_trans_aux ?(graph=false) m t =
       end
 
   | PT_exception ((_,ioid), exception_type, _) ->
-      ("raise exception", Some (pp_exception m ioid exception_type))
+      ("raise exception", Some (pp_exception pp_instruction_ast m ioid exception_type))
 
 
-let pp_pt_trans ?(graph=false) m t =
+let pp_pt_trans pp_instruction_ast ?(graph=false) m t =
   let tid = tid_of_pt_trans t in
   let ioid = ioid_of_pt_trans t in
   pp_thread_trans_prefix ~graph m tid ioid  ^
-  match pp_pt_trans_aux ~graph m t with
+  match pp_pt_trans_aux pp_instruction_ast ~graph m t with
   | (label, None)      -> label
   | (label, Some info) -> label ^ ": " ^ info
 
@@ -2030,9 +2055,9 @@ let pp_pt_thread_start_trans ?(graph=false) m (tid,ioid) (rv,mrv) mtid' =
 
 
 
-let pp_p_trans ?(graph=false) m (t: ('ts,'ss,PromisingViews.t0) p_trans) =
+let pp_p_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss,PromisingViews.t0) p_trans) =
   match t with
-  | PT t -> pp_pt_trans ~graph m t
+  | PT t -> pp_pt_trans pp_instruction_ast ~graph m t
   | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
      pp_pt_thread_start_trans ~graph m (tid,ioid) (rv,mrv) tid'
   | PSys_stop_promising -> "Stop promising"
@@ -2083,13 +2108,13 @@ let pp_cand_aux pp_trans_f m (n,t) =
          in
          sprintf "%s %s    %s %s" s (colour_tran_id m (sprintf "%-2d" n)) (colour_tran_id m (pp_trans_f m t)) s
 
-let pp_cand m (n,t) = pp_cand_aux pp_trans m (n,t)
-let pp_pcand m (n,t) = pp_cand_aux pp_p_trans m (n,t)
+let pp_cand pp_instruction_ast m (n,t) = pp_cand_aux (pp_trans pp_instruction_ast) m (n,t)
+let pp_pcand pp_instruction_ast m (n,t) = pp_cand_aux (pp_p_trans pp_instruction_ast) m (n,t)
 
 
 (** pp a UI storage subsystem state *)
 
-let pldi11_pp_ui_storage_subsystem_state m model ss =
+let pldi11_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
 
   (* don't explicitly print:  ui_threads : thread_id list; *)
 
@@ -2114,14 +2139,14 @@ let pldi11_pp_ui_storage_subsystem_state m model ss =
          ss.ui_new_coherence) in
 
   let pp_ss_transitions ts =
-    String.concat "\n" (List.map (pp_cand m) ts) ^ "\n" in
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
 
   let ppd_writes_past_coherence_point =
     (match m.pp_style with
     | Globals.Ppstyle_compact ->
         let non_init_writes =
           (List.filter
-             (function cw -> (decolour2 cw).w_thread <> Test.init_thread)
+             (function cw -> (decolour2 cw).w_thread <> init_thread)
              ss.ui_writes_past_coherence_point
           ) in
         (*pp_leftbrace m ^*) "...init writes..." ^ (if non_init_writes <> [] then ", " else "")
@@ -2139,7 +2164,7 @@ let pldi11_pp_ui_storage_subsystem_state m model ss =
            | Globals.Ppstyle_compact ->
                let non_init_events =
                  (List.filter
-                    (function cte -> match decolour2 cte with | SWrite (w,_) -> w.w_thread <> Test.init_thread | SBarrier b -> b.b_thread <> Test.init_thread)
+                    (function cte -> match decolour2 cte with | SWrite (w,_) -> w.w_thread <> init_thread | SBarrier b -> b.b_thread <> init_thread)
                     events
                  ) in
                "[" ^ "...init writes..." ^ (if non_init_events <> [] then ", " else "") ^
@@ -2236,7 +2261,7 @@ let pldi11_pp_ui_storage_subsystem_state m model ss =
  *)
 
 
-let flowing_pp_ui_storage_subsystem_state m model ss =
+let flowing_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   let tree =
     let ext_pps = {
       Pp_flowing_tree.pp_colour_tran_id = colour_tran_id;
@@ -2260,7 +2285,7 @@ let flowing_pp_ui_storage_subsystem_state m model ss =
     pp_changed3_list m pp_write_slices_uncoloured ss.ui_flowing_ss_memory_writes in
 
   let pp_ss_transitions ts =
-    String.concat "\n" (List.map (pp_cand m) ts) ^ "\n" in
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
 
   (*begin match m.Globals.pp_kind with
   | Ascii ->*)
@@ -2322,7 +2347,7 @@ let flat_pp_ui_storage_subsystem_state m model ss =
   (*| Html ->
   end*)
 
-let pop_pp_ui_storage_subsystem_state m model ss =
+let pop_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   let events_seen =
     pp_changed3_setlist m pp_flowing_event_uncoloured ss.ui_pop_ss_events_seen in
 
@@ -2341,7 +2366,7 @@ let pop_pp_ui_storage_subsystem_state m model ss =
     pp_changed2_setlist m pp_store_exclusive_map_uncoloured ss.ui_pop_ss_store_exclusive_map in*)
 
   let pp_ss_transitions ts =
-    String.concat "\n" (List.map (pp_cand m) ts) ^ "\n" in
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
 
     (*begin match m.Globals.pp_kind with
     | Ascii ->*)
@@ -2360,7 +2385,7 @@ let pop_pp_ui_storage_subsystem_state m model ss =
     end*)
 
 
-let nop_pp_ui_storage_subsystem_state m model ss =
+let nop_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   let events_seen =
     pp_changed3_setlist m pp_flowing_event_uncoloured ss.ui_nop_ss_events_seen in
 
@@ -2379,7 +2404,7 @@ let nop_pp_ui_storage_subsystem_state m model ss =
     pp_changed2_setlist m pp_store_exclusive_map_uncoloured ss.ui_pop_ss_store_exclusive_map in*)
 
   let pp_ss_transitions ts =
-    String.concat "\n" (List.map (pp_cand m) ts) ^ "\n" in
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
 
     (*begin match m.Globals.pp_kind with
     | Ascii ->*)
@@ -2396,7 +2421,7 @@ let nop_pp_ui_storage_subsystem_state m model ss =
     (*| Html ->
     end*)
 
-let tso_pp_ui_storage_subsystem_state m model ss =
+let tso_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   let tree =
     let ext_pps = {
       Pp_flowing_tree.pp_colour_tran_id = colour_tran_id;
@@ -2418,7 +2443,7 @@ let tso_pp_ui_storage_subsystem_state m model ss =
   in
 
   let pp_ss_transitions ts =
-    String.concat "\n" (List.map (pp_cand m) ts) ^ "\n" in
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
 
   (*begin match m.Globals.pp_kind with
   | Ascii ->*)
@@ -2501,14 +2526,14 @@ let pp_pssto_state m model ss =
 
 
 
-let pp_ui_storage_subsystem_state m model ss =
+let pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   match ss with
-  | PLDI11_UI_storage  ui_storage_subsystem -> pldi11_pp_ui_storage_subsystem_state  m model ui_storage_subsystem
-  | Flowing_UI_storage ui_storage_subsystem -> flowing_pp_ui_storage_subsystem_state m model ui_storage_subsystem
+  | PLDI11_UI_storage  ui_storage_subsystem -> pldi11_pp_ui_storage_subsystem_state  pp_instruction_ast m model ui_storage_subsystem
+  | Flowing_UI_storage ui_storage_subsystem -> flowing_pp_ui_storage_subsystem_state pp_instruction_ast m model ui_storage_subsystem
   | Flat_UI_storage    ui_storage_subsystem -> flat_pp_ui_storage_subsystem_state    m model ui_storage_subsystem
-  | POP_UI_storage     ui_storage_subsystem -> pop_pp_ui_storage_subsystem_state     m model ui_storage_subsystem
-  | NOP_UI_storage     ui_storage_subsystem -> nop_pp_ui_storage_subsystem_state     m model ui_storage_subsystem
-  | TSO_UI_storage     ui_storage_subsystem -> tso_pp_ui_storage_subsystem_state     m model ui_storage_subsystem
+  | POP_UI_storage     ui_storage_subsystem -> pop_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
+  | NOP_UI_storage     ui_storage_subsystem -> nop_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
+  | TSO_UI_storage     ui_storage_subsystem -> tso_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
 
 (** pp an instruction instance state *)
 
@@ -2564,7 +2589,7 @@ let pp_requested_reads m subreads =
   in
   "[" ^ (pp_list m pp_rr_requested subreads.ui_sr_requested) ^ "]"
 
-let pp_micro_op_state_top indent ioid m mos =
+let pp_micro_op_state_top pp_instruction_ast indent ioid m mos =
   if not(m.pp_style = Globals.Ppstyle_screenshot) then
     match mos with
     | MOS_unpredictable         -> "MOS_unpredictable"
@@ -2576,7 +2601,7 @@ let pp_micro_op_state_top indent ioid m mos =
     | MOS_AMO_lock ic           -> "MOS_AMO_lock"
     | MOS_AMO_unlock c          -> "MOS_AMO_unlock"
     | MOS_pending_exception exception_type ->
-        "MOS_pending_exception " ^ (pp_exception m ioid exception_type)
+        "MOS_pending_exception " ^ (pp_exception pp_instruction_ast m ioid exception_type)
 
   else
     match mos with
@@ -2589,7 +2614,7 @@ let pp_micro_op_state_top indent ioid m mos =
     | MOS_AMO_lock ic           -> "MOS_AMO_lock"
     | MOS_AMO_unlock c          -> "MOS_AMO_unlock"
     | MOS_pending_exception exception_type ->
-        "MOS_pending_exception " ^ (pp_exception m ioid exception_type)
+        "MOS_pending_exception " ^ (pp_exception pp_instruction_ast m ioid exception_type)
 
 let pp_outcome_S indent m is =
   begin match is with
@@ -2627,7 +2652,7 @@ let pp_outcome_S indent m is =
   end
 
 
-let pp_micro_op_state_body indent addr ioid subreads potential_writes m mos =
+let pp_micro_op_state_body pp_instruction_ast indent addr ioid subreads potential_writes m mos =
 (*  let indent = if not(m.pp_screenshot) then indent else indent^"  " in*)
   match mos with
   | MOS_unpredictable  -> "unpredictable"
@@ -2638,7 +2663,7 @@ let pp_micro_op_state_body indent addr ioid subreads potential_writes m mos =
            | Fetched_FDO _ -> "(from program)"
            | _ -> "fetch")
       in
-      let fetch_info = pp_fetched ~graph:false m addr ioid f in
+      let fetch_info = pp_fetched pp_instruction_ast ~graph:false m addr ioid f in
       sprintf "MOS-fetch %s %s" fetched_type fetch_info
   | MOS_plain is -> pp_outcome_S indent m is
   | MOS_wait_IC is  -> pp_outcome_S indent m is
@@ -2671,7 +2696,7 @@ let pad_instruction =
 
 let compact_loc_max_width = ref 0   (* nasty imperative hack *)
 
-let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
+let pp_ui_instruction_instance pp_instruction_ast (m:Globals.ppmode) tid indent i =
 
   let ppd_dwarf_source_file_lines =
     match !Globals.use_dwarf, m.pp_dwarf_static with
@@ -2706,7 +2731,7 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
       (pp_address m (Some i.ui_instance_ioid) i.ui_program_loc)
       (
        let finished = match i.ui_finished with C2b_changed x -> x | C2b_unchanged x -> x in
-       let s = pad pad_instruction (pp_instruction m m.pp_symbol_table i.ui_instruction i.ui_program_loc) in
+       let s = pad pad_instruction (pp_instruction pp_instruction_ast m m.pp_symbol_table i.ui_instruction i.ui_program_loc) in
        if finished then colour_finished_instruction m s else colour_unfinished_instruction m s)
       (if not (m.pp_style = Globals.Ppstyle_screenshot) then pp_maybe_opcode m i.ui_program_opcode ^ " " else "\n") in
 
@@ -2757,12 +2782,12 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
     if m.pp_sail then
       "  micro_op_state: " ^
         (colour_changed2b_f m
-                            (pp_micro_op_state_top indent' i.ui_instance_ioid)
+                            (pp_micro_op_state_top pp_instruction_ast indent' i.ui_instance_ioid)
                             i.ui_micro_op_state
          ^ (match i.ui_finished with
             | C2b_unchanged true -> "\n"
             | _ -> nocolour_changed2b_f m
-                                        (pp_micro_op_state_body indent' i.ui_program_loc i.ui_instance_ioid i.ui_subreads i.ui_subwrites.ui_sw_potential_writes)
+                                        (pp_micro_op_state_body pp_instruction_ast indent' i.ui_program_loc i.ui_instance_ioid i.ui_subreads i.ui_subwrites.ui_sw_potential_writes)
                                         i.ui_micro_op_state))
     else
       ""
@@ -2785,7 +2810,7 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
   in
 
   let ppd_transitions =
-    String.concat "\n" (List.map (pp_cand m) i.ui_instruction_transitions)
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) i.ui_instruction_transitions)
     ^ (if i.ui_instruction_transitions <> [] then "\n" else "")
   in
 
@@ -2811,7 +2836,7 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
       ^ " " ^
        (
         let finished = match i.ui_finished with C2b_changed x -> x | C2b_unchanged x -> x in
-        let s = pad pad_instruction (pp_instruction m m.pp_symbol_table i.ui_instruction i.ui_program_loc) in
+        let s = pad pad_instruction (pp_instruction pp_instruction_ast m m.pp_symbol_table i.ui_instruction i.ui_program_loc) in
         if finished then colour_finished_instruction m s else colour_unfinished_instruction m s)
       ^ "  " ^
       pad 0  (* was pad 2, to indent reg r/w iff there are no mem r/w  *)
@@ -2856,7 +2881,7 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
              indent
              (pad 2 (pp_pretty_ioid_padded i.ui_instance_ioid))
              (pp_address m (Some i.ui_instance_ioid) i.ui_program_loc)
-             (colour_bold m (pad pad_instruction (pp_instruction m m.pp_symbol_table i.ui_instruction i.ui_program_loc)))
+             (colour_bold m (pad pad_instruction (pp_instruction pp_instruction_ast m m.pp_symbol_table i.ui_instruction i.ui_program_loc)))
            ^ sprintf "%s%s%s\n"
 
                (pad
@@ -2901,8 +2926,8 @@ let pp_ui_instruction_instance (m:Globals.ppmode) tid indent i =
 
 
 (* copying over many things from pp_ui_instruction_instance *)
-let pp_ui_instruction_info tid indent (m:Globals.ppmode)
-      (i : instruction_info)  =
+let pp_ui_instruction_info pp_instruction_ast tid indent (m:Globals.ppmode)
+      (i : 'i instruction_info)  =
 
   let ppd_dwarf_source_file_lines =
     match !Globals.use_dwarf, m.pp_dwarf_static with
@@ -3055,22 +3080,22 @@ let pp_ui_instruction_info tid indent (m:Globals.ppmode)
 
  (** pp the instruction instances of a thread state, rendering the tree structure with indentation *)
 
-let is_finished_unchanged (i: ('ts,'ss) MachineDefTypes.ui_instruction_instance) : bool =
+let is_finished_unchanged (i: ('i,'ts,'ss) MachineDefTypes.ui_instruction_instance) : bool =
   match i.ui_finished with
   | C2b_unchanged true -> true
   | C2b_unchanged false -> false
   | C2b_changed b -> false
 
- let rec pp_list_ui_instruction_tree m tid (indent:string) t : (string * bool) list =
+ let rec pp_list_ui_instruction_tree pp_instruction_ast m tid (indent:string) t : (string * bool) list =
    match t with
    | UI_T [] -> []
-   | UI_T [iit] -> f m tid indent iit
+   | UI_T [iit] -> f pp_instruction_ast m tid indent iit
    | UI_T iits ->
        let indent' = "  " ^ indent in
        List.flatten
          (List.map
             (function iit ->
-              let ss = (f m tid indent' iit) in
+              let ss = (f pp_instruction_ast m tid indent' iit) in
               match ss with
               | (s,f)::ss' ->
               (* hack to add "-" at start of indentation of first line *)
@@ -3083,20 +3108,20 @@ let is_finished_unchanged (i: ('ts,'ss) MachineDefTypes.ui_instruction_instance)
                   | Not_found -> ss)
               | [] -> [])
             iits)
- and pp_ui_old_instruction_list m tid indent (is: ('ts,'ss) ui_instruction_instance changed2 list) : (string*bool) list =
-   List.map (function ic -> g m tid indent ic) is
+ and pp_ui_old_instruction_list pp_instruction_ast m tid indent (is: ('i,'ts,'ss) ui_instruction_instance changed2 list) : (string*bool) list =
+   List.map (function ic -> g pp_instruction_ast m tid indent ic) is
 
- and f m tid indent (ic,t) : (string*bool) list =
-   colour_changed3_fp m (fun m i -> (pp_ui_instruction_instance m tid indent i, is_finished_unchanged i)) ic
+ and f pp_instruction_ast m tid indent (ic,t) : (string*bool) list =
+   colour_changed3_fp m (fun m i -> (pp_ui_instruction_instance pp_instruction_ast m tid indent i, is_finished_unchanged i)) ic
  (*  ^ "\n"*)
-   :: pp_list_ui_instruction_tree m tid indent t
+   :: pp_list_ui_instruction_tree pp_instruction_ast m tid indent t
 
- and g m tid indent ic : (string * bool) =
-   colour_changed2_fp m (fun m i -> (pp_ui_instruction_instance m tid indent i, is_finished_unchanged i)) ic
+ and g pp_instruction_ast m tid indent ic : (string * bool) =
+   colour_changed2_fp m (fun m i -> (pp_ui_instruction_instance pp_instruction_ast m tid indent i, is_finished_unchanged i)) ic
  (*  ^ "\n"*)
 
- let pp_ui_instruction_tree m tid (indent:string) t : string =
-   let sbs = pp_list_ui_instruction_tree m tid indent t in
+ let pp_ui_instruction_tree pp_instruction_ast m tid (indent:string) t : string =
+   let sbs = pp_list_ui_instruction_tree pp_instruction_ast m tid indent t in
    match m.pp_style with
    | Globals.Ppstyle_compact ->
        let initial_finished =
@@ -3121,7 +3146,7 @@ let is_finished_unchanged (i: ('ts,'ss) MachineDefTypes.ui_instruction_instance)
 
 
 
-let pp_ui_instruction_list m tid (indent:string) instrs : string =
+let pp_ui_instruction_list pp_instruction_ast m tid (indent:string) instrs : string =
 
   let rec take' xs n =
      match xs, n with
@@ -3136,21 +3161,25 @@ let pp_ui_instruction_list m tid (indent:string) instrs : string =
     | _, _ -> instrs
   in
   
-  pp_changed2_list m (pp_ui_instruction_info tid indent) instrs
+  pp_changed2_list m (pp_ui_instruction_info pp_instruction_ast tid indent) instrs
 
 
- let pp_plain_instruction_instance m tid (indent:string) (i:MachineDefTypes.instruction_instance)  =
+ let pp_plain_instruction_instance pp_instruction_ast m tid (indent:string) (i:'i MachineDefTypes.instruction_instance)  =
      sprintf "%sioid:%s %s"
        indent
        (pad 1 (pp_pretty_ioid i.instance_ioid))
  (*      (pp_address m i.ui_program_loc)*)
-       (pad 6 (pp_instruction m m.pp_symbol_table i.instruction i.program_loc))
+       (pad 6 (pp_instruction pp_instruction_ast m m.pp_symbol_table i.instruction i.program_loc))
  (*      (pp_maybe_opcode m i.ui_program_opcode) *)
 
- let rec pp_plain_instruction_tree m tid (indent:string) (t:MachineDefTypes.instruction_tree) =
+ let rec pp_plain_instruction_tree pp_instruction_ast m tid (indent:string) (t:'i MachineDefTypes.instruction_tree) =
    match t with
    | T iiits ->
-       "T [" ^ String.concat ", " (List.map (function (i,it) -> sprintf "(%s, %s)" (pp_plain_instruction_instance m tid indent i) (pp_plain_instruction_tree m tid indent it)) iiits) ^ "]"
+      "T [" ^ String.concat ", " 
+                (List.map (function (i,it) ->
+                             sprintf "(%s, %s)"
+                               (pp_plain_instruction_instance pp_instruction_ast m tid indent i)
+                               (pp_plain_instruction_tree pp_instruction_ast m tid indent it)) iiits) ^ "]"
 
 
  (** pp a UI thread state *)
@@ -3174,21 +3203,21 @@ let pp_ui_instruction_list m tid (indent:string) instrs : string =
 
 let pp_promise _m = pp_eiid
 
-let pp_ui_machine_thread_state m (tid,ts) =
+let pp_ui_machine_thread_state pp_instruction_ast m (tid,ts) =
   let initial_ioid = (tid,0) in (* hack for dwarf pp... *)
   let base_indent = "" in
   let ppd_tid = sprintf "%d" ts.ui_thread in
 
   let ppd_initial_fetch_address = pp_initial_fetch_address m base_indent initial_ioid ts.ui_initial_fetch_address in
   let ppd_initial_fetch_transitions =
-    String.concat "\n" (List.map (pp_cand m) ts.ui_initial_fetch_transitions) ^ "\n" in
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts.ui_initial_fetch_transitions) ^ "\n" in
   let ppd_empty_thread_instructions = ppd_initial_fetch_address ^ ppd_initial_fetch_transitions in
   let ppd_nonempty_thread_instructions =
     (* base_indent ^ "old instructions\n"
      ^ pp_ui_old_instruction_list m tid base_indent (List.rev_append ts.ui_old_instructions [])
      ^ base_indent ^ "new instructions\n"
      ^ (if not(m.pp_style = Globals.Ppstyle_screenshot) then base_indent ^ "-------------------------\n" else "")
-     ^*) pp_ui_instruction_tree m tid base_indent ts.ui_instruction_tree in
+     ^*) pp_ui_instruction_tree pp_instruction_ast m tid base_indent ts.ui_instruction_tree in
 
   let ppd_instructions =
     (*match (ts.ui_old_instructions,ts.ui_instruction_tree) with
@@ -3263,7 +3292,7 @@ let pp_ui_machine_thread_state m (tid,ts) =
  (*     ppd_unacknowledged_syncs*\) *)
 
 
-let pp_ui_promising_thread_state m (tid,ts) =
+let pp_ui_promising_thread_state pp_instruction_ast m (tid,ts) =
   let base_indent = "" in
   let ppd_tid = sprintf "%d" ts.ui_promising_thread in
 
@@ -3275,7 +3304,7 @@ let pp_ui_promising_thread_state m (tid,ts) =
   let ppd_instructions =
     if m.pp_kind = Hash
     then "last ioid "  ^ pp_pretty_ioid last_ioid
-    else pp_ui_instruction_list m tid base_indent ts.ui_promising_instrs  
+    else pp_ui_instruction_list pp_instruction_ast m tid base_indent ts.ui_promising_instrs  
   in
 
   let ppd_reg = 
@@ -3354,7 +3383,8 @@ let pp_ui_promising_thread_state m (tid,ts) =
   ^ t_instructions
 
 
-let pp_ui_thread_state m (tid,ts) = pp_ui_machine_thread_state m (tid,ts)
+let pp_ui_thread_state pp_instruction_ast m (tid,ts) =
+  pp_ui_machine_thread_state pp_instruction_ast m (tid,ts)
 
 
 
@@ -3391,7 +3421,7 @@ let rev_mapi f l =
 let transition_history_loc_max_width = ref 0
 let transition_history_loc_max_width' = ref 0
 
-let pp_transition_history_trans m s j trans =
+let pp_transition_history_trans pp_instruction_ast m s j trans =
   let mioid = MachineDefTypes.principal_ioid_of_trans trans in
   let io =
     begin match mioid with
@@ -3411,7 +3441,8 @@ let pp_transition_history_trans m s j trans =
           pad (!transition_history_loc_max_width) s in
         ppd_loc
         ^ " "
-        ^ let s = pad pad_instruction (pp_instruction m m.pp_symbol_table i.ui_instruction i.ui_program_loc) in s
+        ^ let s = pad pad_instruction
+                    (pp_instruction pp_instruction_ast m m.pp_symbol_table i.ui_instruction i.ui_program_loc) in s
         ^  " "
         ^ let ppd_dwarf_source_file_lines =
           (match !Globals.use_dwarf, m.pp_dwarf_static with
@@ -3428,21 +3459,21 @@ let pp_transition_history_trans m s j trans =
   let res =
     res
     ^ (pad (!transition_history_loc_max_width') s1)
-    ^ pp_trans m trans
+    ^ pp_trans pp_instruction_ast m trans
   in
   match !Globals.pp_kind with
   | Ascii | Latex | Hash -> res ^ !linebreak
   | Html -> "<p class=rmem>" ^ res ^ "</p>" (* this (instead of <br>) is needed to make JS scrollIntoView work *)
 
-let pp_transition_history m ?(filter = fun _ -> true) s =
+let pp_transition_history pp_instruction_ast m ?(filter = fun _ -> true) s =
   transition_history_loc_max_width := 0;
-  String.concat "" (rev_mapi (pp_transition_history_trans m s) (List.filter filter s.ui_transition_history))
+  String.concat "" (rev_mapi (pp_transition_history_trans pp_instruction_ast m s) (List.filter filter s.ui_transition_history))
 
 
  (** pp a UI system state *)
 
-let pp_ui_system_state m s =
-  begin match !(Globals.model_params).t.thread_isa_info.ism with
+let pp_ui_system_state pp_instruction_ast m s =
+  begin match !ism with
   | AARCH64_ism _ -> ""
   | RISCV_ism     ->
       let ppd_riscv_AMO_lock =
@@ -3459,16 +3490,16 @@ let pp_ui_system_state m s =
   | MIPS_ism      -> ""
   | X86_ism       -> ""
   end
-  ^ pp_ui_storage_subsystem_state m s.ui_model s.ui_storage_subsystem
+  ^ pp_ui_storage_subsystem_state pp_instruction_ast m s.ui_model s.ui_storage_subsystem
 (*  ^ (Pset.elements s.ui_model.shared_memory |> List.map (pp_footprint m None) |> String.concat "; ")
   ^ !linebreak*)
   ^ !linebreak
-  ^ String.concat !linebreak (List.map (pp_ui_thread_state m) s.ui_thread_states)
+  ^ String.concat !linebreak (List.map (pp_ui_thread_state pp_instruction_ast m) s.ui_thread_states)
   ^ !linebreak
 
 
 
-let pp_ui_pstate m s =
+let pp_ui_pstate pp_instruction_ast m s =
 
   let stopped_promising = 
     let pp _m = function
@@ -3483,14 +3514,14 @@ let pp_ui_pstate m s =
   ^ stopped_promising
   ^ !linebreak
   ^ !linebreak
-  ^ String.concat !linebreak (List.map (pp_ui_promising_thread_state m)
+  ^ String.concat !linebreak (List.map (pp_ui_promising_thread_state pp_instruction_ast m)
                                 s.p_ui_thread_states)
 
 
 
 
 
-let pp_ui_instruction m s tid ioid =
+let pp_ui_instruction pp_instruction_ast m s tid ioid =
   let indent = "  " in
 
   let ic =
@@ -3519,12 +3550,13 @@ let pp_ui_instruction m s tid ioid =
   in
 
   match ic with
-  | Some ic -> colour_changed3_f m (fun m i -> pp_ui_instruction_instance m tid indent i) ic
+  | Some ic ->
+     colour_changed3_f m (fun m i -> pp_ui_instruction_instance pp_instruction_ast m tid indent i) ic
   | None -> pp_pretty_ioid ioid ^ " (pp could not find the instruction-instance)"
 
 
 
-let pp_p_ui_instruction m s tid ioid =
+let pp_p_ui_instruction pp_instruction_ast m s tid ioid =
   let indent = "  " in
 
   let ic =
@@ -3537,13 +3569,14 @@ let pp_p_ui_instruction m s tid ioid =
   in
 
   match ic with
-  | Some ic -> colour_changed2_f m (fun _m i -> pp_ui_instruction_info tid indent m i) ic
+  | Some ic -> colour_changed2_f m (fun _m i -> pp_ui_instruction_info pp_instruction_ast tid indent m i) ic
   | None -> pp_pretty_ioid ioid ^ " (pp could not find the instruction-instance)"
 
 
 
 
-let pp_ui_gen_eiid_table m (s: ('ts,'ss) MachineDefTypes.system_state) = { m with pp_pretty_eiid_table = pretty_eiids s }
+let pp_ui_gen_eiid_table m (s: ('i,'ts,'ss) MachineDefTypes.system_state) =
+  { m with pp_pretty_eiid_table = pretty_eiids s }
 
 
 

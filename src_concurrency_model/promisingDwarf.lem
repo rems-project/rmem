@@ -41,7 +41,7 @@ open import Promising
 
 let p_get_dwarf_evaluation_context
     (endianness: end_flag)
-    (state:      p_state (pts 'v) pss 'v)
+    (state:      p_state 'i (pts 'i 'v) pss 'v)
     (tid:        thread_id)
     (ioid:       ioid)
     : maybe (natural (* the ioid address*) * dwarf_evaluation_context)
@@ -55,9 +55,9 @@ let p_get_dwarf_evaluation_context
 
       (* given the po-before (prefix) and the instruction (i), return dwarf_evaluation_context *)
       let context i =
-        let reg_data = state.p_model.t.thread_isa_info.register_data_info in
+        let reg_data = state.p_isa.register_data_info in
         let dec_read_register (reg: natural) : dwarf_register_read_result =
-          match reg_name_of_dwarf state.p_model.t.thread_isa_info.ism reg_data reg with
+          match reg_name_of_dwarf state.p_isa.ism reg_data reg with
           | Nothing       -> DRRR_bad_register_number
           | Just reg_name ->
              let register_value = reg_value reg_name thread_state in

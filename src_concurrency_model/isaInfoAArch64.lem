@@ -27,17 +27,89 @@ open import InstructionSemantics
 open import BasicTypes
 import Sail_values
 import ArmV8_embed_types
+import ArmV8_embed
+
+(* FIX THIS AND MOVE THE LOGIC FOR THIS TO SAIL *)
+val aarch64hand_encode : ArmV8_embed_types.ast -> end_flag -> memory_value
+declare ocaml target_rep function aarch64hand_encode = `Arm_encode.actually_SAIL_encode`
+
+
+let aarch64hand_shallow_embedding : instruction_semantics ArmV8_embed_types.ast = 
+  
+  let decode_to_instruction (address : address) (opcode : opcode) =
+    let (Opcode bytes) = opcode in
+    let opcode_bitv = Sail_values.bitv_of_bytes false bytes in
+
+    match ArmV8_embed.decode opcode_bitv with
+    | Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
+    | Done (Just instr)  -> 
+       (* TODO: abstract supported_instructions for all ISAs *)
+       match ArmV8_embed.supported_instructions instr with
+       | Nothing -> FDO_decode_error(Unsupported_instruction_error opcode instr)
+       | Just _ -> FDO_success address (Just opcode) instr
+       end
+    | _ -> FDO_decode_error (Internal_decode_error "unhandled effect")
+    end
+  in
+
+  let initial_outcome_of_instruction instr = (ArmV8_embed.execute instr,Nothing) in
+
+  let analysis instr reanalyse reginfo environment =
+    if reanalyse then
+      failwith "instruction_re_analysis: AArch64 instruction" 
+    else 
+      let a = handle_reg_reads environment (ArmV8_embed.initial_analysis instr) in
+      process_analysis reginfo a
+  in
+
+  <| decode_to_instruction = decode_to_instruction;
+     encode_instruction = aarch64hand_encode;
+     instruction_analysis = analysis;
+     initial_outcome_of_instruction = initial_outcome_of_instruction |>
+
+
 
 
 let aarch64_is_system_call_instruction = function
-  | AArch64_instr (ArmV8_embed_types.GenerateExceptionEL1 imm) -> Just (Sail_values.unsigned imm)
+  | ArmV8_embed_types.GenerateExceptionEL1 imm -> Just (Sail_values.unsigned imm)
   | _ -> Nothing
   end
 
 let aarch64_is_thread_start_instruction = function
-  | AArch64_instr (ArmV8_embed_types.ImplementationDefinedThreadStart) -> true
+  | ArmV8_embed_types.ImplementationDefinedThreadStart -> true
   | _ -> false
   end
+
+let aarch64_is_atomically_fetchable_instruction (i: ArmV8_embed_types.ast) : bool =
+  match i with
+(*| ArmV8_embed_types.Barrier3 (ArmV8_embed_types.MemBarrierOp_ISB, _, _) -> true *)
+  | ArmV8_embed_types.Hint (ArmV8_embed_types.SystemHintOp_NOP) -> true
+  | ArmV8_embed_types.BranchImmediate _ -> true
+  | _ -> false
+  end
+
+let aarch64_is_branch = function
+  | ArmV8_embed_types.CompareAndBranch _ -> true
+  | ArmV8_embed_types.BranchConditional _ -> true
+  | ArmV8_embed_types.TestBitAndBranch _ -> true
+  | ArmV8_embed_types.BranchImmediate _ -> true
+  | ArmV8_embed_types.BranchRegister _ -> true
+  | _ -> false
+end
+
+let aarch64_is_amo _ = false    (* update once we have AMO instructions *)
+
+
+let AArch64_maybe_split_conditional_branch (i: ArmV8_embed_types.ast) =
+  match i with
+  | ArmV8_embed_types.BranchConditional (x,y) -> Just (x,y)
+  | _ -> Nothing
+  end
+
+let AArch64_make_conditional_branch (x,y) = 
+  ArmV8_embed_types.BranchConditional (x, y)
+
+
 
 let aarch64_register_data_info : registerdata =
   let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
@@ -443,8 +515,8 @@ let aarch64_thread_start_info =
    particular, the function will return false for STXP/STLXP, even though they
    are store-pair, since the whole write is single-copy atomic. *)
 let aarch64_is_nonatomic_store_pair_instruction = function
-  | AArch64_instr (ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_STORE,_,_)) -> true
-  | AArch64_instr (ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_STORE,_,_,_)) -> true
+  | ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_STORE,_,_) -> true
+  | ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_STORE,_,_,_) -> true
   | _ -> false
   end
 
@@ -455,16 +527,16 @@ let aarch64_is_nonatomic_store_pair_instruction = function
    (32bit) registers even though these are load-pair, since the whole read is
    single-copy atomic. *)
 let aarch64_is_nonatomic_load_pair_instruction = function
-  | AArch64_instr (ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_LOAD,_,_)) -> true
-  | AArch64_instr (ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_LOAD,_,_,_)) -> true
-  | AArch64_instr (ArmV8_embed_types.LoadStoreAcqExc (_,_,_,_,_,_,Sail_values.B1,MemOp_LOAD,elsize,_,_)) ->
+  | ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_LOAD,_,_) -> true
+  | ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_LOAD,_,_,_) -> true
+  | ArmV8_embed_types.LoadStoreAcqExc (_,_,_,_,_,_,Sail_values.B1,MemOp_LOAD,elsize,_,_) ->
      natFromInteger elsize = 64 (* no pattern matching on integers in Lem *)
   | _ -> false
   end
 
 let aarch64_make_empty_write_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: ArmV8_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -482,7 +554,7 @@ let aarch64_make_empty_write_events
 
 let aarch64_make_read_request_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: ArmV8_embed_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -500,11 +572,15 @@ let aarch64_make_read_request_events
 
 (* aarch64hand_ism is the start point for aarch64gen_ism, when changing
 something here make sure you are not breaking aarch64gen *)
-let aarch64hand_ism : isa_info =
+let aarch64hand_ism : isa ArmV8_embed_types.ast =
   <|  ism                         = AARCH64_ism AArch64HandSail;
+      instruction_semantics       = aarch64hand_shallow_embedding;
 
       is_system_call_instruction  = aarch64_is_system_call_instruction;
       is_thread_start_instruction = aarch64_is_thread_start_instruction;
+      is_atomically_fetchable_instruction     = aarch64_is_atomically_fetchable_instruction;
+      is_branch = aarch64_is_branch;
+      is_amo = aarch64_is_amo;
 
       thread_start_info           = aarch64_thread_start_info;
 
@@ -515,7 +591,11 @@ let aarch64hand_ism : isa_info =
       dia_reg                     = Nothing;
 
       make_empty_write_events     = aarch64_make_empty_write_events;
-      make_read_request_events    = aarch64_make_read_request_events
+      make_read_request_events    = aarch64_make_read_request_events;
+
+      maybe_split_conditional_branch = AArch64_maybe_split_conditional_branch;
+      make_conditional_branch = AArch64_make_conditional_branch;
+
   |>
 
 (********************************************************************)
@@ -716,7 +796,7 @@ let aarch64gen_thread_start_info =
       tsi_f_addr = Nothing;
   |>
 
-let aarch64gen_ism : isa_info =
+let aarch64gen_ism : isa ArmV8_embed_types.ast =
   <| aarch64hand_ism with
       ism = AARCH64_ism AArch64GenSail;
       thread_start_info = aarch64gen_thread_start_info;

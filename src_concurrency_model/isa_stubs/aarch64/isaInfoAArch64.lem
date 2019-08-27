@@ -16,6 +16,7 @@
 (*===============================================================================*)
 
 open import BasicTypes
+import ArmV8_embed_types
 
-let aarch64hand_ism   : isa_info = isa_info_stub
-let aarch64gen_ism    : isa_info = isa_info_stub
+let aarch64hand_ism   : isa ArmV8_embed_types.ast  = isa_stub
+let aarch64gen_ism    : isa ArmV8_embed_types.ast  = isa_stub

@@ -28,6 +28,15 @@ module IInt = Sail_impl_base
 module IImp = Interp_inter_imp
 
 type instruction = AArch64HGenBase.instruction
+type instruction_ast = ArmV8_embed_types.ast1
+
+let instruction_to_interp_instruction = ArmV8_toFromInterp.astToInterpValue0
+let interp_instruction_to_instruction = ArmV8_toFromInterp.astFromInterpValue0
+
+let instruction_to_interp2_instruction = failwith "not implemented"
+let interp2_instruction_to_instruction = failwith "not implemented"
+
+let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
 (* #include "build_isa_models/aarch64_new/gen/types_trans_sail.hgen" *)
 

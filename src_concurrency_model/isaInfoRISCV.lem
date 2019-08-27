@@ -19,22 +19,82 @@
 
 (* emacs fontification -*-caml-*- *)
 
-open import Pervasives
-open import Assert_extra
+open import Pervasives_extra
 
 open import Sail_impl_base
 open import Utils
 open import Events
 open import BasicTypes
 open import InstructionSemantics
+open import Sail_values
 import Riscv_types
+import Riscv
 
-let riscv_is_system_call_instruction (_: instruction_ast) = Nothing
+
+open import Sail_1_2_convert
+
+
+
+
+let riscv_shallow_embedding : instruction_semantics Riscv_types.ast = 
+  
+  let decode_to_instruction (address : address) (opcode : opcode) =
+    let (Opcode bytes) = opcode in
+    let opcode_bitv = Sail_values.bitv_of_bytes false bytes in
+    let bitv = Sail2_operators_mwords.vec_of_bits (sail_bv_1to2 opcode_bitv) in
+    let instr = continue_to_sail2_done "decode" (Riscv.decode bitv) in
+    FDO_success address (Just opcode) instr
+  in
+
+  let initial_outcome_of_instruction instr = 
+    (ignore_outcome (sail2_prompt_to_outcome (Riscv.execute instr)),Nothing) in
+
+  let analysis instr reanalyse reginfo environment =
+    if reanalyse then
+      failwith "instruction_re_analysis: RISCV instruction"
+    else
+      let a = (handle_reg_reads environment)
+                (analysis_outcome_riscv_to_sail1
+                   (sail2_prompt_to_outcome (Riscv.initial_analysis instr))) in
+      process_analysis reginfo a
+  in
+
+  <| decode_to_instruction = decode_to_instruction;
+     instruction_analysis = analysis;
+     initial_outcome_of_instruction = initial_outcome_of_instruction;
+     encode_instruction = fun _ -> failwith "not implemented yet" |>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+let riscv_is_system_call_instruction (_: Riscv_types.ast) = Nothing
 
 let riscv_is_thread_start_instruction = function
-  | RISCV_instr (Riscv_types.THREAD_START ()) -> true
+  | Riscv_types.THREAD_START () -> true
   | _ -> false
   end
+
+let riscv_is_branch = function
+  | Riscv_types.BTYPE _ -> true
+  | _ -> false
+end
+
+let riscv_is_amo = function
+  | Riscv_types.AMO _ -> true
+  | _ -> false
+end
+
 
 let riscv_register_data_info : registerdata =
   let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
@@ -152,7 +212,7 @@ let riscv_thread_start_info =
 
 let riscv_make_empty_write_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: Riscv_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -168,7 +228,7 @@ let riscv_make_empty_write_events
 
 let riscv_make_read_request_events
     (tid:          thread_id)
-    (inst: instruction_ast) 
+    (inst: Riscv_types.ast) 
     (id_state: FreshIds.id_state ioid) 
     (ioid: ioid) 
     ((addr, size): footprint)
@@ -182,11 +242,28 @@ let riscv_make_read_request_events
   in
   make_read_request_events' id_state tid ioid addr size read_size read_kind
 
-let riscv_ism : isa_info =
-  <|  ism                         = RISCV_ism;
 
+let mips_is_atomically_fetchable_instruction _i : bool =
+  failwith "not implemented"
+
+let mips_maybe_split_conditional_branch _i =
+  failwith "not implemented"
+
+let mips_make_conditional_branch (x,y) = 
+  failwith "not implemented"
+
+let riscv_ism : isa Riscv_types.ast =
+  <|  ism                         = RISCV_ism;
+      instruction_semantics       = riscv_shallow_embedding;
+
+      maybe_split_conditional_branch = mips_maybe_split_conditional_branch;
+      make_conditional_branch = mips_make_conditional_branch;
+
+      is_atomically_fetchable_instruction = mips_is_atomically_fetchable_instruction;
       is_system_call_instruction  = riscv_is_system_call_instruction;
       is_thread_start_instruction = riscv_is_thread_start_instruction;
+      is_branch = riscv_is_branch;
+      is_amo = riscv_is_amo;
 
       thread_start_info           = riscv_thread_start_info;
 
@@ -199,3 +276,6 @@ let riscv_ism : isa_info =
       make_empty_write_events     = riscv_make_empty_write_events;
       make_read_request_events    = riscv_make_read_request_events;
   |>
+
+
+

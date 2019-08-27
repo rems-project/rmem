@@ -1061,7 +1061,8 @@ let flowing_ss_abort_transaction params state tstart =
 
 let flowing_ss_initial_state params tids initial_writes =
   (* TODO: ensure initial writes don't overlap *)
-  let (tree, tid_to_seg, buffers, _) = flowing_tree_from_topology params.ss.flowing_topology flowing_segment_initial in
+  let (tree, tid_to_seg, buffers, _) =
+    flowing_tree_from_topology params.flowing_topology flowing_segment_initial in
   <|  flowing_ss_threads           = tids;
       flowing_ss_topology          = tree;
       flowing_ss_thread_to_segment = tid_to_seg;
@@ -1239,8 +1240,8 @@ let flowing_ss_is_final_state _params (state: flowing_storage_subsystem_state) :
 let flowing_make_ui_storage_subsystem_state
     (ss: maybe flowing_storage_subsystem_state)
     (ss': flowing_storage_subsystem_state)
-    (transitions: list (ui_trans 'ts 'ss))
-    : ui_storage_subsystem_state 'ts 'ss
+    (transitions: list (ui_trans 'i 'ts 'ss))
+    : ui_storage_subsystem_state 'i 'ts 'ss
   =
   let ss = fromMaybe ss' ss in
   let threads = Set_extra.toList ss'.flowing_ss_threads in
@@ -1355,7 +1356,7 @@ let flowing_make_ui_storage_subsystem_state
     |>
 
 
-val flowing_storage : storageSubsystem flowing_storage_subsystem_state
+val flowing_storage : forall 'i 'ts. storageSubsystem 'i 'ts flowing_storage_subsystem_state
 let flowing_storage = 
    <| ss_thread_memory_value_of_footprint = 
         flowing_ss_thread_memory_value_of_footprint;
@@ -1363,14 +1364,9 @@ let flowing_storage =
       ss_is_final_state         = flowing_ss_is_final_state;
       ss_coherence              = flowing_ss_coherence;
       ss_clean_reads            = remove_old_read_requests;
-  |>
-
-
-val flowing_machine_storage : forall 'ts. machineStorageSubsystem 'ts flowing_storage_subsystem_state
-let flowing_machine_storage = 
-   <| ss_enumerate_transitions  = flowing_ss_enumerate_transitions;
+      ss_enumerate_transitions  = flowing_ss_enumerate_transitions;
       ss_receive_transition =
-        fun params s tl -> ListMonad.option_guard (flowing_ss_receive_transition params s tl);
+        fun _isa params s tl -> ListMonad.option_guard (flowing_ss_receive_transition params s tl);
       ss_enumerate_final_transitions = fun s -> [];
       ss_make_ui_storage_state = flowing_make_ui_storage_subsystem_state
   |>

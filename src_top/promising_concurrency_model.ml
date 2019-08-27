@@ -15,16 +15,45 @@
 (*===================================================================================*)
 
 
-module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
+module Make (ISAModel: Isa_model.S) :
+  Concurrency_model.S with type instruction_ast = ISAModel.instruction_ast = struct
 
-  type thread_subsystem_state = PromisingViews.t0 PromisingThread.pts
+  type instruction_ast = ISAModel.instruction_ast
+
+  type thread_subsystem_state = (instruction_ast,PromisingViews.t0) PromisingThread.pts
+
   type storage_subsystem_state = PromisingStorage.pss
-  type system_state = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) Promising.p_state
-  type ui_state = (PromisingUI.pts_ui_state, PromisingUI.pss_ui_state, PromisingViews.t0) PromisingUI.p_ui_state 
+
+  module ISA = ISAModel
+
+  type system_state =
+    (instruction_ast,
+     thread_subsystem_state,
+     storage_subsystem_state,
+     PromisingViews.t0)
+      Promising.p_state
+
+  type ui_state =
+    (instruction_ast,
+     instruction_ast PromisingUI.pts_ui_state,
+     PromisingUI.pss_ui_state,
+     PromisingViews.t0)
+      PromisingUI.p_ui_state 
 
   (* For efficiency, 'state' also includes all the enabled transitions *)
-  type state = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) Promising.pst
-  type trans = (thread_subsystem_state,storage_subsystem_state,PromisingViews.t0) PromisingTransitions.p_trans
+  type state =
+    (instruction_ast,
+     thread_subsystem_state,
+     storage_subsystem_state,
+     PromisingViews.t0)
+      Promising.pst
+
+  type trans =
+    (instruction_ast,
+     thread_subsystem_state,
+     storage_subsystem_state,
+     PromisingViews.t0)
+      PromisingTransitions.p_trans
 
   type ui_trans = int * trans
 
@@ -32,10 +61,11 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
 
   let sst_of_state = Promising.type_specialised_p_pst_of_state
 
+  let pp_instruction_ast = ISAModel.pp_instruction_ast
+                   
   let initial_state ism run_options initial_state_record =
     Promising.p_initial_state
-      (ISAModel.instruction_semantics ism run_options)
-      ISAModel.ISADefs.reg_data
+      ISAModel.isa.BasicTypes.register_data_info
       initial_state_record
     |> Promising.type_specialised_p_pst_of_state
 
@@ -131,10 +161,10 @@ module Make (ISAModel: Isa_model.S) : Concurrency_model.S = struct
   let ioid_of_thread_trans = PromisingTransitions.ioid_of_p_trans
   let is_storage_trans = PromisingTransitions.p_is_storage_transition
   let pp_transition_history = fun _ -> failwith "pp_transition_history"
-  let pp_cand = Pp.pp_pcand
-  let pp_trans = Pp.pp_p_trans
-  let pp_ui_state = Pp.pp_ui_pstate
-  let pp_instruction = Pp.pp_p_ui_instruction
+  let pp_cand = Pp.pp_pcand pp_instruction_ast
+  let pp_trans = Pp.pp_p_trans pp_instruction_ast
+  let pp_ui_state = Pp.pp_ui_pstate pp_instruction_ast
+  let pp_instruction = Pp.pp_p_ui_instruction pp_instruction_ast
   let set_model_params model s =
     let open Promising in
     type_specialised_p_pst_of_state {s.pst_state with p_model = model}

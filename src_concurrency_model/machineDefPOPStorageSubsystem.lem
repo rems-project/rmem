@@ -548,7 +548,7 @@ let pop_ss_enumerate_transitions
 
   propagate_event_cands ++ satisfy_read_cands
 
-let pop_ss_receive_transition params state t_send =
+let pop_ss_receive_transition _isa params state t_send =
   match t_send with
   | T_fetch _ -> failwith "fetch not implemented for POP"
   | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for POP"
@@ -612,8 +612,8 @@ let pop_ss_coherence _params state =
 let pop_make_ui_storage_subsystem_state
     (ss: maybe pop_storage_subsystem_state)
     (ss': pop_storage_subsystem_state)
-    (transitions: list (ui_trans 'ts 'ss))
-    : ui_storage_subsystem_state 'ts 'ss
+    (transitions: list (ui_trans 'i 'ts 'ss))
+    : ui_storage_subsystem_state 'i 'ts 'ss
   =
   let ss = fromMaybe ss' ss in
   let threads = Set_extra.toList ss'.pop_ss_threads in
@@ -664,7 +664,7 @@ let pop_make_ui_storage_subsystem_state
     |>
 
 
-val pop_storage : storageSubsystem pop_storage_subsystem_state
+val pop_storage : forall 'i 'ts. storageSubsystem 'i 'ts pop_storage_subsystem_state
 let pop_storage = 
   <| ss_thread_memory_value_of_footprint = 
        pop_ss_thread_memory_value_of_footprint ;
@@ -672,14 +672,9 @@ let pop_storage =
      ss_is_final_state         = pop_ss_is_final_state;
      ss_coherence              = pop_ss_coherence;
      ss_clean_reads            = pop_ss_remove_old_read_requests ;
- |>
-
-
-val pop_machine_storage : forall 'ts. machineStorageSubsystem 'ts pop_storage_subsystem_state
-let pop_machine_storage = 
-  <| ss_enumerate_transitions  = pop_ss_enumerate_transitions;
+     ss_enumerate_transitions  = pop_ss_enumerate_transitions;
      ss_receive_transition = 
-       fun p s tl -> ListMonad.option_guard (pop_ss_receive_transition p s tl);
+       fun isa p s tl -> ListMonad.option_guard (pop_ss_receive_transition isa p s tl);
      ss_enumerate_final_transitions = fun s -> [];
      ss_make_ui_storage_state = pop_make_ui_storage_subsystem_state;
  |>

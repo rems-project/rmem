@@ -46,15 +46,15 @@ let debug_sail_interp = ref false
 
 (* model_params should probably not be changed after the initial state
 was created *)
+(* let model_params = ref Params.default_model_params *)
+
+let default_ism = InstructionSemantics.PPCGEN_ism
+let ism = ref default_ism
 let model_params = ref Params.default_model_params
 
+
+
 let big_endian = ref None
-(*let big_endian = fun () -> false
-  begin match !model_params.t.thread_isa_info.ism with
-  | PPCGEN_ism    -> true
-  | AARCH64_ism _ -> false
-  | MIPS_ism      -> true
-  end*)
 
 (* BE CAREFUL: call big_endian only after thread_ism (of model_params)
 has been set properly (i.e. set_model_ism was called) *)
@@ -63,7 +63,7 @@ let get_endianness = fun () ->
   | None ->
       let open InstructionSemantics in
       let open BasicTypes in
-      begin match !model_params.t.thread_isa_info.ism with
+      begin match !ism with
       | PPCGEN_ism    -> Sail_impl_base.E_big_endian
       | AARCH64_ism _ -> Sail_impl_base.E_little_endian
       | MIPS_ism      -> Sail_impl_base.E_big_endian
@@ -80,12 +80,8 @@ let pp_endianness = fun () ->
   | Sail_impl_base.E_big_endian    -> "big endian"
   end
 
-let set_model_ism ism =
-  model_params :=
-    let open Params in
-    {!model_params with
-        t = {!model_params.t with thread_isa_info = ism; }
-    }
+let set_model_ism ism' =
+  ism := ism'
 
 let suppress_non_symbol_memory = ref false (* ELF *)
 

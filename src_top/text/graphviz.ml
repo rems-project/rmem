@@ -44,9 +44,12 @@ let mycommand ppmode command input_file output_file =
 
 
 module Make (ConcModel: Concurrency_model.S)
-    : (GraphBackend.S with type ui_trans = ConcModel.ui_trans)
+    : (GraphBackend.S with type ui_trans = ConcModel.ui_trans 
+                      and type instruction_ast = ConcModel.instruction_ast)
   = struct
+
   type ui_trans = ConcModel.ui_trans
+  type instruction_ast = ConcModel.instruction_ast
   module Base = Graphviz_base.Make(ConcModel)
 
   let make_dot_graph ppmode legend_opt cex basename_in_dir ioid_trans_lookup =

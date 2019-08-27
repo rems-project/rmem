@@ -197,7 +197,7 @@ let tso_ss_accept_strong_barrier_cand params state (b: barrier) =
 
 (************** storage system receive transitions ******************)
 
-let tso_ss_receive_transition params state = function
+let tso_ss_receive_transition _isa params state = function
   | T_fetch _ -> failwith "fetch not implemented for TSO"
   | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for TSO"
   | T_propagate_write tl ->
@@ -288,8 +288,8 @@ let tso_ss_coherence params state =
 let tso_make_ui_storage_subsystem_state
     (ss:          maybe tso_storage_subsystem_state)
     (ss':         tso_storage_subsystem_state)
-    (transitions: list (ui_trans 'ts 'ss))
-    : ui_storage_subsystem_state 'ts 'ss
+    (transitions: list (ui_trans 'i 'ts 'ss))
+    : ui_storage_subsystem_state 'i 'ts 'ss
   =
   let ss = fromMaybe ss' ss in
   TSO_UI_storage
@@ -314,7 +314,7 @@ let tso_make_ui_storage_subsystem_state
 
 
 
-val tso_storage : storageSubsystem tso_storage_subsystem_state
+val tso_storage : forall 'i 'ts. storageSubsystem 'i 'ts tso_storage_subsystem_state
 let tso_storage = 
   <| ss_thread_memory_value_of_footprint = 
        tso_ss_thread_memory_value_of_footprint;
@@ -322,13 +322,9 @@ let tso_storage =
      ss_is_final_state         = tso_ss_is_final_state;
      ss_coherence              = tso_ss_coherence;
      ss_clean_reads            = fun _ _ _ _ _ -> Nothing;
- |>
-
-val tso_machine_storage : forall 'ts. machineStorageSubsystem 'ts tso_storage_subsystem_state
-let tso_machine_storage = 
-  <| ss_enumerate_transitions  = tso_ss_enumerate_transitions;
+     ss_enumerate_transitions  = tso_ss_enumerate_transitions;
      ss_receive_transition = 
-       fun p s tl -> ListMonad.option_guard (tso_ss_receive_transition p s tl);
+       fun isa p s tl -> ListMonad.option_guard (tso_ss_receive_transition isa p s tl);
      ss_enumerate_final_transitions = fun _ -> [];
      ss_make_ui_storage_state = tso_make_ui_storage_subsystem_state;
  |>

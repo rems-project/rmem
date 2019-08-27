@@ -25,7 +25,8 @@ type reg_base_name = Sail_impl_base.reg_base_name
 type address = Sail_impl_base.address
 type register_value = Sail_impl_base.register_value
 type memory_value = Sail_impl_base.memory_value
-type instruction_ast = InstructionSemantics.instruction_ast
+
+
 type thread_id = Events.thread_id
 
 module C = MoreConstraints.Make
@@ -37,13 +38,13 @@ let init_thread = 1000
 
 type labelmap = (string * int) list
 
-type test = 
+type 'instruction_ast test = 
   { arch:            Archs.t;
     info:            MiscParser.info;
     init_reg_state:  ((thread_id * reg_base_name) * register_value) list;
     init_mem_state:  (address * memory_value) list;
     mem_addr_map:    (address * int) LocationMap.t;
-    prog:            (thread_id * instruction_ast list * labelmap) list;
+    prog:            (thread_id * 'instruction_ast list * labelmap) list;
     filter:          C.prop option;
     constr:          C.constr;
     flocs:           C.location list;

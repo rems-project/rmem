@@ -325,213 +325,8 @@ let mk_elf_threads_list elf_threads =
   to_n [] elf_threads
 
 
-type data = char list
 
-let arch_of_test (test: test) : BasicTypes.isa_info =
-  begin match Nat_big_num.to_int test.e_machine with
-  | 21  (* EM_PPC64 *)   -> IsaInfoPPCGen.ppcgen_ism
-  | 183 (* EM_ARACH64 *) when !Globals.aarch64gen ->
-                            IsaInfoAArch64.aarch64gen_ism
-  | 183 (* EM_ARACH64 *) when not !Globals.aarch64gen ->
-                            IsaInfoAArch64.aarch64hand_ism
-  | 8   (* EM_MIPS *)    -> IsaInfoMIPS.mips_ism
-  | 243 (* EM_RISCV *)   -> IsaInfoRISCV.riscv_ism
-  | _ ->
-      Printf.eprintf "Unsupported architecture\n";
-      exit 1
-
-  end
-
-let symbols_for_stacks threads =
-  List.map
-    (fun ((stack_base_address,stack_size), stack_pointer, stack_data, stack_pp_symbol) ->
-      (stack_pp_symbol, (Elf_symbol_table.stt_notype,
-                         Nat_big_num.of_int stack_size,
-                         stack_base_address,
-                         None,
-                         Elf_symbol_table.stb_global)))
-    (List.map initial_stack (mk_elf_threads_list threads))
-
-
-(** invert the symbol table to use for pp *)
-let symbol_table test : ((Sail_impl_base.address * int) * string) list =
-  Debug.print_string "*************** symbol_table for pp **************\n";
-
-  (* map symbol to (bindings, footprint),
-  if a symbol appears more then once keep the one with higher
-  precedence (stb_global > stb_weak > stb_local) *)
-  let map_all =
-    List.fold_left
-      (fun map (name, (typ, size, address, mb, binding)) ->
-          if String.length name <> 0                                                         (* name nonempty *)
-            && (if String.length name = 1 then Char.code (String.get name 0) <> 0 else true) (* name not singleton null char *)
-            && (not (Nat_big_num.equal address (Nat_big_num.of_int 0))                       (* address not 0 *)
-            && ( (Nat_big_num.equal typ Elf_symbol_table.stt_object)                         (* either object, function, or local notype *)
-             || (Nat_big_num.equal typ Elf_symbol_table.stt_func)
-             || (Nat_big_num.equal typ Elf_symbol_table.stt_notype && Nat_big_num.equal binding Elf_symbol_table.stb_local))
-            ) then
-            (* force size to 0 for non-object symbols to avoid bad pp behaviour, as the size of stt_func OPD entities seems to be the size of the associated bytes, which are somewhere else *)
-            let my_size = if Nat_big_num.equal typ Elf_symbol_table.stt_object then Nat_big_num.to_int size else 0 in
-            try
-              let ((_,_,_,_,binding'), _) = StringMap.find name map in
-              if  Nat_big_num.equal binding' Elf_symbol_table.stb_local ||
-                  Nat_big_num.equal binding Elf_symbol_table.stb_global then
-                StringMap.add name ((typ, size, address, mb, binding), (Sail_impl_base.address_of_integer address, my_size)) map
-              else map
-            with Not_found ->
-              StringMap.add name ((typ, size, address, mb, binding), (Sail_impl_base.address_of_integer address, my_size)) map
-
-          else map
-      )
-      StringMap.empty
-      test.symbol_map
-  in
-
-  (* turn into a name-indexed association list *)
-  let ndfps_all = StringMap.bindings map_all in
-
-  (* if two symbols appear with the same address, if one is an object or func and the other is not then suppress the other *)
-  let rec f =
-    function
-    | [] -> []
-    | ((name, ((typ,size,address,mb,binding), fp)) as ndfp) :: ndfps' ->
-          begin match List.exists
-              (function (name', ((typ',size',address',mb',binding'), fp')) ->
-                (Nat_big_num.equal address address')
-                  && ( (Nat_big_num.equal typ' Elf_symbol_table.stt_object)
-                    || (Nat_big_num.equal typ' Elf_symbol_table.stt_func))
-                  && not  ( (Nat_big_num.equal typ Elf_symbol_table.stt_object)
-                    || (Nat_big_num.equal typ Elf_symbol_table.stt_func))
-              ) ndfps' with
-          | true -> f ndfps'
-          | false ->
-              Debug.print_string (Printf.sprintf "(%s, %s) %s\n" (Nat_big_num.to_string address) (Nat_big_num.to_string size) name);
-              ndfp :: f ndfps'
-          end
-  in
-  List.map (function (name, ((typ,size,address,mb,binding),fp)) -> (fp, name)) (f ndfps_all)
-
-
-let show_mem_locations (test: test) : (Sail_impl_base.address * int) list =
-  let map_globals_for_show =
-    List.fold_left
-      (fun map (name, (typ, size, address, _, _)) ->
-          if String.length name <> 0                                                         (* name nonempty *)
-            && (if String.length name = 1 then Char.code (String.get name 0) <> 0 else true) (* name not singleton null char *)
-            && (not (Nat_big_num.equal address (Nat_big_num.of_int 0))                       (* address not 0 *)
-            && (not (Nat_big_num.equal size (Nat_big_num.of_int 0)))                         (* size not 0 *)
-            && (Nat_big_num.equal typ Elf_symbol_table.stt_object)                           (* object *)
-            )
-          then
-            let my_size = Nat_big_num.to_int size in
-            StringMap.add name (Sail_impl_base.address_of_integer address, my_size) map
-          else
-            map
-      )
-      StringMap.empty
-      test.symbol_map
-  in
-
-  StringMap.bindings map_globals_for_show |> List.split |> snd
-
-
-let test_info (test: test) (name: string) : Test.info =
-  let mems = show_mem_locations test in
-  { Test.name           = name;
-    Test.ism            = (arch_of_test test).BasicTypes.ism;
-    Test.thread_count   = test.elf_threads;
-    Test.symbol_map     = test.symbol_map;
-    Test.symbol_table   = symbol_table test;
-    Test.dwarf_static   = test.dwarf_static;
-
-    Test.show_regs   = [];
-    Test.show_mem    = mems;
-    Test.filter_regs = [];
-    Test.filter_mem  = [];
-
-    Test.info           = [];
-    Test.filter         = None;
-    Test.constr         = ConstrGen.ExistsState (ConstrGen.And []); (* i.e. "true" *)
-  }
-
-
-let read (name: string) info (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
-  Debug.timer_start_total ();
-  Debug.print_string "elf read\n";
-
-  (* call ELF analyser on file *)
-  let (elf_file, elf_epi, symbol_map) =
-    begin match info with
-    | Error.Fail s -> Warn.fatal "populate_and_obtain_global_symbol_init_info: %s" s
-    | Error.Success
-        ((elf_file: Elf_file.elf_file),
-         (elf_epi: Sail_interface.executable_process_image),
-         (symbol_map: Elf_file.global_symbol_init_info))
-        (*       (symbol_map: Elf_executable_file.global_symbol_init_info)) *)
-        ->
-          Debug.print_string (Sail_interface.string_of_executable_process_image elf_epi);
-          (elf_file, elf_epi, symbol_map)
-    end
-  in
-
-  Debug.print_string "elf segments etc\n";
-  let (segments, e_entry, e_machine, (dso: Dwarf.dwarf_static option)) =
-    begin match elf_epi, elf_file with
-    | (Sail_interface.ELF_Class_32 _, _)  -> Warn.fatal "cannot handle ELF_Class_32"
-    | (_, Elf_file.ELF_File_32 _)  -> Warn.fatal "cannot handle ELF_File_32"
-    | (Sail_interface.ELF_Class_64 (segments,e_entry,e_machine), Elf_file.ELF_File_64 f1) ->
-        (* remove all the auto generated segments (they contain only 0s) *)
-        let segments =
-          Lem_list.mapMaybe
-            (fun (seg, prov) -> if prov = Elf_file.FromELF then Some seg else None)
-            segments
-        in
-        let dso =
-          (*Printf.printf "!Globals.use_dwarf = %b" !Globals.use_dwarf;flush stdout;*)
-          begin match !Globals.use_dwarf (* TODO: update wrt new option management scheme *) with
-          | false -> (Debug.print_string2 "use_dwarf false\n"; None)
-          | true ->
-              match Dwarf.extract_dwarf_static (Elf_file.ELF_File_64 f1) with
-              | None -> Warn.fatal "extract_dwarf_static failed"
-              | Some ds ->
-                  Debug.print_string2 (Dwarf.pp_analysed_location_data ds.Dwarf.ds_dwarf ds.Dwarf.ds_analysed_location_data);
-                  Debug.print_string2 (Dwarf.pp_evaluated_frame_info ds.Dwarf.ds_evaluated_frame_info);
-                  Some ds
-          end in
-        (segments,e_entry,e_machine, dso)
-    end
-  in
-
-  Debug.print_string "elf test\n";
-  let test =
-    { symbol_map  = symbol_map @ (symbols_for_stacks !Globals.elf_threads);
-      segments    = segments;
-      e_entry     = e_entry;
-      e_machine   = e_machine;
-      elf_threads = !Globals.elf_threads;
-      dwarf_static= dso;
-    }
-  in
-  Globals.set_model_ism (arch_of_test test);
-
-  begin match isa_callback with
-  | Some f -> f (!Globals.model_params).Params.t.Params.thread_isa_info.BasicTypes.ism
-  | _ -> ()
-  end;
-
-  let info = test_info test name in
-
-  Globals.add_bt_and_sm_to_model_params info.Test.symbol_table;
-
-  (info, test)
-
-let read_data (name: string) (data: data) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
-  read name (Sail_interface.populate_and_obtain_global_symbol_init_info' (Byte_sequence.byte_sequence_of_byte_list data)) isa_callback
-
-let read_file (name: string) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : Test.info * test =
-  read name (Sail_interface.populate_and_obtain_global_symbol_init_info name) isa_callback
-
-let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model : Params.initial_state_record =
+let initial_state_record elf_test model isa : 'i Params.initial_state_record =
   let elf_threads_list = mk_elf_threads_list elf_test.elf_threads in
 
   let (program_memory  : (Nat_big_num.num, word8) Pmap.map),
@@ -736,9 +531,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
       BasicTypes.empty_elf_memory  in
 
 
-  let module ISADefs = (val isa_defs) in
-
-  let initial_register_state =
+  let initial_register_state reg_data =
     fun tid ->
       let initial_register_abi_data_tid = initial_register_abi_data tid in
       fun rbn ->
@@ -746,7 +539,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
        * the fixed_pseudo_registers list? *)
         begin try List.assoc rbn initial_register_abi_data_tid with
         | Not_found ->
-            (RegUtils.register_state_zero ISADefs.reg_data) tid rbn
+            (RegUtils.register_state_zero reg_data) tid rbn
         end
   in
 
@@ -766,13 +559,13 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
     | _ -> None
   in
 
-  let model' =
+  let isa' =
     let fixed_pseudo_registers' =
       let open Sail_impl_base in
       let open Params in
       let open InstructionSemantics in
       let open BasicTypes in
-      match model.t.thread_isa_info.ism with
+      match isa.ism with
       | PPCGEN_ism ->
           let endianness =
             match Globals.get_endianness () with
@@ -780,7 +573,7 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
             | E_big_endian    -> register_value_ones  D_increasing 1 0
           in
           (Reg_slice ("bigendianmode", 0, D_increasing, (0,0)), endianness) ::
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
 
       | AARCH64_ism _ ->
           let endianness =
@@ -790,28 +583,26 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
           in
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "E0E", (24,24)), endianness) ::
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "EE",  (25,25)), endianness) ::
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
 
       | MIPS_ism ->
           (* TODO: set endianness? *)
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
       | RISCV_ism ->
           (* TODO: set endianness? *)
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
       | X86_ism ->
           (* TODO: set endianness? *)
-          model.t.thread_isa_info.fixed_pseudo_registers
+          isa.fixed_pseudo_registers
     in
     let open Params in
     let open BasicTypes in
-    {model with t =
-      {model.t with thread_isa_info =
-        {model.t.thread_isa_info with fixed_pseudo_registers =
-          fixed_pseudo_registers'}}}
+    {isa with fixed_pseudo_registers = fixed_pseudo_registers'}
   in
 
   let open Params in
-  { isr_params            = model';
+  { isr_params            = model;
+    isr_isa               = isa';
     isr_program           = program_memory;
     isr_return_addr       = List.map (fun tid -> (tid, initial_LR_sentinel)) tids;
     isr_thread_ids        = tids;
@@ -820,3 +611,275 @@ let initial_state_record elf_test (isa_defs: (module Isa_model.ISADefs)) model :
     isr_first_instruction = first_instruction;
     isr_memory            = initial_writes;
   }
+
+
+
+
+
+
+type data = char list
+
+let arch_of_test (test: test) : InstructionSemantics.instruction_semantics_mode =
+  let open InstructionSemantics in
+  begin match Nat_big_num.to_int test.e_machine with
+  | 21  (* EM_PPC64 *)   -> PPCGEN_ism
+  | 183 (* EM_ARACH64 *) when !Globals.aarch64gen ->
+                            AARCH64_ism AArch64GenSail
+  | 183 (* EM_ARACH64 *) when not !Globals.aarch64gen ->
+                            AARCH64_ism AArch64HandSail
+  | 8   (* EM_MIPS *)    -> MIPS_ism
+  | 243 (* EM_RISCV *)   -> RISCV_ism
+  | _ ->
+      Printf.eprintf "Unsupported architecture\n";
+      exit 1
+
+  end
+
+let symbols_for_stacks threads =
+  List.map
+    (fun ((stack_base_address,stack_size), stack_pointer, stack_data, stack_pp_symbol) ->
+      (stack_pp_symbol, (Elf_symbol_table.stt_notype,
+                         Nat_big_num.of_int stack_size,
+                         stack_base_address,
+                         None,
+                         Elf_symbol_table.stb_global)))
+    (List.map initial_stack (mk_elf_threads_list threads))
+
+
+(** invert the symbol table to use for pp *)
+let symbol_table test : ((Sail_impl_base.address * int) * string) list =
+  Debug.print_string "*************** symbol_table for pp **************\n";
+
+  (* map symbol to (bindings, footprint),
+  if a symbol appears more then once keep the one with higher
+  precedence (stb_global > stb_weak > stb_local) *)
+  let map_all =
+    List.fold_left
+      (fun map (name, (typ, size, address, mb, binding)) ->
+          if String.length name <> 0                                                         (* name nonempty *)
+            && (if String.length name = 1 then Char.code (String.get name 0) <> 0 else true) (* name not singleton null char *)
+            && (not (Nat_big_num.equal address (Nat_big_num.of_int 0))                       (* address not 0 *)
+            && ( (Nat_big_num.equal typ Elf_symbol_table.stt_object)                         (* either object, function, or local notype *)
+             || (Nat_big_num.equal typ Elf_symbol_table.stt_func)
+             || (Nat_big_num.equal typ Elf_symbol_table.stt_notype && Nat_big_num.equal binding Elf_symbol_table.stb_local))
+            ) then
+            (* force size to 0 for non-object symbols to avoid bad pp behaviour, as the size of stt_func OPD entities seems to be the size of the associated bytes, which are somewhere else *)
+            let my_size = if Nat_big_num.equal typ Elf_symbol_table.stt_object then Nat_big_num.to_int size else 0 in
+            try
+              let ((_,_,_,_,binding'), _) = StringMap.find name map in
+              if  Nat_big_num.equal binding' Elf_symbol_table.stb_local ||
+                  Nat_big_num.equal binding Elf_symbol_table.stb_global then
+                StringMap.add name ((typ, size, address, mb, binding), (Sail_impl_base.address_of_integer address, my_size)) map
+              else map
+            with Not_found ->
+              StringMap.add name ((typ, size, address, mb, binding), (Sail_impl_base.address_of_integer address, my_size)) map
+
+          else map
+      )
+      StringMap.empty
+      test.symbol_map
+  in
+
+  (* turn into a name-indexed association list *)
+  let ndfps_all = StringMap.bindings map_all in
+
+  (* if two symbols appear with the same address, if one is an object or func and the other is not then suppress the other *)
+  let rec f =
+    function
+    | [] -> []
+    | ((name, ((typ,size,address,mb,binding), fp)) as ndfp) :: ndfps' ->
+          begin match List.exists
+              (function (name', ((typ',size',address',mb',binding'), fp')) ->
+                (Nat_big_num.equal address address')
+                  && ( (Nat_big_num.equal typ' Elf_symbol_table.stt_object)
+                    || (Nat_big_num.equal typ' Elf_symbol_table.stt_func))
+                  && not  ( (Nat_big_num.equal typ Elf_symbol_table.stt_object)
+                    || (Nat_big_num.equal typ Elf_symbol_table.stt_func))
+              ) ndfps' with
+          | true -> f ndfps'
+          | false ->
+              Debug.print_string (Printf.sprintf "(%s, %s) %s\n" (Nat_big_num.to_string address) (Nat_big_num.to_string size) name);
+              ndfp :: f ndfps'
+          end
+  in
+  List.map (function (name, ((typ,size,address,mb,binding),fp)) -> (fp, name)) (f ndfps_all)
+
+
+let show_mem_locations (test: test) : (Sail_impl_base.address * int) list =
+  let map_globals_for_show =
+    List.fold_left
+      (fun map (name, (typ, size, address, _, _)) ->
+          if String.length name <> 0                                                         (* name nonempty *)
+            && (if String.length name = 1 then Char.code (String.get name 0) <> 0 else true) (* name not singleton null char *)
+            && (not (Nat_big_num.equal address (Nat_big_num.of_int 0))                       (* address not 0 *)
+            && (not (Nat_big_num.equal size (Nat_big_num.of_int 0)))                         (* size not 0 *)
+            && (Nat_big_num.equal typ Elf_symbol_table.stt_object)                           (* object *)
+            )
+          then
+            let my_size = Nat_big_num.to_int size in
+            StringMap.add name (Sail_impl_base.address_of_integer address, my_size) map
+          else
+            map
+      )
+      StringMap.empty
+      test.symbol_map
+  in
+
+  StringMap.bindings map_globals_for_show |> List.split |> snd
+
+
+let test_info (test: test) (name: string) : Test.info =
+  let mems = show_mem_locations test in
+  { Test.name           = name;
+    Test.ism            = arch_of_test test;
+    Test.thread_count   = test.elf_threads;
+    Test.symbol_map     = test.symbol_map;
+    Test.symbol_table   = symbol_table test;
+    Test.dwarf_static   = test.dwarf_static;
+
+    Test.show_regs   = [];
+    Test.show_mem    = mems;
+    Test.filter_regs = [];
+    Test.filter_mem  = [];
+
+    Test.info           = [];
+    Test.filter         = None;
+    Test.constr         = ConstrGen.ExistsState (ConstrGen.And []); (* i.e. "true" *)
+  }
+
+
+
+let make_concurrency_model
+      (runOptions : RunOptions.t)
+      (ism : InstructionSemantics.instruction_semantics_mode)
+      (ts: Params.thread_model)
+      (ss: Params.storage_model)
+    : (module Concurrency_model.S)
+  =
+  
+  let module ISA = (val (Isa_model.make ism runOptions)) in
+
+  match ts with
+  | Params.Promising_thread_model ->
+     (module (Promising_concurrency_model.Make (ISA)))
+  | _ ->
+     let module SS = (val (Machine_concurrency_model.get_SS_model ss)) in
+     (module (Machine_concurrency_model.Make(ISA)(SS)))
+
+
+
+
+
+
+let read
+      (runOptions : RunOptions.t)
+      (name: string)
+      info
+      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+    : (module Test_file.ConcModel_Info_Init) =
+
+  Debug.timer_start_total ();
+  Debug.print_string "elf read\n";
+
+  let params = !Globals.model_params in
+
+  (* call ELF analyser on file *)
+  let (elf_file, elf_epi, symbol_map) =
+    begin match info with
+    | Error.Fail s -> Warn.fatal "populate_and_obtain_global_symbol_init_info: %s" s
+    | Error.Success
+        ((elf_file: Elf_file.elf_file),
+         (elf_epi: Sail_interface.executable_process_image),
+         (symbol_map: Elf_file.global_symbol_init_info))
+        (*       (symbol_map: Elf_executable_file.global_symbol_init_info)) *)
+        ->
+          Debug.print_string (Sail_interface.string_of_executable_process_image elf_epi);
+          (elf_file, elf_epi, symbol_map)
+    end
+  in
+
+  Debug.print_string "elf segments etc\n";
+  let (segments, e_entry, e_machine, (dso: Dwarf.dwarf_static option)) =
+    begin match elf_epi, elf_file with
+    | (Sail_interface.ELF_Class_32 _, _)  -> Warn.fatal "cannot handle ELF_Class_32"
+    | (_, Elf_file.ELF_File_32 _)  -> Warn.fatal "cannot handle ELF_File_32"
+    | (Sail_interface.ELF_Class_64 (segments,e_entry,e_machine), Elf_file.ELF_File_64 f1) ->
+        (* remove all the auto generated segments (they contain only 0s) *)
+        let segments =
+          Lem_list.mapMaybe
+            (fun (seg, prov) -> if prov = Elf_file.FromELF then Some seg else None)
+            segments
+        in
+        let dso =
+          (*Printf.printf "!Globals.use_dwarf = %b" !Globals.use_dwarf;flush stdout;*)
+          begin match !Globals.use_dwarf (* TODO: update wrt new option management scheme *) with
+          | false -> (Debug.print_string2 "use_dwarf false\n"; None)
+          | true ->
+              match Dwarf.extract_dwarf_static (Elf_file.ELF_File_64 f1) with
+              | None -> Warn.fatal "extract_dwarf_static failed"
+              | Some ds ->
+                  Debug.print_string2 (Dwarf.pp_analysed_location_data ds.Dwarf.ds_dwarf ds.Dwarf.ds_analysed_location_data);
+                  Debug.print_string2 (Dwarf.pp_evaluated_frame_info ds.Dwarf.ds_evaluated_frame_info);
+                  Some ds
+          end in
+        (segments,e_entry,e_machine, dso)
+    end
+  in
+
+  Debug.print_string "elf test\n";
+  let test =
+    { symbol_map  = symbol_map @ (symbols_for_stacks !Globals.elf_threads);
+      segments    = segments;
+      e_entry     = e_entry;
+      e_machine   = e_machine;
+      elf_threads = !Globals.elf_threads;
+      dwarf_static= dso;
+    }
+  in
+  let ism = (arch_of_test test) in
+
+  Globals.set_model_ism ism;
+
+  begin match isa_callback with
+  | Some f -> f ism
+  | _ -> ()
+  end;
+
+  let info = test_info test name in
+
+  Globals.add_bt_and_sm_to_model_params info.Test.symbol_table;
+
+
+  let module ConcModel =
+    (val (make_concurrency_model runOptions ism
+            params.t.thread_model params.ss.ss_model))
+  in
+
+  (module (struct
+    module ISA = ConcModel.ISA
+    type instruction_ast = ISA.instruction_ast
+    let initial_state_record_maker p = initial_state_record test p ISA.isa
+    let test = test
+    let info = info
+    module ConcModel = ConcModel
+  end))
+
+let read_data
+      (runOptions : RunOptions.t)
+      (name: string)
+      (data: data)
+      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+    : (module Test_file.ConcModel_Info_Init) =
+  let data_bytes = (Byte_sequence.byte_sequence_of_byte_list data) in
+  let info = (Sail_interface.populate_and_obtain_global_symbol_init_info' data_bytes) in
+  read runOptions name info isa_callback
+
+let read_file
+      (runOptions : RunOptions.t)
+      (name: string)
+      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+    : (module Test_file.ConcModel_Info_Init) =
+  let info = (Sail_interface.populate_and_obtain_global_symbol_init_info name) in
+  read runOptions name info isa_callback
+
+

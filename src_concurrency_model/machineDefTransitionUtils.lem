@@ -36,7 +36,7 @@ open import MachineDefSystem
 
 open import Sail_values
 
-let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe footprint =
+let read_footprint_of_trans (transition: trans 'i 'ts 'ss) : maybe footprint =
   match transition with
   | SS_trans _ -> Nothing
   | T_trans (T_only tl) ->
@@ -97,8 +97,8 @@ let read_footprint_of_trans (transition: trans 'ts 'ss) : maybe footprint =
 
 let trans_reads_footprint
     (footprint:  footprint)
-    (state:      system_state_and_transitions 'ts 'ss)
-    (transition: trans 'ts 'ss)
+    (state:      system_state_and_transitions 'i 'ts 'ss)
+    (transition: trans 'i 'ts 'ss)
     : bool
   =
   read_footprint_of_trans transition
@@ -107,7 +107,7 @@ let trans_reads_footprint
 
 (* NOTE: write_footprints_of_trans is (also) used to determine if the
 transition can be taken eagerly when eager_local_mem is enabled *)
-let write_footprints_of_trans (transition: trans 'ts 'ss) : list footprint =
+let write_footprints_of_trans (transition: trans 'i 'ts 'ss) : list footprint =
   match transition with
   | SS_trans _ -> []
   | T_trans (T_only tl) ->
@@ -160,8 +160,8 @@ let write_footprints_of_trans (transition: trans 'ts 'ss) : list footprint =
 
 let trans_writes_footprint
     (footprint:  footprint)
-    (state:      system_state_and_transitions 'ts 'ss)
-    (transition: trans 'ts 'ss)
+    (state:      system_state_and_transitions 'i 'ts 'ss)
+    (transition: trans 'i 'ts 'ss)
     : bool
   =
   exists (fp MEM (write_footprints_of_trans transition)).
@@ -177,7 +177,7 @@ let memory_access_footprints t =
 let is_rw_transition t =
   memory_access_footprints t <> []
 
-let is_fetch_single_transition : (trans 'ts 'ss -> bool) = function
+let is_fetch_single_transition : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_sync (T_fetch tl) _) ->
       match tl.tl_label.fr_kind with
       | FK_normal         -> true
@@ -187,7 +187,7 @@ let is_fetch_single_transition : (trans 'ts 'ss -> bool) = function
   | _ -> false
   end
 
-let is_fetch_multi_transition : (trans 'ts 'ss -> bool) = function
+let is_fetch_multi_transition : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_sync (T_fetch tl) _) ->
       match tl.tl_label.fr_kind with
       | FK_normal         -> false
@@ -197,7 +197,7 @@ let is_fetch_multi_transition : (trans 'ts 'ss -> bool) = function
   | _ -> false
   end
 
-let is_pseudocode_internal_step_transition : (trans 'ts 'ss -> bool) = function
+let is_pseudocode_internal_step_transition : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_internal_outcome -> true
@@ -206,19 +206,19 @@ let is_pseudocode_internal_step_transition : (trans 'ts 'ss -> bool) = function
   | _ -> false
   end
 
-let is_constant_register_read_transition params : (trans 'ts 'ss -> bool) = function
+let is_constant_register_read_transition isa : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_pseudoreg_read r _    ->
           let r = register_base_name r in
-          exists ((r', _) MEM params.t.thread_isa_info.fixed_pseudo_registers).
+          exists ((r', _) MEM isa.fixed_pseudo_registers).
               register_base_name r' = r
       | _ -> false
       end
   | _ -> false
   end
 
-let is_register_read_or_write_transition : (trans 'ts 'ss -> bool) = function
+let is_register_read_or_write_transition : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_pseudoreg_read _ _    -> true
@@ -259,7 +259,7 @@ let is_always_eager_atomic_fetch params = function
   | _ -> false
   end
 
-let is_eager_atomic_fetch_transition : (trans 'ts 'ss -> bool) = function
+let is_eager_atomic_fetch_transition : (trans 'i 'ts 'ss -> bool) = function
   | SS_trans ss_trans ->
       match ss_trans with
       | SS_only ss_only_trans _ ->
@@ -285,7 +285,7 @@ let is_eager_atomic_fetch_transition : (trans 'ts 'ss -> bool) = function
       end
   end
 
-let is_eager_relaxed_fetch_speculate_transition params : (trans 'ts 'ss -> bool) =
+let is_eager_relaxed_fetch_speculate_transition params : (trans 'i 'ts 'ss -> bool) =
   function
   | T_trans (T_only tl) ->
       match tl.tl_label with
@@ -295,7 +295,7 @@ let is_eager_relaxed_fetch_speculate_transition params : (trans 'ts 'ss -> bool)
   | _ -> false
   end
 
-let is_eager_relaxed_fetch_fetch_transition params : (trans 'ts 'ss -> bool) =
+let is_eager_relaxed_fetch_fetch_transition params : (trans 'i 'ts 'ss -> bool) =
   let seen addr =
       let addr_fp = (addr, 4) in
       let seen_loc =
@@ -323,7 +323,7 @@ let is_eager_relaxed_fetch_fetch_transition params : (trans 'ts 'ss -> bool) =
   | _ -> false
   end
 
-let is_eager_relaxed_fetch_ic_transition : (trans 'ts 'ss -> bool) = function
+let is_eager_relaxed_fetch_ic_transition : (trans 'i 'ts 'ss -> bool) = function
   | SS_trans ss_trans ->
       match ss_trans with
       | SS_only ss_only_trans _ ->
@@ -369,7 +369,7 @@ let is_eager_fetch_transition params t =
     else
       is_eager_atomic_fetch_transition t
 
-let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = function
+let is_memory_auxiliary_steps_transition params : (trans 'i 'ts 'ss -> bool) = function
   | SS_trans ss_trans ->
       match ss_trans with
       | SS_only ss_only_trans _ ->
@@ -468,7 +468,7 @@ let is_memory_auxiliary_steps_transition params : (trans 'ts 'ss -> bool) = func
       end
   end
 
-let is_finish_transition : (trans 'ts 'ss -> bool) = function
+let is_finish_transition : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_finish _ _   -> true
@@ -477,7 +477,7 @@ let is_finish_transition : (trans 'ts 'ss -> bool) = function
   | _ -> false
   end
 
-let is_footprint_recalculation_transition : (trans 'ts 'ss -> bool) = function
+let is_footprint_recalculation_transition : (trans 'i 'ts 'ss -> bool) = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_footprint_outcome -> true
@@ -513,15 +513,15 @@ let is_loop_limit_exception_transition = function
   | _ -> false
   end
 
-let is_eager_transition params
+let is_eager_transition params isa
     (eager_mode:    eager_mode)
-    (t:             trans 'ts 'ss)
+    (t:             trans 'i 'ts 'ss)
     : bool
   =
      (eager_mode.eager_fetch_single        && is_eager_fetch_transition params t && is_fetch_single_transition t)
   || (eager_mode.eager_fetch_multi         && is_eager_fetch_transition params t && params.t.thread_allow_tree_speculation && is_fetch_multi_transition t)
   || (eager_mode.eager_pseudocode_internal && is_pseudocode_internal_step_transition t)
-  || (eager_mode.eager_constant_reg_read   && is_constant_register_read_transition params t)
+  || (eager_mode.eager_constant_reg_read   && is_constant_register_read_transition isa t)
   || (eager_mode.eager_reg_rw              && is_register_read_or_write_transition t)
   || (eager_mode.eager_memory_aux          && is_memory_auxiliary_steps_transition params t)
   || (eager_mode.eager_finish              && is_finish_transition t)
@@ -536,7 +536,7 @@ let is_eager_transition params
 
 (** predicates for filtering ****************************************)
 
-let is_internal : trans 'ts 'ss -> bool = function
+let is_internal : trans 'i 'ts 'ss -> bool = function
   | T_trans (T_only tl) ->
       match tl.tl_label with
       | T_internal_outcome      -> true
@@ -572,7 +572,7 @@ let is_internal : trans 'ts 'ss -> bool = function
 
 (** predicates for breakpoints **************************************)
 
-let enabled_exception_transition (sst: system_state_and_transitions 'ts 'ss) : bool =
+let enabled_exception_transition (sst: system_state_and_transitions 'i 'ts 'ss) : bool =
   exists (t MEM sst.sst_system_transitions).
     match t with
     | T_trans (T_only tl) ->
@@ -584,13 +584,13 @@ let enabled_exception_transition (sst: system_state_and_transitions 'ts 'ss) : b
     end
 
 
-let fetched_address (addr: address) (sst: system_state_and_transitions 'ts 'ss) : bool =
+let fetched_address (addr: address) (sst: system_state_and_transitions 'i 'ts 'ss) : bool =
   Map.any
     (fun _ t -> isJust (ts_find_instruction sst.sst_state.t_model 
                           (fun _prefix i -> i.program_loc = addr) t))
     sst.sst_state.thread_states
 
-let trans_fetch_address : trans 'ts 'ss -> maybe address
+let trans_fetch_address : trans 'i 'ts 'ss -> maybe address
   = function
   | T_trans (T_sync (T_fetch tl) _) ->
       let addr' = tl.tl_label.fr_addr in
@@ -598,7 +598,7 @@ let trans_fetch_address : trans 'ts 'ss -> maybe address
   | _ -> Nothing
   end
 
-let is_ioid_finished (target_ioid : ioid) (sst: system_state_and_transitions 'ts 'ss) : bool =
+let is_ioid_finished (target_ioid : ioid) (sst: system_state_and_transitions 'i 'ts 'ss) : bool =
   let (thread_id, inst_id) = target_ioid in
   let thread = ensure_just (Map.lookup thread_id sst.sst_state.thread_states)
                            "No such thread" in
@@ -608,7 +608,7 @@ let is_ioid_finished (target_ioid : ioid) (sst: system_state_and_transitions 'ts
   end
 
 
-let exclusive_priority : trans 'ts 'ss -> bool = function
+let exclusive_priority : trans 'i 'ts 'ss -> bool = function
   | T_trans (T_sync (T_try_store_excl _) _)              -> true
   | T_trans (T_only tl) ->
     match tl.tl_label with
@@ -619,7 +619,7 @@ let exclusive_priority : trans 'ts 'ss -> bool = function
   | _ -> false
 end
 
-let riscv_cond_priority : trans 'ts 'ss -> bool = function
+let riscv_cond_priority : trans 'i 'ts 'ss -> bool = function
   | T_trans (T_only tl) ->
     match tl.tl_label with
     | T_potential_store_cond -> true
@@ -629,7 +629,7 @@ let riscv_cond_priority : trans 'ts 'ss -> bool = function
   | _ -> false
 end
 
-let fetch_multi_priority : trans 'ts 'ss -> bool = function
+let fetch_multi_priority : trans 'i 'ts 'ss -> bool = function
   | T_trans (T_sync (T_fetch tl) _) ->
     match tl.tl_label.fr_kind with
     | FK_multiple_fixed -> true
@@ -652,11 +652,11 @@ but the choice can be done eagerly.
 predicate identifies a set of transitions from which we can
 nondeterministically chose one eagerly. The additional bool, when true,
 indicates that the transitions should be further subdivided by ioid. *)
-let priority_transitions params (ss_final_state : bool) (_: eager_mode) :
-      list ((trans 'ts 'ss -> bool) * bool) =
+let priority_transitions params isa (ss_final_state : bool) (_: eager_mode) :
+      list ((trans 'i 'ts 'ss -> bool) * bool) =
   match params.t.thread_model with
   | POP_thread_model _ ->
-      match params.t.thread_isa_info.ism with
+      match isa.ism with
       | AARCH64_ism _ -> [(exclusive_priority,true); (fetch_multi_priority,true)]
       | RISCV_ism     -> [(riscv_cond_priority, true); (fetch_multi_priority,true)]
       | PPCGEN_ism    -> []
