@@ -38,6 +38,9 @@ val dont_tool: bool ref (* "Dont" output *)
 
 val debug_sail_interp : bool ref
 
+val init_thread : int
+
+
 (** model options ***************************************************)
 
 val ism: InstructionSemantics.instruction_semantics_mode ref

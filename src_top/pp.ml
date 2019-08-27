@@ -55,7 +55,7 @@ open Globals
 
 
 
-let init_thread = 1000
+let init_thread = Globals.init_thread
 
 
 (** ******************* *)

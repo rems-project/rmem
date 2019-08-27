@@ -53,7 +53,7 @@ type ppmode_ax = { ppm : Globals.ppmode;
                    prettyi : (MachineDefFreshIds.ioid * string) list;(* pretty instruction name*)
                    prettywi: (MachineDefFreshIds.ioid * string) list;(* pretty initial write name*)               }
   
-let init_thread = 1000  (* PS: yuck *)
+let init_thread = Globals.init_thread  (* PS: yuck *)
 
 let sorted_instructions c =
   List.sort

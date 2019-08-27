@@ -34,6 +34,9 @@
 open Params
 
 
+let init_thread = 1000
+
+
 (** output options **************************************************)
 
 let logdir = ref None

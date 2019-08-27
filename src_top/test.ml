@@ -34,7 +34,7 @@ module C = MoreConstraints.Make
 module LocationMap = MyMap.Make(String)
 
 (* 'fake' tid for the memory write events of initial values *)
-let init_thread = 1000
+let init_thread = Globals.init_thread
 
 type labelmap = (string * int) list
 
