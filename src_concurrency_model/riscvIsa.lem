@@ -253,8 +253,8 @@ let mips_maybe_split_conditional_branch _i =
 let mips_make_conditional_branch (x,y) = 
   failwith "not implemented"
 
-let riscv_ism : isa Riscv_types.ast =
-  <|  ism                         = RISCV_ism;
+let riscv_isa : isa Riscv_types.ast =
+  <|  isa_model                   = RISCV;
       instruction_semantics       = riscv_shallow_embedding;
 
       maybe_split_conditional_branch = mips_maybe_split_conditional_branch;

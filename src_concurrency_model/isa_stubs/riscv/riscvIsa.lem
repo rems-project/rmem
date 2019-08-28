@@ -19,7 +19,7 @@ open import Assert_extra
 open import Isa
 import Riscv_types
 
-let riscv_ism : isa Riscv_types.ast = isa_stub
+let riscv_isa : isa Riscv_types.ast = isa_stub
 
 
 let continue_to_sail2_done callee o = failwith "stub"

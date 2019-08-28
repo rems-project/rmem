@@ -49,7 +49,12 @@ let rec range from until =
 module Run_test (Test_file: Test_file.S) = struct
   (* name is either a file name to read the test from or the name of
   the test if data is provided *)
-  let run (run_options: RunOptions.t) (name: string) (data: Test_file.data option) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : unit =
+  let run
+        (run_options: RunOptions.t)
+        (name: string)
+        (data: Test_file.data option)
+        (isa_callback: (Isa.isa_model -> unit) option)
+      : unit =
     (* read the file/data *)
     let (module CII) =
       begin match data with
@@ -143,7 +148,7 @@ let from_litmus_data
     (run_options: RunOptions.t)
     (name:        string)
     (data:        Litmus_test_file.data)
-    (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+    (isa_callback: (Isa.isa_model -> unit) option)
     : unit
   =
   Run_litmus.run run_options name (Some data) isa_callback
@@ -152,7 +157,7 @@ let from_ELF_data
     (run_options: RunOptions.t)
     (name:        string)
     (data:        Elf_test_file.data)
-    (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+    (isa_callback: (Isa.isa_model -> unit) option)
     : unit
   =
   Run_elf.run run_options name (Some data) isa_callback

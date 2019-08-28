@@ -112,9 +112,9 @@ let initial_stack tid : ((Nat_big_num.num * int) (* entire footprint *) *
 let initial_stack_and_reg_data_of_PPC_elf_file e_entry memory elf_threads_list =
   let reg name =
     match RegUtils.reg_from_data
-            PowerIsa.ppcgen_ism.Isa.register_data_info name with
+            PowerIsa.ppc_isa.Isa.register_data_info name with
     | Some r -> r
-    | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoPPCGen.ppcgen_ism.register_data_info'")
+    | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoPPCGen.ppc_isa.register_data_info'")
   in
 
   (* set up initial registers, per 3.4.1 of 64-bit PowerPC ELF Application Binary Interface Supplement 1.9 *)
@@ -167,9 +167,9 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
   let reg name =
     let registerdata =
       if !Globals.aarch64gen then
-        Aarch64Isa.aarch64gen_ism.Isa.register_data_info
+        Aarch64Isa.aarch64gen_isa.Isa.register_data_info
       else
-        Aarch64Isa.aarch64hand_ism.Isa.register_data_info
+        Aarch64Isa.aarch64hand_isa.Isa.register_data_info
     in
     match RegUtils.reg_from_data registerdata name with
     | Some r -> r
@@ -238,9 +238,9 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
 
 let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list =
       let reg name =
-        match RegUtils.reg_from_data MipsIsa.mips_ism.Isa.register_data_info name with
+        match RegUtils.reg_from_data MipsIsa.mips_isa.Isa.register_data_info name with
         | Some r -> r
-        | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoMIPS.mips_ism.register_data_info'")
+        | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoMIPS.mips_isa.register_data_info'")
       in
 
   let stacks = List.map initial_stack elf_threads_list in
@@ -270,9 +270,9 @@ let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list 
 
 let initial_stack_and_reg_data_of_riscv_elf_file symbol_map memory elf_threads_list =
       let reg name =
-        match RegUtils.reg_from_data RiscvIsa.riscv_ism.Isa.register_data_info name with
+        match RegUtils.reg_from_data RiscvIsa.riscv_isa.Isa.register_data_info name with
         | Some r -> r
-        | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoRISCV.riscv_ism.register_data_info'")
+        | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoRISCV.riscv_isa.register_data_info'")
       in
 
   let stacks = List.map initial_stack elf_threads_list in
@@ -565,8 +565,8 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
       let open Params in
       let open InstructionSemantics in
       let open Isa in
-      match isa.ism with
-      | PPCGEN_ism ->
+      match isa.isa_model with
+      | PPC ->
           let endianness =
             match Globals.get_endianness () with
             | E_little_endian -> register_value_zeros D_increasing 1 0
@@ -575,7 +575,7 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
           (Reg_slice ("bigendianmode", 0, D_increasing, (0,0)), endianness) ::
           isa.fixed_pseudo_registers
 
-      | AARCH64_ism _ ->
+      | AARCH64 _ ->
           let endianness =
             match Globals.get_endianness () with
             | E_little_endian -> register_value_zeros D_decreasing 1 0
@@ -585,13 +585,13 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "EE",  (25,25)), endianness) ::
           isa.fixed_pseudo_registers
 
-      | MIPS_ism ->
+      | MIPS ->
           (* TODO: set endianness? *)
           isa.fixed_pseudo_registers
-      | RISCV_ism ->
+      | RISCV ->
           (* TODO: set endianness? *)
           isa.fixed_pseudo_registers
-      | X86_ism ->
+      | X86 ->
           (* TODO: set endianness? *)
           isa.fixed_pseudo_registers
     in
@@ -619,16 +619,14 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
 
 type data = char list
 
-let arch_of_test (test: test) : InstructionSemantics.instruction_semantics_mode =
+let arch_of_test (test: test) : Isa.isa_model =
   let open InstructionSemantics in
   begin match Nat_big_num.to_int test.e_machine with
-  | 21  (* EM_PPC64 *)   -> PPCGEN_ism
-  | 183 (* EM_ARACH64 *) when !Globals.aarch64gen ->
-                            AARCH64_ism AArch64GenSail
-  | 183 (* EM_ARACH64 *) when not !Globals.aarch64gen ->
-                            AARCH64_ism AArch64HandSail
-  | 8   (* EM_MIPS *)    -> MIPS_ism
-  | 243 (* EM_RISCV *)   -> RISCV_ism
+  | 21  (* EM_PPC64 *)   -> PPC
+  | 183 (* EM_ARACH64 *) when !Globals.aarch64gen -> AARCH64 Gen
+  | 183 (* EM_ARACH64 *) when not !Globals.aarch64gen -> AARCH64 Hand
+  | 8   (* EM_MIPS *)    -> MIPS
+  | 243 (* EM_RISCV *)   -> RISCV
   | _ ->
       Printf.eprintf "Unsupported architecture\n";
       exit 1
@@ -731,7 +729,7 @@ let show_mem_locations (test: test) : (Sail_impl_base.address * int) list =
 let test_info (test: test) (name: string) : Test.info =
   let mems = show_mem_locations test in
   { Test.name           = name;
-    Test.ism            = arch_of_test test;
+    Test.isa_model      = arch_of_test test;
     Test.thread_count   = test.elf_threads;
     Test.symbol_map     = test.symbol_map;
     Test.symbol_table   = symbol_table test;
@@ -751,13 +749,13 @@ let test_info (test: test) (name: string) : Test.info =
 
 let make_concurrency_model
       (runOptions : RunOptions.t)
-      (ism : InstructionSemantics.instruction_semantics_mode)
+      (isa_model : Isa.isa_model)
       (ts: Params.thread_model)
       (ss: Params.storage_model)
     : (module Concurrency_model.S)
   =
   
-  let module ISA = (val (Isa_model.make ism runOptions)) in
+  let module ISA = (val (Isa_model.make isa_model runOptions)) in
 
   match ts with
   | Params.Promising_thread_model ->
@@ -775,7 +773,7 @@ let read
       (runOptions : RunOptions.t)
       (name: string)
       info
-      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+      (isa_callback: (Isa.isa_model -> unit) option)
     : (module Test_file.ConcModel_Info_Init) =
 
   Debug.timer_start_total ();
@@ -836,12 +834,12 @@ let read
       dwarf_static= dso;
     }
   in
-  let ism = (arch_of_test test) in
+  let isa_model = (arch_of_test test) in
 
-  Globals.set_model_ism ism;
+  Globals.set_isa_model isa_model;
 
   begin match isa_callback with
-  | Some f -> f ism
+  | Some f -> f isa_model
   | _ -> ()
   end;
 
@@ -851,7 +849,7 @@ let read
 
 
   let module ConcModel =
-    (val (make_concurrency_model runOptions ism
+    (val (make_concurrency_model runOptions isa_model
             params.t.thread_model params.ss.ss_model))
   in
 
@@ -868,7 +866,7 @@ let read_data
       (runOptions : RunOptions.t)
       (name: string)
       (data: data)
-      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+      (isa_callback: (Isa.isa_model -> unit) option)
     : (module Test_file.ConcModel_Info_Init) =
   let data_bytes = (Byte_sequence.byte_sequence_of_byte_list data) in
   let info = (Sail_interface.populate_and_obtain_global_symbol_init_info' data_bytes) in
@@ -877,7 +875,7 @@ let read_data
 let read_file
       (runOptions : RunOptions.t)
       (name: string)
-      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option)
+      (isa_callback: (Isa.isa_model -> unit) option)
     : (module Test_file.ConcModel_Info_Init) =
   let info = (Sail_interface.populate_and_obtain_global_symbol_init_info name) in
   read runOptions name info isa_callback

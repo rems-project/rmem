@@ -571,10 +571,10 @@ let aarch64_make_read_request_events
   in
   make_read_request_events' id_state tid ioid addr size read_size read_kind
 
-(* aarch64hand_ism is the start point for aarch64gen_ism, when changing
+(* aarch64hand_isa is the start point for aarch64gen_isa, when changing
 something here make sure you are not breaking aarch64gen *)
-let aarch64hand_ism : isa ArmV8_embed_types.ast =
-  <|  ism                         = AARCH64_ism AArch64HandSail;
+let aarch64hand_isa : isa ArmV8_embed_types.ast =
+  <|  isa_model                   = AARCH64 Hand;
       instruction_semantics       = aarch64hand_shallow_embedding;
 
       is_system_call_instruction  = aarch64_is_system_call_instruction;
@@ -797,9 +797,9 @@ let aarch64gen_thread_start_info =
       tsi_f_addr = Nothing;
   |>
 
-let aarch64gen_ism : isa ArmV8_embed_types.ast =
-  <| aarch64hand_ism with
-      ism = AARCH64_ism AArch64GenSail;
+let aarch64gen_isa : isa ArmV8_embed_types.ast =
+  <| aarch64hand_isa with
+      isa_model = AARCH64 Gen;
       thread_start_info = aarch64gen_thread_start_info;
       register_data_info = aarch64gen_register_data_info;
       fixed_pseudo_registers = aarch64gen_fixed_pseudo_registers;

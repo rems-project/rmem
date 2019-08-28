@@ -129,7 +129,7 @@ module Make
         raise e (* changing this line to anything else will destroy the backtrace *)
     end
 
-  let initial_state ism run_options initial_state_record =
+  let initial_state run_options initial_state_record =
     MachineDefSystem.initial_system_state
       (dict_ts)
       (dict_ss)

@@ -53,7 +53,7 @@ type 'instruction_ast test =
 type info =
   { name:           string;
 
-    ism:            InstructionSemantics.instruction_semantics_mode;
+    isa_model:      Isa.isa_model;
     thread_count:   int;
     symbol_map:     Elf_file.global_symbol_init_info;
     symbol_table:   ((address * int) * string) list;

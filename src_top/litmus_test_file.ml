@@ -148,24 +148,22 @@ end
 type 'i test = 'i Test.test
 type data = string
 
-let test_info (test: 'i Test.test) (name: string) : Test.info =
-  let ism =
-    let open InstructionSemantics in
-    begin match test.arch with
-    | `PPC           -> PPCGEN_ism
-    | `AArch64 when !Globals.aarch64gen ->
-                        AARCH64_ism AArch64GenSail
-    | `AArch64 when not !Globals.aarch64gen ->
-                        AARCH64_ism AArch64HandSail
-    | `MIPS          -> MIPS_ism
-    | `RISCV         -> RISCV_ism
-    | `X86           -> X86_ism
-    | _ ->
-        Printf.eprintf "Unsupported architecture\n";
-        exit 1
-    end
-  in
+let isa_model_of_arch arch = 
+  let open Isa in
+  match arch with
+  | `PPC           -> PPC
+  | `AArch64 when !Globals.aarch64gen -> AARCH64 Gen
+  | `AArch64 when not !Globals.aarch64gen -> AARCH64 Hand
+  | `MIPS          -> MIPS
+  | `RISCV         -> RISCV
+  | `X86           -> X86
+  | _ ->
+     Printf.eprintf "Unsupported architecture\n";
+     exit 1
 
+
+let test_info (test: 'i Test.test) (name: string) : Test.info =
+  let isa_model = isa_model_of_arch test.arch in
   let bindings = Test.LocationMap.bindings test.mem_addr_map in
 
   let symbol_map =
@@ -254,7 +252,7 @@ let test_info (test: 'i Test.test) (name: string) : Test.info =
 
 
   { Test.name           = name;
-    Test.ism            = ism;
+    Test.isa_model      = isa_model;
     Test.thread_count   = List.length test.Test.prog;
     Test.symbol_map     = symbol_map;
     Test.symbol_table   = symbol_table_pp @ prog_labels_pp;
@@ -403,9 +401,9 @@ let initial_state_record
        let tpidr_el0 =
          let registerdata =
            if !Globals.aarch64gen then
-             Aarch64Isa.aarch64gen_ism.register_data_info
+             Aarch64Isa.aarch64gen_isa.register_data_info
            else
-             Aarch64Isa.aarch64hand_ism.register_data_info
+             Aarch64Isa.aarch64hand_isa.register_data_info
          in
          match RegUtils.reg_from_data registerdata "TPIDR_EL0" with
          | Some r -> r
@@ -417,7 +415,7 @@ let initial_state_record
           tids)
        @ test.init_reg_state
     | `RISCV ->
-       let registerdata = RiscvIsa.riscv_ism.register_data_info in
+       let registerdata = RiscvIsa.riscv_isa.register_data_info in
        let get_reg r = match RegUtils.reg_from_data registerdata r with
          | Some r -> r
          | None -> failwith (r ^ " not in register_data_info")
@@ -454,8 +452,8 @@ let initial_state_record
   let isa' =
     let fixed_pseudo_registers' =
       let open Sail_impl_base in
-      match isa.ism with
-      | PPCGEN_ism ->
+      match isa.isa_model with
+      | PPC ->
           let endianness =
             match Globals.get_endianness () with
             | E_little_endian -> register_value_zeros D_increasing 1 0
@@ -464,7 +462,7 @@ let initial_state_record
           (Reg_slice ("bigendianmode", 0, D_increasing, (0,0)), endianness) ::
           isa.fixed_pseudo_registers
 
-      | AARCH64_ism _ ->
+      | AARCH64 _ ->
           let endianness =
             match Globals.get_endianness () with
             | E_little_endian -> register_value_zeros D_decreasing 1 0
@@ -474,12 +472,12 @@ let initial_state_record
           (Reg_field ("SCTLR_EL1", 31, D_decreasing, "EE",  (25,25)), endianness) ::
           isa.fixed_pseudo_registers
 
-      | MIPS_ism ->
+      | MIPS ->
           (* TODO: set endianness? *)
           isa.fixed_pseudo_registers
-      | RISCV_ism ->
+      | RISCV ->
           isa.fixed_pseudo_registers
-      | X86_ism ->
+      | X86 ->
           isa.fixed_pseudo_registers
     in
 
@@ -522,7 +520,7 @@ let read_channel
       (runOptions: RunOptions.t)
       (name: string)
       (in_chan: lex_input)
-      (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) 
+      (isa_callback: (Isa.isa_model -> unit) option) 
     : (module Test_file.ConcModel_Info_Init) =
   (* First split the input file in sections *)
   let module SPL = Splitter.Make(Splitter.Default) in
@@ -534,28 +532,15 @@ let read_channel
   in
 
   (* extract the architecture from the litmus file *)
-  let ism =
-    let open InstructionSemantics in
-    begin match test_splitted.Splitter.arch with
-    | `PPC           -> PPCGEN_ism
-    | `AArch64 when !Globals.aarch64gen ->
-                        AARCH64_ism AArch64GenSail
-    | `AArch64 when not !Globals.aarch64gen ->
-                        AARCH64_ism AArch64HandSail
-    | `MIPS          -> MIPS_ism
-    | `RISCV         -> RISCV_ism
-    | `X86           -> X86_ism
-    | _ -> Warn.fatal "Can only do %s, %s, %s, %s and %s" (Archs.pp `PPC) (Archs.pp `AArch64) (Archs.pp `MIPS) (Archs.pp `RISCV) (Archs.pp `X86)
-    end 
-  in
-  Globals.set_model_ism ism;
+  let isa_model = isa_model_of_arch test_splitted.Splitter.arch in
+  Globals.set_isa_model isa_model;
 
   let open Params in
   let open InstructionSemantics in
   let open Isa in
 
   begin match isa_callback with
-  | Some f -> f ism
+  | Some f -> f isa_model
   | _ -> ()
   end;
 
@@ -571,12 +556,12 @@ let read_channel
     (* let open Globals in *)
     let params = !Globals.model_params in
 
-    begin match (ism, params.ss.ss_model, params.t.thread_model) with
-    | (AARCH64_ism AArch64HandSail, POP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, Flowing_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, Flat_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, NOP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64HandSail, Flat_storage_model, Relaxed_thread_model) -> 
+    begin match (isa_model, params.ss.ss_model, params.t.thread_model) with
+    | (AARCH64 Hand, POP_storage_model, POP_thread_model _)
+    | (AARCH64 Hand, Flowing_storage_model, POP_thread_model _)
+    | (AARCH64 Hand, Flat_storage_model, POP_thread_model _)
+    | (AARCH64 Hand, NOP_storage_model, POP_thread_model _)
+    | (AARCH64 Hand, Flat_storage_model, Relaxed_thread_model) -> 
         let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
         let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
         let test = Parser.parse in_chan test_splitted in
@@ -589,7 +574,7 @@ let read_channel
            module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
          end))
 
-    | (AARCH64_ism AArch64HandSail, Promising_storage_model, Promising_thread_model) ->
+    | (AARCH64 Hand, Promising_storage_model, Promising_thread_model) ->
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
        let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
        let test = Parser.parse in_chan test_splitted in
@@ -601,11 +586,11 @@ let read_channel
           module ConcModel = Promising_concurrency_model.Make(ISA)
         end))
 
-    | (AARCH64_ism AArch64GenSail, POP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, Flowing_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, Flat_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, NOP_storage_model, POP_thread_model _)
-    | (AARCH64_ism AArch64GenSail, Flat_storage_model, Relaxed_thread_model) ->
+    | (AARCH64 Gen, POP_storage_model, POP_thread_model _)
+    | (AARCH64 Gen, Flowing_storage_model, POP_thread_model _)
+    | (AARCH64 Gen, Flat_storage_model, POP_thread_model _)
+    | (AARCH64 Gen, NOP_storage_model, POP_thread_model _)
+    | (AARCH64 Gen, Flat_storage_model, Relaxed_thread_model) ->
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
        let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
        let test = Parser.parse in_chan test_splitted in
@@ -618,7 +603,7 @@ let read_channel
           module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
         end))
 
-    | (AARCH64_ism AArch64GenSail, Promising_storage_model, Promising_thread_model) ->
+    | (AARCH64 Gen, Promising_storage_model, Promising_thread_model) ->
 
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
        let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
@@ -631,10 +616,10 @@ let read_channel
           module ConcModel = Promising_concurrency_model.Make(ISA)
         end))
 
-    | (PPCGEN_ism, POP_storage_model, POP_thread_model _)
-    | (PPCGEN_ism, Flat_storage_model, POP_thread_model _)
-    | (PPCGEN_ism, PLDI11_storage_model, PLDI11_thread_model)
-    | (PPCGEN_ism, Flat_storage_model, Relaxed_thread_model) ->
+    | (PPC, POP_storage_model, POP_thread_model _)
+    | (PPC, Flat_storage_model, POP_thread_model _)
+    | (PPC, PLDI11_storage_model, PLDI11_thread_model)
+    | (PPC, Flat_storage_model, Relaxed_thread_model) ->
         let module Parser = Make_litmus_parser(PPC)(PPCGenTransSail)(PPCLexParse) in
         let module ISA = Make (IsShallowEmbedding) (PPCGEN_ISA) (PPCGenISADefs) in
         let test = Parser.parse in_chan test_splitted in
@@ -647,11 +632,11 @@ let read_channel
           module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
         end))
 
-    | (MIPS_ism, POP_storage_model, POP_thread_model _)
-    | (MIPS_ism, Flowing_storage_model, POP_thread_model _)
-    | (MIPS_ism, Flat_storage_model, POP_thread_model _)
-    | (MIPS_ism, NOP_storage_model, POP_thread_model _)
-    | (MIPS_ism, Flat_storage_model, Relaxed_thread_model) ->
+    | (MIPS, POP_storage_model, POP_thread_model _)
+    | (MIPS, Flowing_storage_model, POP_thread_model _)
+    | (MIPS, Flat_storage_model, POP_thread_model _)
+    | (MIPS, NOP_storage_model, POP_thread_model _)
+    | (MIPS, Flat_storage_model, Relaxed_thread_model) ->
         let module Parser = Make_litmus_parser(MIPSHGen)(MIPSHGenTransSail)(MIPSHGenLexParse) in
         let module ISA = Make(IsShallowEmbedding)(MIPS_ISA)(MIPS64ISADefs) in
         let test = Parser.parse in_chan test_splitted in
@@ -663,16 +648,16 @@ let read_channel
            let info = make_info test
            module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
          end))
-    | (MIPS_ism, PLDI11_storage_model, PLDI11_thread_model) ->
+    | (MIPS, PLDI11_storage_model, PLDI11_thread_model) ->
         Printf.eprintf "The pldi11 model does not support the MIPS architecture\n";
         exit 1
 
-    | (RISCV_ism, POP_storage_model, POP_thread_model _)
-    | (RISCV_ism, Flowing_storage_model, POP_thread_model _)
-    | (RISCV_ism, Flat_storage_model, POP_thread_model _)
-    | (RISCV_ism, NOP_storage_model, POP_thread_model _)
-    | (RISCV_ism, TSO_storage_model, TSO_thread_model)
-    | (RISCV_ism, Flat_storage_model, Relaxed_thread_model) ->
+    | (RISCV, POP_storage_model, POP_thread_model _)
+    | (RISCV, Flowing_storage_model, POP_thread_model _)
+    | (RISCV, Flat_storage_model, POP_thread_model _)
+    | (RISCV, NOP_storage_model, POP_thread_model _)
+    | (RISCV, TSO_storage_model, TSO_thread_model)
+    | (RISCV, Flat_storage_model, Relaxed_thread_model) ->
        let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
        let module ISA = Make(IsShallowEmbedding)(RISCV_ISA)(RISCVISADefs) in
        let test = Parser.parse in_chan test_splitted in
@@ -685,7 +670,7 @@ let read_channel
           module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
         end))
 
-    | (RISCV_ism, Promising_storage_model, Promising_thread_model) ->
+    | (RISCV, Promising_storage_model, Promising_thread_model) ->
        let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
        let module ISA = Make(IsShallowEmbedding)(RISCV_ISA)(RISCVISADefs) in
        let test = Parser.parse in_chan test_splitted in
@@ -697,8 +682,8 @@ let read_channel
           module ConcModel = Promising_concurrency_model.Make(ISA)
         end))
 
-    | (X86_ism, TSO_storage_model, TSO_thread_model)
-    | (X86_ism, Flat_storage_model, Relaxed_thread_model) ->
+    | (X86, TSO_storage_model, TSO_thread_model)
+    | (X86, Flat_storage_model, Relaxed_thread_model) ->
         begin match List.assoc "Syntax" test_splitted.Splitter.info with
         | "gas" ->
             Globals.x86syntax := Some X86_gas;
@@ -782,10 +767,19 @@ let read_channel
   (module CII)
 
 
-let read_data (runOptions : RunOptions.t) (name: string) (data: data) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : (module Test_file.ConcModel_Info_Init) =
+let read_data
+      (runOptions : RunOptions.t)
+      (name: string)
+      (data: data)
+      (isa_callback: (Isa.isa_model -> unit) option)
+    : (module Test_file.ConcModel_Info_Init) =
   read_channel runOptions name (LexInString data) isa_callback
 
-let read_file (runOptions : RunOptions.t) (name: string) (isa_callback: (InstructionSemantics.instruction_semantics_mode -> unit) option) : (module Test_file.ConcModel_Info_Init) =
+let read_file
+      (runOptions : RunOptions.t)
+      (name: string)
+      (isa_callback: (Isa.isa_model -> unit) option)
+    : (module Test_file.ConcModel_Info_Init) =
   Misc.input_protect begin
       fun (in_chan: in_channel) ->
         read_channel runOptions name (LexInChannel in_chan) isa_callback

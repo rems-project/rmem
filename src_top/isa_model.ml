@@ -18,6 +18,7 @@
 (*===============================================================================*)
 
 open InstructionSemantics
+open Isa
 
 
 open Trans
@@ -185,8 +186,8 @@ module Make
 
     let endianness = Globals.get_endianness () in
 
-      match ISADefs.ism with
-      | RISCV_ism ->
+      match ISADefs.isa_model with
+      | RISCV ->
          begin match ISADefs.interp2_isa_defs_thunk () with
          | Ast.Defs [], _ -> raise (Misc.Fatal "Empty ISA defs (use '-shallow_embedding true')")
          | defs, env ->
@@ -248,60 +249,60 @@ end
 
 module PPCGEN_ISA : ISA with type instruction_ast = Power_embed_types.ast0 = struct
   type instruction_ast = Power_embed_types.ast0
-  let isa = PowerIsa.ppcgen_ism
+  let isa = PowerIsa.ppc_isa
   let pp_instruction_ast = Pp.pp_ppcgen_instruction
   module TransSail = PPCGenTransSail
 end
 
 module AARCH64_HGEN_ISA : ISA with type instruction_ast = ArmV8_embed_types.ast1 = struct
   type instruction_ast = ArmV8_embed_types.ast1
-  let isa = Aarch64Isa.aarch64hand_ism
+  let isa = Aarch64Isa.aarch64hand_isa
   let pp_instruction_ast = Pp.pp_aarch64_instruction
   module TransSail = (AArch64HGenTransSail)
 end
 
 module AARCH64_GEN_ISA : ISA with type instruction_ast = ArmV8_embed_types.ast1 = struct
   type instruction_ast = ArmV8_embed_types.ast1
-  let isa = Aarch64Isa.aarch64gen_ism
+  let isa = Aarch64Isa.aarch64gen_isa
   let pp_instruction_ast = Pp.pp_aarch64_instruction
   module TransSail = (AArch64GenTransSail)
 end
 
 module MIPS_ISA : ISA with type instruction_ast = Mips_embed_types.ast2 = struct
   type instruction_ast = Mips_embed_types.ast2
-  let isa = MipsIsa.mips_ism
+  let isa = MipsIsa.mips_isa
   let pp_instruction_ast = Pp.pp_mips_instruction
   module TransSail = (MIPSHGenTransSail)
 end
 
 module RISCV_ISA : ISA with type instruction_ast = Riscv_types.ast = struct
   type instruction_ast = Riscv_types.ast
-  let isa = RiscvIsa.riscv_ism
+  let isa = RiscvIsa.riscv_isa
   let pp_instruction_ast = Pp.pp_riscv_instruction
   module TransSail = (RiscvTransSail)
 end
 
 module X86_ISA : ISA with type instruction_ast = X86_embed_types.ast3 = struct
   type instruction_ast = X86_embed_types.ast3
-  let isa = X86Isa.x86_ism
+  let isa = X86Isa.x86_isa
   let pp_instruction_ast = Pp.pp_x86_instruction
   module TransSail = (X86HGenTransSail)
 end
 
-let make ism (runOptions : RunOptions.t) =
+let make isa_model (runOptions : RunOptions.t) =
   let module IsShallow_embedding =
     (struct let b = not runOptions.RunOptions.interpreter end)
   in
-  match ism with
-  | PPCGEN_ism ->
+  match isa_model with
+  | PPC ->
      (module (Make (IsShallow_embedding) (PPCGEN_ISA) (PPCGenISADefs)) : S)
-  | AARCH64_ism AArch64HandSail ->
+  | AARCH64 Hand ->
      (module (Make (IsShallow_embedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) ): S)
-  | AARCH64_ism AArch64GenSail  ->
+  | AARCH64 Gen  ->
      (module (Make (IsShallow_embedding) (AARCH64_GEN_ISA ) (AArch64GenISADefs) ) : S)
-  | MIPS_ism ->
+  | MIPS ->
      (module (Make (IsShallow_embedding) (MIPS_ISA : ISA) (MIPS64ISADefs) ) : S)
-  | RISCV_ism ->
+  | RISCV ->
      (module (Make (IsShallow_embedding) (RISCV_ISA : ISA) (RISCVISADefs) ) : S)
-  | X86_ism ->
+  | X86 ->
      (module (Make (IsShallow_embedding) (X86_ISA : ISA) (X86ISADefs) ): S)

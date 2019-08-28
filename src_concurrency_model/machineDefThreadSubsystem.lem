@@ -739,7 +739,7 @@ let finish_action isa state iic =
   let i' = <| iic.iic_instance with finished = true |> in
 
   let (it_subtree', discarded_ioids) =
-    if isa.ism = MIPS_ism then
+    if isa.isa_model = MIPS then
       if is_branch_instruction (ik iic.iic_instance) then
         match iic.subtree with
         | T [(successor, T iiits)] ->
@@ -1263,11 +1263,11 @@ let pop_commit_barrier_cand
   (* we allow RISC-V fences to commit and finish on speculated branches;
   This is needed to allow MP+fence.rw.rw+ctrlfence.w.r and
   SB+fence.rw.rw+ctrlfence.r.rxp *)
-  (isa.ism <> RISCV_ism --> commitControlflow iic) &&
+  (isa.isa_model <> RISCV --> commitControlflow iic) &&
 
   (* commit order between barriers *)
-  match isa.ism with
-  | AARCH64_ism _ ->
+  match isa.isa_model with
+  | AARCH64 _ ->
       if is_flat_model params then
         (is_pop_strong_memory_barrier (ik inst) -->
           (forall (iprev MEM iic.active_prefix).
@@ -1281,18 +1281,18 @@ let pop_commit_barrier_cand
           (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
             --> iprev.finished
 
-  | PPCGEN_ism    ->
+  | PPC    ->
       forall (iprev MEM iic.active_prefix).
         (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
           --> iprev.finished
 
-  | MIPS_ism      ->
+  | MIPS      ->
       forall (iprev MEM iic.active_prefix).
         (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
           --> iprev.finished
 
-  | RISCV_ism     -> true
-  | X86_ism       -> true
+  | RISCV     -> true
+  | X86       -> true
   end &&
 
   (is_pop_strong_memory_barrier (ik inst) -->
@@ -2040,13 +2040,13 @@ let pop_possible_write_forwarding
                    their value yet. In POP for ARMv8 we will try to
                    forward these writes, see private comments THREAD4
                    and THREAD5 *)
-                (match (isa.ism, params.thread_model) with
-                 | (AARCH64_ism _, POP_thread_model Standard_POP) -> []
-                 | (AARCH64_ism _, _) -> i.subwrites.sw_potential_write_addresses
-                 | (PPCGEN_ism, _)  -> i.subwrites.sw_potential_write_addresses
-                 | (MIPS_ism, _)    -> i.subwrites.sw_potential_write_addresses
-                 | (RISCV_ism, _)   -> i.subwrites.sw_potential_write_addresses
-                 | (X86_ism, _)     -> i.subwrites.sw_potential_write_addresses
+                (match (isa.isa_model, params.thread_model) with
+                 | (AARCH64 _, POP_thread_model Standard_POP) -> []
+                 | (AARCH64 _, _) -> i.subwrites.sw_potential_write_addresses
+                 | (PPC, _)  -> i.subwrites.sw_potential_write_addresses
+                 | (MIPS, _)    -> i.subwrites.sw_potential_write_addresses
+                 | (RISCV, _)   -> i.subwrites.sw_potential_write_addresses
+                 | (X86, _)     -> i.subwrites.sw_potential_write_addresses
                  end)
           )
           iic.active_prefix)
@@ -2493,7 +2493,7 @@ let handle_barrier_outcome
     || is_pop_instruction_barrier (ik i)
     || is_AArch64_ld_barrier (ik i)
     || (params.thread_model = TSO_thread_model && 
-          isa.ism = RISCV_ism &&  not (is_RISCV_fence_pw (ik i)))
+          isa.isa_model = RISCV &&  not (is_RISCV_fence_pw (ik i)))
     || params.thread_model = Relaxed_thread_model
   then
     (* barriers that are not sent to storage *)
@@ -2615,7 +2615,7 @@ let handle_footprint_outcome
   let state' = fun () ->
     let i = iic.iic_instance in
 
-    let () = ensure (isa.ism = PPCGEN_ism) "expected PPCGEN" in
+    let () = ensure (isa.isa_model = PPC) "expected PPC" in
 
     let i' = <| i with micro_op_state = MOS_plain is' |> in
     let i'' = recalculate_register_footprint isa i' old_outcome
@@ -3265,8 +3265,8 @@ let enumerate_propagate_write_transitions
          end) >>
 
   let rf =
-    match isa.ism with
-    | AARCH64_ism _ ->
+    match isa.isa_model with
+    | AARCH64 _ ->
         guard (is_flat_model params) >>
         let successful_atomic_pairings =
           instruction_tree_fold_root (fun found _prefix ii it ->
@@ -3289,10 +3289,10 @@ let enumerate_propagate_write_transitions
         guard (rf <> []) >>
         (* and return the load exclusive's read_request, this list, and the store exclusive ioid *)
         return (read_request,rf,storexs)
-    | RISCV_ism     -> []
-    | PPCGEN_ism    -> []
-    | MIPS_ism      -> []
-    | X86_ism       -> []
+    | RISCV     -> []
+    | PPC       -> []
+    | MIPS      -> []
+    | X86       -> []
     end
   in
 
@@ -3517,8 +3517,8 @@ let enumerate_excl_res_success_outcome_transition_pop
 
   option_guard (paired_atomic_load iic) >>= fun load ->
 
-  match isa.ism with
-  | AARCH64_ism _ ->
+  match isa.isa_model with
+  | AARCH64 _ ->
       let state' = fun () ->
         let i' =
           <| i with
@@ -3548,16 +3548,16 @@ let enumerate_excl_res_success_outcome_transition_pop
         [(T_sync (T_try_store_excl (make_label state iic (r, rf, i.instance_ioid) state')) ())]
       else
         [(T_only (make_label state iic T_successful_store_excl state'))]
-  | RISCV_ism     ->
+  | RISCV     ->
       let state' = fun () ->
         let i' = <| i with micro_op_state = MOS_plain (isa_cont true) |> in
         <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
         $> make_thread_cont_res {} {}
       in
       [(T_only (make_label state iic T_potential_store_cond state'))]
-  | PPCGEN_ism    -> failwith "not implemented for PPC"
-  | MIPS_ism      -> failwith "not implemented for MIPS"
-  | X86_ism       -> failwith "not implemented for x86"
+  | PPC       -> failwith "not implemented for PPC"
+  | MIPS      -> failwith "not implemented for MIPS"
+  | X86       -> failwith "not implemented for x86"
   end
 
 
@@ -3575,8 +3575,8 @@ let enumerate_excl_res_success_outcome_transition_flat
 
   option_guard (paired_atomic_load iic) >>= fun load ->
 
-  match isa.ism with
-  | AARCH64_ism _ ->
+  match isa.isa_model with
+  | AARCH64 _ ->
       let state' = fun () ->
         let i' =
           <| i with
@@ -3603,16 +3603,16 @@ let enumerate_excl_res_success_outcome_transition_flat
         [T_sync (T_try_store_excl (make_label state iic (r, Just rf, i.instance_ioid) state')) ()]
       else
         [T_only (make_label state iic T_successful_store_excl state')]
-  | RISCV_ism     ->
+  | RISCV     ->
       let state' = fun () ->
         let i' = <| i with micro_op_state = MOS_plain (isa_cont true) |> in
         <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
         $> make_thread_cont_res {} {}
       in
       [T_only (make_label state iic T_potential_store_cond state')]
-  | PPCGEN_ism    -> failwith "not implemented for PPC"
-  | MIPS_ism      -> failwith "not implemented for MIPS"
-  | X86_ism       -> failwith "not implemented for x86"
+  | PPC       -> failwith "not implemented for PPC"
+  | MIPS      -> failwith "not implemented for MIPS"
+  | X86       -> failwith "not implemented for x86"
   end
 
 
@@ -3664,8 +3664,8 @@ let enumerate_excl_res_success_outcome_transition_relaxed
   let i = iic.iic_instance in
   guard (i.successful_atomic_store = Nothing) >>
 
-  match isa.ism with
-  | AARCH64_ism _ ->
+  match isa.isa_model with
+  | AARCH64 _ ->
       let state' = fun () ->
         let i' =
           <| i with
@@ -3677,16 +3677,16 @@ let enumerate_excl_res_success_outcome_transition_relaxed
         $> make_thread_cont_res {} {}
       in
       [T_only (make_label state iic T_successful_store_excl state')]
-  | RISCV_ism     ->
+  | RISCV     ->
       let state' = fun () ->
         let i' = <| i with micro_op_state = MOS_plain (isa_cont true) |> in
         <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
         $> make_thread_cont_res {} {}
       in
       [T_only (make_label state iic T_potential_store_cond state')]
-  | PPCGEN_ism    -> failwith "not implemented for PPC"
-  | MIPS_ism      -> failwith "not implemented for MIPS"
-  | X86_ism       -> failwith "not implemented for x86"
+  | PPC       -> failwith "not implemented for PPC"
+  | MIPS      -> failwith "not implemented for MIPS"
+  | X86       -> failwith "not implemented for x86"
   end
 
 

@@ -27,16 +27,6 @@ open import Sail_values
 open import Sail_1_2_convert
 
 
-type aarch64_variant =
-  | AArch64HandSail   (* hand written ISA model *)
-  | AArch64GenSail    (* auto-generated ISA model *)
-
-type instruction_semantics_mode (* ism *) =
-  | PPCGEN_ism
-  | AARCH64_ism of aarch64_variant
-  | MIPS_ism
-  | RISCV_ism
-  | X86_ism
 
 type instruction 'i = 
   | Unfetched

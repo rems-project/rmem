@@ -51,8 +51,9 @@ let debug_sail_interp = ref false
 was created *)
 (* let model_params = ref Params.default_model_params *)
 
-let default_ism = InstructionSemantics.PPCGEN_ism
-let ism = ref default_ism
+let default_isa_model = Isa.PPC
+
+let isa_model = ref default_isa_model
 let model_params = ref Params.default_model_params
 
 
@@ -64,13 +65,13 @@ has been set properly (i.e. set_model_ism was called) *)
 let get_endianness = fun () ->
   begin match !big_endian with
   | None ->
-      let open InstructionSemantics in
-      begin match !ism with
-      | PPCGEN_ism    -> Sail_impl_base.E_big_endian
-      | AARCH64_ism _ -> Sail_impl_base.E_little_endian
-      | MIPS_ism      -> Sail_impl_base.E_big_endian
-      | RISCV_ism      -> Sail_impl_base.E_little_endian
-      | X86_ism       -> Sail_impl_base.E_little_endian
+      let open Isa in
+      begin match !isa_model with
+      | PPC    -> Sail_impl_base.E_big_endian
+      | AARCH64 _ -> Sail_impl_base.E_little_endian
+      | MIPS      -> Sail_impl_base.E_big_endian
+      | RISCV      -> Sail_impl_base.E_little_endian
+      | X86       -> Sail_impl_base.E_little_endian
       end
   | Some true  -> Sail_impl_base.E_big_endian
   | Some false -> Sail_impl_base.E_little_endian
@@ -82,8 +83,8 @@ let pp_endianness = fun () ->
   | Sail_impl_base.E_big_endian    -> "big endian"
   end
 
-let set_model_ism ism' =
-  ism := ism'
+let set_isa_model isa_model' =
+  isa_model := isa_model'
 
 let suppress_non_symbol_memory = ref false (* ELF *)
 

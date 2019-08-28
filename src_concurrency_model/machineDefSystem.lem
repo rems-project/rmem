@@ -593,7 +593,7 @@ let get_dwarf_evaluation_context
       let context prefix i =
         let reg_data = state.isa.register_data_info in
         let dec_read_register (reg: natural) : dwarf_register_read_result =
-          match reg_name_of_dwarf state.isa.ism reg_data reg with
+          match reg_name_of_dwarf state.isa.isa_model reg_data reg with
           | Nothing       -> DRRR_bad_register_number
           | Just reg_name ->
               match

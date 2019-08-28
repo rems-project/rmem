@@ -1,20 +1,37 @@
-open import Pervasives_extra
+open import Pervasives
+open import Assert_extra
 open import Sail_impl_base
 open import Sail_values
-open import InstructionSemantics
-open import ExceptionTypes
 open import Events
-open import Fragments
-open import Utils
+import InstructionSemantics
+import Fragments
+import FreshIds
+
+(* open import Pervasives_extra
+ * open import Sail_values
+ * open import InstructionSemantics
+ * open import ExceptionTypes
+ * open import Events
+ * open import Utils *)
 
 (* the left nat is width and the right nat is initial index;
 the list is the register fields; if direction is D_increasing the left side of the
 slice is less or equal to the right, if direction is D_decreasing the right side of the
 slice is less or equal to the left *)
-type registerdata = list (reg_base_name * (direction * nat * nat * list (string * slice)))
+type registerdata = list (reg_base_name * (direction * nat * nat * list (string * Fragments.slice)))
 
 
-(** ISA info *)
+type aarch64_model =
+  | Hand   (* hand written ISA model *)
+  | Gen    (* auto-generated ISA model *)
+
+type isa_model = 
+  | PPC
+  | AARCH64 of aarch64_model
+  | MIPS
+  | RISCV
+  | X86
+
 
 type thread_start_info =
   <|  (* these registers hold the arguments of the thread_start function *)
@@ -32,8 +49,8 @@ type thread_start_info =
 
 
 type isa 'i =
-  <|  ism : InstructionSemantics.instruction_semantics_mode;
-      instruction_semantics : instruction_semantics 'i;
+  <|  isa_model : isa_model;
+      instruction_semantics : InstructionSemantics.instruction_semantics 'i;
 
       maybe_split_conditional_branch: 'i -> maybe (vector bitU * vector bitU);
       make_conditional_branch: vector bitU * vector bitU -> 'i;
@@ -52,7 +69,7 @@ type isa 'i =
       nia_reg                : reg_name;
       dia_reg                : maybe reg_name;
 
-      make_empty_write_events  : thread_id -> 
+      make_empty_write_events  : Events.thread_id -> 
                                  'i -> (* instruction instance's AST node *)
                                  FreshIds.id_state ioid -> (* instruction instance's id state *)
                                  ioid -> (* instruction instance's id *)
@@ -70,10 +87,10 @@ type isa 'i =
   
 
 let instruction_semantics_stub = 
-  <| decode_to_instruction = fun _ _ -> failwith "stub";
-     encode_instruction = fun _ _ -> failwith "stub";
-     initial_outcome_of_instruction = fun _ -> failwith "stub";
-     instruction_analysis = fun _ _ _ _ -> failwith "stub"
+  <| InstructionSemantics.decode_to_instruction = fun _ _ -> failwith "stub";
+     InstructionSemantics.encode_instruction = fun _ _ -> failwith "stub";
+     InstructionSemantics.initial_outcome_of_instruction = fun _ -> failwith "stub";
+     InstructionSemantics.instruction_analysis = fun _ _ _ _ -> failwith "stub"
   |>
 
 
@@ -89,7 +106,7 @@ let thread_start_info_stub =
   |>
 
 let isa_stub = 
-  <|  ism                         = InstructionSemantics.PPCGEN_ism;
+  <|  isa_model                   = PPC;
       thread_start_info           = thread_start_info_stub;
       instruction_semantics       = instruction_semantics_stub;
       register_data_info          = [];

@@ -28,7 +28,6 @@ module type S = sig
   module ISA : Isa_model.S with type instruction_ast = instruction_ast
 
   val initial_state :
-    InstructionSemantics.instruction_semantics_mode ->
     RunOptions.t ->
     instruction_ast Params.initial_state_record ->
     state

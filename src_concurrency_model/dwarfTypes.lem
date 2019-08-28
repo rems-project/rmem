@@ -21,30 +21,27 @@ type dwarf_evaluation_context =
   |>
 
 let reg_name_of_dwarf
-    (ism: instruction_semantics_mode)
+    (isa: isa_model)
     (registerdata: registerdata)
     (n: natural)
     : maybe reg_name
   =
-  match ism with
-  | PPCGEN_ism ->
+  match isa with
+  | PPC ->
       if n < 0 || 31 < n then Nothing
       else reg_from_data registerdata ("GPR" ^ (show n))
-
-  | AARCH64_ism variant ->
-      if variant = AArch64HandSail || variant = AArch64GenSail then
-        (* General registers and SP_ELO have the same name in both; this is not guaranteed for other registers *)
-        if n < 0 || 31 < n then Nothing
-        else if n = 31 then reg_from_data registerdata "SP_EL0"  (* HACK: won't work for other EL - the Dwarf name is really context dependent? *)
-        else reg_from_data registerdata ("R" ^ (show n))
-      else fail
-  | MIPS_ism ->
-      if 0 <= n && n <= 9 then        reg_from_data registerdata ("GPR0" ^ (show n))
-      else if 10 <= n && n <= 31 then reg_from_data registerdata ("GPR"  ^ (show n))
-      else                            Nothing
-  | RISCV_ism ->
+  | AARCH64 _ ->
+     (* General registers and SP_ELO have the same name in both; this is not guaranteed for other registers *)
+     if n < 0 || 31 < n then Nothing
+     else if n = 31 then reg_from_data registerdata "SP_EL0"  (* HACK: won't work for other EL - the Dwarf name is really context dependent? *)
+     else reg_from_data registerdata ("R" ^ (show n))
+  | MIPS ->
+     if 0 <= n && n <= 9 then        reg_from_data registerdata ("GPR0" ^ (show n))
+     else if 10 <= n && n <= 31 then reg_from_data registerdata ("GPR"  ^ (show n))
+     else                            Nothing
+  | RISCV ->
      if n < 0 || 31 < n then Nothing
      else reg_from_data registerdata ("x" ^ (show n))
-  | X86_ism ->
+  | X86 ->
      failwith "x86 reg_name_from_dwarf"
   end

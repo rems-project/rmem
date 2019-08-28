@@ -369,8 +369,8 @@ let ppcgen_maybe_split_conditional_branch _i =
 let ppcgen_make_conditional_branch (x,y) = 
   failwith "not implemented"
 
-let ppcgen_ism : isa Power_embed_types.ast =
-  <|  ism = PPCGEN_ism;
+let ppc_isa : isa Power_embed_types.ast =
+  <|  isa_model = PPC;
       instruction_semantics = ppcgen_shallow_embedding;
   
       is_system_call_instruction = ppcgen_is_system_call_instruction;

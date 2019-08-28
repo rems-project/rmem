@@ -656,12 +656,12 @@ let priority_transitions params isa (ss_final_state : bool) (_: eager_mode) :
       list ((trans 'i 'ts 'ss -> bool) * bool) =
   match params.t.thread_model with
   | POP_thread_model _ ->
-      match isa.ism with
-      | AARCH64_ism _ -> [(exclusive_priority,true); (fetch_multi_priority,true)]
-      | RISCV_ism     -> [(riscv_cond_priority, true); (fetch_multi_priority,true)]
-      | PPCGEN_ism    -> []
-      | MIPS_ism      -> []
-      | X86_ism       -> []
+      match isa.isa_model with
+      | AARCH64 _ -> [(exclusive_priority,true); (fetch_multi_priority,true)]
+      | RISCV     -> [(riscv_cond_priority, true); (fetch_multi_priority,true)]
+      | PPC       -> []
+      | MIPS      -> []
+      | X86       -> []
       end
   | PLDI11_thread_model -> []
   | TSO_thread_model -> []

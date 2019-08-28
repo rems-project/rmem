@@ -569,7 +569,7 @@ let successor_fetch_address (i: instruction_instance 'i) : address =
   add_address_nat i.program_loc 4  (* TODO not if at end of address space - cf 2.06B *)
 
 let next_address_of_finished_instruction isa (i: instruction_instance 'i) : address =
-  let () = ensure (isa.ism <> MIPS_ism)
+  let () = ensure (isa.isa_model <> MIPS)
       "next_address_of_finished_instruction not implemented for MIPS"
   in
   match List.lookup isa.nia_reg i.reg_writes with
@@ -658,8 +658,8 @@ let analyse_instruction
     if isa.is_thread_start_instruction inst then
       {isa.thread_start_info.tsi_return}
     else regs_out in
-  let nias = match isa.ism with
-    | MIPS_ism ->
+  let nias = match isa.isa_model with
+    | MIPS ->
        match iprefix with
        | [] -> { NIA_successor }
        | prev_inst :: _ ->
@@ -785,7 +785,7 @@ let starting_inst_instance_aux
           let () = ensure (is_atomic_read r = is_atomic_write w)
             "the atomicity of the read and the write of an RMW must be the same" in
 
-          if isa.ism = RISCV_ism then Nothing
+          if isa.isa_model = RISCV then Nothing
           else if is_atomic_read r && is_atomic_write w then Just true
           else Nothing
       | IK_barrier _   -> Nothing
@@ -1022,7 +1022,7 @@ let potential_next_addresses_of_instruction
     (iic:    instruction_in_context 'i)
     : set address
   =
-  if isa.ism = MIPS_ism then
+  if isa.isa_model = MIPS then
     (* Maybe the instruction preceding this one was a branch? *)
     match iic.active_prefix with
     | [] ->
@@ -1066,7 +1066,7 @@ let rec make_old_instructions_helper
       if i.finished && i.instance_ioid NIN unacknowledged_syncs_ioids && not is_active_tstart then
         let succs = [instruction.program_loc | forall ((instruction, _) MEM it') | true] in
         let nia =
-          if isa.ism = MIPS_ism then
+          if isa.isa_model = MIPS then
             match acc with
             | [] ->  successor_fetch_address i
             | prev_inst :: _ ->
@@ -1092,8 +1092,8 @@ let rec make_old_instructions_helper
 (* return a new thread state with as many instructions as possible moved from
    the instruction tree to the list of old instructions *)
 let make_old_instructions isa (state: thread_state 'i) : thread_state 'i =
-  match isa.ism with
-  | MIPS_ism -> state (* optimisation not yet implemented for MIPS due to branch delays *)
+  match isa.isa_model with
+  | MIPS -> state (* optimisation not yet implemented for MIPS due to branch delays *)
   | _ ->
   let unacknowledged_syncs =
     match state.thread_substate with

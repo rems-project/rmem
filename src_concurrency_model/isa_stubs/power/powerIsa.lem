@@ -17,4 +17,4 @@
 
 open import Isa
 
-let ppcgen_ism = isa_stub
+let ppc_isa = isa_stub

@@ -191,8 +191,8 @@ let mips_make_read_request_events
   in
   make_read_request_events' id_state tid ioid addr size read_size read_kind
 
-let mips_ism : isa Mips_embed_types.ast =
-  <|  ism                         = MIPS_ism;
+let mips_isa : isa Mips_embed_types.ast =
+  <|  isa_model                   = MIPS;
       instruction_semantics       = mips_shallow_embedding;
 
       is_system_call_instruction  = mips_is_system_call_instruction;

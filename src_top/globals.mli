@@ -43,7 +43,7 @@ val init_thread : int
 
 (** model options ***************************************************)
 
-val ism: InstructionSemantics.instruction_semantics_mode ref
+val isa_model: Isa.isa_model ref
 val model_params: Params.model_params ref
 
 val big_endian: (bool option) ref
@@ -53,7 +53,7 @@ has been set properly (i.e. set_model_ism was called) *)
 val get_endianness: unit -> Sail_impl_base.end_flag
 val pp_endianness: unit -> string
 
-val set_model_ism: InstructionSemantics.instruction_semantics_mode -> unit
+val set_isa_model: Isa.isa_model -> unit
 
 val suppress_non_symbol_memory: bool ref (* ELF *)
 

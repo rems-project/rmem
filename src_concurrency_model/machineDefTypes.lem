@@ -813,7 +813,7 @@ type thread_state 'i =
      (* ...for the above two, it'd be nice to be able to find the *)
      (* right place in the tree without a big search?             *)
 
-     (* this is for ARM transactional memory, but it might also work for POWER *)
+     (* this is for ARM transactional memory, but it might also work for PPC *)
      transaction: maybe (transaction_start * (register_value -> instruction_instance 'i));
 
      (* the part of the state that is unique to each model *)

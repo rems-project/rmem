@@ -110,14 +110,14 @@ module Make : S =
     (* translate from Sail register name to litmus register name *)
     let pp_reg r =
       let open InstructionSemantics in
-      begin match !Globals.ism with
-      | PPCGEN_ism ->
+      begin match !Globals.isa_model with
+      | PPC ->
           if String.length r > 3 &&
             r.[0] = 'G' && r.[1] = 'P' && r.[2] = 'R'
           then "r" ^ String.sub r 3 (String.length r - 3)
           else r
-      | AARCH64_ism AArch64HandSail
-      | AARCH64_ism AArch64GenSail ->
+      | AARCH64 Hand
+      | AARCH64 Gen ->
           (*General registers currently have the same names for both models*)
           begin try
             let u = Scanf.sscanf (r ^ "$") "R%u$" (fun u -> if u < 31 then u else invalid_arg r) in
@@ -125,21 +125,21 @@ module Make : S =
           with
           | _ -> r
           end
-      | MIPS_ism ->
+      | MIPS ->
          begin try
              let u = Scanf.sscanf (r ^ "$") "GPR%u$" (fun u -> if u < 32 then u else invalid_arg r) in
              MIPSHGenBase.pp_reg (MIPSHGenBase.IReg (MIPSHGenBase.int_to_ireg u))
            with
            | _ -> r
          end
-      | RISCV_ism ->
+      | RISCV ->
          begin try
              let u = Scanf.sscanf (r ^ "$") "x%u$" (fun u -> if u < 32 then u else invalid_arg r) in
              RISCVHGenBase.pp_reg (RISCVHGenBase.IReg (RISCVHGenBase.int_to_ireg u))
            with
            | _ -> r
          end
-      | X86_ism ->
+      | X86 ->
          r
       end
 

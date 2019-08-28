@@ -169,8 +169,8 @@ let x86_maybe_split_conditional_branch _i =
 let x86_make_conditional_branch (x,y) = 
   failwith "not implemented"
 
-let x86_ism : isa X86_embed_types.ast =
-  <|  ism                         = X86_ism;
+let x86_isa : isa X86_embed_types.ast =
+  <|  isa_model                   = X86;
       instruction_semantics       = x86_shallow_embedding;
 
       is_system_call_instruction  = x86_is_system_call_instruction;

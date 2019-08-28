@@ -19,39 +19,10 @@
 (*===============================================================================*)
 
 
-(* type instruction_ast = InstructionSemantics.instruction_ast *)
-
-(* module type TransSail = sig
- *   type instruction
- *   type instruction_ast
- *   type labelmap = (string * int) list
- * 
- *   val shallow_ast_to_herdtools_ast : instruction_ast -> instruction
- *   val herdtools_ast_to_shallow_ast : instruction -> instruction_ast
- * 
- *   val herdtools_ast_to_interp_instruction : instruction -> Interp_interface.interp_instruction
- *   val interp_instruction_to_herdtools_ast : Interp_interface.interp_instruction -> instruction
- * 
- *   val unlabelize_ins :
- *       (string -> int) (\** global variable lookup function *\)
- *       -> labelmap     (\** label locations *\)
- *       -> int          (\** current instruction index *\)
- *       -> instruction  (\** current instruction, possibly with labels *\)
- *       -> instruction  (\** unlabelized instruction *\)
- *   val labelize_ins :
- *     (Sail_impl_base.address -> string option)
- *     -> Sail_impl_base.address
- *     -> instruction
- *     -> instruction
- * 
- *   val end_ins : instruction (\** special to stop fetching *\)
- * end *)
-
-
 
 module type ISADefs = sig
   val name : string
-  val ism : InstructionSemantics.instruction_semantics_mode
+  val isa_model : Isa.isa_model
   (* val reg_data : Isa.registerdata *)
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
@@ -121,8 +92,5 @@ module Make
     (ISADefs : ISADefs) :
    (S with type instruction_ast = Isa.instruction_ast)
 
-val make :
-  InstructionSemantics.instruction_semantics_mode ->
-  RunOptions.t ->
-  (module S)
+val make : Isa.isa_model -> RunOptions.t -> (module S)
 

@@ -1758,12 +1758,12 @@ let pp_t_only_label pp_instruction_ast ?(graph=false) m tl =
   | T_potential_store_cond -> ("potential store-conditional", None)
 
   | T_failed_store_excl ->
-      begin match !ism with
-      | AARCH64_ism _ -> ("failed store-exclusive instruction", None)
-      | RISCV_ism     -> ("failed store-conditional instruction", None)
-      | PPCGEN_ism    -> failwith "not implemented for PPC"
-      | MIPS_ism      -> failwith "not implemented for PPC"
-      | X86_ism       -> failwith "not implemented for PPC"
+      begin match !isa_model with
+      | AARCH64 _ -> ("failed store-exclusive instruction", None)
+      | RISCV     -> ("failed store-conditional instruction", None)
+      | PPC       -> failwith "not implemented for PPC"
+      | MIPS      -> failwith "not implemented for PPC"
+      | X86       -> failwith "not implemented for PPC"
       end
 
   | T_prev_excl_result s ->
@@ -2024,12 +2024,12 @@ let pp_pt_trans_aux pp_instruction_ast ?(graph=false) m t =
       ("finish instruction: " ^ instr_pped, None)
 
   | PT_failed_store_excl (_, _) ->
-      begin match !ism with
-      | AARCH64_ism _ -> ("failed store-exclusive instruction", None)
-      | RISCV_ism     -> ("failed store-conditional instruction", None)
-      | PPCGEN_ism    -> failwith "not implemented for PPC"
-      | MIPS_ism      -> failwith "not implemented for PPC"
-      | X86_ism       -> failwith "not implemented for PPC"
+      begin match !isa_model with
+      | AARCH64 _ -> ("failed store-exclusive instruction", None)
+      | RISCV     -> ("failed store-conditional instruction", None)
+      | PPC       -> failwith "not implemented for PPC"
+      | MIPS      -> failwith "not implemented for PPC"
+      | X86       -> failwith "not implemented for PPC"
       end
 
   | PT_exception ((_,ioid), exception_type, _) ->
@@ -3474,9 +3474,9 @@ let pp_transition_history pp_instruction_ast m ?(filter = fun _ -> true) s =
  (** pp a UI system state *)
 
 let pp_ui_system_state pp_instruction_ast m s =
-  begin match !ism with
-  | AARCH64_ism _ -> ""
-  | RISCV_ism     ->
+  begin match !isa_model with
+  | AARCH64 _ -> ""
+  | RISCV     ->
       let ppd_riscv_AMO_lock =
         let pp_maybe_ioid m = function
           | Some ioid -> pp_pretty_ioid ioid
@@ -3487,9 +3487,9 @@ let pp_ui_system_state pp_instruction_ast m s =
       colour_bold m "System state:" ^ !linebreak
       ^ "AMO lock: " ^ ppd_riscv_AMO_lock ^ !linebreak
       ^ !linebreak
-  | PPCGEN_ism    -> ""
-  | MIPS_ism      -> ""
-  | X86_ism       -> ""
+  | PPC       -> ""
+  | MIPS      -> ""
+  | X86       -> ""
   end
   ^ pp_ui_storage_subsystem_state pp_instruction_ast m s.ui_model s.ui_storage_subsystem
 (*  ^ (Pset.elements s.ui_model.shared_memory |> List.map (pp_footprint m None) |> String.concat "; ")

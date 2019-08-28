@@ -36,8 +36,8 @@ open import PromisingTransitions
 open ListMonad
 
 let is_RISC isa =
-  match isa.ism with
-  | RISCV_ism -> true
+  match isa.isa_model with
+  | RISCV -> true
   | _ -> false
   end
 
@@ -400,9 +400,9 @@ let write_cia_nia_riscv isa ((ts,(ii,view,o)) : iconf 'i 'v) =
     (ts,(ii,view,o))
 
 let write_cia_nia isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
-  match isa.ism with
-  | AARCH64_ism _ -> write_cia_arm isa (ts,(ii,view,o))
-  | RISCV_ism -> write_cia_nia_riscv isa (ts,(ii,view,o))
+  match isa.isa_model with
+  | AARCH64 _ -> write_cia_arm isa (ts,(ii,view,o))
+  | RISCV -> write_cia_nia_riscv isa (ts,(ii,view,o))
   | _ -> fail
   end
 

@@ -2386,7 +2386,7 @@ let run_interactive
         |> Screen.show_warning ppmode;
         s
     end
-    |> ConcModel.initial_state test_info.Test.ism options
+    |> ConcModel.initial_state options
     |> initial_interact_state options ppmode test_info
   in
 
@@ -2720,7 +2720,7 @@ let run_search
   in
 
   state_records
-  |> List.map (ConcModel.initial_state test_info.Test.ism options)
+  |> List.map (ConcModel.initial_state options)
   |> List.map (initial_interact_state options ppmode test_info)
   |> List.iter run_search_from
 

@@ -63,7 +63,7 @@ module Make (ISAModel: Isa_model.S) :
 
   let pp_instruction_ast = ISAModel.pp_instruction_ast
                    
-  let initial_state ism run_options initial_state_record =
+  let initial_state run_options initial_state_record =
     Promising.p_initial_state
       ISAModel.isa.Isa.register_data_info
       initial_state_record

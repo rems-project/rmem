@@ -42,13 +42,13 @@ module type S = sig
     RunOptions.t ->
     string ->
     data ->
-    (InstructionSemantics.instruction_semantics_mode -> unit) option ->
+    (Isa.isa_model -> unit) option ->
     (module ConcModel_Info_Init)
 
   (* parse file and return test and the test name *)
   val read_file :
     RunOptions.t ->
     string ->
-    (InstructionSemantics.instruction_semantics_mode -> unit) option ->
+    (Isa.isa_model -> unit) option ->
     (module ConcModel_Info_Init)
 end
