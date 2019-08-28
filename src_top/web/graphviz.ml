@@ -17,9 +17,11 @@
 (*===============================================================================*)
 
 module Make (ConcModel: Concurrency_model.S)
-    : (GraphBackend.S with type ui_trans = ConcModel.ui_trans)
+    : (GraphBackend.S with type ui_trans = ConcModel.ui_trans 
+                      and type instruction_ast = ConcModel.instruction_ast)
   = struct
   type ui_trans = ConcModel.ui_trans
+  type instruction_ast = ConcModel.instruction_ast
   module Base = Graphviz_base.Make(ConcModel)
 
   let render_dot ppmode legend_opt cex ioid_trans_lookup = fun layout_dot ->

@@ -25,7 +25,7 @@ open import Utils
 open import BasicTypes
 open import Events
 open import InstructionSemantics
-
+open import RegUtils
 import Sail_values
 import Power_embed_types
 import Power_embed

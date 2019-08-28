@@ -25,6 +25,7 @@ open import FreshIds
 open import Events
 open import InstructionSemantics
 open import BasicTypes
+open import RegUtils
 import Sail_values
 import ArmV8_embed_types
 import ArmV8_embed

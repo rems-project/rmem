@@ -27,6 +27,7 @@ open import Utils
 open import Events
 open import BasicTypes
 open import InstructionSemantics
+open import RegUtils
 import X86_embed_types
 import X86_embed
 

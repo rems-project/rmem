@@ -27,6 +27,7 @@ open import Events
 open import BasicTypes
 open import InstructionSemantics
 open import Sail_values
+open import RegUtils
 import Riscv_types
 import Riscv
 

@@ -407,7 +407,7 @@ let initial_state_record
            else
              IsaInfoAArch64.aarch64hand_ism.register_data_info
          in
-         match reg_from_data registerdata "TPIDR_EL0" with
+         match RegUtils.reg_from_data registerdata "TPIDR_EL0" with
          | Some r -> r
          | None -> failwith ("\"TPIDR_EL0\" is not in 'register_data_info'")
        in
@@ -418,7 +418,7 @@ let initial_state_record
        @ test.init_reg_state
     | `RISCV ->
        let registerdata = IsaInfoRISCV.riscv_ism.register_data_info in
-       let get_reg r = match reg_from_data registerdata r with
+       let get_reg r = match RegUtils.reg_from_data registerdata r with
          | Some r -> r
          | None -> failwith (r ^ " not in register_data_info")
        in

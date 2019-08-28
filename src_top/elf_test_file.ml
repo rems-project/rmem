@@ -111,7 +111,7 @@ let initial_stack tid : ((Nat_big_num.num * int) (* entire footprint *) *
 
 let initial_stack_and_reg_data_of_PPC_elf_file e_entry memory elf_threads_list =
   let reg name =
-    match BasicTypes.reg_from_data
+    match RegUtils.reg_from_data
             IsaInfoPPCGen.ppcgen_ism.BasicTypes.register_data_info name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoPPCGen.ppcgen_ism.register_data_info'")
@@ -171,7 +171,7 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
       else
         IsaInfoAArch64.aarch64hand_ism.BasicTypes.register_data_info
     in
-    match BasicTypes.reg_from_data registerdata name with
+    match RegUtils.reg_from_data registerdata name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'register_data_info'")
   in
@@ -238,7 +238,7 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
 
 let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list =
       let reg name =
-        match BasicTypes.reg_from_data IsaInfoMIPS.mips_ism.BasicTypes.register_data_info name with
+        match RegUtils.reg_from_data IsaInfoMIPS.mips_ism.BasicTypes.register_data_info name with
         | Some r -> r
         | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoMIPS.mips_ism.register_data_info'")
       in
@@ -270,7 +270,7 @@ let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list 
 
 let initial_stack_and_reg_data_of_riscv_elf_file symbol_map memory elf_threads_list =
       let reg name =
-        match BasicTypes.reg_from_data IsaInfoRISCV.riscv_ism.BasicTypes.register_data_info name with
+        match RegUtils.reg_from_data IsaInfoRISCV.riscv_ism.BasicTypes.register_data_info name with
         | Some r -> r
         | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoRISCV.riscv_ism.register_data_info'")
       in

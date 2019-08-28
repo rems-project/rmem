@@ -38,9 +38,6 @@ type instruction_semantics_mode (* ism *) =
   | RISCV_ism
   | X86_ism
 
-(* replace isa_info with type ISA 'i where 'i is the instruction type
- * then move the functions from Instruction class to ISA *)
-
 type instruction 'i = 
   | Unfetched
   | Fetched of 'i
