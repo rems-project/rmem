@@ -69,7 +69,7 @@ let ppcgen_shallow_embedding : instruction_semantics Power_embed_types.ast =
   <| decode_to_instruction = decode_to_instruction;
      instruction_analysis = analysis;
      initial_outcome_of_instruction = initial_outcome_of_instruction;
-     encode_instruction = fun _ -> failwith "not implemented yet";
+     encode_instruction = fun _ _ -> failwith "not implemented yet";
  |>
 
 

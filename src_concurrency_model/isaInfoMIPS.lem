@@ -54,7 +54,7 @@ let mips_shallow_embedding : instruction_semantics Mips_embed_types.ast =
   <| decode_to_instruction = decode_to_instruction;
      instruction_analysis = analysis;
      initial_outcome_of_instruction = initial_outcome_of_instruction;
-     encode_instruction = fun _ -> failwith "not implemented yet"; |>
+     encode_instruction = fun _ _ -> failwith "not implemented yet"; |>
 
 
 let mips_is_system_call_instruction (_: Mips_embed_types.ast) = Nothing
