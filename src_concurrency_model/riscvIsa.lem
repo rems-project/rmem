@@ -24,7 +24,7 @@ open import Pervasives_extra
 open import Sail_impl_base
 open import Utils
 open import Events
-open import BasicTypes
+open import Isa
 open import InstructionSemantics
 open import Sail_values
 open import RegUtils

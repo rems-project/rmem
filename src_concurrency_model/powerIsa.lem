@@ -22,7 +22,7 @@ open import Assert_extra
 
 open import Sail_impl_base
 open import Utils
-open import BasicTypes
+open import Isa
 open import Events
 open import InstructionSemantics
 open import RegUtils

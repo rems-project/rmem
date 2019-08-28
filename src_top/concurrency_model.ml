@@ -35,7 +35,7 @@ module type S = sig
 
   val transitions : state -> trans list
   val state_after_trans :
-    state -> trans -> ((instruction_ast,state) BasicTypes.transition_outcome)
+    state -> trans -> ((instruction_ast,state) ExceptionTypes.transition_outcome)
 
   val model_params     : state -> Params.model_params
   val set_model_params : Params.model_params -> state -> state

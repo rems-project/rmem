@@ -277,13 +277,13 @@ let test_info (test: 'i Test.test) (name: string) : Test.info =
 
 let initial_state_record
     (test:      'i test)
-    (isa:       'i BasicTypes.isa)
+    (isa:       'i Isa.isa)
     (model:     Params.model_params)
   : 'i Params.initial_state_record
   =
 
   let open Params in
-  let open BasicTypes in
+  let open Isa in
   let open InstructionSemantics in
 
   (* list of tids 0,1,... *)
@@ -397,15 +397,15 @@ let initial_state_record
   (* Set up TPIDR registers -- used for thread local storage, specifically
      seems to be a pointer to the TCB. For now, just put the thread id there *)
   let reg_values : ((Nat_num.nat * Sail_impl_base.reg_base_name) * Sail_impl_base.register_value) list =
-    let open BasicTypes in
+    let open Isa in
     match test.arch with
     | `AArch64 ->
        let tpidr_el0 =
          let registerdata =
            if !Globals.aarch64gen then
-             IsaInfoAArch64.aarch64gen_ism.register_data_info
+             Aarch64Isa.aarch64gen_ism.register_data_info
            else
-             IsaInfoAArch64.aarch64hand_ism.register_data_info
+             Aarch64Isa.aarch64hand_ism.register_data_info
          in
          match RegUtils.reg_from_data registerdata "TPIDR_EL0" with
          | Some r -> r
@@ -417,7 +417,7 @@ let initial_state_record
           tids)
        @ test.init_reg_state
     | `RISCV ->
-       let registerdata = IsaInfoRISCV.riscv_ism.register_data_info in
+       let registerdata = RiscvIsa.riscv_ism.register_data_info in
        let get_reg r = match RegUtils.reg_from_data registerdata r with
          | Some r -> r
          | None -> failwith (r ^ " not in register_data_info")
@@ -552,7 +552,7 @@ let read_channel
 
   let open Params in
   let open InstructionSemantics in
-  let open BasicTypes in
+  let open Isa in
 
   begin match isa_callback with
   | Some f -> f ism

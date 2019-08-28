@@ -5,7 +5,7 @@ open import Utils
 open import Events
 open import Fragments
 open import Params
-open import BasicTypes
+open import Isa
 
 
 
@@ -103,3 +103,23 @@ let pseudo_register_value isa cia_address reg =
   in
 
   ensure_just (reassemble_register_value reg found) "could not reconstruct pseudo register"
+
+
+
+
+(** Dependency calculation *)
+type register_read_source =
+  | RRS_instruction of ioid * list reg_name * list (maybe_value_fragment bit_lifted)
+  | RRS_initial_state of list (maybe_value_fragment bit_lifted)
+  | RRS_pseudoregister
+(* the lists of maybe_value_fragments above are recorded only for the sake of constructing axiomatic executions for the user interface *)
+
+(* list with the most recent at the head *)
+type register_read_sources = list register_read_source
+
+type register_write_dependency =
+    | RWD_reg_write of ioid * list reg_name (* a po-previous instruction and register writes
+                                            that feed a register read that was performed
+                                            before the register write *)
+    | RWD_mem_read (* indicates the instruction performed a memory read
+                   before the register write *)

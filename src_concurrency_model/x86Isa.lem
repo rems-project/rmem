@@ -25,7 +25,7 @@ open import Assert_extra
 open import Sail_impl_base
 open import Utils
 open import Events
-open import BasicTypes
+open import Isa
 open import InstructionSemantics
 open import RegUtils
 import X86_embed_types

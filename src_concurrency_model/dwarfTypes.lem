@@ -2,7 +2,7 @@ open import Pervasives
 open import Assert_extra
 open import Sail_impl_base
 open import InstructionSemantics
-open import BasicTypes
+open import Isa
 open import RegUtils
 
 type dwarf_register_read_result =

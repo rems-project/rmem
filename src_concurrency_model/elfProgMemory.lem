@@ -1,0 +1,48 @@
+open import Pervasives_extra
+open import Sail_impl_base
+(* open import Sail_values *)
+open import InstructionSemantics
+(* open import Events
+ * open import Fragments
+ * open import Utils *)
+
+
+
+(* represent ELF-derived program memory as a Lem "Map (list word8)
+word8", where the "list word8" is the bytes of the address as would
+appear in a Bytevector interpreter value (the default OCaml compare
+should be fine for such maps) (it would be more efficient, and perhaps
+more elegant, to use a lem word64 type for the index) *)
+
+let empty_elf_memory : map address byte = Map.empty
+
+(* convert the address-to-word8 map memory into an "address -> maybe opcode" function *)
+let elf_program_memory_opcode_lookup (mem: map address byte) (endianness: end_flag) (a0: address) : maybe opcode =
+  let a1 = add_address_nat a0 1 in
+  let a2 = add_address_nat a0 2 in
+  let a3 = add_address_nat a0 3 in
+  let byte0 : maybe byte = Map.lookup a0 mem in
+  let byte1 : maybe byte = Map.lookup a1 mem in
+  let byte2 : maybe byte = Map.lookup a2 mem in
+  let byte3 : maybe byte = Map.lookup a3 mem in
+  match (endianness, byte0,byte1,byte2,byte3) with
+  | (E_big_endian,    Just b0, Just b1, Just b2, Just b3) -> Just (opcode_of_bytes b0 b1 b2 b3)
+  | (E_little_endian, Just b0, Just b1, Just b2, Just b3) -> Just (opcode_of_bytes b3 b2 b1 b0)
+  | _ -> Nothing
+  end
+
+let elf_program_memory 
+      (mem: map address byte)
+      (endianness: end_flag)
+      (instruction_semantics: instruction_semantics 'i)
+      (a: address) : (fetch_and_decode_outcome 'i) =
+  let decode (instruction_semantics: instruction_semantics 'i) (a:address) (mopcode:maybe opcode): (fetch_and_decode_outcome 'i) =
+    match mopcode with
+      | Just opcode -> instruction_semantics.decode_to_instruction a opcode
+      | Nothing ->     FDO_illegal_fetch_address
+    end
+  in
+  elf_program_memory_opcode_lookup mem endianness a
+  $> decode instruction_semantics a
+
+

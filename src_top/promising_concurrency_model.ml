@@ -65,7 +65,7 @@ module Make (ISAModel: Isa_model.S) :
                    
   let initial_state ism run_options initial_state_record =
     Promising.p_initial_state
-      ISAModel.isa.BasicTypes.register_data_info
+      ISAModel.isa.Isa.register_data_info
       initial_state_record
     |> Promising.type_specialised_p_pst_of_state
 

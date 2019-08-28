@@ -112,7 +112,7 @@ let initial_stack tid : ((Nat_big_num.num * int) (* entire footprint *) *
 let initial_stack_and_reg_data_of_PPC_elf_file e_entry memory elf_threads_list =
   let reg name =
     match RegUtils.reg_from_data
-            IsaInfoPPCGen.ppcgen_ism.BasicTypes.register_data_info name with
+            PowerIsa.ppcgen_ism.Isa.register_data_info name with
     | Some r -> r
     | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoPPCGen.ppcgen_ism.register_data_info'")
   in
@@ -167,9 +167,9 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
   let reg name =
     let registerdata =
       if !Globals.aarch64gen then
-        IsaInfoAArch64.aarch64gen_ism.BasicTypes.register_data_info
+        Aarch64Isa.aarch64gen_ism.Isa.register_data_info
       else
-        IsaInfoAArch64.aarch64hand_ism.BasicTypes.register_data_info
+        Aarch64Isa.aarch64hand_ism.Isa.register_data_info
     in
     match RegUtils.reg_from_data registerdata name with
     | Some r -> r
@@ -238,7 +238,7 @@ let initial_stack_and_reg_data_of_AAarch64_elf_file e_entry memory elf_threads_l
 
 let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list =
       let reg name =
-        match RegUtils.reg_from_data IsaInfoMIPS.mips_ism.BasicTypes.register_data_info name with
+        match RegUtils.reg_from_data MipsIsa.mips_ism.Isa.register_data_info name with
         | Some r -> r
         | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoMIPS.mips_ism.register_data_info'")
       in
@@ -270,7 +270,7 @@ let initial_stack_and_reg_data_of_mips_elf_file e_entry memory elf_threads_list 
 
 let initial_stack_and_reg_data_of_riscv_elf_file symbol_map memory elf_threads_list =
       let reg name =
-        match RegUtils.reg_from_data IsaInfoRISCV.riscv_ism.BasicTypes.register_data_info name with
+        match RegUtils.reg_from_data RiscvIsa.riscv_ism.Isa.register_data_info name with
         | Some r -> r
         | None -> failwith ("\"" ^ name ^ "\" is not in 'IsaInfoRISCV.riscv_ism.register_data_info'")
       in
@@ -528,7 +528,7 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
       Sail_impl_base.address_of_integer
       Sail_impl_base.byte_of_int
       (program_memory: (Nat_big_num.num, word8) Pmap.map)
-      BasicTypes.empty_elf_memory  in
+      ElfProgMemory.empty_elf_memory  in
 
 
   let initial_register_state reg_data =
@@ -544,7 +544,7 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
   in
 
   let program_memory =
-    BasicTypes.elf_program_memory
+    ElfProgMemory.elf_program_memory
       program_memory
       (Globals.get_endianness ())
   in
@@ -564,7 +564,7 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
       let open Sail_impl_base in
       let open Params in
       let open InstructionSemantics in
-      let open BasicTypes in
+      let open Isa in
       match isa.ism with
       | PPCGEN_ism ->
           let endianness =
@@ -596,7 +596,7 @@ let initial_state_record elf_test model isa : 'i Params.initial_state_record =
           isa.fixed_pseudo_registers
     in
     let open Params in
-    let open BasicTypes in
+    let open Isa in
     {isa with fixed_pseudo_registers = fixed_pseudo_registers'}
   in
 

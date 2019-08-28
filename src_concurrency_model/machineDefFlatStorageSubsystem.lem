@@ -31,7 +31,7 @@ open import Utils
 open import UiTypes
 open import InstructionSemantics
 open import InstructionKindPredicates
-open import BasicTypes
+open import Isa
 open import MachineDefUI
 open import MachineDefTypes
 open MaybeMonad

@@ -3,7 +3,7 @@ open import Sail_impl_base
 open import InstructionSemantics
 open import Events
 open import Fragments
-open import BasicTypes
+open import Isa
 
 
 (** model parameters *)

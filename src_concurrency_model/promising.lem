@@ -24,9 +24,10 @@ open import FreshIds
 open import Events
 open import Fragments
 open import Debug
+open import ExceptionTypes
 open import Utils
 open import Params
-open import BasicTypes
+open import Isa
 open import RegUtils
 open import CandidateExecution
      import Map

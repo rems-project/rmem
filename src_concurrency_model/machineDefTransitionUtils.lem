@@ -25,7 +25,7 @@ open import Debug
 open import Utils
 open import FreshIds
 open import Events
-open import BasicTypes
+open import Isa
 open import Params
 open import Fragments
 open import InstructionSemantics

@@ -15,6 +15,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import BasicTypes
+open import Isa
 
 let ppcgen_ism = isa_stub

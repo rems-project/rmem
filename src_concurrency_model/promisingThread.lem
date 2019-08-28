@@ -20,6 +20,7 @@ open import Relation
 open import Pervasives_extra
 open import Sail_impl_base
 open import InstructionSemantics
+open import ExceptionTypes
 open import FreshIds
 open import Events
 open import InstructionKindPredicates
@@ -27,7 +28,7 @@ open import Fragments
 open import Debug
 open import Utils
 open import Params
-open import BasicTypes
+open import Isa
 open import RegUtils
      import Map
 open import PromisingViews

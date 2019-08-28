@@ -724,12 +724,12 @@ let try_single_transition
                   interact_node.system_state
                   transition
           with
-          | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
+          | ExceptionTypes.TO_unhandled_exception (tid, ioid, e) ->
               SO.strLine "the transition leads to exception"
               |> Screen.show_message interact_state.ppmode;
               (* TODO: pp the exception *)
               None
-          | BasicTypes.TO_system_state system_state' ->
+          | ExceptionTypes.TO_system_state system_state' ->
               let interact_nodes =
                 if eager then
                   match interact_nodes with

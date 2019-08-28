@@ -24,7 +24,7 @@ open import Sail_impl_base
 open import Utils
 open import Events
 open import InstructionSemantics
-open import BasicTypes
+open import Isa
 open import RegUtils
 import Mips_embed_types
 import Mips_embed

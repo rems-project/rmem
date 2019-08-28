@@ -65,7 +65,6 @@ let get_endianness = fun () ->
   begin match !big_endian with
   | None ->
       let open InstructionSemantics in
-      let open BasicTypes in
       begin match !ism with
       | PPCGEN_ism    -> Sail_impl_base.E_big_endian
       | AARCH64_ism _ -> Sail_impl_base.E_little_endian

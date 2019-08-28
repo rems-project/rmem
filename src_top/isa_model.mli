@@ -52,7 +52,7 @@
 module type ISADefs = sig
   val name : string
   val ism : InstructionSemantics.instruction_semantics_mode
-  (* val reg_data : BasicTypes.registerdata *)
+  (* val reg_data : Isa.registerdata *)
 
   val isa_defs_thunk : ?no_memo:bool -> unit -> Interp_interface.specification
   val interp2_isa_defs_thunk : ?no_memo:bool -> unit -> (Type_check.tannot Ast.defs * Type_check.Env.t)
@@ -84,7 +84,7 @@ end
 
 module type ISA = sig
   type instruction_ast
-  val isa: instruction_ast BasicTypes.isa
+  val isa: instruction_ast Isa.isa
   val pp_instruction_ast :
     Globals.ppmode ->
     ((Sail_impl_base.address * Sail_impl_base.size) * string) list ->
@@ -97,7 +97,7 @@ end
 module type S = sig
   type instruction_ast
   module ISADefs : ISADefs
-  val isa : instruction_ast BasicTypes.isa
+  val isa : instruction_ast Isa.isa
   val pp_instruction_ast :
     Globals.ppmode ->
     ((Sail_impl_base.address * Sail_impl_base.size) * string) list ->

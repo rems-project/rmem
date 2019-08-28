@@ -23,7 +23,7 @@ open import FreshIds
 open import Utils
 open import Params
 open import Events
-open import BasicTypes
+open import Isa
 open import RegUtils
      import Map
 open import DwarfTypes

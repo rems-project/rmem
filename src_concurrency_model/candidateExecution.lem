@@ -48,7 +48,8 @@ open import Events
 open import Utils
 open import Params
 open import Fragments
-open import BasicTypes
+open import RegUtils
+open import Isa
 open import InstructionSemantics
 
 

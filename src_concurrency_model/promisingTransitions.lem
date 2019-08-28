@@ -1,6 +1,7 @@
 open import Pervasives
 open import Sail_impl_base
-open import BasicTypes
+open import ExceptionTypes
+open import Isa
 open import InstructionSemantics
 open import Fragments
 open import PromisingViews

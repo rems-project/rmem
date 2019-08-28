@@ -1,0 +1,113 @@
+open import Pervasives_extra
+open import Sail_impl_base
+open import Sail_values
+open import InstructionSemantics
+open import ExceptionTypes
+open import Events
+open import Fragments
+open import Utils
+
+(* the left nat is width and the right nat is initial index;
+the list is the register fields; if direction is D_increasing the left side of the
+slice is less or equal to the right, if direction is D_decreasing the right side of the
+slice is less or equal to the left *)
+type registerdata = list (reg_base_name * (direction * nat * nat * list (string * slice)))
+
+
+(** ISA info *)
+
+type thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr:   reg_name;
+      tsi_toc:    maybe reg_name; (* PPCGEN *)
+      tsi_extra:  maybe reg_name; (* PPCGEN, though unused *)
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return: reg_name;
+
+      (* these registers hold the arguments of the new thread function *)
+      tsi_f_tid:  reg_name;
+      tsi_f_toc:  maybe reg_name; (* PPCGEN *)
+      tsi_f_addr: maybe reg_name; (* MIPS *)
+  |>
+
+
+type isa 'i =
+  <|  ism : InstructionSemantics.instruction_semantics_mode;
+      instruction_semantics : instruction_semantics 'i;
+
+      maybe_split_conditional_branch: 'i -> maybe (vector bitU * vector bitU);
+      make_conditional_branch: vector bitU * vector bitU -> 'i;
+
+      is_system_call_instruction  : 'i -> maybe integer;
+      is_thread_start_instruction : 'i -> bool;
+      is_atomically_fetchable_instruction: 'i -> bool;
+      is_branch: 'i -> bool;
+      is_amo: 'i -> bool;
+
+      thread_start_info : thread_start_info;
+
+      register_data_info     : registerdata;
+      fixed_pseudo_registers : list (reg_name * register_value);
+      cia_reg                : reg_name;
+      nia_reg                : reg_name;
+      dia_reg                : maybe reg_name;
+
+      make_empty_write_events  : thread_id -> 
+                                 'i -> (* instruction instance's AST node *)
+                                 FreshIds.id_state ioid -> (* instruction instance's id state *)
+                                 ioid -> (* instruction instance's id *)
+                                 footprint ->
+                                 write_kind ->
+                                 ((list write) * (FreshIds.id_state ioid));
+      make_read_request_events : thread_id ->
+                                 'i -> (* instruction instance's AST node *)
+                                 FreshIds.id_state ioid -> (* instruction instance's id state *)
+                                 ioid -> (* instruction instance's id *)
+                                 footprint ->
+                                 read_kind ->
+                                 ((list read_request) * (FreshIds.id_state ioid));
+  |>
+  
+
+let instruction_semantics_stub = 
+  <| decode_to_instruction = fun _ _ -> failwith "stub";
+     encode_instruction = fun _ _ -> failwith "stub";
+     initial_outcome_of_instruction = fun _ -> failwith "stub";
+     instruction_analysis = fun _ _ _ _ -> failwith "stub"
+  |>
+
+
+
+let thread_start_info_stub =
+  <|  tsi_addr  = Reg "" 0 0 D_increasing;
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      tsi_return = Reg "" 0 0 D_increasing;
+      tsi_f_tid  = Reg "" 0 0 D_increasing;
+      tsi_f_toc  = Nothing;
+      tsi_f_addr = Nothing;
+  |>
+
+let isa_stub = 
+  <|  ism                         = InstructionSemantics.PPCGEN_ism;
+      thread_start_info           = thread_start_info_stub;
+      instruction_semantics       = instruction_semantics_stub;
+      register_data_info          = [];
+      fixed_pseudo_registers      = [];
+      cia_reg                     = Reg "" 0 0 D_increasing;
+      nia_reg                     = Reg "" 0 0 D_increasing;
+      dia_reg                     = Nothing;
+      make_empty_write_events     = fun _ _ _ _ -> failwith "stub";
+      make_read_request_events    = fun _ _ _ _ -> failwith "stub";
+      is_system_call_instruction  = fun _ -> failwith "stub";
+      is_thread_start_instruction = fun _ -> failwith "stub";
+      is_atomically_fetchable_instruction = fun _ -> failwith "stub";
+      is_branch = fun _ -> failwith "stub";
+      is_amo = fun _ -> failwith "stub";
+      (* print_instruction = fun _ -> failwith "stub"; *)
+      maybe_split_conditional_branch = fun _ -> failwith "stub";
+      make_conditional_branch = fun _ -> failwith "stub";
+  |>
+
+
+

@@ -34,7 +34,8 @@ open Sail_impl_base
 open Utils
 open Events
 open Params
-open BasicTypes
+open RegUtils
+open ExceptionTypes
 open UiTypes
 open InstructionSemantics
 open Fragments

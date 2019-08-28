@@ -35,10 +35,12 @@ open import Utils
 open import FreshIds
 open import Fragments
 open import Events
-open import BasicTypes
+open import Isa
+open import RegUtils
 open import Params
 open import DwarfTypes
 open import InstructionSemantics
+open import ExceptionTypes
 open import InstructionKindPredicates
 open import CandidateExecution
 open import MachineDefTypes

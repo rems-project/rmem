@@ -15,7 +15,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-open import BasicTypes
-import Mips_embed_types
+open import Isa
+import ArmV8_embed_types
 
-let mips_ism : isa Mips_embed_types.ast = isa_stub
+let aarch64hand_ism   : isa ArmV8_embed_types.ast  = isa_stub
+let aarch64gen_ism    : isa ArmV8_embed_types.ast  = isa_stub

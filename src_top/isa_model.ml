@@ -31,7 +31,7 @@ end
 
 module type ISA = sig
   type instruction_ast
-  val isa: instruction_ast BasicTypes.isa
+  val isa: instruction_ast Isa.isa
   val pp_instruction_ast :
     Globals.ppmode ->
     ((Sail_impl_base.address * Sail_impl_base.size) * string) list ->
@@ -44,7 +44,7 @@ end
 module type S = sig
   type instruction_ast
   module ISADefs : ISADefs
-  val isa : instruction_ast BasicTypes.isa
+  val isa : instruction_ast Isa.isa
   val pp_instruction_ast :
     Globals.ppmode ->
     ((Sail_impl_base.address * Sail_impl_base.size) * string) list ->
@@ -248,42 +248,42 @@ end
 
 module PPCGEN_ISA : ISA with type instruction_ast = Power_embed_types.ast0 = struct
   type instruction_ast = Power_embed_types.ast0
-  let isa = IsaInfoPPCGen.ppcgen_ism
+  let isa = PowerIsa.ppcgen_ism
   let pp_instruction_ast = Pp.pp_ppcgen_instruction
   module TransSail = PPCGenTransSail
 end
 
 module AARCH64_HGEN_ISA : ISA with type instruction_ast = ArmV8_embed_types.ast1 = struct
   type instruction_ast = ArmV8_embed_types.ast1
-  let isa = IsaInfoAArch64.aarch64hand_ism
+  let isa = Aarch64Isa.aarch64hand_ism
   let pp_instruction_ast = Pp.pp_aarch64_instruction
   module TransSail = (AArch64HGenTransSail)
 end
 
 module AARCH64_GEN_ISA : ISA with type instruction_ast = ArmV8_embed_types.ast1 = struct
   type instruction_ast = ArmV8_embed_types.ast1
-  let isa = IsaInfoAArch64.aarch64gen_ism
+  let isa = Aarch64Isa.aarch64gen_ism
   let pp_instruction_ast = Pp.pp_aarch64_instruction
   module TransSail = (AArch64GenTransSail)
 end
 
 module MIPS_ISA : ISA with type instruction_ast = Mips_embed_types.ast2 = struct
   type instruction_ast = Mips_embed_types.ast2
-  let isa = IsaInfoMIPS.mips_ism
+  let isa = MipsIsa.mips_ism
   let pp_instruction_ast = Pp.pp_mips_instruction
   module TransSail = (MIPSHGenTransSail)
 end
 
 module RISCV_ISA : ISA with type instruction_ast = Riscv_types.ast = struct
   type instruction_ast = Riscv_types.ast
-  let isa = IsaInfoRISCV.riscv_ism
+  let isa = RiscvIsa.riscv_ism
   let pp_instruction_ast = Pp.pp_riscv_instruction
   module TransSail = (RiscvTransSail)
 end
 
 module X86_ISA : ISA with type instruction_ast = X86_embed_types.ast3 = struct
   type instruction_ast = X86_embed_types.ast3
-  let isa = IsaInfoX86.x86_ism
+  let isa = X86Isa.x86_ism
   let pp_instruction_ast = Pp.pp_x86_instruction
   module TransSail = (X86HGenTransSail)
 end

@@ -52,10 +52,10 @@ module StateMap = Map.Make(struct
 end)
 
 module ExceptionMap = Map.Make(struct
-  type t = Events.thread_id * Events.ioid * (ConcModel.instruction_ast BasicTypes.exception_type)
+  type t = Events.thread_id * Events.ioid * (ConcModel.instruction_ast ExceptionTypes.exception_type)
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
     begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
-    | (0, 0) -> BasicTypes.exception_type_compare e1 e2
+    | (0, 0) -> ExceptionTypes.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c
     end
@@ -526,10 +526,10 @@ let take_transition search_state state (i, (transition : ConcModel.trans)) eager
 
       begin match ConcModel.state_after_trans state
                     (transition : ConcModel.trans) with
-      | BasicTypes.TO_unhandled_exception (tid, ioid, e) ->
+      | ExceptionTypes.TO_unhandled_exception (tid, ioid, e) ->
           (* SF: I don't think this will ever happen *)
           record_exception search_state (tid, ioid, e)
-      | BasicTypes.TO_system_state state' when eager ->
+      | ExceptionTypes.TO_system_state state' when eager ->
           (* If the transition was eager, pop and re-push the head node,
           prepending it to the previous node's open_transition *)
           begin match (pop search_state) with
@@ -550,7 +550,7 @@ let take_transition search_state state (i, (transition : ConcModel.trans)) eager
               }
               |> add_search_node state'
           end
-      | BasicTypes.TO_system_state state' (* when not eager *) ->
+      | ExceptionTypes.TO_system_state state' (* when not eager *) ->
           (* Otherwise we push a new node. We have previously asserted that open_transition = [] *)
           assert (search_node.open_transition = []);
           { search_state with

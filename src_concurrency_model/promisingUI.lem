@@ -26,7 +26,7 @@ open import Fragments
 open import Debug
 open import Utils
 open import Params
-open import BasicTypes
+open import Isa
 open import RegUtils
 open import UiTypes
      import Map

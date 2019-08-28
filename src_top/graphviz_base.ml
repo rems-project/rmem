@@ -21,7 +21,7 @@ open Printf
 open Sail_impl_base
 open Fragments
 open Events
-open BasicTypes
+open RegUtils
 open CandidateExecution
 
 open Globals
