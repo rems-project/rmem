@@ -242,12 +242,12 @@ let options_of_html : unit -> RunOptions.t = fun () ->
   }
 ;;
 
-let isa_callback (isa: InstructionSemantics.instruction_semantics_mode) =
+let isa_callback (isa: Isa.isa_model) =
   begin match isa with
-  | PPCGEN_ism ->
+  | PPC ->
      Globals.model_params := Model_aux.parse_and_update_model "pldi11" !Globals.model_params;
      Js.Unsafe.fun_call (Js.Unsafe.js_expr "set_isa") [|Js.Unsafe.inject (js "PPC")|] |> ignore
-  | MIPS_ism ->
+  | MIPS ->
       begin match (!Globals.model_params).ss.ss_model with
       | PLDI11_storage_model
       | TSO_storage_model
@@ -259,7 +259,7 @@ let isa_callback (isa: InstructionSemantics.instruction_semantics_mode) =
       | NOP_storage_model -> ()
       end;
       Js.Unsafe.fun_call (Js.Unsafe.js_expr "set_isa") [|Js.Unsafe.inject (js "MIPS")|] |> ignore
-  | RISCV_ism ->
+  | RISCV ->
       begin match (!Globals.model_params).ss.ss_model with
       | PLDI11_storage_model
       | Flowing_storage_model
@@ -271,7 +271,7 @@ let isa_callback (isa: InstructionSemantics.instruction_semantics_mode) =
       | TSO_storage_model -> ()
       end;
       Js.Unsafe.fun_call (Js.Unsafe.js_expr "set_isa") [|Js.Unsafe.inject (js "RISCV")|] |> ignore
-  | AARCH64_ism _ ->
+  | AARCH64 _ ->
       begin match (!Globals.model_params).ss.ss_model with
       | PLDI11_storage_model
       | TSO_storage_model ->
@@ -283,7 +283,7 @@ let isa_callback (isa: InstructionSemantics.instruction_semantics_mode) =
       | Promising_storage_model -> ()
       end;
       Js.Unsafe.fun_call (Js.Unsafe.js_expr "set_isa") [|Js.Unsafe.inject (js "AArch64")|] |> ignore
-  | X86_ism ->
+  | X86 ->
       begin match (!Globals.model_params).ss.ss_model with
       | PLDI11_storage_model
       | Flowing_storage_model
