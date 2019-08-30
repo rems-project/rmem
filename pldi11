@@ -1,0 +1,2 @@
+#!/bin/sh
+$(dirname "$0")/rmem -model pldi11 -shallow_embedding true -eager false -hash_prune false "$@"
