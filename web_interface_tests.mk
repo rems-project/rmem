@@ -14,12 +14,12 @@
 #                                                                               #
 #===============================================================================#
 
-PPCTESTSDIR = ../litmus-tests-power-private
-AArch64TESTSDIR = ../litmus-tests-armv8a-private
-AArch64SystemTESTSDIR = ../litmus-tests-armv8a-system
-RISCVTESTSDIR = ../litmus-tests-riscv
-x86TESTSDIR = ../litmus-tests-x86-private
-# MIPSTESTSDIR = ../litmus-tests-mips-private
+PPCTESTSDIR = $(REMSDIR)/litmus-tests-power-private
+AArch64TESTSDIR = $(REMSDIR)/litmus-tests-armv8a-private
+AArch64SystemTESTSDIR = $(REMSDIR)/litmus-tests-armv8a-system
+RISCVTESTSDIR = $(REMSDIR)/litmus-tests-riscv
+x86TESTSDIR = $(REMSDIR)/litmus-tests-x86-private
+# MIPSTESTSDIR = $(REMSDIR)/litmus-tests-mips-private
 
 $(INSTALLDIR)/tests/PPC:
 	cp -ar $(PPCTESTSDIR)/tests $@

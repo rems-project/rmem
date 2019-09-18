@@ -445,24 +445,26 @@ get_all_deps: check_external_deps
 ## internal dependencies: ############################################
 #  these are dependencies we build from source
 
-ottgit=https://github.com/ott-lang/ott.git
-ottdir=../ott
+REMSDIR ?= ../
+
+ottgit ?= https://github.com/ott-lang/ott.git
+ottdir ?= $(REMSDIR)/ott
 .PHONY: ottgit ottdir
 
-sailgit=https://github.com/rems-project/sail.git
-saildir=../sail
+sailgit ?= https://github.com/rems-project/sail.git
+saildir ?= $(REMSDIR)/sail
 .PHONY: sailgit saildir
 
-sail2git=https://github.com/rems-project/sail.git
-sail2dir=../sail2
+sail2git ?= https://github.com/rems-project/sail.git
+sail2dir ?= $(REMSDIR)/sail2
 .PHONY: sail2git sail2dir
 
-lemgit=https://github.com/rems-project/lem.git
-lemdir=../lem
+lemgit ?= https://github.com/rems-project/lem.git
+lemdir ?= $(REMSDIR)/lem
 .PHONY: lemgit lemdir
 
-linksemgit=https://github.com/rems-project/linksem.git
-linksemdir=../linksem
+linksemgit ?= https://github.com/rems-project/linksem.git
+linksemdir ?= $(REMSDIR)/linksem
 .PHONY: linksemgit linksemdir
 
 # If lem/bin or ott/bin do not exist when you run make (e.g. first run)
@@ -503,8 +505,8 @@ fetch_sail2: fetch_ott fetch_lem
 fetch_internal_deps: fetch_lem fetch_linksem fetch_ott fetch_sail fetch_sail2
 .PHONY: fetch_internal_deps
 
-riscvgit=https://github.com/rems-project/sail-riscv.git
-riscvdir=../sail-riscv
+riscvgit ?= https://github.com/rems-project/sail-riscv.git
+riscvdir ?= $(REMSDIR)/sail-riscv
 .PHONY: riscvgit riscvdir
 
 fetch_isa_model_riscv: fetch_isa_model_%:
@@ -964,7 +966,7 @@ sloc_isa_model_%: FORCE
 jenkins-sanity: sanity.xml
 .PHONY: jenkins-sanity
 
-sanity.xml: REGRESSIONDIR = ../litmus-tests-regression-machinery
+sanity.xml: REGRESSIONDIR = $(REMSDIR)/litmus-tests-regression-machinery
 sanity.xml: FORCE
 	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow" TARGETS=clean-model
 	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow"

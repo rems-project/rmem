@@ -62,9 +62,9 @@ check_session_exists() {
       (which tmux &>/dev/null && tmux has-session -t "$SESSION")
   then
     echo "Error: the session \"$SESSION\" already exists."
-    echo "  reattach: $0 -r -s \"$SESSION\""
-    echo "  kill:     $0 -k -s \"$SESSION\""
-    echo "or use a different session name, see '$0 -h'"
+    echo "  reattach: $SCRIPTNAME -r -s \"$SESSION\""
+    echo "  kill:     $SCRIPTNAME -k -s \"$SESSION\""
+    echo "or use a different session name, see '$SCRIPTNAME -h'"
     exit 1
   fi
 }
@@ -81,7 +81,7 @@ run_reattach() {
       remove_pipes
     fi
   else
-    echo "Error: the session \"$SESSION\" does not exist (hint: use '$0 -k -s \"$SESSION\"' to remove leftovers)"
+    echo "Error: the session \"$SESSION\" does not exist (hint: use '$SCRIPTNAME -k -s \"$SESSION\"' to remove leftovers)"
     exit 1
   fi
 }
@@ -256,7 +256,7 @@ while [ "$#" -gt 0 ]; do
         SESSION="$2"
         shift 2
       else
-        echo "Error: '$1' expects a session name (see '$0 -h')"
+        echo "Error: '$1' expects a session name (see '$SCRIPTNAME -h')"
         exit 1
       fi
       ;;
