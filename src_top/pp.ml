@@ -1189,8 +1189,11 @@ let pp_write_value m w =
   | None       -> "(awaiting)"
   end
 
+let pp_write_lhs m w =
+  sprintf "%s%s %s" (pp_pretty_eiid m w.weiid) (pp_brief_write_kind m w.w_write_kind) (pp_footprint m (Some w.w_ioid) w.w_addr)
+
 let pp_write_uncoloured m w =
-  sprintf "%s%s %s=%s" (*(pp_pretty_write_id w.weiid)*) (pp_pretty_eiid m w.weiid) (pp_brief_write_kind m w.w_write_kind) (*w.w_Thread*) (pp_footprint m (Some w.w_ioid) w.w_addr) (pp_write_value m w)
+  (pp_write_lhs m w) ^ "=" ^ (pp_write_value m w)
 
 let pp_writes_uncoloured m ws = String.concat " " (List.map (pp_write_uncoloured m) ws)
 
@@ -1285,13 +1288,15 @@ let pp_read_with_slices_and_view_uncoloured m r unsat_slices view =
 let pp_write_slice m write slice =
   let slice_value = Fragments.value_of_write_slices [(write, [slice])] in
   let slice_footprint = Fragments.footprint_of_write_slice write slice in
-  sprintf "[%s=%s]" (pp_footprint m (Some write.w_ioid) slice_footprint) (pp_memory_value m write.w_ioid slice_value)
-(* ^ sprintf "[%s,%s]" (pp_slice m slice) (pp_memory_value m slice_value) *)
+  (pp_footprint m (Some write.w_ioid) slice_footprint) ^ "=" ^ (pp_memory_value m write.w_ioid slice_value)
 
 let pp_write_slices_uncoloured m (w, slices) =
-  pp_write_uncoloured m w ^
-  if slices = [Fragments.complete_slice w.w_addr] then ""
-  else " " ^ String.concat "," (List.map (pp_write_slice m w) slices)
+  if slices = [Fragments.complete_slice w.w_addr] then
+    pp_write_uncoloured m w
+  else
+    pp_write_lhs m w ^ "=[" ^
+    String.concat "," (List.map (pp_write_slice m w) slices) ^
+    "]"
 
 let pp_mrs_uncoloured m r_ioid mrs =
 (*  pp_footprint m mrs.mrs_footprint
