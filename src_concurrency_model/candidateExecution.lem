@@ -109,10 +109,23 @@ type cex_candidate 'i =
     cex_threads: map thread_id (cex_thread_state 'i);
     cex_rf: Relation.rel (write * slices) read_request;
     cex_co: Relation.rel write write;
-    cex_fr: Relation.rel read_request write;
+    cex_fr: Relation.rel read_request (write * slices);
     cex_model: model_params;
   |> 
 
+(* We expect co to be transitively closed *)
+let fr_from_rf_co rf co =
+    let rfConverse = {(((w, sls), r), w) | forall (((w, sls), r) IN rf) | true} in
+    Relation.relComp rfConverse co
+    $> Set.mapMaybe (fun (((wrf, sls), r), wfr) ->
+          match match_write wrf.w_addr sls (write_with_complete_slice wfr) with
+          | Nothing -> Nothing
+          | Just (_, wsls) -> Just (r, wsls)
+          end)
+    (* $> Set.filter (fun (((wrf, sls), r), wfr) ->
+      overlapping_slices (wrf.w_addr, sls) (wfr.w_addr, [complete_slice wfr.w_addr]))
+    $> Set.map (fun ((_, r), wfr) ->
+      (r, wfr)) *)
 
 (** cutting down graphs to the concurrent accesses *)
 

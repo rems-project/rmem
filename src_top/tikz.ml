@@ -471,10 +471,10 @@ let make_tikz_graph
     | fr ->
       let edges =
         List.map
-          (fun (r, w) ->
-              pp_tikz_edge "fr"
-                (pp_tikz_pretty_eiid m r.reiid)
-                (pp_tikz_pretty_eiid m w.weiid))
+          (fun (r, (w, ss)) ->
+              pp_tikz_edge ("fr'=" ^ pp_tikz_write_slices_uncoloured m (w, ss))
+                  (pp_tikz_pretty_eiid m r.reiid)
+                  (pp_tikz_pretty_eiid m w.weiid))
           fr
       in
                 "  % from-read:\n" ^

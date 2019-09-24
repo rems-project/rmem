@@ -241,10 +241,11 @@ type i = ConcModel.instruction_ast
    let label = "co" in
    n1 ^ " -> " ^ n2 ^ " [weight=0, constraint=false color=\"brown\", fontcolor=\"brown\", label=\"" ^ label ^ "\",fontsize=10 fontname=\"helvetica\" ]" ^ arrowsz ^ ";\n"
 
- let pp_html_fr_edge m positions (r1,w2) =
-   let n1 = nodeid_of_read_request r1 in
-   let n2 = nodeid_of_write m w2 in
-   let label = "fr" in
+ let pp_html_fr_edge m positions (r,(w,slices)) =
+   let n1 = nodeid_of_read_request r in
+   let n2 = nodeid_of_write m w in
+   let pp_slices = List.map (Pp.pp_write_slice m w) slices in
+   let label = "fr" ^ String.concat "," pp_slices in
    n1 ^ " -> " ^ n2 ^ " [weight=0, constraint=false color=\"orange\", fontcolor=\"orange\", label=\"" ^ label ^ "\",fontsize=10 fontname=\"helvetica\" ]" ^ arrowsz ^ ";\n"
 
 
@@ -630,7 +631,7 @@ let pp_html_candidate_execution m legend_opt render_edges positions (cex: i cex_
       "/* coherence */\n"
       ^ (if m.ppg_co then String.concat "" (List.map (pp_html_co_edge m positions) (List.filter (function (w1,w2) -> pw w1 && pw w2) (Pset.elements cex.cex_co))) else "")
       ^ "/* from-reads */\n"
-      ^ (if m.ppg_fr then String.concat "" (List.map (pp_html_fr_edge m positions) (List.filter (function (r1,w2) -> pr r1 && pw w2) (Pset.elements cex.cex_fr))) else "")
+      ^ (if m.ppg_fr then String.concat "" (List.map (pp_html_fr_edge m positions) (List.filter (function (r1,(w2, _)) -> pr r1 && pw w2) (Pset.elements cex.cex_fr))) else "")
     else
       "")
   ^ (postamble legend_opt)

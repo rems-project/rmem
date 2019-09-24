@@ -579,19 +579,13 @@ let p_make_cex_candidate s : cex_candidate 'i =
 
   let co = pss_coherence s.p_storage_state in
 
-  let fr =
-    let rfConverse = {(r, w) | forall (((w, _), r) IN rf) | true} in
-    Relation.relComp rfConverse co
-    $> Set.filter (fun (r,w) -> non_empty_intersection r.r_addr w.w_addr)
-  in
-
   <|
     cex_program_memory = s.p_program_memory;
     cex_initial_writes = s.p_initial_writes;
     cex_threads = Map.map p_make_cex_thread_state s.p_thread_states;
     cex_rf = rf;
     cex_co = Relation.withoutTransitiveEdges co;
-    cex_fr = fr;
+    cex_fr = CandidateExecution.fr_from_rf_co rf co;
     cex_model = s.p_model;
   |> 
 
