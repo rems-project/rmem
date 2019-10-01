@@ -411,18 +411,6 @@ let restrict_value params = (params.ss.ss_sc, params.t.thread_restriction)
 
 (* thread: *)
 
-let thread_fsa_assoc =
-  [(Flowing_same_address_strict,     "flowing_same_address_strict");
-   (Flowing_same_address_aggressive, "flowing_same_address_aggressive")]
-let thread_fsa_update params value = {params with t = {params.t with thread_fsa = value}}
-let thread_fsa_value params = params.t.thread_fsa
-
-let thread_rwc_assoc =
-  [(Forbid_prev_uncommitted_read_type0,                "forbid_uncommitted_read");
-   (Allow_prev_uncommitted_determined_addr_read_type1, "allow_uncommitted_determined_read")]
-let thread_rwc_update params value = {params with t = {params.t with thread_rwc = value}}
-let thread_rwc_value params = params.t.thread_rwc
-
 let thread_rr_assoc =
   [(Restart_on_commit,       "restart_on_read_commit");
    (Restart_on_read_satisfy, "restart_on_read_satisfy")]
@@ -473,12 +461,6 @@ let new_coh_assoc =
 let new_coh_update params value = {params with ss = {params.ss with new_coh = value}}
 let new_coh_value params = params.ss.new_coh
 
-let pw_assoc =
-  [(Only_at_end,        "propagate_at_end");
-   (Possibly_in_middle, "propagate_in_middle")]
-let pw_update params value = {params with ss = {params.ss with pw = value}}
-let pw_value params = params.ss.pw
-
 (*
 let bc_assoc =
   [(Weak_BC,       "barrier_coherence_weak");
@@ -500,8 +482,6 @@ let parsers =
 
     gen_parser restrict_assoc restrict_update;
 
-    gen_parser thread_fsa_assoc thread_fsa_update;
-    gen_parser thread_rwc_assoc thread_rwc_update;
     gen_parser thread_rr_assoc thread_rr_update;
     gen_parser thread_allow_tree_speculation_assoc thread_allow_tree_speculation_update;
     gen_parser thread_allow_write_subsumption_assoc thread_allow_write_subsumption_update;
@@ -510,7 +490,6 @@ let parsers =
 
 (*    gen_parser coherence_commit_assoc coherence_commit_update;*)
     gen_parser new_coh_assoc new_coh_update;
-    gen_parser pw_assoc pw_update;
     gen_parser p_promise_first_assoc p_promise_first_update;
 (*    gen_parser bc_assoc bc_update;*)
     gen_parser fetch_atomics_assoc fetch_atomics_update;
@@ -521,8 +500,6 @@ let model_strings =
   (assoc_image model_assoc) @
   (assoc_image restrict_assoc) @
   (* thread: *)
-  (assoc_image thread_fsa_assoc) @
-  (assoc_image thread_rwc_assoc) @
   (assoc_image thread_rr_assoc) @
   (assoc_image thread_allow_tree_speculation_assoc) @
   (assoc_image thread_allow_write_subsumption_assoc) @
@@ -531,7 +508,6 @@ let model_strings =
   (* storage: *)
 (*  (assoc_image coherence_commit_assoc) @*)
   (assoc_image new_coh_assoc) @
-  (assoc_image pw_assoc) @
   (assoc_image p_promise_first_assoc) @
 (*  (assoc_image bc_assoc) @*)
   (assoc_image fetch_atomics_assoc)
@@ -542,8 +518,6 @@ let current_model params =
     (List.assoc (model_value params) model_assoc);
     (List.assoc (restrict_value params) restrict_assoc);
     (* thread: *)
-    (List.assoc (thread_fsa_value params) thread_fsa_assoc);
-    (List.assoc (thread_rwc_value params) thread_rwc_assoc);
     (List.assoc (thread_rr_value params) thread_rr_assoc);
     (List.assoc (thread_allow_tree_speculation_value params) thread_allow_tree_speculation_assoc);
     (List.assoc (thread_allow_write_subsumption_value params) thread_allow_write_subsumption_assoc);
@@ -552,7 +526,6 @@ let current_model params =
     (* storage: *)
 (*    (List.assoc (coherence_commit_value params) coherence_commit_assoc);*)
     (List.assoc (new_coh_value params) new_coh_assoc);
-    (List.assoc (pw_value params) pw_assoc);
     (List.assoc (p_promise_first_value params) p_promise_first_assoc);
 (*    (List.assoc (bc_value params) bc_assoc);*)
     (List.assoc (fetch_atomics_value params) fetch_atomics_assoc);

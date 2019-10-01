@@ -9,10 +9,6 @@ open import Isa
 (** model parameters *)
 (*: \subsection{Model Parameters} :*)
 
-type propagate_write_params =
-  | Only_at_end
-  | Possibly_in_middle
-
 type new_coherence_params =
   | Use_new_coherence
   | Use_old_coherence
@@ -48,7 +44,6 @@ type fetch_type =  (* Enable/Disable fetching for self-modifying examples *)
 type ss_params =
   <| ss_model: storage_model;
      ss_sc   : bool; (* behave like SC *)
-     pw      : propagate_write_params;
      new_coh : new_coherence_params;
      ss_fetch_type: fetch_type;
 
@@ -75,14 +70,6 @@ let update_ss_params_flat_dic params b =
   | Fetch_Atomic -> params
   | Fetch_Relaxed p -> <| params with ss_fetch_type = Fetch_Relaxed <| p with flat_need_ic = not b |> |>
   end
-
-type thread_flowing_same_address_params =
-  | Flowing_same_address_strict
-  | Flowing_same_address_aggressive
-
-type thread_restrict_write_commit_params =
-  | Forbid_prev_uncommitted_read_type0
-  | Allow_prev_uncommitted_determined_addr_read_type1
 
 type thread_restart_read_params =
   | Restart_on_commit
@@ -118,8 +105,6 @@ type fetch_order =
 type thread_params =
   <| thread_model:       thread_model;
      thread_restriction: thread_restriction; (* additional model restrictions *)
-     thread_fsa:         thread_flowing_same_address_params;
-     thread_rwc:         thread_restrict_write_commit_params;
      thread_rr:          thread_restart_read_params;
      thread_allow_tree_speculation:  bool;
      thread_allow_write_subsumption: bool;
@@ -350,7 +335,6 @@ let default_model_params =
     <|  ss_model = PLDI11_storage_model;
         ss_sc = false;
         (*coherence_commit = Partial_CC;*)
-        pw = Only_at_end;
         (*bc = Weak_BC;*)
         new_coh =  Use_old_coherence ;
         (*new_coh =     No_new_coherence;*)
@@ -362,8 +346,6 @@ let default_model_params =
   let default_t =
     <|  thread_model                   = PLDI11_thread_model;
         thread_restriction             = RestrictionNone;
-        thread_fsa                     = Flowing_same_address_strict;
-        thread_rwc                     = Forbid_prev_uncommitted_read_type0;
         thread_rr                      = Restart_on_read_satisfy;
         thread_allow_tree_speculation  = true;
         thread_allow_write_subsumption = false;

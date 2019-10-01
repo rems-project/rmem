@@ -1804,7 +1804,7 @@ let pp_t_sync_label pp_instruction_ast ?(graph=false) m t =
       ("satisfy memory read from memory", Some info)
 
   | T_Flat_try_commit_store_cond {tl_suppl = None} -> assert false
-  | T_Flat_try_commit_store_cond {tl_label = (write, _); tl_suppl = Some MWO_successful _} ->
+  | T_Flat_try_commit_store_cond {tl_label = (write, _); tl_suppl = Some MWO_successful} ->
      let info = colour_memory_action m (pp_write_uncoloured m write) in
      ("successfully commit and propagate store-conditional to memory", Some info)
   | T_Flat_try_commit_store_cond {tl_label = (write, _); tl_suppl = Some (MWO_unmapped_address _)} ->
@@ -1831,10 +1831,10 @@ let pp_t_sync_label pp_instruction_ast ?(graph=false) m t =
       ("satisfy memory read from memory", Some info)
 
   | T_propagate_write {tl_suppl = None} -> assert false
-  | T_propagate_write {tl_label = (write, None, _); tl_suppl = Some MWO_successful _; tl_cont = tc} ->
+  | T_propagate_write {tl_label = (write, None, _); tl_suppl = Some MWO_successful; tl_cont = tc} ->
      let info = colour_memory_action m (pp_write_uncoloured m write) in
      ("propagate memory write to storage", Some info)
-  | T_propagate_write {tl_label = (write, Some r, _); tl_suppl = Some MWO_successful _; tl_cont = tc} ->
+  | T_propagate_write {tl_label = (write, Some r, _); tl_suppl = Some MWO_successful; tl_cont = tc} ->
       let info =
         sprintf "%s - %s"
           (colour_memory_action m (pp_write_uncoloured m write))
