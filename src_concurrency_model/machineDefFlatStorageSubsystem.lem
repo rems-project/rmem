@@ -122,7 +122,7 @@ let flat_propagate_write params state tl =
           forall ((w,slices) MEM write_slices).
           not (overlapping_slices (slice_of_write write) (w.w_addr,slices)))
           state.flat_ss_exclusive_reads) >>
-  let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+  let tl' = <| tl with tl_suppl = Just MWO_successful |> in
   let state_cont = fun () ->
     let state = flat_write_to_storage params state write in
     let state = List.foldl add_read_exclusive_write_slices state rf in
@@ -204,7 +204,7 @@ see RISCV/mixed-size/HAND/ATOMIC+mixed1.litmus and ATOMIC+mixed2.litmus *)
 let flat_try_commit_store_cond params state tl =
   let (write, rf) = tl.tl_label in
   if check_potential_atomicity params state write.w_thread rf then
-    let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+    let tl' = <| tl with tl_suppl = Just MWO_successful |> in
     let state_cont = fun () -> flat_write_to_storage params state write in
     return (T_Flat_try_commit_store_cond tl', Just state_cont)
   else

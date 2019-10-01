@@ -928,7 +928,7 @@ type fetch_kind =
 (* memory_write_outcome is what we feed the thread continuation after
 committing a write *)
 type memory_write_outcome 'a =
-  | MWO_successful of 'a (* writes were performed *) (* 'a is timestamp for the case of Promising, otherwise unit *)
+  | MWO_successful
   | MWO_unmapped_address of list write  (* trying to access unmapped address *)
   | MWO_exclusive_failed                (* write-exclusive failed *)
 
@@ -1399,7 +1399,7 @@ type storageSubsystem 'i 'ts 'ss =
 
      ss_receive_transition : isa 'i -> ss_params ->
        'ss -> thread_sync_label 'i 'ts ->
-       (* no-one except promising_ss returns more than one *)
+       (* no-one except Flat returns more than one *)
        list (thread_sync_label 'i 'ts * maybe (unit -> 'ss));
 
      ss_make_ui_storage_state : 

@@ -3297,7 +3297,7 @@ let enumerate_propagate_write_transitions
   in
 
   let state' = function
-    | MWO_successful _ ->
+    | MWO_successful ->
         propagate_write_action params state iic write
     | MWO_unmapped_address ws ->
         write_unmapped_memory_action state iic ws
@@ -3312,7 +3312,7 @@ let enumerate_propagate_write_transitions
         exists (w MEM propagated_writes). non_empty_intersection write.w_addr w.w_addr)
     then
       (* the write was subsumed *)
-      let state' = fun () -> state' (MWO_successful ()) in
+      let state' = fun () -> state' MWO_successful in
       T_only (make_label state iic (T_POP_subsumed_write write) state')
     else
       T_sync (T_propagate_write (make_label state iic (write, Nothing, rf) state')) ()
@@ -3371,7 +3371,7 @@ let enumerate_commit_and_prop_RISCV_store_cond_transition
       $ "can't handle atomic load (ioid " ^ show load.instance_ioid ^ ") with multiple reads" in
 
   let state' = function
-    | MWO_successful _ ->
+    | MWO_successful ->
         let i' =
           <| i with
               subwrites = <| i.subwrites with sw_committed = true |>;

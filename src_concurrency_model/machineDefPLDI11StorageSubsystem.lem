@@ -903,7 +903,7 @@ let pldi11_ss_receive_transition _isa params state t_send =
       | (rr, slices, rf, Nothing) -> [(T_mem_read_request tl', Nothing)]
       end
   | T_propagate_write tl  ->
-      let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+      let tl' = <| tl with tl_suppl = Just MWO_successful |> in
       match tl.tl_label with
       | (w, Just _, _)  -> fail (* FIXME: *)
       | (w, Nothing, _) ->

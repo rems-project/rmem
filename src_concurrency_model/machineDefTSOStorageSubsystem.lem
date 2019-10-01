@@ -201,7 +201,7 @@ let tso_ss_receive_transition _isa params state = function
   | T_fetch _ -> failwith "fetch not implemented for TSO"
   | T_propagate_cache_maintenance _ -> failwith "cache maintenance not implemented for TSO"
   | T_propagate_write tl ->
-      let tl' = <| tl with tl_suppl = Just (MWO_successful ()) |> in
+      let tl' = <| tl with tl_suppl = Just MWO_successful |> in
       match tl.tl_label with
       | (write, Nothing, []) -> tso_ss_accept_write params state write
       | (write, Just _, [])  -> tso_ss_accept_write params state write
