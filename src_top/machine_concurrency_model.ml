@@ -41,11 +41,6 @@ module POPSS : SS = struct
     let dict_StorageSubsystem = MachineDefPOPStorageSubsystem.pop_storage
 end
 
-module NOPSS : SS = struct
-    type storage_subsystem_state = MachineDefTypes.nop_storage_subsystem_state
-    let dict_StorageSubsystem = MachineDefNOPStorageSubsystem.nop_storage
-end
-
 module PLDI11SS : SS = struct
     type storage_subsystem_state = MachineDefTypes.pldi11_storage_subsystem_state
     let dict_StorageSubsystem = MachineDefPLDI11StorageSubsystem.pldi11_storage
@@ -270,7 +265,6 @@ let get_SS_model (m : Params.storage_model) =
   | Flowing_storage_model -> (module FlowingSS : SS)
   | Flat_storage_model -> (module FlatSS : SS)
   | POP_storage_model -> (module POPSS : SS)
-  | NOP_storage_model -> (module NOPSS : SS)
   | TSO_storage_model -> (module TSOSS : SS)
   | _ -> failwith "fail"
 

@@ -493,24 +493,6 @@ type pop_storage_subsystem_state =
       pop_ss_exclusive_writes: map write read_request;
   |>
 
-(********************** NOP Storage Subsystem **********************)
-
-type nop_storage_subsystem_state =
-  <|  (* The set of thread ids that exist in the system. *)
-      nop_ss_threads : set thread_id;
-      (* The set of events the storage subsystem has seen. *)
-      nop_ss_events_seen : set flowing_event;
-      (* The order constraints.  For (e1, e2) IN
-         nop_ss_order_constraints_closure, e1 must be before e2. *)
-      nop_ss_order_constraints_closure : Relation.rel flowing_event flowing_event;
-      (* For each thread, the events that have been propagated to it. *)
-      nop_ss_events_propagated_to : map thread_id (set flowing_event);
-      (* map write-exclusives to the writes that satisfied the corresponding
-         read-exclusive plus the same-thread writes in between the
-         read-exclusive and the write-exclusive *)
-      nop_ss_exclusives : map flowing_event (set flowing_event);
-  |>
-
 (******************** TSO Storage Subsystem ************************)
 
 type tso_storage_subsystem_state =
@@ -840,9 +822,6 @@ type ss_only_trans =
   (*** POP transitions: ***)
   | SS_POP_propagate_event_to_thread of flowing_event * thread_id
   | SS_POP_partially_satisfy_read of read_request * list (write * slices)
-  (*** NOP transitions: ***)
-  | SS_NOP_constrain_order of write * write
-  | SS_NOP_propagate_everything
   (*** Flowing transitions: ***)
   | SS_Flowing_flow_write_to_memory of write
   | SS_Flowing_flow_barrier_to_memory of barrier
@@ -862,8 +841,6 @@ let principal_ioid_of_ss_only_trans = function
   | SS_PLDI11_propagate_barrier_to_thread b _    -> b.b_ioid
   | SS_POP_propagate_event_to_thread e tid       -> principal_ioid_of_flowing_event e
   | SS_POP_partially_satisfy_read r _            -> r.r_ioid
-  | SS_NOP_constrain_order _ w2                  -> w2.w_ioid (* or maybe the other one? *)
-  | SS_NOP_propagate_everything                  -> failwith "I don't know what to do"
   | SS_Flowing_flow_write_to_memory w            -> w.w_ioid
   | SS_Flowing_flow_barrier_to_memory b          -> b.b_ioid
   | SS_Flowing_flow_satisfied_read_to_memory r   -> r.r_ioid
@@ -880,10 +857,6 @@ type ss_sync_trans =
   | SS_PLDI11_acknowledge_sync_barrier of barrier
   (*** POP transitions: ***)
   | SS_POP_read_response of read_request * memory_read_source
-  (*** NOP transitions: ***)
-  | SS_NOP_read_response_segment of read_request * memory_read_source
-  | SS_NOP_read_response_memory of read_request * memory_read_source *
-            set flowing_event * set flowing_event
   (*** Flowing transitions: ***)
   | SS_Flowing_seg_read_response of read_request * memory_read_source
   | SS_Flowing_mem_read_response of read_request * memory_read_source
@@ -894,8 +867,6 @@ type ss_sync_trans =
 let tid_of_ss_sync_trans = function
   | SS_PLDI11_acknowledge_sync_barrier b -> b.b_thread
   | SS_POP_read_response rr _            -> rr.r_thread
-  | SS_NOP_read_response_segment rr _    -> rr.r_thread
-  | SS_NOP_read_response_memory rr _ _ _ -> rr.r_thread
   | SS_Flowing_seg_read_response rr _    -> rr.r_thread
   | SS_Flowing_mem_read_response rr _    -> rr.r_thread
   | SS_Flat_thread_ic _ tid              -> tid
@@ -905,8 +876,6 @@ let tid_of_ss_sync_trans = function
 let principal_ioid_of_ss_sync_trans = function
   | SS_PLDI11_acknowledge_sync_barrier b -> b.b_ioid
   | SS_POP_read_response rr _            -> rr.r_ioid
-  | SS_NOP_read_response_segment rr _    -> rr.r_ioid
-  | SS_NOP_read_response_memory rr _ _ _ -> rr.r_ioid
   | SS_Flowing_seg_read_response rr _    -> rr.r_ioid
   | SS_Flowing_mem_read_response rr _    -> rr.r_ioid
   | SS_Flat_thread_ic cmr _ -> cmr.cmr_ioid
@@ -1273,18 +1242,6 @@ type pop_ui_storage_subsystem_state 'i 'ts 'ss =
      ui_pop_ss_transitions_read_response:          list (ui_trans 'i 'ts 'ss);
   |>
 
-type nop_ui_storage_subsystem_state 'i 'ts 'ss =
-  <| (* storage state *)
-     ui_nop_ss_threads: list thread_id;
-     ui_nop_ss_events_seen: list (changed3 flowing_event);
-     ui_nop_ss_order_constraints_closure: list (changed3 (flowing_event * flowing_event));
-     ui_nop_ss_events_propagated_to: list (thread_id * list (changed3 flowing_event));
-     (*ui_nop_ss_store_exclusive_map: list (changed2 (write * write));*)
-     (* storage transitions *)
-     ui_nop_ss_transitions_constrain_order:        list (ui_trans 'i 'ts 'ss);
-     ui_nop_ss_transitions_propagate_everything:   list (ui_trans 'i 'ts 'ss);
-  |>
-
 type ui_icache =
   <| ui_ic_memory: list (changed3 (write * slices));
      ui_ic_tid: thread_id;
@@ -1318,7 +1275,6 @@ type ui_storage_subsystem_state 'i 'ts 'ss =
   | Flowing_UI_storage of flowing_ui_storage_subsystem_state 'i 'ts 'ss
   | Flat_UI_storage    of flat_ui_storage_subsystem_state 'ts 'ss
   | POP_UI_storage     of pop_ui_storage_subsystem_state 'i 'ts 'ss
-  | NOP_UI_storage     of nop_ui_storage_subsystem_state 'i 'ts 'ss
   | TSO_UI_storage     of tso_ui_storage_subsystem_state 'i 'ts 'ss
 
 
@@ -1440,9 +1396,6 @@ type storageSubsystem 'i 'ts 'ss =
        'ss -> thread_sync_label 'i 'ts ->
        (* no-one except promising_ss returns more than one *)
        list (thread_sync_label 'i 'ts * maybe (unit -> 'ss));
-
-     (* NOP is the only model that returns a non-empty list *)
-     ss_enumerate_final_transitions : 'ss -> list (trans 'i 'ts 'ss);
 
      ss_make_ui_storage_state : 
        maybe 'ss -> 'ss -> list (ui_trans 'i 'ts 'ss) -> 

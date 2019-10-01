@@ -300,20 +300,13 @@ let enumerate_transitions_of_system
 
   let transitions = threads_sys_trans ++ storage_sys_trans in
 
-  if threads_sys_trans = [] && storage_sys_trans = [] then
-    (* this is just for NOP *)
-    match state.s_model.ss_enumerate_final_transitions state.storage_subsystem with
-    | [] -> (transitions, ss_transitions, thread_transitions, Map.empty)
-    | ts -> (ts, [], Map.empty, Map.empty)
-    end
-  else
-    match (storage_sys_trans, state.model.ss.ss_sc) with
-    | (t :: _, true) ->
-        (* in SC mode, always pick one storage transition if any exists *)
-        ([t], ss_transitions, thread_transitions, Map.empty)
-    | _ ->
-        (transitions, ss_transitions, thread_transitions, Map.empty)
-    end
+  match (storage_sys_trans, state.model.ss.ss_sc) with
+  | (t :: _, true) ->
+     (* in SC mode, always pick one storage transition if any exists *)
+     ([t], ss_transitions, thread_transitions, Map.empty)
+  | _ ->
+     (transitions, ss_transitions, thread_transitions, Map.empty)
+  end
 
 
 (** updating state after a transition *******************************)

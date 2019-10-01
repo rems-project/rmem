@@ -991,6 +991,5 @@ let pldi11_storage =
      ss_enumerate_transitions = fun params s ->
        Set_extra.toList (pldi11_enumerate_transitions_of_storage_subsystem params s);
      ss_receive_transition = pldi11_ss_receive_transition;
-     ss_enumerate_final_transitions = fun  s -> [];
      ss_make_ui_storage_state = pldi11_make_ui_storage_subsystem_state
  |>

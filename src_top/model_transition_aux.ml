@@ -93,19 +93,6 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (SS_POP_partially_satisfy_read _, _) -> 1
     | (_, SS_POP_partially_satisfy_read _) -> -1
 
-    | (SS_NOP_constrain_order (write1, write1'),
-       SS_NOP_constrain_order (write2, write2'))
-        ->
-        cmps [ (fun () -> Pervasives.compare write1 write2);
-               (fun () -> Pervasives.compare write1' write2');
-             ]
-    | (SS_NOP_constrain_order _, _) -> 1
-    | (_, SS_NOP_constrain_order _) -> -1
-
-    | (SS_NOP_propagate_everything, SS_NOP_propagate_everything) -> 0
-    | (SS_NOP_propagate_everything, _) -> 1
-    | (_, SS_NOP_propagate_everything) -> -1
-
     | (SS_Flowing_flow_write_to_memory writes1,
        SS_Flowing_flow_write_to_memory writes2)
         -> Pervasives.compare writes1 writes2
@@ -192,23 +179,6 @@ let fuzzy_compare_transitions trans1 trans2 =
         -> read_requestCompare read1 read2
     | (SS_POP_read_response _, _) -> 1
     | (_, SS_POP_read_response _) -> -1
-
-    | (SS_NOP_read_response_segment (read1, _),
-       SS_NOP_read_response_segment (read2, _))
-        -> read_requestCompare read1 read2
-    | (SS_NOP_read_response_segment _, _) -> 1
-    | (_, SS_NOP_read_response_segment _) -> -1
-
-    | (SS_NOP_read_response_memory (read1, _, events1, events1'),
-       SS_NOP_read_response_memory (read2, _, events2, events2'))
-        ->
-        cmps [ (fun () -> read_requestCompare read1 read2);
-               (* Fix these below *)
-               (fun () -> Pervasives.compare events1 events2);
-               (fun () -> Pervasives.compare events1' events2');
-             ]
-    | (SS_NOP_read_response_memory _, _) -> 1
-    | (_, SS_NOP_read_response_memory _) -> -1
 
     | (SS_Flowing_seg_read_response (read1, _),
        SS_Flowing_seg_read_response (read2, _))

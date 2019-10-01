@@ -560,7 +560,6 @@ let read_channel
     | (AARCH64 Hand, POP_storage_model, POP_thread_model _)
     | (AARCH64 Hand, Flowing_storage_model, POP_thread_model _)
     | (AARCH64 Hand, Flat_storage_model, POP_thread_model _)
-    | (AARCH64 Hand, NOP_storage_model, POP_thread_model _)
     | (AARCH64 Hand, Flat_storage_model, Relaxed_thread_model) -> 
         let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
         let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
@@ -589,7 +588,6 @@ let read_channel
     | (AARCH64 Gen, POP_storage_model, POP_thread_model _)
     | (AARCH64 Gen, Flowing_storage_model, POP_thread_model _)
     | (AARCH64 Gen, Flat_storage_model, POP_thread_model _)
-    | (AARCH64 Gen, NOP_storage_model, POP_thread_model _)
     | (AARCH64 Gen, Flat_storage_model, Relaxed_thread_model) ->
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
        let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
@@ -635,7 +633,6 @@ let read_channel
     | (MIPS, POP_storage_model, POP_thread_model _)
     | (MIPS, Flowing_storage_model, POP_thread_model _)
     | (MIPS, Flat_storage_model, POP_thread_model _)
-    | (MIPS, NOP_storage_model, POP_thread_model _)
     | (MIPS, Flat_storage_model, Relaxed_thread_model) ->
         let module Parser = Make_litmus_parser(MIPSHGen)(MIPSHGenTransSail)(MIPSHGenLexParse) in
         let module ISA = Make(IsShallowEmbedding)(MIPS_ISA)(MIPS64ISADefs) in
@@ -655,7 +652,6 @@ let read_channel
     | (RISCV, POP_storage_model, POP_thread_model _)
     | (RISCV, Flowing_storage_model, POP_thread_model _)
     | (RISCV, Flat_storage_model, POP_thread_model _)
-    | (RISCV, NOP_storage_model, POP_thread_model _)
     | (RISCV, TSO_storage_model, TSO_thread_model)
     | (RISCV, Flat_storage_model, Relaxed_thread_model) ->
        let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in

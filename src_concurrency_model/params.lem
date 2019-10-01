@@ -23,7 +23,6 @@ type storage_model =
   | Flowing_storage_model
   | Flat_storage_model
   | POP_storage_model
-  | NOP_storage_model
   | TSO_storage_model
   | Promising_storage_model
 

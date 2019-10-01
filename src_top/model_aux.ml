@@ -389,7 +389,6 @@ let model_assoc =
    ((Flowing_storage_model, POP_thread_model Standard_POP), "flowing");
    ((Flat_storage_model,    POP_thread_model Flat_POP),     "flat");
    ((POP_storage_model,     POP_thread_model Standard_POP), "pop");
-   ((NOP_storage_model,     POP_thread_model Standard_POP), "nop");
    ((TSO_storage_model,     TSO_thread_model),              "tso");
    ((Promising_storage_model, Promising_thread_model),      "promising");
    ((Flat_storage_model,    Relaxed_thread_model),          "relaxed");]

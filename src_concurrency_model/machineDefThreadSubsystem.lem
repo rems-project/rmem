@@ -4383,9 +4383,6 @@ let thread_receive_transition
   | SS_PLDI11_acknowledge_sync_barrier b -> pldi11_ancknowledge_sync_barrier b
   (* POP transitions: *)
   | SS_POP_read_response rr mrs            -> pop_sat_read rr mrs
-  (* NOP transitions: *)
-  | SS_NOP_read_response_segment rr mrs    -> pop_sat_read rr mrs
-  | SS_NOP_read_response_memory rr mrs _ _ -> pop_sat_read rr mrs
   (* Flowing transitions: *)
   | SS_Flowing_seg_read_response rr mrs    -> pop_sat_read rr mrs
   | SS_Flowing_mem_read_response rr mrs    -> pop_sat_read rr mrs

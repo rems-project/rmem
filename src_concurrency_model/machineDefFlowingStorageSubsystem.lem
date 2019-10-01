@@ -1367,6 +1367,5 @@ let flowing_storage =
       ss_enumerate_transitions  = flowing_ss_enumerate_transitions;
       ss_receive_transition =
         fun _isa params s tl -> ListMonad.option_guard (flowing_ss_receive_transition params s tl);
-      ss_enumerate_final_transitions = fun s -> [];
       ss_make_ui_storage_state = flowing_make_ui_storage_subsystem_state
   |>

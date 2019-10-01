@@ -675,6 +675,5 @@ let flat_storage =
      ss_enumerate_transitions = enumerate_transitions_ss;
      ss_receive_transition = 
          fun p s tl -> flat_ss_receive_transition p s tl;
-     ss_enumerate_final_transitions = fun s -> [];
      ss_make_ui_storage_state = flat_make_ui_storage_subsystem_state;
  |>

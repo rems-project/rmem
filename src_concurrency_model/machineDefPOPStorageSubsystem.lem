@@ -675,6 +675,5 @@ let pop_storage =
      ss_enumerate_transitions  = pop_ss_enumerate_transitions;
      ss_receive_transition = 
        fun isa p s tl -> ListMonad.option_guard (pop_ss_receive_transition isa p s tl);
-     ss_enumerate_final_transitions = fun s -> [];
      ss_make_ui_storage_state = pop_make_ui_storage_subsystem_state;
  |>

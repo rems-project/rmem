@@ -325,6 +325,5 @@ let tso_storage =
      ss_enumerate_transitions  = tso_ss_enumerate_transitions;
      ss_receive_transition = 
        fun isa p s tl -> ListMonad.option_guard (tso_ss_receive_transition isa p s tl);
-     ss_enumerate_final_transitions = fun _ -> [];
      ss_make_ui_storage_state = tso_make_ui_storage_subsystem_state;
  |>

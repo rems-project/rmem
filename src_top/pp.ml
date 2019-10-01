@@ -1564,18 +1564,6 @@ let pp_ss_only_label ?(graph=false) (m: Globals.ppmode) t =
       in
       ("partially satisfy read", Some info)
 
-  | SS_NOP_constrain_order (w1, w2) ->
-      let info =
-        sprintf "%s %s %s"
-          (pp_write_uncoloured m w1)
-          (pp_arrow m)
-          (pp_write_uncoloured m w2)
-      in
-      ("constrain coherence order", Some info)
-
-  | SS_NOP_propagate_everything ->
-     ("propagate everything", None)
-
   | SS_Flowing_flow_write_to_memory write ->
       let info = colour_memory_action m (pp_write_uncoloured m write) in
       ("flow write to memory", Some info)
@@ -1644,23 +1632,6 @@ let pp_ss_sync_label ?(graph=false) m t =
       in
       ("memory read request response from storage", Some info)
 
-  | SS_NOP_read_response_segment (read_request, source) ->
-      let info =
-        sprintf "%s from %s"
-          (colour_memory_action m (pp_read_uncoloured m read_request))
-          (colour_memory_action m (pp_mrs_uncoloured m read_request.r_ioid source))
-      in
-      ("memory read request response from storage-segment", Some info)
-
-  | SS_NOP_read_response_memory (read_request, source, before, after) ->
-      let info =
-        sprintf "%s from %s, ordering %s before %s"
-          (colour_memory_action m (pp_read_uncoloured m read_request))
-          (colour_memory_action m (pp_mrs_uncoloured m read_request.r_ioid source))
-          (pp_setlist m pp_flowing_event_uncoloured (Pset.elements before))
-          (colour_memory_action m (pp_mrs_uncoloured m read_request.r_ioid source))
-      in
-      ("memory read request response from storage-memory", Some info)
   | SS_Flat_thread_ic (cmr, tid) ->
       let info =
           sprintf "%s to Thread %d"
@@ -2391,42 +2362,6 @@ let pop_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
     end*)
 
 
-let nop_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
-  let events_seen =
-    pp_changed3_setlist m pp_flowing_event_uncoloured ss.ui_nop_ss_events_seen in
-
-  let order_constraints =
-    pp_changed3_setlist m pp_pop_order_constraints ss.ui_nop_ss_order_constraints_closure in
-
-  let ppd_events_propagated_to =
-    (String.concat !linebreak
-      (List.map
-        (function (tid, events) ->
-            (sprintf "    Thread %d: " tid) ^
-            (pp_changed3_setlist m pp_flowing_event_uncoloured events))
-        ss.ui_nop_ss_events_propagated_to)) in
-
-  (*let store_exclusive_map =
-    pp_changed2_setlist m pp_store_exclusive_map_uncoloured ss.ui_pop_ss_store_exclusive_map in*)
-
-  let pp_ss_transitions ts =
-    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
-
-    (*begin match m.Globals.pp_kind with
-    | Ascii ->*)
-      String.concat ""
-       [sprintf "%s:"                          (colour_bold m "Storage subsystem state (NOP)"); !linebreak;
-        sprintf "  events seen = %s"           events_seen; !linebreak;
-        (*sprintf "  store exclusive pairs = %s"  store_exclusive_map; !linebreak;*)
-        sprintf "  order constraints = %s"     order_constraints; !linebreak;
-        sprintf "  events propagated to:";     !linebreak;
-        sprintf      "%s"                      ppd_events_propagated_to; !linebreak;
-        sprintf "%s"                           (pp_ss_transitions ss.ui_nop_ss_transitions_constrain_order);
-        sprintf "%s"                           (pp_ss_transitions  ss.ui_nop_ss_transitions_propagate_everything);
-       ]
-    (*| Html ->
-    end*)
-
 let tso_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   let tree =
     let ext_pps = {
@@ -2538,7 +2473,6 @@ let pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   | Flowing_UI_storage ui_storage_subsystem -> flowing_pp_ui_storage_subsystem_state pp_instruction_ast m model ui_storage_subsystem
   | Flat_UI_storage    ui_storage_subsystem -> flat_pp_ui_storage_subsystem_state    m model ui_storage_subsystem
   | POP_UI_storage     ui_storage_subsystem -> pop_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
-  | NOP_UI_storage     ui_storage_subsystem -> nop_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
   | TSO_UI_storage     ui_storage_subsystem -> tso_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
 
 (** pp an instruction instance state *)

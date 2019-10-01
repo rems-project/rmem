@@ -826,7 +826,6 @@ MACHINEFILES-PRE=\
   src_concurrency_model/machineDefFlowingStorageSubsystem.lem\
   src_concurrency_model/machineDefFlatStorageSubsystem.lem\
   src_concurrency_model/machineDefPOPStorageSubsystem.lem\
-  src_concurrency_model/machineDefNOPStorageSubsystem.lem\
   src_concurrency_model/machineDefTSOStorageSubsystem.lem\
   src_concurrency_model/machineDefThreadSubsystemUtils.lem\
   src_concurrency_model/machineDefThreadSubsystem.lem\
