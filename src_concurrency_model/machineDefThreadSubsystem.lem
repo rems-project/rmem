@@ -4415,5 +4415,7 @@ let machine_thread =
      ts_is_final_state = thread_is_final_state;
      ts_return_address = fun ts -> ts.return_address;
      (* ts_make_ui_thread_state = make_ui_machine_thread_state; *)
+     ts_enumerate_transitions_of_thread = enumerate_transitions_of_thread;
+     ts_receive_transition = thread_receive_transition;
  |>
 

@@ -85,7 +85,6 @@ module Make
 
   type ts = instruction_ast MachineDefTypes.thread_state
   type ss = Ss.storage_subsystem_state
-  let dict_sys = MachineDefSystem.machine_system (Ss.dict_StorageSubsystem)
   let dict_ts = MachineDefThreadSubsystem.machine_thread
   let dict_ss = Ss.dict_StorageSubsystem
 
@@ -107,11 +106,14 @@ module Make
 
   let pp_instruction_ast = ISAModel.pp_instruction_ast
 
+  let make_ui_system_state = MachineDefUI.make_ui_system_state 
+                               MachineDefThreadSubsystemUtils.make_ui_machine_thread_state
+                               dict_ss.ss_make_ui_storage_state
+
   let sst_of_state state =
     begin try MachineDefSystem.sst_of_state state with
     | Debug.Thread_failure (tid, ioid, s, bt) ->
-        let ui_state = dict_sys.s_make_ui_system_state
-            None state [] in
+        let ui_state = make_ui_system_state None state [] in
         Printf.eprintf "Failure in the thread subsystem while enumerating the transitions of:\n";
         Printf.eprintf "%s\n" (Pp.pp_ui_instruction pp_instruction_ast (Globals.get_ppmode ()) ui_state tid ioid);
         Printf.eprintf "%s\n\n" s;
@@ -128,7 +130,6 @@ module Make
     MachineDefSystem.initial_system_state
       (dict_ts)
       (dict_ss)
-      (dict_sys)
       ISAModel.isa.register_data_info
       initial_state_record
     |> sst_of_state
@@ -170,10 +171,10 @@ module Make
       match (prev_state,ppmode.Globals.pp_kind) with
       | (None,_)
       | (_,Globals.Hash) ->
-          dict_sys.s_make_ui_system_state
+          make_ui_system_state
             None state.sst_state ncands
       | (Some prev_state,_) ->
-          dict_sys.s_make_ui_system_state
+          make_ui_system_state
             (Some prev_state.sst_state) state.sst_state ncands
     in
     (ppmode', ui_state)

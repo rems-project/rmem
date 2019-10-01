@@ -1379,6 +1379,11 @@ type threadSubsystem 'i 'ts =
        (reg_base_name -> register_value) -> maybe address -> list write -> 'ts;
 
      ts_return_address : 'ts -> address;
+
+     ts_enumerate_transitions_of_thread: thread_params -> isa 'i -> 'ts -> list (thread_trans 'i 'ts);
+
+     ts_receive_transition : thread_params -> isa 'i -> 'ts -> ss_sync_trans -> maybe (thread_cont unit 'ts)
+
   |>
 
 
@@ -1412,27 +1417,10 @@ type system_state 'i 'ts 'ss =
      isa:                   isa 'i;
      t_model:               threadSubsystem 'i 'ts;
      s_model:               storageSubsystem 'i 'ts 'ss;
-     system_model:          system 'i 'ts 'ss;
      transition_history:    list (trans 'i 'ts 'ss);    (* most recent first *)
       (* recording the transition history might have a bad effect on performance; we'll see *)
 
      riscv_AMO_lock:        maybe ioid;
-  |>
-
-and system 'i 'ts 'ss =
-  <| s_make_ui_system_state : 
-       maybe (system_state 'i 'ts 'ss) -> system_state 'i 'ts 'ss -> list (ui_trans 'i 'ts 'ss) -> 
-       ui_system_state 'i 'ts 'ss; 
-  
-     s_enumerate_transitions_of_system :
-       system_state 'i 'ts 'ss ->
-       maybe (list (ss_trans 'ss)) ->
-       map thread_id (list (thread_trans 'i 'ts)) ->
-       map thread_id (list (trans 'i 'ts 'ss * bool)) ->
-       (list (trans 'i 'ts 'ss)) * (list (ss_trans 'ss)) * 
-         (map thread_id (list (thread_trans 'i 'ts))) * 
-           (map thread_id (list (trans 'i 'ts 'ss * bool)));
-
   |>
 
 
