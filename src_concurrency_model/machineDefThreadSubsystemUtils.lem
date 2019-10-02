@@ -681,6 +681,23 @@ let analyse_instruction
     end in
   (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
 
+
+let empty_subreads = 
+  <|  sr_addr =             Nothing;
+      sr_unsat_slices =     [];
+      sr_writes_read_from = [];
+      sr_requested =        [];
+      sr_assembled_value =  Nothing;
+  |>
+
+let empty_subwrites = 
+  <|  sw_addr =                      Nothing;
+      sw_potential_write_addresses = [];
+      sw_potential_writes =          [];
+      sw_propagated_writes =         [];
+      sw_committed =                 false;
+  |>
+
 let starting_fetch_inst
       isa
       (new_ioid: ioid)
@@ -708,25 +725,12 @@ let starting_fetch_inst
     reg_reads =  [];
     reg_writes = [];
 
-    subreads =
-      <|  sr_addr =             Nothing;
-          sr_unsat_slices =     [];
-          sr_writes_read_from = [];
-          sr_requested =        [];
-          sr_assembled_value =  Nothing;
-      |>;
-
-    subwrites =
-      <|  sw_addr =                      Nothing;
-          sw_potential_write_addresses = [];
-          sw_potential_writes =          [];
-          sw_propagated_writes =         [];
-          sw_committed =                 false;
-      |>;
+    subreads = empty_subreads; 
+    subwrites = empty_subwrites;
 
     successful_atomic_store = Nothing;
-    committed_barriers =   [];
-    finished =  false;
+    committed_barriers = [];
+    finished = false;
     micro_op_state = MOS_fetch Nothing;
     rmw_finished_load_snapshot = Nothing;
 |>
@@ -763,21 +767,8 @@ let starting_inst_instance_aux
     reg_reads =  [];
     reg_writes = [];
 
-    subreads =
-      <|  sr_addr =             Nothing;
-          sr_unsat_slices =     [];
-          sr_writes_read_from = [];
-          sr_requested =        [];
-          sr_assembled_value =  Nothing;
-      |>;
-
-    subwrites =
-      <|  sw_addr =                      Nothing;
-          sw_potential_write_addresses = [];
-          sw_potential_writes =          [];
-          sw_propagated_writes =         [];
-          sw_committed =                 false;
-      |>;
+    subreads = empty_subreads;
+    subwrites = empty_subwrites;
 
     successful_atomic_store =
       match ik with
@@ -855,30 +846,12 @@ let starting_fetch_exception_inst_instance
     reg_reads =  [];
     reg_writes = [];
 
-    subreads =
-      <|  sr_addr =             Nothing;
-          sr_unsat_slices =     [];
-          sr_writes_read_from = [];
-          sr_requested =        [];
-          sr_assembled_value =  Nothing;
-      |>;
-
-    subwrites =
-      <|  sw_addr =                      Nothing;
-          sw_potential_write_addresses = [];
-          sw_potential_writes =          [];
-          sw_propagated_writes =         [];
-          sw_committed =                 false;
-      |>;
-
+    subreads = empty_subreads;
+    subwrites = empty_subwrites;
     successful_atomic_store = Nothing;
-
     committed_barriers =   [];
-
     finished =  false;
-
     micro_op_state = MOS_pending_exception (ET_fetch_and_decode fde);
-
     rmw_finished_load_snapshot = Nothing;
 |>
 
@@ -908,21 +881,8 @@ let restart_instruction (i: instruction_instance 'i) : instruction_instance 'i =
           reg_reads  = [];
           reg_writes = [];
 
-          subreads =
-            <|  sr_addr             = Nothing;
-                sr_unsat_slices     = [];
-                sr_writes_read_from = [];
-                sr_requested        = [];
-                sr_assembled_value  = Nothing;
-            |>;
-
-          subwrites =
-            <|  sw_addr =                      Nothing;
-                sw_potential_write_addresses = [];
-                sw_potential_writes =          [];
-                sw_propagated_writes =         [];
-                sw_committed =                 false;
-            |>;
+          subreads = empty_subreads;
+          subwrites = empty_subwrites;
 
           micro_op_state = i.initial_micro_op_state;
 
@@ -933,18 +893,9 @@ let restart_instruction (i: instruction_instance 'i) : instruction_instance 'i =
   | Just snapshot ->
       <| i with
           instance_id_state = snapshot.rfls_instance_id_state;
-
           reg_reads  = snapshot.rfls_reg_reads;
           reg_writes = snapshot.rfls_reg_writes;
-
-          subwrites =
-            <|  sw_addr =                      Nothing;
-                sw_potential_write_addresses = [];
-                sw_potential_writes =          [];
-                sw_propagated_writes =         [];
-                sw_committed =                 false;
-            |>;
-
+          subwrites = empty_subwrites;
           micro_op_state = snapshot.rfls_micro_op_state;
       |>
   end
