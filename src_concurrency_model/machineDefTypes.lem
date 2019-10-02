@@ -1337,9 +1337,12 @@ type threadSubsystem 'i 'ts =
 
      ts_initial_thread_state :
        thread_params ->
-       thread_id -> (address -> fetch_and_decode_outcome 'i) -> address ->
+       thread_id ->
+       address ->
        registerdata ->
-       (reg_base_name -> register_value) -> maybe address -> list write -> 'ts;
+       (reg_base_name -> register_value) ->
+       maybe address ->
+       'ts;
 
      ts_return_address : 'ts -> address;
 

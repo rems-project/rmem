@@ -53,18 +53,15 @@ right?  Shaked says that it has to be the former way*)
 (** Initial thread state ********************************************)
 
 let init_pldi11_thread_substate = <| unacknowledged_syncs = {}; |>
-
 let init_pop_thread_substate = <| read_issuing_order = relonEmpty; |>
 
 let initial_thread_state
     (params:         thread_params)
     (tid :           thread_id)
-    (_progmem:       address -> fetch_and_decode_outcome 'i)
     (return_address: address)
     (rd:             registerdata)
     (irv:            reg_base_name -> register_value)
     (initial_fetch:  maybe address)
-    (_iws:           list write)
   =
   <| thread                     = tid;
      id_state                   = FreshIds.initial_id_state tid;

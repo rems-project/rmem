@@ -65,12 +65,10 @@ let initial_system_state
       thread_model.ts_initial_thread_state 
         state_record.isr_params.t
         tid
-        prog
         (ensure_just (List.lookup tid state_record.isr_return_addr) "missing return address for thread")
         register_data
         (state_record.isr_register_values register_data tid)
         (state_record.isr_first_instruction tid)
-        state_record.isr_memory
     in
     [(tid, init tid) | forall (tid MEM state_record.isr_thread_ids) | true]
   in
