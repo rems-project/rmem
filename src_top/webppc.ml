@@ -255,8 +255,7 @@ let isa_callback (isa: Isa.isa_model) =
           Globals.model_params := Model_aux.parse_and_update_model "flat" !Globals.model_params
       | Flowing_storage_model
       | Flat_storage_model
-      | POP_storage_model
-      | NOP_storage_model -> ()
+      | POP_storage_model -> ()
       end;
       Js.Unsafe.fun_call (Js.Unsafe.js_expr "set_isa") [|Js.Unsafe.inject (js "MIPS")|] |> ignore
   | RISCV ->
@@ -264,7 +263,6 @@ let isa_callback (isa: Isa.isa_model) =
       | PLDI11_storage_model
       | Flowing_storage_model
       | POP_storage_model
-      | NOP_storage_model
       | Promising_storage_model ->
           Globals.model_params := Model_aux.parse_and_update_model "flat" !Globals.model_params
       | Flat_storage_model
@@ -278,7 +276,6 @@ let isa_callback (isa: Isa.isa_model) =
           Globals.model_params := Model_aux.parse_and_update_model "flat" !Globals.model_params
       | Flowing_storage_model
       | POP_storage_model
-      | NOP_storage_model
       | Flat_storage_model
       | Promising_storage_model -> ()
       end;
@@ -288,7 +285,6 @@ let isa_callback (isa: Isa.isa_model) =
       | PLDI11_storage_model
       | Flowing_storage_model
       | POP_storage_model
-      | NOP_storage_model
       | Flat_storage_model
       | Promising_storage_model ->
           Globals.model_params := Model_aux.parse_and_update_model "tso" !Globals.model_params
