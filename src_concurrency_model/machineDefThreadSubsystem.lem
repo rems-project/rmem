@@ -74,7 +74,6 @@ let initial_thread_state
      initial_fetch_address      = initial_fetch;
      old_instructions           = [];
      instruction_tree           = T [];
-     transaction                = Nothing;
 
      thread_substate =
         match params.thread_model with
@@ -3699,85 +3698,6 @@ let handle_excl_res_outcome
   enumerate_excl_res_success_outcome_transition_relaxed params isa state iic isa_cont ++
   enumerate_excl_res_fail_outcome_transition params state iic isa_cont
 
-
-let handle_tmstart_outcome
-    (params:   thread_params)
-    (state:    thread_state 'i)
-    (iic:      instruction_in_context 'i)
-    (isa_cont: register_value -> outcome_S)
-  =
-  (** for Arch64 transactional memory semantics **)
-  guard (pop_propagate_tmstart_cand iic) >>
-
-  let () = ensure (state.transaction = Nothing)
-      "a nested transaction should not have tmstart outcome" in
-
-  let i = iic.iic_instance in
-  let (ts, id_state') = Events.make_transaction_start_event i.instance_id_state state.thread i.instance_ioid in
-
-  let state' = fun () ->
-    let i' = fun (v: register_value) ->
-      <| i with instance_id_state = id_state';
-                micro_op_state = MOS_plain (isa_cont v) |>
-    in
-
-    let success =
-      (* this is an arbitrary GPR, they are all the same *)
-      let reg = fromJust (reg_from_data state.register_data "R0") in
-      register_value_for_reg_of_integer reg 0
-    in
-
-    <| state with
-        instruction_tree = apply_tree_context iic.context (i' success,iic.subtree);
-        transaction = Just (ts, i');
-    |>
-    $> make_thread_cont_res {} {}
-  in
-  [T_sync (T_POP_tm_start (make_label state iic ts state')) ()]
-
-
-let handle_tmcommit_outcome
-    (params:   thread_params)
-    (state:    thread_state 'i)
-    (iic:      instruction_in_context 'i)
-    (outcome:  outcome_S)
-  =
-  (** for Arch64 transactional memory semantics **)
-  guard (pop_propagate_tmcommit_cand iic) >>
-  let (ts,_) = ensure_just (state.transaction) "fail" in
-  let state' = fun () ->
-    let i' = <| iic.iic_instance with micro_op_state = MOS_plain outcome |> in
-    <| state with
-        instruction_tree = apply_tree_context iic.context (i', iic.subtree);
-        transaction = Nothing;
-    |>
-    $> make_thread_cont_res {} {}
-  in
-  [T_sync (T_POP_tm_commit (make_label state iic ts state')) ()]
-
-
-let handle_tmabort_outcome
-    (params:   thread_params)
-    (state:    thread_state 'i)
-    (iic:      instruction_in_context 'i)
-    (value:    register_value)
-    (outcome:  outcome_S)
-  =
-  (** for Arch64 transactional memory semantics **)
-  guard (pop_propagate_tmabort_cand iic) >>
-  let (ts,cont) = ensure_just (state.transaction) "no active transaction to abort" in
-  let tstart_iic = ensure_just (find_ioid_instruction_in_context state ts.ts_ioid) "fail" in
-  let state' = fun () ->
-    let discarded_ioids = ioids_of_instruction_tree tstart_iic.subtree in
-    let tstart' = cont value in
-    <| state with
-        instruction_tree = apply_tree_context tstart_iic.context (tstart', T []);
-        transaction = Nothing;
-    |>
-    $> make_thread_cont_res {} discarded_ioids
-  in
-  [T_sync (T_POP_tm_abort (make_label state iic (ts, value) state')) ()]
-
 let enumerate_finish_load_part_of_rmw
     (params: thread_params)
     (state:      thread_state 'i)
@@ -4049,13 +3969,6 @@ let enumerate_transitions_of_instruction
   | MOS_wait_IC _ -> []
   | MOS_plain is ->
     match fst is with
-    (* these are special outcomes that we abuse instead of adding new effect kinds *)
-    | Read_reg (Reg "TMStartEffect" 63 64 D_decreasing) c ->
-      handle_tmstart_outcome params s iic c
-    | Write_reg (Reg "TMAbortEffect" 63 64 D_decreasing, v) o ->
-      handle_tmabort_outcome params s iic v o
-    | Barrier Barrier_TM_COMMIT o ->
-      handle_tmcommit_outcome params s iic o
 
     (* IC *)
     | Write_reg (Reg "instruction_cache_operation_IVAU" 63 64 D_decreasing, v) o ->
@@ -4256,31 +4169,7 @@ let initial_fetch_transition_of_thread
   in
   [T_only tl]
 
-let enumerate_failed_transaction_transition params state = 
-  option_guard state.transaction >>= fun (ts,cont) ->
 
-  let tstart_iic = ensure_just (find_ioid_instruction_in_context state ts.ts_ioid) "fail" in
-  let abort_values =
-    (* this is an arbitrary GPR, they are all the same *)
-    let reg = fromJust (reg_from_data state.register_data "R0") in
-    let setRTRY    = 2**8 in
-    (* let setMEMbit  = 2**14 in *)
-    let setIMPbit  = 2**16 in
-    [(*register_value_for_reg_of_integer reg (setMEMbit + setRTRY);*)
-     (*register_value_for_reg_of_integer reg setIMPbit;*)
-     register_value_for_reg_of_integer reg (setIMPbit + setRTRY)]
-  in
-
-  abort_values >>= fun value -> (* for each abort value .. *)
-  let state' = fun () ->
-    let tstart' = cont value in
-    <| state with
-        instruction_tree = apply_tree_context tstart_iic.context (tstart', T []);
-        transaction = Nothing;
-    |>
-    $> make_thread_cont_res {} {}
-  in
-  [T_sync (T_POP_tm_abort (make_label state tstart_iic (ts, value) state')) ()]
 
 let enumerate_transitions_of_thread
     (params: thread_params)
@@ -4299,10 +4188,7 @@ let enumerate_transitions_of_thread
   (* transitions for initialising the fetch of successor instructions *)
   (un_old_instructions state >>= fun iic ->
     catch_thread_errors state.thread iic.iic_instance.instance_ioid $ fun () ->
-      enumerate_init_fetch_transitions_of_instruction params isa state iic) ++
-
-  (* failed transaction transitions *)
-  enumerate_failed_transaction_transition params state
+      enumerate_init_fetch_transitions_of_instruction params isa state iic)
 
 
 let pop_receive_satisfy_read_transition params isa state rr mrs = 

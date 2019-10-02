@@ -231,9 +231,6 @@ let tso_ss_receive_transition _isa params state = function
   | T_Flat_mem_satisfy_read _      -> fail
   | T_Flat_try_commit_store_cond _ -> fail
   | T_mem_read_request _           -> fail
-  | T_POP_tm_start _               -> fail
-  | T_POP_tm_commit _              -> fail
-  | T_POP_tm_abort _               -> fail
   end
 
 

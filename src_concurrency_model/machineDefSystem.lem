@@ -420,9 +420,6 @@ let system_state_after_transition
       | T_Flat_mem_satisfy_read tl      -> update_state ssc (Just (next_thread_of_tl tl))
       | T_Flat_try_commit_store_cond tl -> update_state ssc (Just (next_thread_of_tl tl))
       | T_TSO_mem_satisfy_read tl       -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_POP_tm_start tl               -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_POP_tm_commit tl              -> update_state ssc (Just (next_thread_of_tl tl))
-      | T_POP_tm_abort tl               -> update_state ssc (Just (next_thread_of_tl tl))
       | T_try_store_excl tl             -> update_state ssc (Just (next_thread_of_tl tl))
       end
 

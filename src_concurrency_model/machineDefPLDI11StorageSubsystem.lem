@@ -930,9 +930,6 @@ let pldi11_ss_receive_transition _isa params state t_send =
   | T_Flat_try_commit_store_cond _ -> fail
   | T_TSO_mem_satisfy_read _       -> fail
   | T_try_store_excl _             -> fail (* FIXME: *)
-  | T_POP_tm_start _               -> fail
-  | T_POP_tm_commit _              -> fail
-  | T_POP_tm_abort _               -> fail
   end
 
 let pldi11_thread_memory_value_of_footprint

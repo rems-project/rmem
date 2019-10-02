@@ -375,24 +375,6 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (T_TSO_mem_satisfy_read _, _) -> 1
     | (_, T_TSO_mem_satisfy_read _) -> -1
 
-    | (T_POP_tm_start tl1, T_POP_tm_start tl2) ->
-        let cmp (t1: transaction_start) (t2: transaction_start) = Pervasives.compare t1 t2 in
-        cmp_tl cmp tl1 tl2
-    | (T_POP_tm_start _, _) -> 1
-    | (_, T_POP_tm_start _) -> -1
-
-    | (T_POP_tm_commit tl1, T_POP_tm_commit tl2) ->
-        let cmp (t1: transaction_start) (t2: transaction_start) = Pervasives.compare t1 t2 in
-        cmp_tl cmp tl1 tl2
-    | (T_POP_tm_commit _, _) -> 1
-    | (_, T_POP_tm_commit _) -> -1
-
-    | (T_POP_tm_abort tl1, T_POP_tm_abort tl2) ->
-        let cmp (t1, r1) (t2, r2) = Pervasives.compare (t1, r1) (t2, r2) in
-        cmp_tl cmp tl1 tl2
-    | (T_POP_tm_abort _, _) -> 1
-    | (_, T_POP_tm_abort _) -> -1
-
     | (T_try_store_excl tl1, T_try_store_excl tl2) ->
         let cmp (read1, _, _) (read2, _, _) = read_requestCompare read1 read2 in
         cmp_tl cmp tl1 tl2

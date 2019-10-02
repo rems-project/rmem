@@ -72,7 +72,6 @@ let slices_of_fe = function
   | FFWrite r _   -> (r.r_addr, [complete_slice r.r_addr])
   | FRead r sls _ -> (r.r_addr, sls)
   | FBarrier _    -> fail
-  | FTStart _     -> fail
   end
 
 (* check if the footprints/unsat-slices of memory accesses intersect *)
@@ -322,12 +321,8 @@ let internal_reorder_events_cand params exclusive_reads exclusive_writes new_eve
 
   (* See private comment in notes84: FLOWING2 *)
   not (is_fe_barrier_st new_event && is_fe_write old_event && tid_new = tid_old) &&
-  not (is_fe_barrier_st old_event && is_fe_write new_event) &&
+  not (is_fe_barrier_st old_event && is_fe_write new_event)
   (* DMB LD is like address dependency, see notes60 *)
-
-  (* changes for transactional memory: *)
-  not (is_fe_tstart new_event) && (* don't let old events join the transaction *)
-  not (is_fe_write new_event && is_fe_tstart old_event) (* don't let transactional writes escape *)
 
 (** exclusives order ************************************************)
 
@@ -445,12 +440,8 @@ let flowing_ss_accept_event_action _params state event =
   let segment = segment_of_thread state tid in
 
   let buffers =
-    if Map.lookup tid state.flowing_ss_tm <> Nothing && is_fe_barrier event then
-      (* throw away barriers from threads that are in transaction mode *)
-      state.flowing_ss_buffers
-    else
-      let buffer = buffer_of_segment state segment in
-      Map.insert segment (event :: buffer) state.flowing_ss_buffers
+    let buffer = buffer_of_segment state segment in
+    Map.insert segment (event :: buffer) state.flowing_ss_buffers
   in
 
   <| state with flowing_ss_buffers = buffers |>
@@ -585,27 +576,15 @@ let flowing_ss_flow_event_action params state feic =
   match feic.feic_parent_segment with
   | Nothing -> fail
   | Just new_segment ->
-      let tid = thread_of_flowing_event feic.feic_event in
       let buffers =
         state.flowing_ss_buffers
         $> Map.insert new_segment (feic.feic_event :: (buffer_of_segment state new_segment))
         $> Map.insert feic.feic_segment feic.feic_buffer_above
       in
 
-      (* changes for transactional memory: *)
-      let tm' =
-        match (feic.feic_event, Map.lookup tid state.flowing_ss_tm) with
-        (* when a TM-read crosses a join point we record it and prevent writes to
-        overlapping footprints from different branches from crossing the join point *)
-        | (FRead r _ _, Just rs) -> Map.insert tid (rs union {r}) state.flowing_ss_tm
-        | _ -> state.flowing_ss_tm
-        end
-      in
-
       <| state with
           flowing_ss_buffers = buffers;
           flowing_ss_reordered = restrict_relation_from {feic.feic_event} state.flowing_ss_reordered;
-          flowing_ss_tm = tm';
       |>
   end
 
@@ -621,22 +600,8 @@ let flowing_ss_flow_event_cand params state feic : bool =
     -->
       flowing_ss_flow_event_action params state feic
       $> exclusives_order params
-      $> Relation.isIrreflexive) &&
+      $> Relation.isIrreflexive)
 
-  (* changes for transactional memory: *)
-  match feic.feic_event with
-  | FWrite w ->
-      (* don't let writes cross the join point if an overlapping TM-read
-      from a different branch already crossed the join point *)
-      let tm_rs =
-        Map.delete (thread_of_flowing_event feic.feic_event) state.flowing_ss_tm
-        $> Map.range
-        $> Set.bigunion
-      in
-      forall (r IN tm_rs). not (non_empty_intersection w.w_addr r.r_addr)
-  | FTStart _ -> false (* don't let tstart escape *)
-  | _ -> true
-  end
 
 let flowing_ss_flow_event params state feic =
   guard (flowing_ss_flow_event_cand params state feic) >>
@@ -731,13 +696,6 @@ let flowing_ss_satisfy_read_from_segment_cand params state feic =
 
   (* the event below in the buffer is a write *)
   tryFWrite write_event >>= fun write ->
-
-  (* changes for transactional memory: *)
-  guard (
-    (* TM-read can read from transactional writes or memory *)
-    let tid = thread_of_flowing_event feic.feic_event in
-    Map.lookup tid state.flowing_ss_tm <> Nothing
-      --> exists (e MEM es). is_fe_tstart e) >>
 
   (* read-acq can only be satisfied from write-rel that reached memory
         see private notes19-2014-11-11-flowing.txt *)
@@ -952,110 +910,8 @@ let flowing_ss_flow_barrier_to_memory params state feic =
   let barrier = unsafeFBarrier feic.feic_event in
   return (SS_only (SS_Flowing_flow_barrier_to_memory barrier) state_cont)
 
-(************************* accept TM start **************************)
 
-let flowing_ss_accept_tstart_action params state tstart =
-  let state = flowing_ss_accept_event_action params state (FTStart tstart) in
-  <| state with
-     flowing_ss_tm = Map.insert tstart.ts_thread {} state.flowing_ss_tm;
-  |>
 
-let flowing_ss_accept_tstart_cond params state tstart : bool =
-  flowing_ss_accept_event_cand params state (FTStart tstart) &&
-  Map.lookup tstart.ts_thread state.flowing_ss_tm = Nothing
-
-let flowing_ss_accept_tstart params state tstart =
-  guard (flowing_ss_accept_tstart_cond params state tstart) >>
-  let state_cont = fun () ->
-    flowing_ss_accept_tstart_action params state tstart
-  in
-  return state_cont
-
-(******************* accept successful TM commit ********************)
-
-let flowing_ss_accept_successful_tcommit_action _params state tstart =
-  let segment = segment_of_thread state tstart.ts_thread in
-  let buffer = buffer_of_segment state segment in
-  match List.reverse buffer with
-  | t :: ws -> (* first element is the FTStart *)
-      let buffers = Map.insert segment [] state.flowing_ss_buffers in
-      let reordered = restrict_relation_from (Set.fromList (t :: ws)) state.flowing_ss_reordered in
-      let tm = Map.delete tstart.ts_thread state.flowing_ss_tm in
-
-      let state =
-        List.foldl
-          (fun state w ->
-            let write = unsafeFWrite w in
-            add_write_to_memory state write)
-          state
-          ws
-      in
-
-      <|  state with
-          flowing_ss_buffers = buffers;
-          flowing_ss_reordered = reordered;
-          flowing_ss_tm = tm;
-      |>
-  | [] -> fail
-  end
-
-let flowing_ss_accept_successful_tcommit_cond _params state tstart : bool =
-  let es = events_propagated_to state tstart.ts_thread in
-  match List.splitWhile (fun e -> not (is_fe_tstart e)) es with
-  | (ws, _ :: []) -> (* found FTStart and there are no events older then it *)
-      let tm_rs =
-        Map.delete tstart.ts_thread state.flowing_ss_tm
-        $> Map.range
-        $> Set.bigunion
-      in
-      forall (w MEM ws) (r IN tm_rs).
-        let w = unsafeFWrite w in
-        not (non_empty_intersection w.w_addr r.r_addr)
-  | _ -> false (* did not find FTStart (i.e. the thread is not in TM mode),
-                  or there are events after the FTStart *)
-  end
-
-let flowing_ss_accept_successful_tcommit params state tstart =
-  guard (flowing_ss_accept_successful_tcommit_cond params state tstart) >>
-  let state_cont = fun () ->
-    flowing_ss_accept_successful_tcommit_action params state tstart
-  in
-  return state_cont
-
-(************************ abort transaction *************************)
-
-let flowing_ss_abort_transaction_action params state tstart =
-  let tid = tstart.ts_thread in
-
-  let buffers =
-    Map.map
-      (fun buf -> List.filter (fun e -> thread_of_flowing_event e <> tid) buf)
-      state.flowing_ss_buffers
-  in
-
-  let reordered =
-    {(e, e')  | forall ((e, e') IN state.flowing_ss_reordered)
-              | thread_of_flowing_event e <> tid &&
-                thread_of_flowing_event e' <> tid}
-  in
-
-  let tm = Map.delete tid state.flowing_ss_tm in
-
-  <| state with
-      flowing_ss_buffers = buffers;
-      flowing_ss_reordered = reordered;
-      flowing_ss_tm = tm;
-  |>
-
-let flowing_ss_abort_transaction_cand _params state tstart : bool =
-  Map.lookup tstart.ts_thread state.flowing_ss_tm <> Nothing
-
-let flowing_ss_abort_transaction params state tstart =
-  guard (flowing_ss_abort_transaction_cand params state tstart) >>
-  let state_cont = fun () ->
-    flowing_ss_abort_transaction_action params state tstart
-  in
-  return state_cont
 
 (********************************************************************)
 
@@ -1072,7 +928,6 @@ let flowing_ss_initial_state params tids initial_writes =
       flowing_ss_exclusive_writes  = Map.empty;
       flowing_ss_memory_writes     = complete_writes initial_writes;
       flowing_ss_old_writes        = initial_writes;
-      flowing_ss_tm                = Map.empty;
   |>
 
 
@@ -1201,21 +1056,6 @@ let flowing_ss_receive_transition params state = function
       flowing_ss_guarantee_exclusive_success params state read rf se_ioid >>= fun state_cont ->
       let tl' = <| tl with tl_suppl = Just () |> in
       return (T_try_store_excl tl', Just state_cont)
-  | T_POP_tm_start tl ->
-      let tstart = tl.tl_label in
-      flowing_ss_accept_tstart params state tstart >>= fun state_cont ->
-      let tl' = <| tl with tl_suppl = Just () |> in
-      return (T_POP_tm_start tl', Just state_cont)
-  | T_POP_tm_commit tl ->
-      let tstart = tl.tl_label in
-      flowing_ss_accept_successful_tcommit params state tstart >>= fun state_cont ->
-      let tl' = <| tl with tl_suppl = Just () |> in
-      return (T_POP_tm_commit tl', Just state_cont)
-  | T_POP_tm_abort tl ->
-      let (tstart, _) = tl.tl_label in
-      flowing_ss_abort_transaction params state tstart >>= fun state_cont ->
-      let tl' = <| tl with tl_suppl = Just () |> in
-      return (T_POP_tm_abort tl', Just state_cont)
   | T_PLDI11_mem_satisfy_read _    -> fail
   | T_Flat_mem_satisfy_read _      -> fail
   | T_Flat_try_commit_store_cond _ -> fail

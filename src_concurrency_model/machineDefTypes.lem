@@ -165,7 +165,7 @@ type flowing_event =
   a value. *)
   | FRead of read_request * slices * list (write * slices)
   | FBarrier of barrier
-  | FTStart of transaction_start
+
 
 
 instance (Show flowing_event)
@@ -174,7 +174,6 @@ instance (Show flowing_event)
   | FFWrite r _   -> ("W(future, paired with '" ^ show r ^ "')")
   | FRead r _ _   -> show r
   | FBarrier b    -> show b
-  | FTStart t     -> show t
   end
 end
 
@@ -188,15 +187,14 @@ let flowing_eventCompare fe1 fe2 =
       end
   | (FRead r1 sls1 ws1, FRead r2 sls2 ws2) -> compare (r1, sls1, ws1) (r2, sls2, ws2)
   | (FBarrier b1,       FBarrier b2)       -> compare b1 b2
-  | (FTStart t1,        FTStart t2)        -> compare t1 t2
   | (FWrite _, _)                          -> LT
   | (_, FWrite _)                          -> GT
   | (FFWrite _ _, _)                       -> LT
   | (_, FFWrite _ _)                       -> GT
   | (FRead _ _ _, _)                       -> LT
   | (_, FRead _ _ _)                       -> GT
-  | (FBarrier _, _)                        -> LT
-  | (_, FBarrier _)                        -> GT
+  (* | (FBarrier _, _)                        -> LT
+   * | (_, FBarrier _)                        -> GT *)
   end
 (* even with the sets contained in flowing_events ocaml's Pset implementation of sets should
 be fine *)
@@ -256,11 +254,6 @@ let tryFBarrier : flowing_event -> maybe barrier = function
   | _ -> Nothing
   end
 
-let tryFTStart : flowing_event -> maybe transaction_start = function
-  | FTStart t -> Just t
-  | _ -> Nothing
-  end
-
 let unsafeFWrite (e: flowing_event) : write =
   e $> tryFWrite $> Maybe_extra.fromJust
 
@@ -273,15 +266,11 @@ let unsafeFRead (e: flowing_event) : read_request * slices * list (write * slice
 let unsafeFBarrier (e: flowing_event) : barrier =
   e $> tryFBarrier $> Maybe_extra.fromJust
 
-let unsafeFTStart (e: flowing_event) : transaction_start =
-  e $> tryFTStart $> Maybe_extra.fromJust
-
 let thread_of_flowing_event = function
   | FWrite w      -> w.w_thread
   | FFWrite r _   -> r.r_thread
   | FRead r _ _   -> r.r_thread
   | FBarrier b    -> b.b_thread
-  | FTStart t     -> t.ts_thread
   end
 
 let principal_ioid_of_flowing_event = function
@@ -289,7 +278,6 @@ let principal_ioid_of_flowing_event = function
   | FFWrite _ _   -> fail
   | FRead rr _ _  -> rr.r_ioid
   | FBarrier b    -> b.b_ioid
-  | FTStart t     -> t.ts_ioid
   end
 
 let ioid_of_flowing_event = function
@@ -297,7 +285,6 @@ let ioid_of_flowing_event = function
   | FFWrite _ _   -> fail
   | FRead rr _ _  -> rr.r_ioid
   | FBarrier b    -> b.b_ioid
-  | FTStart t     -> t.ts_ioid
   end
 
 let address_of_flowing_event = function
@@ -305,7 +292,6 @@ let address_of_flowing_event = function
   | FFWrite r _   -> r.r_addr
   | FRead r _ _   -> r.r_addr
   | FBarrier _    -> fail
-  | FTStart _     -> fail
   end
 
 let is_fe_read = function
@@ -382,11 +368,6 @@ let is_fe_strong_memory_barrier = function
   | _ -> false
   end
 
-let is_fe_tstart = function
-  | FTStart _ -> true
-  | _ -> false
-  end
-
 (******************** Flowing Storage Subsystem ********************)
 
 type flowing_segment = nat
@@ -427,10 +408,6 @@ type flowing_storage_subsystem_state =
       (* record writes that flowed to memory in the order in which they
       flowed (head is new); we need this to reconstruct coherence *)
       flowing_ss_old_writes : list write;
-
-      (* map every thread that is in TM model to the set of read-requests
-      from that thread that has flown down to the next segment *)
-      flowing_ss_tm : map thread_id (set read_request);
   |>
 
 
@@ -795,9 +772,6 @@ type thread_state 'i =
      (* ...for the above two, it'd be nice to be able to find the *)
      (* right place in the tree without a big search?             *)
 
-     (* this is for ARM transactional memory, but it might also work for PPC *)
-     transaction: maybe (transaction_start * (register_value -> instruction_instance 'i));
-
      (* the part of the state that is unique to each model *)
      thread_substate: thread_substate;
   |>
@@ -1051,10 +1025,6 @@ type thread_sync_label 'i 'ts =
   (*** PLDI11: ***)
   | T_PLDI11_mem_satisfy_read of thread_label (read_request * slices) (list memory_read_source) 'ts
   (* TODO  | T_commit_mem_write_cond *)
-  (*** POP: ***)
-  | T_POP_tm_start  of thread_label transaction_start unit 'ts
-  | T_POP_tm_commit of thread_label transaction_start unit 'ts
-  | T_POP_tm_abort  of thread_label (transaction_start * register_value) unit 'ts
   (*** Flat: ***)
   | T_Flat_mem_satisfy_read of thread_label
       (read_request * slices * list (write * slices) * maybe (set ioid))
@@ -1081,9 +1051,6 @@ let tid_of_thread_sync_trans = function
   | T_propagate_barrier tl                    -> tl.tl_cont.tc_tid
   | T_PLDI11_mem_satisfy_read tl              -> tl.tl_cont.tc_tid
   | T_try_store_excl tl                       -> tl.tl_cont.tc_tid
-  | T_POP_tm_start tl                         -> tl.tl_cont.tc_tid
-  | T_POP_tm_commit tl                        -> tl.tl_cont.tc_tid
-  | T_POP_tm_abort tl                         -> tl.tl_cont.tc_tid
   | T_Flat_mem_satisfy_read tl                -> tl.tl_cont.tc_tid
   | T_Flat_try_commit_store_cond tl           -> tl.tl_cont.tc_tid
   | T_TSO_mem_satisfy_read tl                 -> tl.tl_cont.tc_tid
@@ -1097,9 +1064,6 @@ let ioid_of_thread_sync_trans = function
   | T_propagate_barrier tl                    -> tl.tl_cont.tc_ioid
   | T_PLDI11_mem_satisfy_read tl              -> tl.tl_cont.tc_ioid
   | T_try_store_excl tl                       -> tl.tl_cont.tc_ioid
-  | T_POP_tm_start tl                         -> tl.tl_cont.tc_ioid
-  | T_POP_tm_commit tl                        -> tl.tl_cont.tc_ioid
-  | T_POP_tm_abort tl                         -> tl.tl_cont.tc_ioid
   | T_Flat_mem_satisfy_read tl                -> tl.tl_cont.tc_ioid
   | T_Flat_try_commit_store_cond tl           -> tl.tl_cont.tc_ioid
   | T_TSO_mem_satisfy_read tl                 -> tl.tl_cont.tc_ioid
@@ -1338,7 +1302,6 @@ type ui_thread_state 'i 'ts 'ss =
     ui_initial_fetch_address: changed2b (maybe address);
     (* ui_old_instructions: list (changed2 ui_instruction_instance);  *)
     ui_instruction_tree: ui_instruction_tree 'i 'ts 'ss;
-    ui_transaction: changed2b (maybe transaction_start);
 
     (* PLDI11_thread: *)
     ui_unacknowledged_syncs: maybe (list (changed3 barrier));

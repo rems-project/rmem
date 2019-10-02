@@ -80,9 +80,6 @@ let read_footprint_of_trans (transition: trans 'i 'ts 'ss) : maybe footprint =
       | T_PLDI11_mem_satisfy_read tl ->
           let (r, _) = tl.tl_label in
           Just r.r_addr
-      | T_POP_tm_start _          -> Nothing
-      | T_POP_tm_commit _         -> Nothing
-      | T_POP_tm_abort _          -> Nothing
       | T_Flat_mem_satisfy_read tl ->
           let (r, _, _, _) = tl.tl_label in
           Just r.r_addr
@@ -147,9 +144,6 @@ let write_footprints_of_trans (transition: trans 'i 'ts 'ss) : list footprint =
       | T_propagate_write tl            -> let (w, _, _) = tl.tl_label in [w.w_addr]
       | T_propagate_barrier _           -> []
       | T_PLDI11_mem_satisfy_read _     -> []
-      | T_POP_tm_start _                -> []
-      | T_POP_tm_commit _               -> []
-      | T_POP_tm_abort _                -> []
       | T_Flat_mem_satisfy_read _       -> []
       | T_Flat_try_commit_store_cond tl -> let (w, _) = tl.tl_label in [w.w_addr]
       | T_TSO_mem_satisfy_read _        -> []
@@ -451,9 +445,6 @@ let is_memory_auxiliary_steps_transition params : (trans 'i 'ts 'ss -> bool) = f
           | T_propagate_write tl           -> false
           | T_propagate_barrier _          -> (is_flat_model params.t)
           | T_PLDI11_mem_satisfy_read _    -> false
-          | T_POP_tm_start _               -> false
-          | T_POP_tm_commit _              -> false
-          | T_POP_tm_abort _               -> false
           | T_Flat_mem_satisfy_read _      -> false
           | T_Flat_try_commit_store_cond _ -> false
           | T_TSO_mem_satisfy_read _       -> false

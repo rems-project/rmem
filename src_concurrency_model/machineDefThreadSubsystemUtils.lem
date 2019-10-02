@@ -1019,14 +1019,8 @@ let rec make_old_instructions_helper
   =
   match iis with
   | [(i, T it')] ->
-      let is_active_tstart =
-        match state.transaction with
-        | Just (ts, _) -> ts.ts_ioid = i.instance_ioid
-        | Nothing -> false
-        end
-      in
 
-      if i.finished && i.instance_ioid NIN unacknowledged_syncs_ioids && not is_active_tstart then
+      if i.finished && i.instance_ioid NIN unacknowledged_syncs_ioids then
         let succs = [instruction.program_loc | forall ((instruction, _) MEM it') | true] in
         let nia =
           if isa.isa_model = MIPS then
@@ -1229,7 +1223,6 @@ let make_label state iic
 let make_ui_machine_thread_state (_s : 'storage_subsystem_state) 
       (t : maybe (thread_state 'i)) (t' : thread_state 'i)
       (ncands: list (ui_trans 'i 'ts 'ss)) : (ui_thread_state 'i 'ts 'ss) =
-  let trans t = Maybe.bind t $ fun (t, _) -> Just t in
 
   (* UI_machine_thread_state *)
     <| ui_thread = t'.thread ;           
@@ -1253,12 +1246,6 @@ let make_ui_machine_thread_state (_s : 'storage_subsystem_state)
          | Nothing ->
             make_ui_instruction_tree_nocompare
               (tree_of_old_and_new_instructions t') ncands
-         end;
-
-       ui_transaction = 
-         match t with
-         | Just t -> ui_eq_diff2b (trans t.transaction) (trans t'.transaction)
-         | Nothing -> unchanged2b (trans t'.transaction)
          end;
        
        ui_unacknowledged_syncs =

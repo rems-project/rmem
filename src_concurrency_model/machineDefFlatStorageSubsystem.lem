@@ -389,7 +389,10 @@ let _flat_try_fetch_relaxed params state tl =
 
 let flat_try_fetch_relaxed isa params state tl =
   let fetches = _flat_try_fetch_relaxed params state tl in
-  let fdo_from_fetch (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) = fdo in
+  let fdo_from_fetch = function
+    | (T_fetch <| tl_suppl = Just (Fetched_Mem _ fdo) |>, _) -> fdo
+    | _ -> fail
+  end in
   let maybe_cbranch_from_ast = isa.maybe_split_conditional_branch in
   let fdos = List.map fdo_from_fetch fetches in
   let (successful_fdos,unsuccessful_fdos) = List.partition is_fdo_success fdos in
@@ -476,9 +479,6 @@ let flat_ss_receive_transition_guarded params state = function
   | T_mem_read_request tl ->           fail
   | T_propagate_barrier tl ->          fail
   | T_PLDI11_mem_satisfy_read _ ->     fail
-  | T_POP_tm_start _  ->               fail
-  | T_POP_tm_commit _ ->               fail
-  | T_POP_tm_abort _  ->               fail
   | T_TSO_mem_satisfy_read _ ->        fail
   | T_fetch _ -> failwith "T_fetch is not guarded"
 end

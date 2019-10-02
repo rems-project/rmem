@@ -1327,7 +1327,6 @@ let pp_flowing_event_uncoloured m event =
         (if writes = [] then "" else
             " [" ^ String.concat "," (List.map (pp_write_slices_uncoloured m) writes) ^ "]")
   | FBarrier barrier -> pp_barrier_uncoloured m barrier
-  | FTStart ts -> pp_transaction_start_uncoloured m ts
 
 let pp_vf m ioid vf =
   let (sl,mv) = vf in
@@ -1869,20 +1868,6 @@ let pp_t_sync_label pp_instruction_ast ?(graph=false) m t =
       ("propagate cache maintenance", Some info)
 
 
-  | T_POP_tm_start {tl_suppl = None} -> assert false
-  | T_POP_tm_start {tl_cont = tc} ->
-      ("start memory transaction", None)
-
-  | T_POP_tm_commit {tl_suppl = None} -> assert false
-  | T_POP_tm_commit {tl_cont = tc} ->
-      ("commit memory transaction", None)
-
-  | T_POP_tm_abort {tl_suppl = None} -> assert false
-  | T_POP_tm_abort {tl_label = (_, v); tl_cont = tc} ->
-      let info = Printing_functions.register_value_to_string v in
-      ("abort memory transaction", Some info)
-
-
 
 
 let pp_t_thread_start_label_aux graph m (r_address, r_toc) ioid suppl =
@@ -2048,7 +2033,6 @@ let principal_ioid_of_event (fe:flowing_event) =
   | FFWrite _       -> assert false
   | FRead (r, _, _) -> r.r_ioid
   | FBarrier b      -> b.b_ioid
-  | FTStart t       -> t.ts_ioid
 
 let pp_tracked_event m e =
   match e with
@@ -3200,19 +3184,6 @@ let pp_ui_machine_thread_state pp_instruction_ast m (tid,ts) =
      | None -> ""
    in
 
-   let t_transaction =
-      (* make transactions stealthy, show only when the transaction is active *)
-      match ts.ui_transaction with
-      | C2b_changed   (Some _)
-      | C2b_unchanged (Some _) ->
-          let pp_ts m = function
-            | Some ts -> pp_transaction_start_uncoloured m ts
-            | None -> "--"
-          in
-          base_indent ^ "transaction: " ^ (colour_changed2b_f m pp_ts ts.ui_transaction) ^ !linebreak
-      | _ -> ""
-   in
-
    let t_read_issuing_order =
      match ppd_read_issuing_order with
      | Some str -> base_indent ^ "read issue order: " ^ str ^ !linebreak
@@ -3221,7 +3192,6 @@ let pp_ui_machine_thread_state pp_instruction_ast m (tid,ts) =
 
    t_state ^ (if m.pp_style = Globals.Ppstyle_compact then "    " else !linebreak)
    ^ (if m.pp_style = Globals.Ppstyle_screenshot then "" else t_unacknowledged_syncs ^ !linebreak)
-   ^ t_transaction
    ^ t_read_issuing_order
    ^ t_instructions
 
