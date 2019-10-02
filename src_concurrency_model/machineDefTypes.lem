@@ -569,7 +569,7 @@ type subreads =
       In non-MCA ARM, some writes might have an unknown value due to early
       write-forwarding. The value will be set when we handle the Write_memv
       outcome *)
-      sr_writes_read_from : list (read_request * (list (write * slices)));
+      sr_writes_read_from : list (read_request * write_slices);
       (* map read to the slices that were requested from storage.
       we don't remove the request even after we get the response. This
       is important for load-acquires: if a write was forwarded to a load-acquire

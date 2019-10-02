@@ -38,6 +38,12 @@ type slices = list slice
 (* each pair is a (start,end) pair, denoting the elements indexed from start to end, inclusive *)
 (* invariant: the first of each pair is always less than or equal to the second, the list is sorted by the first element, and there is no overlap *)
 
+type write_slices = list (write * slices)
+
+let writes_of_write_slices (ws : write_slices) : list write =
+  fst (List.unzip ws)
+
+
 type value_fragment 'a = slice * list 'a
 (* use 'a=bool and 'a=word8 for register and memory fragments respectively*)
 

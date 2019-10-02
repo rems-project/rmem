@@ -698,6 +698,18 @@ let empty_subwrites =
       sw_committed =                 false;
   |>
 
+let read_initiated inst = inst.subreads.sr_addr <> Nothing
+let read_satisfied inst = inst.subreads.sr_assembled_value <> Nothing
+let read_request_issued inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
+let write_initiated inst = inst.subwrites.sw_addr <> Nothing
+
+
+let unsat_slices_of_read_request inst rr = 
+  ensure_just (List.lookup rr inst.subreads.sr_unsat_slices)
+  $ "missing a read-request in 'sr_unsat_slices' of ioid " ^ show inst.instance_ioid
+
+
+
 let starting_fetch_inst
       isa
       (new_ioid: ioid)

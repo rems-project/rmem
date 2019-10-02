@@ -251,12 +251,10 @@ let possibly_reads_or_writes_address
    the instruction. This guarantees that the instruction's memory read is
    recorded in the instruction_instance state. *)
 let all_reads_are_calculated inst : bool =
-  is_memory_load_instruction (ik inst) --> inst.subreads.sr_addr <> Nothing
-
+  is_memory_load_instruction (ik inst) --> read_initiated inst
 
 let all_writes_are_calculated inst : bool =
-  is_viable_memory_store_ii inst -->
-    inst.subwrites.sw_addr <> Nothing
+  is_viable_memory_store_ii inst --> write_initiated inst
 
 (* return true iff the sail code has already generated all the memory-read/write
    events (except AArch64 write-mem-value, i.e., E_write_memv) for the
@@ -268,8 +266,7 @@ let all_writes_reads_are_calculated inst : bool =
   (all_reads_are_calculated inst && all_writes_are_calculated inst)
 
 let is_entirely_satisfied_load (i: instruction_instance 'i) : bool =
-  all_reads_are_calculated i &&
-  i.subreads.sr_assembled_value <> Nothing
+  all_reads_are_calculated i && read_satisfied i
 
 let finished_load_part inst : bool =
   inst.finished || inst.rmw_finished_load_snapshot <> Nothing
@@ -430,7 +427,9 @@ let pop_memory_read_action_restart_roots params
             ((not (pop_did_reads_issue_in_order state read_request rr)) || is_flat_model params)
             &&
             exists ((rr_w, rr_sls) MEM rr_wss).
-              overlapping_slices (read_request.r_addr, [complete_slice read_request.r_addr]) (rr_w.w_addr, rr_sls) &&
+              overlapping_slices 
+                (read_request.r_addr, [complete_slice read_request.r_addr])
+                (rr_w.w_addr, rr_sls) &&
               rr_w.w_ioid NIN ioids
     end
   in
@@ -488,7 +487,7 @@ let propagate_write_action_restart_roots
        | true}
     in
     exists ((rr, unsat_slices) MEM inst.subreads.sr_unsat_slices).
-        List.lookup rr inst.subreads.sr_requested <> Nothing && (* i.e. rr was issued *)
+        read_request_issued inst rr && (* i.e. rr was issued *)
         non_empty_intersection_set (slice_footprints rr.r_addr unsat_slices) write_fps
   in
 
@@ -563,7 +562,7 @@ let pop_load_sat_might_self_restart params
       'rr' might need to be restarted. *)
       (exists (prev_inst MEM prefix).
        exists ((rr', unsat_slices') MEM prev_inst.subreads.sr_unsat_slices).
-          List.lookup rr' prev_inst.subreads.sr_requested = Nothing &&
+          read_request_issued prev_inst rr' &&
           overlapping_slices (rr.r_addr, unsat_slices) (rr'.r_addr, unsat_slices')
       ) ||
 
@@ -1099,18 +1098,14 @@ let pop_write_co_check
   have already issued the unsat slices. This is important for single-copy
   atomicity *)
   let issued _ iafter itafter =
-    forall ((read_request, writes) MEM iafter.subreads.sr_writes_read_from).
-      let unsat_slices =
-        ensure_just (List.lookup read_request iafter.subreads.sr_unsat_slices)
-          $ "missing a read-request in 'sr_unsat_slices' of ioid " ^ show iafter.instance_ioid
-      in
-      (((List.elem write (List.unzip writes $> fst)) &&
-        (unsat_slices <> [] ||
+    forall ((read_request, write_slices) MEM iafter.subreads.sr_writes_read_from).
+      (((List.elem write (writes_of_write_slices write_slices)) &&
+        (unsat_slices_of_read_request iafter read_request <> [] ||
            (not (is_flat_model params) &&
               (is_AArch64_load_acquire (ik iafter) || is_RISCV_load_strong_acquire (ik iafter)
               || is_atomic_load (ik iafter)))))
       -->
-        List.lookup read_request iafter.subreads.sr_requested <> Nothing)
+        read_request_issued iafter read_request)
   in
   instruction_tree_all issued [] iic.subtree
 
