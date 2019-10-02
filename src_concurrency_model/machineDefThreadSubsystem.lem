@@ -1690,16 +1690,11 @@ let pldi11_memory_read_action_restart_roots params
   (* check if there's a footprint intersection where they've read from different writes *)
        let irestart_roots =
          (* satisfyReadRestarts *)
-         if
-           (match params.thread_rr with
-           | Restart_on_commit -> false
-           | Restart_on_read_satisfy -> true
-           end) then
-           { isucc | forall (isucc IN instructions_of_tree it) |
-              (overlapping_slices_from_different_writes
-                 wss
-                 (Set.fromList (writes_read_from isucc))
-                 (ioids_of_instruction_tree it)) (* i.e. successor of i*)
+         { isucc | forall (isucc IN instructions_of_tree it) |
+           (overlapping_slices_from_different_writes
+              wss
+              (Set.fromList (writes_read_from isucc))
+              (ioids_of_instruction_tree it)) (* i.e. successor of i*)
 (**
  && (* TODOREALLY  the previous code did this ifeed stuff, which I now deal with with the third argument to non_empty_... above. Correctly? *)
             (not (exists (ifeed IN instructions_of_tree it). (* i.e. successor of i *)
@@ -1712,37 +1707,11 @@ let pldi11_memory_read_action_restart_roots params
                     write_possibly_done_by t.thread i'.behaviour w'))
 *)
 
-           }
-   else {} in
-        irestart_roots
+         }
+   in
+   irestart_roots
 
 
-
-(*
-let memory_read_action m t i r w ist =
-       let irestarts =
-         (* satisfyReadRestarts *)
-         if
-           (match m.thread_rr with
-           | Restart_on_commit -> false
-           | Restart_on_read_satisfy -> true
-           end) then
-           { isucc | forall (isucc IN strict_program_order_suffix t i) |
-           (exists (w' IN isucc.writes_read_from).
-              (w'.w_addr = w.w_addr) && not (w' = w) &&
-            (not (exists (i' IN t.in_flight_instructions).
-(* TODO: again, correspondence between text (which here doesn't say "(where the read was not forwarded)") and the use of write_possibly_done_by below isn't terribly clear *)
-                    write_possibly_done_by t.thread i'.behaviour w')))
-           }
-   else {}
-       in
-       let (t',ist') = restart_dependent_subtrees m t irestarts ist in
-       let isem = i.behaviour in
-       let isem' = mem_read_action isem w.w_value in
-       let i' = <| i with behaviour = isem'; read_responses = i.read_responses union {<| rr_thread = r.r_thread; rr_ioid = r.r_ioid; rr_eiid = r.reiid; rr_write = w |>}; writes_read_from = i.writes_read_from union {w} ; has_done_computation = true |> in
-       let t'' = <| t' with in_flight_instructions = (t'.in_flight_instructions union {i'}) \ {i} |> in
-       (t'',ist')
-*)
 
 (* this function is used by both PLDI11 and POP *)
 let read_unmapped_memory_action state iic rr slices =

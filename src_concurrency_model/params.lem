@@ -71,10 +71,6 @@ let update_ss_params_flat_dic params b =
   | Fetch_Relaxed p -> <| params with ss_fetch_type = Fetch_Relaxed <| p with flat_need_ic = not b |> |>
   end
 
-type thread_restart_read_params =
-  | Restart_on_commit
-  | Restart_on_read_satisfy
-
 type pop_thread_model =
   | Standard_POP
   | Flat_POP
@@ -105,7 +101,6 @@ type fetch_order =
 type thread_params =
   <| thread_model:       thread_model;
      thread_restriction: thread_restriction; (* additional model restrictions *)
-     thread_rr:          thread_restart_read_params;
      thread_allow_tree_speculation:  bool;
      thread_allow_write_subsumption: bool;
      thread_fail_on_loop:            bool;
@@ -346,7 +341,6 @@ let default_model_params =
   let default_t =
     <|  thread_model                   = PLDI11_thread_model;
         thread_restriction             = RestrictionNone;
-        thread_rr                      = Restart_on_read_satisfy;
         thread_allow_tree_speculation  = true;
         thread_allow_write_subsumption = false;
         thread_fail_on_loop            = false;

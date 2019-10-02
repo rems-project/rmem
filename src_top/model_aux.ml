@@ -411,12 +411,6 @@ let restrict_value params = (params.ss.ss_sc, params.t.thread_restriction)
 
 (* thread: *)
 
-let thread_rr_assoc =
-  [(Restart_on_commit,       "restart_on_read_commit");
-   (Restart_on_read_satisfy, "restart_on_read_satisfy")]
-let thread_rr_update params value = {params with t = {params.t with thread_rr = value}}
-let thread_rr_value params = params.t.thread_rr
-
 let thread_allow_tree_speculation_assoc =
   [(true,       "allow_tree_speculation");
    (false,      "forbid_tree_speculation")]
@@ -482,7 +476,6 @@ let parsers =
 
     gen_parser restrict_assoc restrict_update;
 
-    gen_parser thread_rr_assoc thread_rr_update;
     gen_parser thread_allow_tree_speculation_assoc thread_allow_tree_speculation_update;
     gen_parser thread_allow_write_subsumption_assoc thread_allow_write_subsumption_update;
     gen_parser thread_fail_on_loop_assoc thread_fail_on_loop_update;
@@ -500,7 +493,6 @@ let model_strings =
   (assoc_image model_assoc) @
   (assoc_image restrict_assoc) @
   (* thread: *)
-  (assoc_image thread_rr_assoc) @
   (assoc_image thread_allow_tree_speculation_assoc) @
   (assoc_image thread_allow_write_subsumption_assoc) @
   (assoc_image thread_fail_on_loop_assoc) @
@@ -518,7 +510,6 @@ let current_model params =
     (List.assoc (model_value params) model_assoc);
     (List.assoc (restrict_value params) restrict_assoc);
     (* thread: *)
-    (List.assoc (thread_rr_value params) thread_rr_assoc);
     (List.assoc (thread_allow_tree_speculation_value params) thread_allow_tree_speculation_assoc);
     (List.assoc (thread_allow_write_subsumption_value params) thread_allow_write_subsumption_assoc);
     (List.assoc (thread_fail_on_loop_value params) thread_fail_on_loop_assoc);
