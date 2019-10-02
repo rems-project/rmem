@@ -4310,85 +4310,91 @@ let enumerate_transitions_of_thread
   enumerate_failed_transaction_transition params state
 
 
+let pop_receive_satisfy_read_transition params isa state rr mrs = 
+  let iic =
+    ensure_just
+      (find_ioid_instruction_in_context state rr.r_ioid)
+      ("cannot find the ioid " ^ show rr.r_ioid ^ " in the instruction tree")
+  in
+  let state' = fun () -> satisfy_read_action params state iic rr [mrs] in
+  Just (make_cont state.thread iic.iic_instance.instance_ioid state')
+
+
+let pldi11_receive_acknowledge_sync_barrier_transition params isa state b = 
+  let state' = fun () ->
+    let pldi11_substate =
+      let substate = get_pldi11_thread_substate state.thread_substate in
+      <| unacknowledged_syncs = { b' | forall (b' IN substate.unacknowledged_syncs) 
+                                  | b'.b_ioid <> b.b_ioid } |>
+    in
+    <| state with thread_substate = PLDI11_thread pldi11_substate |>
+    $> make_old_instructions isa
+    $> make_thread_cont_res {} {}
+  in
+  Just <| tc_tid = state.thread; tc_ioid = b.b_ioid; tc_cont = state' |>
+
+let flat_receive_finish_ic_transition params isa state (cmr : cache_maintenance_request) = 
+  let state' = fun () ->
+    let iic =
+      ensure_just (find_ioid_instruction_in_context state cmr.cmr_ioid)
+      $ "cannot find the ioid " ^ show cmr.cmr_ioid ^ " in the instruction tree"
+    in
+    let i = iic.iic_instance in
+    match i.micro_op_state with
+    | MOS_wait_IC o ->
+       let i' = <| i with micro_op_state = MOS_plain o |> in
+       <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
+       $> make_thread_cont_res {} {}
+    | _ -> failwith "flat finish IC:  wasn't MOS_wait_IC"
+    end
+  in
+  Just <| tc_tid = state.thread; tc_ioid = cmr.cmr_ioid; tc_cont = state' |>
+
+let flat_receive_ic_clear_transition params isa state (cmr : cache_maintenance_request) = 
+  let state' = fun () ->
+    let it = state.instruction_tree in
+    let it' =
+      instruction_tree_map
+        (fun _ i _ ->
+          if i.program_loc <> cmr.cmr_addr then i
+          else
+            match i.micro_op_state with
+            | MOS_fetch _ ->
+               starting_fetch_inst params i.instance_ioid i.program_loc
+            | s -> i
+            end
+        )
+        []
+        it
+    in
+    <| state with instruction_tree=it' |>
+    $> make_thread_cont_res {} {}
+  in
+  Just <| tc_tid = state.thread; tc_ioid = cmr.cmr_ioid; tc_cont = state' |>
+
 let thread_receive_transition
       (params: thread_params)
       (isa:    isa 'i)
       (state:  thread_state 'i)
       label =
-  let pop_sat_read rr mrs =
-    let iic =
-      ensure_just (find_ioid_instruction_in_context state rr.r_ioid)
-      $ "cannot find the ioid " ^ show rr.r_ioid ^ " in the instruction tree"
-    in
-    let state' = fun () -> satisfy_read_action params state iic rr [mrs] in
-    Just (make_cont state.thread iic.iic_instance.instance_ioid state')
-  in
-
-  let pldi11_ancknowledge_sync_barrier b = 
-    let state' = fun () ->
-      let pldi11_substate =
-        let substate = get_pldi11_thread_substate state.thread_substate in
-        <| unacknowledged_syncs = { b' | forall (b' IN substate.unacknowledged_syncs) 
-                                       | b'.b_ioid <> b.b_ioid } |>
-      in
-      <| state with thread_substate = PLDI11_thread pldi11_substate |>
-      $> make_old_instructions isa
-      $> make_thread_cont_res {} {}
-    in
-    Just <| tc_tid = state.thread; tc_ioid = b.b_ioid; tc_cont = state' |>
-  in
-  let flat_finish_ic (cmr : cache_maintenance_request) =
-    let state' = fun () ->
-        let iic =
-          ensure_just (find_ioid_instruction_in_context state cmr.cmr_ioid)
-          $ "cannot find the ioid " ^ show cmr.cmr_ioid ^ " in the instruction tree"
-        in
-        let i = iic.iic_instance in
-        match i.micro_op_state with
-        | MOS_wait_IC o ->
-            let i' = <| i with micro_op_state = MOS_plain o |> in
-            <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
-            $> make_thread_cont_res {} {}
-        | _ -> failwith "flat finish IC:  wasn't MOS_wait_IC"
-        end
-    in
-    Just <| tc_tid = state.thread; tc_ioid = cmr.cmr_ioid; tc_cont = state' |>
-  in
-  let flat_ic_clear (cmr : cache_maintenance_request) =
-    let state' = fun () ->
-      let it = state.instruction_tree in
-      let it' =
-        instruction_tree_map
-          (fun _ i _ ->
-            if i.program_loc = cmr.cmr_addr then
-                match i.micro_op_state with
-                | MOS_fetch _ ->
-                    starting_fetch_inst params i.instance_ioid i.program_loc
-                | s -> i
-                end
-            else
-                i)
-          []
-          it
-      in
-      <| state with instruction_tree=it' |>
-      $> make_thread_cont_res {} {}
-    in
-    Just <| tc_tid = state.thread; tc_ioid = cmr.cmr_ioid; tc_cont = state' |>
-  in
-
 
   match label with
   (* PLDI transitions: *)
-  | SS_PLDI11_acknowledge_sync_barrier b -> pldi11_ancknowledge_sync_barrier b
+  | SS_PLDI11_acknowledge_sync_barrier b ->
+     pldi11_receive_acknowledge_sync_barrier_transition params isa state b
   (* POP transitions: *)
-  | SS_POP_read_response rr mrs            -> pop_sat_read rr mrs
+  | SS_POP_read_response rr mrs ->
+     pop_receive_satisfy_read_transition params isa state rr mrs
   (* Flowing transitions: *)
-  | SS_Flowing_seg_read_response rr mrs    -> pop_sat_read rr mrs
-  | SS_Flowing_mem_read_response rr mrs    -> pop_sat_read rr mrs
+  | SS_Flowing_seg_read_response rr mrs ->
+     pop_receive_satisfy_read_transition params isa state rr mrs
+  | SS_Flowing_mem_read_response rr mrs ->
+     pop_receive_satisfy_read_transition params isa state rr mrs
   (* Flat Transitions *)
-  | SS_Flat_ic_finish cmr                  -> flat_finish_ic cmr
-  | SS_Flat_thread_ic cmr _                -> flat_ic_clear  cmr
+  | SS_Flat_ic_finish cmr ->
+     flat_receive_finish_ic_transition params isa state cmr
+  | SS_Flat_thread_ic cmr _ ->
+     flat_receive_ic_clear_transition params isa state cmr
   end
 
 (* based on CandidateExecution.footprints_of_cex_instruction_instance *)
