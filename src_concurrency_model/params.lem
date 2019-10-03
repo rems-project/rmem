@@ -329,10 +329,7 @@ let default_model_params =
   let default_ss =
     <|  ss_model = PLDI11_storage_model;
         ss_sc = false;
-        (*coherence_commit = Partial_CC;*)
-        (*bc = Weak_BC;*)
         new_coh =  Use_old_coherence ;
-        (*new_coh =     No_new_coherence;*)
         flowing_topology = FTopo_leaf 0;
         ss_fetch_type = Fetch_Atomic;
     |>

@@ -98,18 +98,15 @@ let current_reg_write_dependencies
     | RRS_pseudoregister               -> []
     end
   in
-  match instruction.subreads.sr_assembled_value with
-  | Nothing -> reg_deps
-  | Just _  -> RWD_mem_read :: reg_deps
-  end
+  if read_satisfied instruction then RWD_mem_read :: reg_deps else reg_deps
 
 (* iic_prefix is active_prefix ++ old_prefix *)
 let paired_atomic_load_aux
       (iic_instance : instruction_instance 'i)
-      prefix : maybe (instruction_instance 'i) =
+      prefix 
+    : maybe (instruction_instance 'i) =
   if is_memory_rmw (ik iic_instance) then Just iic_instance 
   else
-    (* let prefix = iic.active_prefix ++ iic.old_prefix in *)
     let atomic i = (is_atomic_load i || is_atomic_store i) && not (is_memory_rmw i) in
     Maybe.bind (List.find (fun i -> atomic (ik i)) prefix) $ fun inst ->
     if is_atomic_load (ik inst) then Just inst else Nothing
@@ -136,34 +133,34 @@ let rec paired_atomic_stores (i: instruction_instance 'i) (it: instruction_tree 
    NOTE: 'state' might be a deadlock state, hence we find a registers snapshot
    for each path in the tree and join them together (register with multiple
    values is mapped to Nothing) *)
-let registers_final_state (state: thread_state 'i) : list (reg_base_name * maybe register_value) =
-  (* get a register snapshot for each path in the instructions tree *)
-  let reg_states =
-    instruction_tree_fold_root
-      (fun acc _ i _ -> i :: acc)
-      state.old_instructions [] state.instruction_tree
-    $> Set.map (find_register_snapshot state.register_data state.initial_register_state)
-  in
 
-  if Set.size reg_states = 0 then
-    (* there must be at least one path in the tree *)
-    fail
-  else if Set.size reg_states = 1 then
-    Set_extra.choose reg_states
-  else
-    (* merge all the snapshots into one *)
-    let (s, reg_states') =
-      let s = Set_extra.choose reg_states in
-      (s, reg_states \ {s})
-    in
-    List.map
-      (fun (rbn, v) ->
-        if forall (s' IN reg_states'). List.lookup rbn s' = Just v then
-          (* rbn is mapped to the same value in all snapshots *)
-          (rbn, v)
-        else
-          (rbn, Nothing))
-      s
+let registers_final_states_per_path (state: thread_state 'i)
+    : set (list (reg_base_name * maybe register_value)) = 
+  let paths = instruction_tree_fold_root (fun acc _ i _ -> i :: acc)
+                state.old_instructions [] state.instruction_tree in
+  Set.map (find_register_snapshot state.register_data state.initial_register_state) paths
+
+let merge_registers_final_states
+      (reg_states : set (list (reg_base_name * maybe register_value))) 
+    : list (reg_base_name * maybe register_value) = 
+  let s = Set_extra.choose reg_states in
+  let reg_states' = reg_states \ {s} in
+  List.map
+    (fun (rbn, v) ->
+      if forall (s' IN reg_states'). List.lookup rbn s' = Just v
+      (* rbn is mapped to the same value in all snapshots *)
+      then (rbn, v)
+      else (rbn, Nothing))
+    s
+
+let registers_final_state (state: thread_state 'i) 
+    : list (reg_base_name * maybe register_value) =
+  (* get a register snapshot for each path in the instructions tree *)
+  let reg_states = registers_final_states_per_path state in
+  let () = ensure (not (Set.null reg_states))
+             "there must be at least one path in the tree" in
+  if Set.size reg_states = 1 then Set_extra.choose reg_states
+  else merge_registers_final_states reg_states
 
 (** Instruction instance predicates *)
 
@@ -187,19 +184,21 @@ let is_indirect_branch_ii (i: instruction_instance 'i) : bool =
 
 (* Return Nothing if the read footprint is not determined yet, or Just
    applied to the set of read addresses otherwise. If the memory read
-   has already been requested then this information is in the
-   micro-op-state; if not, the footprint is only determined if the
-   instruction has a Mem_read outcome in the next state. (This depends
-   on the fact that the only register in the Sail code for loads is
-   for determining the data, after that the read can go ahead. *)
+   has already been initiated then this information is in the
+   instruction instance state; if not, the footprint is only
+   determined if the instruction has a Mem_read outcome in the next
+   state. (This depends on the fact that the only register in the Sail
+   code for loads is for determining the data, after that the read can
+   go ahead. *)
 let read_footprint_of_load instruction : maybe footprint =
   match instruction.subreads.sr_addr with
   | Just fp -> Just fp
   | Nothing ->
       match instruction.micro_op_state with
-      | MOS_plain (Read_mem ((read_kind: read_kind),(addr_lifted: address_lifted),(size: nat)) _,_) ->
-          let addr = ensure_just (address_of_address_lifted addr_lifted) "read_footprint_of_load: bad address" in
-          Just (addr, size)
+      | MOS_plain (Read_mem (read_kind,addr_lifted,size) _,_) ->
+         let addr = ensure_just (address_of_address_lifted addr_lifted)
+                      "read_footprint_of_load: bad address" in
+         Just (addr, size)
       | _ ->  Nothing
       end
   end
@@ -281,6 +280,55 @@ that determines if a po-previous read might be restarted. *)
 
 (* calculate the set of instructions in the tree 'it' that should be
 restarted if 'roots' (presumed within 'it') are restarted *)
+
+(* predicates to determin whether inst needs to be restarted if the
+   instructions in 'restarts' are restarted *)
+
+let also_restart_register_dependent_instr restarts inst prefix = 
+  let undetermined_reg_deps =
+    undetermined_reg_writes_read_from prefix inst.reg_reads in
+  not (Set.null (Set.intersection restarts undetermined_reg_deps))
+
+let also_restart_forward_dependent_instr restarts inst = 
+  exists ((write, _) MEM (writes_read_from inst)).
+  write.w_ioid IN restarts
+
+let also_restart_instr_after_load_acquire restarts inst prefix =
+  is_memory_load_instruction (ik inst) &&
+  exists (prev_inst MEM prefix).
+    (is_AArch64_load_acquire (ik prev_inst) || is_RISCV_load_acquire (ik prev_inst))
+    && not (finished_load_part prev_inst)
+    && prev_inst.instance_ioid IN restarts
+
+let also_restart_instr_after_RISCV_fence_sr restarts inst prefix = 
+  is_memory_load_instruction (ik inst) &&
+  exists_iprev_with_prefix prefix $ fun prev_inst prev_active_prefix ->
+    is_RISCV_fence_sr (ik prev_inst)
+    && is_RISCV_fence_pr (ik prev_inst)
+    && not (is_RISCV_fence_pw (ik prev_inst))
+    && not prev_inst.finished
+    && exists (prev_prev_inst MEM prev_active_prefix).
+        is_memory_load_instruction (ik prev_prev_inst)
+        && not (finished_load_part prev_prev_inst)
+        && prev_prev_inst.instance_ioid IN restarts
+
+let also_restart_instr_after_RISCV_fence_tso restarts inst prefix = 
+  is_memory_load_instruction (ik inst) &&
+  exists_iprev_with_prefix prefix $ fun prev_inst prev_active_prefix ->
+    is_RISCV_fence_tso (ik prev_inst)
+    && not prev_inst.finished
+    && exists (prev_prev_inst MEM prev_active_prefix).
+        is_memory_load_instruction (ik prev_prev_inst)
+        && not (finished_load_part prev_prev_inst)
+        && prev_prev_inst.instance_ioid IN restarts
+
+let also_restart_instr restarts inst prefix = 
+  also_restart_register_dependent_instr restarts inst prefix
+  || also_restart_forward_dependent_instr restarts inst
+  || also_restart_instr_after_load_acquire restarts inst prefix
+  || also_restart_instr_after_RISCV_fence_sr restarts inst prefix
+  || also_restart_instr_after_RISCV_fence_tso restarts inst prefix
+
 let dependent_suffix_to_restart
     (roots: set ioid)
     (it:    instruction_tree 'i)
@@ -293,84 +341,50 @@ let dependent_suffix_to_restart
       (_:        instruction_tree 'i)
       : set ioid
     =
-    let register_dependent = fun () ->
-      undetermined_reg_writes_read_from prefix inst.reg_reads
-      $> Set.intersection restarts
-      $> Set.null
-      $> not
-    in
-
-    let forward_dependent = fun () ->
-      exists ((write, _) MEM (writes_read_from inst)).
-        write.w_ioid IN restarts
-    in
-
-    let after_load_acquire = fun () ->
-      is_memory_load_instruction (ik inst) &&
-      exists (prev_inst MEM prefix).
-        (is_AArch64_load_acquire (ik prev_inst) || is_RISCV_load_acquire (ik prev_inst))
-        && not (finished_load_part prev_inst)
-        && prev_inst.instance_ioid IN restarts
-    in
-
-    let after_RISCV_fence_sr = fun () ->
-      is_memory_load_instruction (ik inst) &&
-      exists_iprev_with_prefix prefix $ fun prev_inst prev_active_prefix ->
-        is_RISCV_fence_sr (ik prev_inst)
-        && is_RISCV_fence_pr (ik prev_inst)
-        && not (is_RISCV_fence_pw (ik prev_inst))
-        && not prev_inst.finished
-        && exists (prev_prev_inst MEM prev_active_prefix).
-            is_memory_load_instruction (ik prev_prev_inst)
-            && not (finished_load_part prev_prev_inst)
-            && prev_prev_inst.instance_ioid IN restarts
-    in
-
-    let after_RISCV_fence_tso = fun () ->
-      is_memory_load_instruction (ik inst) &&
-      exists_iprev_with_prefix prefix $ fun prev_inst prev_active_prefix ->
-        is_RISCV_fence_tso (ik prev_inst)
-        && not prev_inst.finished
-        && exists (prev_prev_inst MEM prev_active_prefix).
-            is_memory_load_instruction (ik prev_prev_inst)
-            && not (finished_load_part prev_prev_inst)
-            && prev_prev_inst.instance_ioid IN restarts
-    in
-
-    if inst.instance_ioid IN roots
-        || register_dependent ()
-        || forward_dependent ()
-        || after_load_acquire ()
-        || after_RISCV_fence_sr ()
-        || after_RISCV_fence_tso ()
-    then {inst.instance_ioid} union restarts
+    if inst.instance_ioid IN roots || also_restart_instr restarts inst prefix
+    then Set.insert inst.instance_ioid restarts
     else restarts
   in
+  bigunion (instruction_tree_fold_root restart_fold {} [] it)
 
-  instruction_tree_fold_root restart_fold {} [] it
-  $> bigunion
 
 (* return a pair, the instruction tree after restarting 'irestart_roots' and
 their dependants, and the set of instructions that were restarted.
 NOTE: 'irestart_roots' must all be in 'it' *)
 let restart_dependent_subtrees
     (it:             instruction_tree 'i)
-    (irestart_roots: set (instruction_instance 'i))
+    (restart_roots: set (instruction_instance 'i))
     : instruction_tree 'i * set ioid
   =
   (* calculate the instructions to restart *)
-  let irestarts = dependent_suffix_to_restart {i.instance_ioid | forall (i IN irestart_roots) | true} it in
+  let root_ioids = {i.instance_ioid | forall (i IN restart_roots) | true} in
+  let restarts = dependent_suffix_to_restart root_ioids it in
   (* restart them *)
   let it' =
     instruction_tree_map
-      (fun _ i _ -> if i.instance_ioid IN irestarts then restart_instruction i else i)
+      (fun _ i _ -> if i.instance_ioid IN restarts
+                    then restart_instruction i else i)
       []
       it
   in
-  (it', irestarts)
+  (it', restarts)
 
 
 (** POP restart machinery *)
+
+(* see if there is a pair of distinct writes in wss1 and wss2 whose
+   slices footprint-intersect and where the second does not come from
+   an instruction in ifeed_ioids *)
+let overlapping_slices_from_different_writes_not_in_set
+      (wss1: set (write*slices))
+      (wss2: set (write*slices))
+      (ifeed_ioids: set ioid) =
+  exists ((w1, sls1) IN wss1). exists ((w2, sls2) IN wss2).
+    (w2.w_ioid NIN ifeed_ioids) &&
+    (w1 <> w2) &&
+    overlapping_slices (w1.w_addr, sls1) (w2.w_addr, sls2)
+
+
 
 (* remove read_requests of restarted instructions from pop's read_issuing_order *)
 let pop_remove_restarted_reads_from_order
@@ -378,16 +392,21 @@ let pop_remove_restarted_reads_from_order
     (restarted_ioids: set ioid)
     : pop_thread_substate
   =
-  <| read_issuing_order = relonFilterSet (fun rr -> rr.r_ioid NIN restarted_ioids) pop_thread.read_issuing_order |>
+  let read_issuing_order' = 
+    relonFilterSet (fun rr -> rr.r_ioid NIN restarted_ioids)
+      pop_thread.read_issuing_order
+  in
+  <| read_issuing_order = read_issuing_order' |>
 
 
-let pop_did_reads_issue_in_order
+let pop_reads_issued_in_order
     (state:      thread_state 'i)
     (po_old_rr:  read_request)
     (po_new_rr:  read_request)
     : bool
   =
-  let read_issuing_order = (get_pop_thread_substate state.thread_substate).read_issuing_order in
+  let read_issuing_order =
+    (get_pop_thread_substate state.thread_substate).read_issuing_order in
   relonInRel po_old_rr po_new_rr read_issuing_order
 
 
@@ -405,44 +424,34 @@ let pop_memory_read_action_restart_roots params
     (wss:          maybe (set (write * slices)))
     : set (instruction_instance 'i)
   =
-  (* predicate to determine if a po-after satisfied read should be restarted *)
 
-  let restart_satisfied_read ioids inst : bool =
+  (* predicate to determine if a po-after satisfied read should be restarted *)
+  let restart_satisfied_read prefix_ioids inst : bool =
     match wss with
     | Just wss ->
         (* we know the writes that satisfied the read, we will restart
         po-after loads that overlap and read from different writes *)
         exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
-          ((not (pop_did_reads_issue_in_order state read_request rr)) || is_flat_model params) &&
-          overlapping_slices_from_different_writes wss (Set.fromList rr_wss) ioids
+          ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
+          overlapping_slices_from_different_writes_not_in_set
+            wss (Set.fromList rr_wss) prefix_ioids
 
     | Nothing ->
         (* we don't know the writes that satisfied the read, we will
         restart all po-after reads that overlap. *)
         exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
-            ((not (pop_did_reads_issue_in_order state read_request rr)) || is_flat_model params)
+            ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params)
             &&
             exists ((rr_w, rr_sls) MEM rr_wss).
               overlapping_slices 
                 (read_request.r_addr, [complete_slice read_request.r_addr])
                 (rr_w.w_addr, rr_sls) &&
-              rr_w.w_ioid NIN ioids
+              rr_w.w_ioid NIN prefix_ioids
     end
   in
 
-  let folded =
-    instruction_tree_fold_root
-      (fun (ioids, restarts) _ i _ ->
-          let restarts' =
-            if restart_satisfied_read ioids i then {i} union restarts
-            else restarts
-          in
-          ({i.instance_ioid} union ioids, restarts'))
-      ({}, {})
-      []
-      it
-  in
-  Set.bigunion {restarts | forall ((_, restarts) IN folded) | true}
+  {i | forall ((i,prefix_ioids) IN instructions_with_prefix_ioids it)
+     | restart_satisfied_read prefix_ioids i}
 
 
 
@@ -465,7 +474,7 @@ let propagate_write_action_restart_roots
   write_slices (but is not one of them) *)
 
   let restart_sat_read write_slices ioids inst : bool =
-    overlapping_slices_from_different_writes
+    overlapping_slices_from_different_writes_not_in_set
         (Set.fromList write_slices)
         (Set.fromList (writes_read_from inst))
         ioids
@@ -666,9 +675,10 @@ let pop_is_stale_read params
 
   exists (prev_inst MEM full_prefix).
     exists ((prev_rr, prev_writes) MEM prev_inst.subreads.sr_writes_read_from).
-      (not (pop_did_reads_issue_in_order state prev_rr read_request))
+      (not (pop_reads_issued_in_order state prev_rr read_request))
       &&
-      overlapping_slices_from_different_writes wss (Set.fromList prev_writes) ioids
+        overlapping_slices_from_different_writes_not_in_set
+          wss (Set.fromList prev_writes) ioids
 
 
 (** Thread Transition Preconditions and Actions *********************)
@@ -1184,7 +1194,7 @@ let rec pop_load_finish_co_check_helper
                     -->
                     not (is_flat_model params) &&
                     List.lookup rr' inst.subreads.sr_requested <> Nothing &&
-                    pop_did_reads_issue_in_order state rr' read_request)
+                    pop_reads_issued_in_order state rr' read_request)
                 end)
         end)
       &&
@@ -1691,7 +1701,7 @@ let pldi11_memory_read_action_restart_roots params
        let irestart_roots =
          (* satisfyReadRestarts *)
          { isucc | forall (isucc IN instructions_of_tree it) |
-           (overlapping_slices_from_different_writes
+           (overlapping_slices_from_different_writes_not_in_set
               wss
               (Set.fromList (writes_read_from isucc))
               (ioids_of_instruction_tree it)) (* i.e. successor of i*)

@@ -120,14 +120,6 @@ let overlapping_slices ((fp1,sls1): (footprint*slices)) ((fp2,sls2): (footprint*
   non_empty_intersection_set fps1 fps2
 
 
-(* see if there is a pair of distinct writes in wss1 and wss2 whose slices footprint-intersect and where the second does not come from an instruction in ifeed_ioids *)
-let overlapping_slices_from_different_writes (wss1: set (write*slices)) (wss2: set (write*slices)) (ifeed_ioids: set ioid) =
-  exists ((w1, sls1) IN wss1). exists ((w2, sls2) IN wss2).
-    (w2.w_ioid NIN ifeed_ioids) &&
-    (w1 <> w2) &&
-    overlapping_slices (w1.w_addr, sls1) (w2.w_addr, sls2)
-
-
 (* fp1 is equal to or contained in fp2 *)
 let sub_footprint (fp1:footprint) (fp2:footprint) : bool =
   let (a1,sz1) = integer_footprint_of_footprint fp1 in

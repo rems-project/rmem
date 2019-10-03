@@ -426,6 +426,16 @@ let rec instruction_tree_fold_root
      instruction_tree_fold_root f prev prefix (T iis)
   end
 
+let instructions_with_prefix_ioids (it : instruction_tree 'i)
+    : set (instruction_instance 'i * set ioid)
+  = 
+  let fold (acc,prefix_ioids) _ i _ = 
+    (Set.insert (i,prefix_ioids) acc,
+     Set.insert i.instance_ioid prefix_ioids)
+  in
+  Set.bigunion (Set.map fst (instruction_tree_fold_root fold ({}, {}) [] it))
+
+
 
 (* find all the in-flight instruction instances in a thread's instruction_tree,
    together with the tree context for each *)
