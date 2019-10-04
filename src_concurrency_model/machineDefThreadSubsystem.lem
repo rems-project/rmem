@@ -364,8 +364,7 @@ let restart_dependent_subtrees
     instruction_tree_map
       (fun _ i _ -> if i.instance_ioid IN restarts
                     then restart_instruction i else i)
-      []
-      it
+      [] it
   in
   (it', restarts)
 
@@ -387,17 +386,16 @@ let overlapping_slices_from_different_writes_not_in_set
 
 
 (* remove read_requests of restarted instructions from pop's read_issuing_order *)
-let pop_remove_restarted_reads_from_order
+let pop_remove_reads_from_order
     (pop_thread:      pop_thread_substate)
-    (restarted_ioids: set ioid)
+    (to_remove: set ioid)
     : pop_thread_substate
   =
   let read_issuing_order' = 
-    relonFilterSet (fun rr -> rr.r_ioid NIN restarted_ioids)
+    relonFilterSet (fun rr -> rr.r_ioid NIN to_remove)
       pop_thread.read_issuing_order
   in
   <| read_issuing_order = read_issuing_order' |>
-
 
 let pop_reads_issued_in_order
     (state:      thread_state 'i)
@@ -473,11 +471,12 @@ let propagate_write_action_restart_roots
   which returns true if 'inst' reads from a write that overlaps with
   write_slices (but is not one of them) *)
 
-  let restart_sat_read write_slices ioids inst : bool =
+  let read_satisfied_not_from_write_slices_not_from_po_predecessor
+        write_slices prefix_ioids inst : bool =
     overlapping_slices_from_different_writes_not_in_set
-        (Set.fromList write_slices)
-        (Set.fromList (writes_read_from inst))
-        ioids
+      (Set.fromList write_slices)
+      (Set.fromList (writes_read_from inst))
+      prefix_ioids
   in
 
   (* restart reads with unsatisfied slices that overlap write_slices where
@@ -485,73 +484,58 @@ let propagate_write_action_restart_roots
   (i.e. reads that will be satisfied by writes that are co-before
   write_slices). *)
 
-  let restart_unsat_read write_slices inst =
-    let write_fps = Set.bigunion
-      {slice_footprints write.w_addr slices
-       | forall ((write, slices) MEM write_slices)
-       | true}
-    in
+  let unsatisfied_issued_read_overlapping_write_slices ws inst : bool =
+    let write_fps = write_fps_of_write_slices ws in
     exists ((rr, unsat_slices) MEM inst.subreads.sr_unsat_slices).
-        read_request_issued inst rr && (* i.e. rr was issued *)
+        read_request_issued inst rr &&
         non_empty_intersection_set (slice_footprints rr.r_addr unsat_slices) write_fps
   in
 
   let folded =
     instruction_tree_fold_root
-      (fun (write_slices, ioids, accum) _ i _ ->
-        let ioids' = {i.instance_ioid} union ioids in
-
+      (fun (write_slices, prefix_ioids, restarts) _ i _ ->
+        let prefix_ioids' = Set.insert i.instance_ioid prefix_ioids in
+        let propagated = propagated_write_slices_of_instruction i in
         let write_slices' =
-          let propagated_slices = complete_writes i.subwrites.sw_propagated_writes in
-          let not_propagated (write, slices) =
-            let (_, match_write_slices) =
-              match_writes write.w_addr slices
-                           (propagated_slices ++ [(write, slices)]) [] in
-            match List.lookup write match_write_slices with
-            | Nothing -> Nothing
-            | Just slices -> Just (write, slices)
-            end
-          in
-          List.mapMaybe not_propagated write_slices
+          List.mapMaybe (parts_not_overwritten_by_write_slices propagated)
+            write_slices in
+        let restarts' = 
+          if read_satisfied_not_from_write_slices_not_from_po_predecessor
+               write_slices prefix_ioids i || 
+             unsatisfied_issued_read_overlapping_write_slices write_slices i
+          then Set.insert i restarts else restarts 
         in
-
-        if restart_sat_read write_slices ioids i || restart_unsat_read write_slices i
-        then (write_slices', ioids', { i } union accum)
-        else (write_slices', ioids', accum))
+        (write_slices', prefix_ioids', restarts')
+      )
       (complete_writes writes, {}, {})
-      []
-      it
+      [] it
       in
   Set.bigunion {insts | forall ((_, _, insts) IN folded) | true}
 
 
 let pop_memory_write_exclusive_commit_fail_action_restart_roots
     (it:          instruction_tree 'i)
-    (fail_writes: list write)
+    (failed_writes: list write)
     : set (instruction_instance 'i)
   =
-  let fail_writes = Set.fromList fail_writes in
-
   (* restart reads that the writes were forwarded to *)
   {isucc  | forall (isucc IN instructions_of_tree it)
           | exists ((write, _) MEM (writes_read_from isucc)).
-                write IN fail_writes}
+                List.elem write failed_writes}
 
 
 (* check if 'instruction' might be restarted when a read response from
 storage is received for one of the instruction's read requests (see
 pop_is_stale_read). *)
 let pop_load_sat_might_self_restart params
-    (state:               thread_state 'i)
+    (state:                thread_state 'i)
     (might_restart_prefix: set ioid)
     (prefix:               list (instruction_instance 'i))
     (instruction:          instruction_instance 'i)
     : bool
   =
   let prev_ioids =
-    {i.instance_ioid
-      | forall (i MEM (prefix ++ state.old_instructions))
-      | true}
+    {i.instance_ioid | forall (i MEM (prefix ++ state.old_instructions)) | true}
   in
   
   exists ((rr, unsat_slices) MEM instruction.subreads.sr_unsat_slices).
@@ -560,26 +544,83 @@ let pop_load_sat_might_self_restart params
       (exists (prev_inst MEM prefix).
         prev_inst.instance_ioid IN might_restart_prefix &&
         exists (rr' MEM (read_requests_of_subreads prev_inst.subreads)).
-          overlapping_slices (rr.r_addr, unsat_slices) (rr'.r_addr, [complete_slice rr'.r_addr])
-      ) ||
+          overlapping_slices (rr.r_addr, unsat_slices) 
+                             (rr'.r_addr, [complete_slice rr'.r_addr])
+      )
+
+      ||
 
       (* if a po-previous read to the same address has not been issued yet
       'rr' might need to be restarted. *)
       (exists (prev_inst MEM prefix).
        exists ((rr', unsat_slices') MEM prev_inst.subreads.sr_unsat_slices).
           read_request_issued prev_inst rr' &&
-          overlapping_slices (rr.r_addr, unsat_slices) (rr'.r_addr, unsat_slices')
-      ) ||
+          overlapping_slices (rr.r_addr, unsat_slices) 
+                             (rr'.r_addr, unsat_slices')
+      )
+
+      ||
 
       (* if a po-previous read to the same address has been issued after
       'rr' and was already satisfied, 'rr' might need to be restarted. *)
-      let issued_after = relonRightOf rr (get_pop_thread_substate state.thread_substate).read_issuing_order in
+      let pop_ts = get_pop_thread_substate state.thread_substate in
+      let issued_after = relonRightOf rr pop_ts.read_issuing_order in
       exists (rr' IN issued_after).
           rr'.r_ioid IN prev_ioids &&
-          overlapping_slices (rr.r_addr, unsat_slices) (rr'.r_addr, [complete_slice rr'.r_addr])
+          overlapping_slices (rr.r_addr, unsat_slices) 
+                             (rr'.r_addr, [complete_slice rr'.r_addr])
 
 
-let pop_might_be_restarted_roots params
+let pop_store_might_restart_roots params
+    (state:                thread_state 'i)
+    (_might_restart_prefix: set ioid)
+    (prefix:               list (instruction_instance 'i))
+    (instruction:          instruction_instance 'i)
+    (inst_tree:            instruction_tree 'i)
+    : set (instruction_instance 'i)
+  =
+  if not (is_viable_memory_store_ii instruction) then {}
+  else
+    let potential_footprint =
+      instruction.subwrites.sw_potential_writes ++
+        instruction.subwrites.sw_potential_write_addresses in
+    let write_restarts (success : bool) = 
+      if success
+      then propagate_write_action_restart_roots inst_tree potential_footprint
+      else pop_memory_write_exclusive_commit_fail_action_restart_roots
+             inst_tree potential_footprint
+    in
+    if is_atomic_store (ik instruction) then
+      (* Nothing means success undetermined, Just true means determined to succeed*)
+      match instruction.successful_atomic_store with
+      | Nothing -> (write_restarts true) union (write_restarts false)
+      | Just true -> write_restarts true
+      | Just false -> write_restarts false
+      end
+    else
+      write_restarts true
+
+let pop_load_might_restart_roots params
+    (state:                thread_state 'i)
+    (might_restart_prefix: set ioid)
+    (prefix:               list (instruction_instance 'i))
+    (instruction:          instruction_instance 'i)
+    (inst_tree:            instruction_tree 'i)
+    : set (instruction_instance 'i)
+  =
+  if not (is_memory_load_instruction (ik instruction)) then {}
+  else
+    Set.bigunionMap
+      (fun rr -> pop_memory_read_action_restart_roots params state inst_tree rr Nothing)
+      (Set.fromList (read_requests_of_subreads instruction.subreads))
+    union
+    if instruction.instance_ioid NIN might_restart_prefix && (* for efficiency *)
+      pop_load_sat_might_self_restart params state might_restart_prefix prefix instruction
+    then {instruction}
+    else {}
+
+
+let pop_instruction_might_restart_roots params
     (state:                thread_state 'i)
     (might_restart_prefix: set ioid)
     (prefix:               list (instruction_instance 'i))
@@ -587,49 +628,16 @@ let pop_might_be_restarted_roots params
     (inst_tree:            instruction_tree 'i)
     : set ioid
   =
-  let restarts =
-    if instruction.finished then {} else
-
+  if instruction.finished then {} else
     let store_roots =
-      if is_viable_memory_store_ii instruction then
-        let potential_footprint =
-          instruction.subwrites.sw_potential_writes ++
-            instruction.subwrites.sw_potential_write_addresses in
-        if is_atomic_store (ik instruction) then
-          match instruction.successful_atomic_store with
-          | Nothing ->
-              (propagate_write_action_restart_roots inst_tree potential_footprint)
-              union
-              (pop_memory_write_exclusive_commit_fail_action_restart_roots inst_tree
-                  potential_footprint)
-          | Just true ->
-              propagate_write_action_restart_roots inst_tree potential_footprint
-          | Just false ->
-              pop_memory_write_exclusive_commit_fail_action_restart_roots inst_tree
-                  potential_footprint
-          end
-        else
-          propagate_write_action_restart_roots inst_tree potential_footprint
-      else {}
+      pop_store_might_restart_roots 
+        params state might_restart_prefix prefix instruction inst_tree
     in
-
     let load_roots =
-      if is_memory_load_instruction (ik instruction) then
-        Set.bigunionMap
-          (fun rr -> pop_memory_read_action_restart_roots params state inst_tree rr Nothing)
-          (Set.fromList (read_requests_of_subreads instruction.subreads))
-
-        union
-        if instruction.instance_ioid NIN might_restart_prefix && (* for efficiency *)
-          pop_load_sat_might_self_restart params state might_restart_prefix prefix instruction
-        then {instruction}
-        else {}
-      else {}
+      pop_load_might_restart_roots 
+        params state might_restart_prefix prefix instruction inst_tree
     in
-
-    store_roots union load_roots
-  in
-  Set.map (fun i -> i.instance_ioid) restarts
+    Set.map (fun i -> i.instance_ioid) (store_roots union load_roots)
 
 
 (* Return the set of instructions in 'prefix' that might be
@@ -643,12 +651,13 @@ let pop_might_be_restarted params
     : set ioid
   =
   let fold prev prefix instruction inst_tree =
-    prev
-    union
-    let roots = pop_might_be_restarted_roots params state prev prefix instruction inst_tree in
+    let roots = pop_instruction_might_restart_roots 
+                  params state prev prefix instruction inst_tree in
     (* because 'roots' might include 'instruction' we have to push it into
     the instructions tree before calling 'dependent_suffix_to_restart' *)
-    dependent_suffix_to_restart roots (T [(instruction, inst_tree)])
+    let roots_and_dependents =
+      dependent_suffix_to_restart roots (T [(instruction, inst_tree)]) in
+    prev union roots_and_dependents
   in
 
   List.foldl (fun it i -> T [(i, it)]) (T []) prefix
@@ -723,79 +732,77 @@ let fully_determined_address
   (is_memory_load_instruction (ik instruction) -->
     read_footprint_of_load instruction <> Nothing)
 
-let commitDataflow (iic: instruction_in_context 'i) : bool =
+let dataflow_committed (iic: instruction_in_context 'i) : bool =
   fully_determined_reg_reads iic.active_prefix iic.iic_instance.reg_reads
 
 
-let commitControlflow (iic: instruction_in_context 'i) : bool =
+let controlflow_committed (iic: instruction_in_context 'i) : bool =
   (forall (iprev MEM iic.active_prefix).
       is_cond_branch_ii iprev --> iprev.finished) &&
-
   (forall (iprev MEM iic.active_prefix).
-      is_indirect_branch_ii iprev --> iprev.finished) &&
+      is_indirect_branch_ii iprev --> iprev.finished)
 
-  (* Additions for AArch64 transactional memory *)
-  (forall (iprev MEM iic.active_prefix).
-      (is_tstart (ik iprev) --> iprev.finished) &&
-      (is_tcommit (ik iprev) --> iprev.finished))
 
+let finish_action_prune_instruction_tree_mips isa subtree i'
+    : instruction_tree 'i * set ioid = 
+  if is_branch_instruction (ik i') then
+    match subtree with
+    | T [(successor, T iiits)] ->
+       (* Prune tree of branch delay instruction *)
+       let successor_nia = mips_next_next_pc_of_finished_instruction isa i' in
+       (* discard all subtrees that didn't fetch from that address, and all but the first of those *)
+       let (iiits, discard) = List.partition (fun (i', _) -> i'.program_loc = successor_nia) iiits in
+       (T [(successor, T iiits)], ioids_of_instruction_tree (T discard))
+    | T [] -> (subtree, {}) (* branch delay not yet fetched *)
+    | _ -> failwith "expected linear subtree following mips branch"
+    end
+  else
+    (subtree, {})
+
+(* also returns the ioids of discarded instructions*)
+let finish_action_prune_instruction_tree isa subtree i'
+    : instruction_tree 'i * set ioid
+  = 
+  if isa.isa_model = MIPS then
+    finish_action_prune_instruction_tree_mips isa subtree i'
+  else
+    (* discard any subtrees that don't match the chosen branch  *)
+    let nia = next_address_of_finished_instruction isa i' in
+    (* discard all subtrees that didn't fetch from that address *)
+    (* make sure only one subtree starts with address nia *)
+    let (T iiits) = subtree in
+    let (iiits, discard) = List.partition (fun (i', _) -> i'.program_loc = nia) iiits in
+    let () =
+      match iiits with
+      | []      -> ()
+      | _ :: [] -> ()
+      | _       -> failwith "fetched more than once from the same location"
+      end
+    in
+    (T iiits, ioids_of_instruction_tree (T discard))
 
 let finish_action isa state iic =
   let i' = <| iic.iic_instance with finished = true |> in
 
   let (it_subtree', discarded_ioids) =
-    if isa.isa_model = MIPS then
-      if is_branch_instruction (ik iic.iic_instance) then
-        match iic.subtree with
-        | T [(successor, T iiits)] ->
-           (* Prune tree of branch delay instruction *)
-           let successor_nia = mips_next_next_pc_of_finished_instruction isa i' in
-           (* discard all subtrees that didn't fetch from that address, and all but the first of those *)
-           let (iiits, discard) = List.partition (fun (i', _) -> i'.program_loc = successor_nia) iiits in
-           (T [(successor, T iiits)], ioids_of_instruction_tree (T discard))
-        | T [] -> (iic.subtree, {}) (* branch delay not yet fetched *)
-        | _ -> failwith "expected linear subtree following mips branch"
-        end
-      else
-        (iic.subtree, {})
-    else
-      (* discard any subtrees that don't match the chosen branch  *)
-      let nia = next_address_of_finished_instruction isa i' in
-      (* discard all subtrees that didn't fetch from that address *)
-      (* make sure only one subtree starts with address nia *)
-      let (T iiits) = iic.subtree in
-      let (iiits, discard) = List.partition (fun (i', _) -> i'.program_loc = nia) iiits in
-      let () =
-        match iiits with
-        | []      -> ()
-        | _ :: [] -> ()
-        | _       -> failwith "fetched more than once from the same location"
-        end
-      in
-      (T iiits, ioids_of_instruction_tree (T discard))
-  in
-
+    finish_action_prune_instruction_tree isa iic.subtree i' in
   let instruction_tree' = apply_tree_context iic.context (i',it_subtree') in
 
   (* POP: remove read requests from untaken branches from read_issuing_order *)
   let thread_substate' =
-    if discarded_ioids <> {} then
+    if Set.null discarded_ioids then state.thread_substate else
       match state.thread_substate with
       | POP_thread pop_substate ->
-          let read_issuing_order' = relonFilterSet (fun rr -> rr.r_ioid NIN discarded_ioids) pop_substate.read_issuing_order in
-          POP_thread  <| read_issuing_order = read_issuing_order' |>
+         POP_thread (pop_remove_reads_from_order pop_substate discarded_ioids)
       | PLDI11_thread _ -> state.thread_substate
       | No_substate -> No_substate
       end
-    else state.thread_substate
   in
-
-  <|  state with
-      instruction_tree = instruction_tree';
-      thread_substate = thread_substate';
-  |>
-  $> make_old_instructions isa
-  $> make_thread_cont_res {} discarded_ioids
+  let state' = 
+    <| state with instruction_tree = instruction_tree';
+                  thread_substate = thread_substate' |> in
+  let state'' = make_old_instructions isa state' in
+  make_thread_cont_res {} discarded_ioids state''
 
 
 
@@ -804,8 +811,7 @@ let address_from_AArch64_dc_ii (instruction: (instruction_instance 'i)) : maybe 
   | IK_cache_op Cache_op_D_CVAU  ->
     match instruction.reg_reads with
     (* DC CVAU only reads 1 register -- it contains the address *)
-    | [(_, _, v)] ->
-        address_of_register_value v
+    | [(_, _, v)] -> address_of_register_value v
     | _ -> Nothing
     end
   | _ -> Nothing
@@ -819,14 +825,12 @@ let handle_restart_dc fp it =
       match address_from_AArch64_dc_ii i with
       | Just addr ->
           (* TODO: dc cache line overlap *)
-          if footprints_overlap fp (addr, 4) then
-            restart_instruction i
-          else
-            i
+         if footprints_overlap fp (addr, 4)
+         then restart_instruction i
+         else i
       | Nothing -> i
       end)
-  []
-  it
+  [] it
 
 
 (* can "finish" a DC only once it becomes non-restartable (see above) 
@@ -834,8 +838,16 @@ let handle_restart_dc fp it =
  * are finished.
  *)
 let flat_can_finish_dc iic =
-  (forall (iprev MEM iic.active_prefix).
-    iprev.finished)
+  forall (iprev MEM iic.active_prefix). iprev.finished
+
+let mark_write_as_propagated i write = 
+  let subwrites' = 
+    <| i.subwrites with
+         sw_potential_writes = List.delete write i.subwrites.sw_potential_writes;
+         sw_propagated_writes = write :: i.subwrites.sw_propagated_writes;
+    |>
+  in
+  <| i with subwrites = subwrites' |>
 
 let propagate_write_action
     (params:        thread_params)
@@ -846,39 +858,29 @@ let propagate_write_action
   =
   let it = inst_context.subtree in
   let i = inst_context.iic_instance in
-
-  let () = ensure (i.successful_atomic_store <> Just false) $
-    "atomic write (ioid " ^ show i.instance_ioid ^ ") that was determined to fail has succeeded" in
-
-  let i' =
-    <| i with
-          subwrites = <| i.subwrites with
-            sw_potential_writes =  List.delete write i.subwrites.sw_potential_writes;
-            sw_propagated_writes = write :: i.subwrites.sw_propagated_writes;
-          |>;
-    |>
-  in
-
+  let () = ensure (i.successful_atomic_store <> Just false)
+             ("atomic write (ioid " ^ show i.instance_ioid ^ ") "^
+                "that was determined to fail has succeeded") in
+  let i' = mark_write_as_propagated i write in
   let (it', restarted_ioids) =
-    if params.thread_model = Relaxed_thread_model then
-      (it, {})
+    if params.thread_model = Relaxed_thread_model then (it, {})
     else
-      propagate_write_action_restart_roots it [write]
-      $> restart_dependent_subtrees it
+      restart_dependent_subtrees it
+        (propagate_write_action_restart_roots it [write])
   in
-
   let it'' = handle_restart_dc write.w_addr it' in
-
-  let state = <| state with instruction_tree = apply_tree_context inst_context.context (i', it'') |> in
-
-  match state.thread_substate with
-  | POP_thread thread_substate ->
-      let pop_thread' = pop_remove_restarted_reads_from_order thread_substate restarted_ioids in
-      <| state with thread_substate = POP_thread pop_thread' |>
-  | PLDI11_thread _ -> state
-  | No_substate     -> state
-  end
-  $> make_thread_cont_res restarted_ioids {}
+  let it''' = apply_tree_context inst_context.context (i', it'') in
+  let state' = <| state with instruction_tree = it''' |> in
+  let state'' = 
+    match state'.thread_substate with
+    | POP_thread thread_substate ->
+        let pop_thread' = pop_remove_reads_from_order thread_substate restarted_ioids in
+        <| state' with thread_substate = POP_thread pop_thread' |>
+    | PLDI11_thread _ -> state'
+    | No_substate     -> state'
+    end 
+  in
+  make_thread_cont_res restarted_ioids {} state''
 
 let failed_write_action
     (state:        thread_state 'i)
@@ -913,7 +915,7 @@ let failed_write_action
 
   match state.thread_substate with
   | POP_thread thread_substate ->
-      let pop_thread' = pop_remove_restarted_reads_from_order thread_substate restarted_ioids in
+      let pop_thread' = pop_remove_reads_from_order thread_substate restarted_ioids in
       <| state with thread_substate = POP_thread pop_thread' |>
   | PLDI11_thread _ -> state
   | No_substate     -> state
@@ -955,10 +957,10 @@ let pldi11_commit_cand
   (* NEWTODO: this code depends on equality of register names, but when we have
      register subfields that will need to be fixed *)
 
-  (* commitDataflow *)
-  commitDataflow iic &&
-  (* commitControlflow *)
-  commitControlflow iic &&
+  (* dataflow_committed *)
+  dataflow_committed iic &&
+  (* controlflow_committed *)
+  controlflow_committed iic &&
   (* commitPrevMightSameAddress *)
   (is_memory_load_instruction (ik i) -->
       pldi11_commitLoadPrevMightSameAddress iic) &&
@@ -1259,12 +1261,12 @@ let pop_commit_barrier_cand
   =
   let inst = iic.iic_instance in
 
-  commitDataflow iic &&
+  dataflow_committed iic &&
 
   (* we allow RISC-V fences to commit and finish on speculated branches;
   This is needed to allow MP+fence.rw.rw+ctrlfence.w.r and
   SB+fence.rw.rw+ctrlfence.r.rxp *)
-  (isa.isa_model <> RISCV --> commitControlflow iic) &&
+  (isa.isa_model <> RISCV --> controlflow_committed iic) &&
 
   (* commit order between barriers *)
   match isa.isa_model with
@@ -1366,8 +1368,8 @@ let pop_commit_store_cand
       are recorded in the instruction_instance state. *)
       all_writes_reads_are_calculated iprev) &&
 
-  commitDataflow iic &&
-  commitControlflow iic &&
+  dataflow_committed iic &&
+  controlflow_committed iic &&
 
   (forall (iprev MEM iic.active_prefix).
       (is_pop_strong_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
@@ -1456,8 +1458,8 @@ let pop_finish_simple_cand
     (iic:     instruction_in_context 'i)
     : bool
   =
-  commitDataflow iic &&
-  commitControlflow iic
+  dataflow_committed iic &&
+  controlflow_committed iic
 
 
 let pop_finish_load_cand_barrier_part
@@ -1516,8 +1518,8 @@ let pop_propagate_tmstart_cand (iic: instruction_in_context 'i) : bool =
   let instruction = iic.iic_instance in
   let () = ensure (is_tstart (ik instruction)) "not a tstart instruction" in
 
-  commitDataflow iic &&
-  commitControlflow iic &&
+  dataflow_committed iic &&
+  controlflow_committed iic &&
 
   forall (i MEM iic.active_prefix). i.finished
   (* TODO: does nested tstart need to wait for the prefix to be finished?
@@ -1528,8 +1530,8 @@ let pop_propagate_tmcommit_cand (iic: instruction_in_context 'i) : bool =
   let instruction = iic.iic_instance in
   let () = ensure (is_tcommit (ik instruction)) "not a tcommit instruction" in
 
-  commitDataflow iic &&
-  commitControlflow iic &&
+  dataflow_committed iic &&
+  controlflow_committed iic &&
 
   forall (i MEM iic.active_prefix). i.finished
   (* TODO: does nested tcommit need to wait for the prefix to be finished?
@@ -1540,8 +1542,8 @@ let pop_propagate_tmabort_cand (iic: instruction_in_context 'i) : bool =
   let instruction = iic.iic_instance in
   let () = ensure (is_tabort (ik instruction)) "not a tabort instruction" in
 
-  commitDataflow iic &&
-  commitControlflow iic
+  dataflow_committed iic &&
+  controlflow_committed iic
 
 
 (** POP commit/propagate/finish actions **********************************************)
@@ -1829,7 +1831,7 @@ let pop_satisfy_read_from_storage_action params
     in
 
     let pop_substate = get_pop_thread_substate state.thread_substate in
-    let pop_substate = pop_remove_restarted_reads_from_order pop_substate restarted_ioids in
+    let pop_substate = pop_remove_reads_from_order pop_substate restarted_ioids in
 
     <| state with
         instruction_tree = apply_tree_context inst_context.context inst_and_it';
@@ -1860,7 +1862,7 @@ let pop_satisfy_read_from_storage_action params
   let (it', restarted_ioids) = restart_dependent_subtrees inst_context.subtree irestart_roots in
   let it'' = handle_restart_dc request.r_addr it' in
   let pop_substate = get_pop_thread_substate state.thread_substate in
-  let pop_substate' = pop_remove_restarted_reads_from_order pop_substate restarted_ioids in
+  let pop_substate' = pop_remove_reads_from_order pop_substate restarted_ioids in
 
   <| state with
       instruction_tree = apply_tree_context inst_context.context (instruction', it'');
@@ -2113,7 +2115,7 @@ let pop_satisfy_read_by_forwarding_action params
   let it'' = handle_restart_dc request.r_addr it' in
 
   let pop_substate = get_pop_thread_substate state.thread_substate in
-  let pop_substate' = pop_remove_restarted_reads_from_order pop_substate restarted_ioids in
+  let pop_substate' = pop_remove_reads_from_order pop_substate restarted_ioids in
 
   <| state with
       instruction_tree = apply_tree_context inst_context.context (i', it'');
@@ -2442,8 +2444,7 @@ let handle_barrier_outcome
                     starting_fetch_inst params i.instance_ioid i.program_loc
                 | s -> i
                 end)
-            []
-            iic.subtree
+            [] iic.subtree
         else
             iic.subtree
     in

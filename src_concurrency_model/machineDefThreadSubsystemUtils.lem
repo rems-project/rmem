@@ -1097,6 +1097,14 @@ let rec find_propagated_writes (T iits: instruction_tree 'i) (acc: list write) :
   | _ -> acc
   end
 
+
+let propagated_write_slices_of_instruction i = 
+  complete_writes i.subwrites.sw_propagated_writes
+
+
+
+
+
 let writes_read_from (inst: instruction_instance 'i) : list (write * slices) =
   List.concat (snd (List.unzip inst.subreads.sr_writes_read_from))
 

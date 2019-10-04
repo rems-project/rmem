@@ -114,6 +114,13 @@ let slice_footprints ((a, _): footprint) (sls: slices) : set footprint =
   { (add_address_nat a i1, (i2+1)-i1)  | forall ((i1,i2) MEM sls) | true }
 
 
+let write_fps_of_write_slices write_slices = 
+  Set.bigunion
+    {slice_footprints write.w_addr slices
+      | forall ((write, slices) MEM write_slices)
+      | true}
+
+
 let overlapping_slices ((fp1,sls1): (footprint*slices)) ((fp2,sls2): (footprint*slices)) : bool =
   let fps1 = slice_footprints fp1 sls1 in
   let fps2 = slice_footprints fp2 sls2 in
@@ -407,9 +414,9 @@ still needed and the pieces of each write used *)
 let rec match_writes
     (fp_needed:     footprint)
     (slices_needed: slices)
-    (writes:        list (write * slices))
-    (acc_found:     list (write * slices))
-    : slices * list (write * slices) (* unsat-read-slices, writes-read-from-slices *)
+    (writes:        write_slices)
+    (acc_found:     write_slices)
+    : slices * write_slices (* unsat-read-slices, writes-read-from-slices *)
   =
   match (slices_needed, writes) with
   | ([], _) -> ([], List.reverse acc_found)
@@ -421,6 +428,21 @@ let rec match_writes
           match_writes fp_needed slices_needed' writes (write_slices' :: acc_found)
       end
   end
+
+(* reduce (write, slices) to the part that is not "overwritten/hidden
+   behind" wss *)
+let parts_not_overwritten_by_write_slices
+      (wss : write_slices)
+      ((write, slices) : write * slices) 
+  : maybe (write * slices) = 
+  let (_, match_write_slices) =
+    match_writes write.w_addr slices
+      (wss ++ [(write, slices)]) [] in
+  match List.lookup write match_write_slices with
+  | Nothing -> Nothing
+  | Just slices -> Just (write, slices)
+  end
+
 
 
 let match_maybe_value_fragment
