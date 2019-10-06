@@ -429,19 +429,7 @@ let rec match_writes
       end
   end
 
-(* reduce (write, slices) to the part that is not "overwritten/hidden
-   behind" wss *)
-let parts_not_overwritten_by_write_slices
-      (wss : write_slices)
-      ((write, slices) : write * slices) 
-  : maybe (write * slices) = 
-  let (_, match_write_slices) =
-    match_writes write.w_addr slices
-      (wss ++ [(write, slices)]) [] in
-  match List.lookup write match_write_slices with
-  | Nothing -> Nothing
-  | Just slices -> Just (write, slices)
-  end
+
 
 
 

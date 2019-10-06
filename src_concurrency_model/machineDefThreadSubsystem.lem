@@ -165,9 +165,16 @@ let registers_final_state (state: thread_state 'i)
 (** Instruction instance predicates *)
 
 (* A failed store-conditional/exclusive is not considered a memory access after it is finished *)
+
+let atomic_store_determined_to_fail (i : instruction_instance 'i) : bool = 
+  i.successful_atomic_store = Just false 
+
+let atomic_store_determined_to_succeed (i : instruction_instance 'i) : bool = 
+  i.successful_atomic_store = Just true
+
 let is_viable_memory_store_ii (i: instruction_instance 'i) : bool =
   is_memory_store_instruction (ik i) &&
-  not (i.successful_atomic_store = Just false && i.finished)
+  not (atomic_store_determined_to_fail i && i.finished)
 
 let is_viable_memory_access_ii (i: instruction_instance 'i) : bool =
   is_memory_load_instruction (ik i) || is_viable_memory_store_ii i
@@ -397,6 +404,18 @@ let pop_remove_reads_from_order
   in
   <| read_issuing_order = read_issuing_order' |>
 
+let remove_reads_from_pop_order 
+    (state : thread_state 'i)
+    (to_remove: set ioid)
+    : thread_state 'i = 
+  match state.thread_substate with
+  | POP_thread thread_substate ->
+     let pop_thread' = pop_remove_reads_from_order thread_substate to_remove in
+     <| state with thread_substate = POP_thread pop_thread' |>
+  | PLDI11_thread _ -> state
+  | No_substate     -> state
+  end
+
 let pop_reads_issued_in_order
     (state:      thread_state 'i)
     (po_old_rr:  read_request)
@@ -487,7 +506,7 @@ let propagate_write_action_restart_roots
   let unsatisfied_issued_read_overlapping_write_slices ws inst : bool =
     let write_fps = write_fps_of_write_slices ws in
     exists ((rr, unsat_slices) MEM inst.subreads.sr_unsat_slices).
-        read_request_issued inst rr &&
+        read_issued inst rr &&
         non_empty_intersection_set (slice_footprints rr.r_addr unsat_slices) write_fps
   in
 
@@ -497,7 +516,7 @@ let propagate_write_action_restart_roots
         let prefix_ioids' = Set.insert i.instance_ioid prefix_ioids in
         let propagated = propagated_write_slices_of_instruction i in
         let write_slices' =
-          List.mapMaybe (parts_not_overwritten_by_write_slices propagated)
+          List.mapMaybe (parts_of_write_not_overwritten_by_write_slices propagated)
             write_slices in
         let restarts' = 
           if read_satisfied_not_from_write_slices_not_from_po_predecessor
@@ -554,7 +573,7 @@ let pop_load_sat_might_self_restart params
       'rr' might need to be restarted. *)
       (exists (prev_inst MEM prefix).
        exists ((rr', unsat_slices') MEM prev_inst.subreads.sr_unsat_slices).
-          read_request_issued prev_inst rr' &&
+          read_issued prev_inst rr' &&
           overlapping_slices (rr.r_addr, unsat_slices) 
                              (rr'.r_addr, unsat_slices')
       )
@@ -594,8 +613,7 @@ let pop_store_might_restart_roots params
       (* Nothing means success undetermined, Just true means determined to succeed*)
       match instruction.successful_atomic_store with
       | Nothing -> (write_restarts true) union (write_restarts false)
-      | Just true -> write_restarts true
-      | Just false -> write_restarts false
+      | Just b -> write_restarts b
       end
     else
       write_restarts true
@@ -659,10 +677,8 @@ let pop_might_be_restarted params
       dependent_suffix_to_restart roots (T [(instruction, inst_tree)]) in
     prev union roots_and_dependents
   in
-
-  List.foldl (fun it i -> T [(i, it)]) (T []) prefix
-  $> instruction_tree_fold_root fold {} []
-  $> Set.bigunion
+  let trees = List.foldl (fun it i -> T [(i, it)]) (T []) prefix in
+  Set.bigunion (instruction_tree_fold_root fold {} [] trees)
 
 
 (* returns true iff a po-previous read request was issued after
@@ -702,8 +718,7 @@ let fully_determined_reg_reads
     (reg_reads:     list (reg_name * register_read_sources * register_value))
     : bool
   =
-  undetermined_reg_writes_read_from active_prefix reg_reads
-  $> Set.null
+  Set.null (undetermined_reg_writes_read_from active_prefix reg_reads)
 
 
 (* true iff the value read from registers that feed directly into a memory
@@ -721,10 +736,11 @@ let fully_determined_address
 
   (* the value read from registers that feed directly into a memory
   access address of 'instruction' cannot change *)
-  [(reg, register_read_sources, v)
-    | forall ((reg, register_read_sources, v) MEM instruction.reg_reads)
-    | reg IN instruction.regs_in_feeding_address]
-  $> fully_determined_reg_reads active_prefix &&
+  let addr_reg_reads = 
+    [(reg, register_read_sources, v)
+       | forall ((reg, register_read_sources, v) MEM instruction.reg_reads)
+       | reg IN instruction.regs_in_feeding_address] in
+  fully_determined_reg_reads active_prefix addr_reg_reads &&
 
   (* the pseudocode has made enough steps to make the address visible *)
   (is_viable_memory_store_ii instruction -->
@@ -783,26 +799,14 @@ let finish_action_prune_instruction_tree isa subtree i'
 
 let finish_action isa state iic =
   let i' = <| iic.iic_instance with finished = true |> in
-
   let (it_subtree', discarded_ioids) =
     finish_action_prune_instruction_tree isa iic.subtree i' in
   let instruction_tree' = apply_tree_context iic.context (i',it_subtree') in
-
+  let state' = <| state with instruction_tree = instruction_tree' |> in
   (* POP: remove read requests from untaken branches from read_issuing_order *)
-  let thread_substate' =
-    if Set.null discarded_ioids then state.thread_substate else
-      match state.thread_substate with
-      | POP_thread pop_substate ->
-         POP_thread (pop_remove_reads_from_order pop_substate discarded_ioids)
-      | PLDI11_thread _ -> state.thread_substate
-      | No_substate -> No_substate
-      end
-  in
-  let state' = 
-    <| state with instruction_tree = instruction_tree';
-                  thread_substate = thread_substate' |> in
-  let state'' = make_old_instructions isa state' in
-  make_thread_cont_res {} discarded_ioids state''
+  let state'' = remove_reads_from_pop_order state' discarded_ioids in
+  let state''' = make_old_instructions isa state'' in
+  make_thread_cont_res {} discarded_ioids state'''
 
 
 
@@ -858,28 +862,20 @@ let propagate_write_action
   =
   let it = inst_context.subtree in
   let i = inst_context.iic_instance in
-  let () = ensure (i.successful_atomic_store <> Just false)
+  let () = ensure (not (atomic_store_determined_to_fail i))
              ("atomic write (ioid " ^ show i.instance_ioid ^ ") "^
                 "that was determined to fail has succeeded") in
   let i' = mark_write_as_propagated i write in
   let (it', restarted_ioids) =
     if params.thread_model = Relaxed_thread_model then (it, {})
     else
-      restart_dependent_subtrees it
-        (propagate_write_action_restart_roots it [write])
+      let restart_roots = propagate_write_action_restart_roots it [write] in
+      restart_dependent_subtrees it restart_roots
   in
   let it'' = handle_restart_dc write.w_addr it' in
   let it''' = apply_tree_context inst_context.context (i', it'') in
   let state' = <| state with instruction_tree = it''' |> in
-  let state'' = 
-    match state'.thread_substate with
-    | POP_thread thread_substate ->
-        let pop_thread' = pop_remove_reads_from_order thread_substate restarted_ioids in
-        <| state' with thread_substate = POP_thread pop_thread' |>
-    | PLDI11_thread _ -> state'
-    | No_substate     -> state'
-    end 
-  in
+  let state'' = remove_reads_from_pop_order state' restarted_ioids in
   make_thread_cont_res restarted_ioids {} state''
 
 let failed_write_action
@@ -891,36 +887,17 @@ let failed_write_action
   =
   let i = inst_context.iic_instance in
   let it = inst_context.subtree in
-
-  let () = ensure (i.successful_atomic_store <> Just true) $
+  let () = ensure (not (atomic_store_determined_to_succeed i)) $
     "atomic write (ioid " ^ show i.instance_ioid ^ ") that was determined to succeed has failed" in
-
-  let i' =
-    <| i with
-          subwrites = <| i.subwrites with
-            sw_potential_write_addresses = [];
-            sw_potential_writes =          [];
-            sw_propagated_writes =         [];
-          |>;
-          micro_op_state = mos;
-    |>
-  in
-
+  let i' = <| i with subwrites = empty_subwrites i.subwrites;
+                     micro_op_state = mos |> in
   let (it', restarted_ioids) =
-    pop_memory_write_exclusive_commit_fail_action_restart_roots it [write]
-    $> restart_dependent_subtrees it
+    let roots = pop_memory_write_exclusive_commit_fail_action_restart_roots it [write] in
+    restart_dependent_subtrees it roots
   in
-
   let state = <| state with instruction_tree = apply_tree_context inst_context.context (i', it') |> in
-
-  match state.thread_substate with
-  | POP_thread thread_substate ->
-      let pop_thread' = pop_remove_reads_from_order thread_substate restarted_ioids in
-      <| state with thread_substate = POP_thread pop_thread' |>
-  | PLDI11_thread _ -> state
-  | No_substate     -> state
-  end
-  $> make_thread_cont_res restarted_ioids {}
+  let state' = remove_reads_from_pop_order state restarted_ioids in
+  make_thread_cont_res restarted_ioids {} state'
 
 (** pldi11 commit candidate *****************************************)
 
@@ -940,8 +917,8 @@ let pldi11_commitPrevMightSameAddress active_prefix footprints =
       ))
 
 let pldi11_commitLoadPrevMightSameAddress iic =
-  footprints_read_from iic.iic_instance.subreads.sr_writes_read_from
-  $> pldi11_commitPrevMightSameAddress iic.active_prefix
+  let fps = footprints_read_from iic.iic_instance.subreads.sr_writes_read_from in
+  pldi11_commitPrevMightSameAddress iic.active_prefix fps
 
 let pldi11_propagateWritePrevMightSameAddress iic write =
   pldi11_commitPrevMightSameAddress iic.active_prefix {write.w_addr}
@@ -1041,70 +1018,44 @@ let pldi11_memory_write_commit_action_restart_roots
   }
 
 
+let pldi11_mark_barrier_as_acknowledged state b = 
+  let pldi11_substate = get_pldi11_thread_substate state.thread_substate in
+  let pldi11_substate = <| unacknowledged_syncs = pldi11_substate.unacknowledged_syncs union {b} |> in
+  <| state with thread_substate = PLDI11_thread pldi11_substate; |>
+
 let pldi11_commit_barrier_action state b =
   match b.b_barrier_kind with
-  | Barrier_Sync ->
-      let pldi11_substate = get_pldi11_thread_substate state.thread_substate in
-      let pldi11_substate = <| unacknowledged_syncs = pldi11_substate.unacknowledged_syncs union {b} |> in
-      <| state with thread_substate = PLDI11_thread pldi11_substate; |>
+  | Barrier_Sync -> pldi11_mark_barrier_as_acknowledged state b
   | _ -> state
   end
 
 
 (** POP commit/propagate/finish candidates ********************************************)
 
-(* aarch64 might-access-same-address (for stores) *)
-let pop_write_co_check
-    (params: thread_params)
-    (state:  thread_state 'i)
-    (iic:    instruction_in_context 'i)
-    (write:  write)
-    : bool
-  =
-  let might_be_restarted = pop_might_be_restarted params state iic.active_prefix in
-
-  (* to guarantee RW-co, all po-previous reads to the same address must be
-     issued and unrestartable. *)
+let pop_all_po_preceding_overlapping_reads_issued_and_non_restartable
+      params iic write might_be_restarted = 
   (forall (iprev MEM iic.active_prefix).
    forall ((iprev_rr, iprev_unsat_slices) MEM iprev.subreads.sr_unsat_slices).
         (non_empty_intersection write.w_addr iprev_rr.r_addr -->
-            match iprev_unsat_slices with
-            | [] -> true (* i.e. iprev_rr was completely satisfied *)
-            | _ -> 
-               not (is_flat_model params) &&
-               List.lookup iprev_rr iprev.subreads.sr_requested <> Nothing (* i.e. iprev_rr was issued *)
-            end &&
+            (List.null iprev_unsat_slices ||
+               (not (is_flat_model params) && read_issued iprev iprev_rr)) &&
             (* and iprev can't be restarted *)
-            iprev.instance_ioid NIN might_be_restarted)) &&
+            iprev.instance_ioid NIN might_be_restarted))
 
-  (* guarantee WW-co *)
-  (forall (iprev MEM iic.active_prefix).
-    let prev_unpropagated_writes =
-      iprev.subwrites.sw_potential_write_addresses
-      ++ iprev.subwrites.sw_potential_writes
-    in
+let pop_all_po_preceding_overlapping_unpropagated_writes_covered
+      prev_unpropagated_writes write = 
+  forall (prev_write MEM prev_unpropagated_writes).
+  non_empty_intersection write.w_addr prev_write.w_addr -->
+    sub_footprint prev_write.w_addr write.w_addr
 
-    if iprev.successful_atomic_store = Just false then true
-    else if params.thread_allow_write_subsumption &&
-        not (is_AArch64_store_release (ik iprev)) &&
-        not (is_RISCV_store_release (ik iprev)) &&
-        not (is_atomic_store (ik iprev))
-    then
-      (* if write-subsumption is allowed, we make sure the write we are propagating
-      covers all po-previous unpropagated writes that intersect with it *)
-      forall (prev_write MEM prev_unpropagated_writes).
-        non_empty_intersection write.w_addr prev_write.w_addr
-        -->
-        sub_footprint prev_write.w_addr write.w_addr
-    else
+let pop_no_po_preceding_overlapping_unpropagated_writes
+  prev_unpropagated_writes write = 
       forall (prev_write MEM prev_unpropagated_writes).
         not (non_empty_intersection write.w_addr prev_write.w_addr)
-  ) &&
 
-  (* Additions for mixed-size/load-acq/load-exc: (forbid litmus test CO-MIXED-20cc) if there is
-  a po-following read that was partially satisfied by the store, it must
-  have already issued the unsat slices. This is important for single-copy
-  atomicity *)
+
+let pop_all_reads_partially_satisfied_by_forwarding_issued_unsat_slices
+      params iic write = 
   let issued _ iafter itafter =
     forall ((read_request, write_slices) MEM iafter.subreads.sr_writes_read_from).
       (((List.elem write (writes_of_write_slices write_slices)) &&
@@ -1113,10 +1064,60 @@ let pop_write_co_check
               (is_AArch64_load_acquire (ik iafter) || is_RISCV_load_strong_acquire (ik iafter)
               || is_atomic_load (ik iafter)))))
       -->
-        read_request_issued iafter read_request)
+        read_issued iafter read_request)
   in
   instruction_tree_all issued [] iic.subtree
 
+let pop_write_allowed_to_be_subsumed params inst = 
+  params.thread_allow_write_subsumption &&
+    not (is_AArch64_store_release (ik inst)) &&
+    not (is_RISCV_store_release (ik inst)) &&
+    not (is_atomic_store (ik inst))
+  
+(* aarch64 might-access-same-address (for stores) *)
+let pop_write_co_check
+    (params: thread_params)
+    (state:  thread_state 'i)
+    (iic:    instruction_in_context 'i)
+    (write:  write)
+    : bool
+  =
+  let might_be_restarted =
+    pop_might_be_restarted params state iic.active_prefix in
+
+  (* to guarantee RW-coherence *)
+  pop_all_po_preceding_overlapping_reads_issued_and_non_restartable
+    params iic write might_be_restarted &&
+
+  (* guarantee WW-co *)
+  (forall (iprev MEM iic.active_prefix).
+    let prev_unpropagated_writes = unpropagated_writes_of_inst iprev in
+    if atomic_store_determined_to_fail iprev then 
+      true
+    else if pop_write_allowed_to_be_subsumed params iprev then
+      pop_all_po_preceding_overlapping_unpropagated_writes_covered
+        prev_unpropagated_writes write
+    else
+      pop_no_po_preceding_overlapping_unpropagated_writes
+        prev_unpropagated_writes write
+  ) &&
+
+    (* Additions for mixed-size/load-acq/load-exc: (forbid litmus test
+       CO-MIXED-20cc) if there is a po-following read that was
+       partially satisfied by the store, it must have already issued
+       the unsat slices. This is important for single-copy atomicity
+       *)
+    pop_all_reads_partially_satisfied_by_forwarding_issued_unsat_slices
+      params iic write 
+
+
+let pop_fixed_write write_instr active_prefix : bool = 
+  (* PPC store-conditional can fail spontaneously *)
+  not (is_PPC_store_conditional (ik write_instr)) && 
+  (* RISC-V store-conditional can fail spontaneously *)
+  not (is_RISCV_store_conditional (ik write_instr)) && 
+  (* all data dependencies (including address) are determined *)
+  fully_determined_reg_reads active_prefix write_instr.reg_reads
 
 let rec pop_load_finish_co_check_helper
     (params:              thread_params)
@@ -1139,28 +1140,16 @@ let rec pop_load_finish_co_check_helper
       all_writes_reads_are_calculated inst &&
 
       (* filter out slices that overlap propagated writes *)
-      let propagated_writes = complete_writes inst.subwrites.sw_propagated_writes in
-      let (_, writes_read_from) =
-        match_writes read_request.r_addr [complete_slice read_request.r_addr]
-                     (propagated_writes ++ writes_read_from) [] in
-      let writes_read_from = [(w, s) | forall ((w, s) MEM writes_read_from)
-                                     | not (List.elem w inst.subwrites.sw_propagated_writes)]
-      in
+      let writes_read_from = parts_of_read_rf_not_overwritten_by_write
+                               writes_read_from read_request inst in
 
       (* filter out slices that were forwarded from fixed writes *)
       let writes_read_from =
-        let is_fixed =
-          not inst.finished && (* for efficiency (propagated_writes covers the propagated case) *)
-          not (is_PPC_store_conditional (ik inst)) && (* PPC store-conditional can fail spontaneously *)
-          not (is_RISCV_store_conditional (ik inst)) && (* RISC-V store-conditional can fail spontaneously *)
-
-          (* all data dependencies (including address) are determined *)
-          fully_determined_reg_reads active_prefix inst.reg_reads
-        in
-
-        if is_fixed then
-          [(w, s) | forall ((w, s) MEM writes_read_from)
-                  | not (List.elem w inst.subwrites.sw_potential_writes)]
+        (* for efficiency check inst.finished (propagated_writes
+           covers the propagated case) *)
+        if not inst.finished && pop_fixed_write inst active_prefix then
+          parts_of_read_rf_not_forwarded_from_write
+            writes_read_from read_request inst
         else writes_read_from
       in
 
@@ -1168,36 +1157,36 @@ let rec pop_load_finish_co_check_helper
       else
 
       (* can't overlap unpropagated writes *)
-      not (exists (write MEM (inst.subwrites.sw_potential_writes ++ inst.subwrites.sw_potential_write_addresses)).
-           exists ((w, s) MEM writes_read_from).
-              overlapping_slices (write.w_addr, [complete_slice write.w_addr]) (w.w_addr, s))
+        not (exists (write MEM (unpropagated_writes_of_inst inst)).
+             exists ((w, s) MEM writes_read_from).
+             overlapping_slices (write.w_addr, [complete_slice write.w_addr]) (w.w_addr, s))
       &&
 
       (* overlapping reads must be finished, or non-restartable and
       issued in order with read_request *)
-      (if finished_load_part inst then true
-      else
+      (finished_load_part inst ||
         match inst.subreads.sr_addr with
-        | Nothing -> true (* not a load instruction *)
+        | Nothing -> true (* not a load instruction (because
+                             all_writes_reads_are_calculated) *)
 
         | Just read_footprint' ->
             (exists ((w, s) MEM writes_read_from).
-              overlapping_slices (w.w_addr, s) (read_footprint', [complete_slice read_footprint']))
+              write_slices_overlaps_with_addr read_footprint' (w, s) )
             -->
             (inst.instance_ioid NIN might_be_restarted &&
             forall ((rr', slices') MEM inst.subreads.sr_unsat_slices).
-                match slices' with
-                | [] -> true
-                | _  ->
-                    ((exists ((w, s) MEM writes_read_from).
-                          overlapping_slices (w.w_addr, s) (rr'.r_addr, [complete_slice rr'.r_addr]))
-                          (* see AArch64/mixed-size/HAND/R+dmb.sy+rfipw-poswp-ctrlisb.litmus as to why
-                          we need to use the complete slice of rr' and not just the unsat slices (slices') *)
-                    -->
-                    not (is_flat_model params) &&
-                    List.lookup rr' inst.subreads.sr_requested <> Nothing &&
-                    pop_reads_issued_in_order state rr' read_request)
-                end)
+            (List.null slices' ||
+               ((exists ((w, s) MEM writes_read_from).
+                 write_slices_overlaps_with_addr rr'.r_addr (w, s) )
+                (* see
+                   AArch64/mixed-size/HAND/R+dmb.sy+rfipw-poswp-ctrlisb.litmus
+                   for why we need to use the complete slice of rr'
+                   and not just the unsat slices (slices') *)  
+                -->
+                not (is_flat_model params) &&
+                read_issued inst rr' &&
+                pop_reads_issued_in_order state rr' read_request)
+            ))
         end)
       &&
 
@@ -2818,7 +2807,8 @@ let enumerate_read_request_transitions
   let successful_exclusives =
     if is_atomic_load (ik i) then
       let s = paired_atomic_stores i iic.subtree in
-      let s = {i.instance_ioid | forall (i MEM s) | i.successful_atomic_store = Just true} in
+      let s = {i.instance_ioid | forall (i MEM s) 
+                               | atomic_store_determined_to_succeed i} in
       if s <> {} then Just s else Nothing
     else Nothing
   in
@@ -2898,7 +2888,8 @@ let enumerate_flat_read_satisfy_from_memory_transitions
   let successful_atomic_stores =
     if is_AArch64_load_exclusive (ik i) then
       let s = paired_atomic_stores i iic.subtree in
-      let s = {i.instance_ioid | forall (i MEM s) | i.successful_atomic_store = Just true} in
+      let s = {i.instance_ioid | forall (i MEM s) 
+                               | atomic_store_determined_to_succeed i} in
       if s <> {} then Just s else Nothing
     else Nothing
   in

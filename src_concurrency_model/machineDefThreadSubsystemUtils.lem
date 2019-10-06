@@ -692,7 +692,7 @@ let analyse_instruction
   (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
 
 
-let empty_subreads = 
+let initial_subreads = 
   <|  sr_addr =             Nothing;
       sr_unsat_slices =     [];
       sr_writes_read_from = [];
@@ -700,7 +700,7 @@ let empty_subreads =
       sr_assembled_value =  Nothing;
   |>
 
-let empty_subwrites = 
+let initial_subwrites = 
   <|  sw_addr =                      Nothing;
       sw_potential_write_addresses = [];
       sw_potential_writes =          [];
@@ -708,16 +708,58 @@ let empty_subwrites =
       sw_committed =                 false;
   |>
 
+let empty_subwrites subwrites = 
+  <| subwrites with sw_potential_write_addresses = [];
+                    sw_potential_writes =          [];
+                    sw_propagated_writes =         []; |>
+
+
+
 let read_initiated inst = inst.subreads.sr_addr <> Nothing
 let read_satisfied inst = inst.subreads.sr_assembled_value <> Nothing
-let read_request_issued inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
+let read_issued inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
 let write_initiated inst = inst.subwrites.sw_addr <> Nothing
-
 
 let unsat_slices_of_read_request inst rr = 
   ensure_just (List.lookup rr inst.subreads.sr_unsat_slices)
   $ "missing a read-request in 'sr_unsat_slices' of ioid " ^ show inst.instance_ioid
 
+let propagated_writes_of_inst inst = 
+  complete_writes inst.subwrites.sw_propagated_writes
+
+let unpropagated_writes_of_inst inst = 
+  inst.subwrites.sw_potential_write_addresses
+  ++ inst.subwrites.sw_potential_writes
+
+
+
+(* reduce (write, slices) to the part that is not "overwritten/hidden
+   behind" wss *)
+let parts_of_write_not_overwritten_by_write_slices
+      (wss : write_slices)
+      ((write, slices) : write * slices) 
+  : maybe (write * slices) = 
+  let (_, match_write_slices) =
+    match_writes write.w_addr slices
+      (wss ++ [(write, slices)]) [] in
+  match List.lookup write match_write_slices with
+  | Nothing -> Nothing
+  | Just slices -> Just (write, slices)
+  end
+   
+let parts_of_read_rf_not_overwritten_by_write
+      writes_read_from read_request write_instr = 
+  let propagated_writes = propagated_writes_of_inst write_instr in
+  let (_, writes_read_from) =
+    match_writes read_request.r_addr [complete_slice read_request.r_addr]
+      (propagated_writes ++ writes_read_from) [] in
+  [(w, s) | forall ((w, s) MEM writes_read_from)
+   | not (List.elem w write_instr.subwrites.sw_propagated_writes)]
+
+let parts_of_read_rf_not_forwarded_from_write
+  writes_read_from _read_request write_instr = 
+  [(w, s) | forall ((w, s) MEM writes_read_from)
+          | not (List.elem w write_instr.subwrites.sw_potential_writes)]
 
 
 let starting_fetch_inst
@@ -747,8 +789,8 @@ let starting_fetch_inst
     reg_reads =  [];
     reg_writes = [];
 
-    subreads = empty_subreads; 
-    subwrites = empty_subwrites;
+    subreads = initial_subreads; 
+    subwrites = initial_subwrites;
 
     successful_atomic_store = Nothing;
     committed_barriers = [];
@@ -789,8 +831,8 @@ let starting_inst_instance_aux
     reg_reads =  [];
     reg_writes = [];
 
-    subreads = empty_subreads;
-    subwrites = empty_subwrites;
+    subreads = initial_subreads;
+    subwrites = initial_subwrites;
 
     successful_atomic_store =
       match ik with
@@ -868,8 +910,8 @@ let starting_fetch_exception_inst_instance
     reg_reads =  [];
     reg_writes = [];
 
-    subreads = empty_subreads;
-    subwrites = empty_subwrites;
+    subreads = initial_subreads;
+    subwrites = initial_subwrites;
     successful_atomic_store = Nothing;
     committed_barriers =   [];
     finished =  false;
@@ -903,8 +945,8 @@ let restart_instruction (i: instruction_instance 'i) : instruction_instance 'i =
           reg_reads  = [];
           reg_writes = [];
 
-          subreads = empty_subreads;
-          subwrites = empty_subwrites;
+          subreads = initial_subreads;
+          subwrites = initial_subwrites;
 
           micro_op_state = i.initial_micro_op_state;
 
@@ -917,7 +959,7 @@ let restart_instruction (i: instruction_instance 'i) : instruction_instance 'i =
           instance_id_state = snapshot.rfls_instance_id_state;
           reg_reads  = snapshot.rfls_reg_reads;
           reg_writes = snapshot.rfls_reg_writes;
-          subwrites = empty_subwrites;
+          subwrites = initial_subwrites;
           micro_op_state = snapshot.rfls_micro_op_state;
       |>
   end
