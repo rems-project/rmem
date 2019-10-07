@@ -396,7 +396,7 @@ let flat_try_fetch_relaxed isa params state tl =
   let maybe_cbranch_from_ast = isa.maybe_split_conditional_branch in
   let fdos = List.map fdo_from_fetch fetches in
   let (successful_fdos,unsuccessful_fdos) = List.partition is_fdo_success fdos in
-  let asts = List.map ast_from_fdo successful_fdos in
+  let asts = List.map unsafe_ast_from_fdo successful_fdos in
   let cbranches = List.mapMaybe maybe_cbranch_from_ast asts in
   if List.length fetches = 1 || List.all isa.is_atomically_fetchable_instruction asts then
       fetches

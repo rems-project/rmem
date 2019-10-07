@@ -748,6 +748,17 @@ let fully_determined_address
   (is_memory_load_instruction (ik instruction) -->
     read_footprint_of_load instruction <> Nothing)
 
+
+
+let preceding_memory_accesses_have_fully_determined_address iic = 
+  forall_iprev_with_prefix iic.active_prefix
+    (fun iprev prev_active_prefix ->
+     fully_determined_address prev_active_prefix iprev)
+
+let preceding_reads_writes_are_calculated iic = 
+  forall (iprev MEM iic.active_prefix).
+  all_writes_reads_are_calculated iprev
+
 let dataflow_committed (iic: instruction_in_context 'i) : bool =
   fully_determined_reg_reads iic.active_prefix iic.iic_instance.reg_reads
 
@@ -965,27 +976,7 @@ let pldi11_commit_cand
        is_memory_store_instruction (ik iprev) --> iprev.finished) &&
    (* commitAddressesBeforeIsyncDetermined *)
    (is_isync (ik i) -->
-      forall_iprev_with_prefix iic.active_prefix $ fun iprev prev_active_prefix ->
-          fully_determined_address prev_active_prefix iprev
-     (*
-     forall (iprev MEM iic.active_prefix).  (* NEWTODO: or iic.active_prefix_full ? *)
-        if (is_memory_access_instruction iprev)
-        then
-            (* determined previous addresses *)
-            known_memory_addresses iprev
-            &&
-            (* *fully* determined previous addresses *)
-            forall (r IN regs_feeding_addresses
-                        (fst (sem_of_instruction m
-                           iprev.instance_instruction initial_id_state))).
-            forall (ideps MEM program_order_prefix ...of... iprev).
-            if r IN ideps.regs_out &&
-               (not (exists (ideps' IN ((strict_program_order_suffix t ideps) inter (strict_program_order_prefix t iprev))).
-                 (r IN ideps'.regs_out)))
-            then ideps.committed else true
-        else true
-   else true
-   *)) &&
+      preceding_memory_accesses_have_fully_determined_address iic) &&
    (* commitPrevLoadAcquire *)
    (is_memory_store_instruction (ik i) -->
      forall (iprev MEM iic.active_prefix).
@@ -1119,6 +1110,7 @@ let pop_fixed_write write_instr active_prefix : bool =
   (* all data dependencies (including address) are determined *)
   fully_determined_reg_reads active_prefix write_instr.reg_reads
 
+
 let rec pop_load_finish_co_check_helper
     (params:              thread_params)
     (state:               thread_state 'i)
@@ -1166,8 +1158,8 @@ let rec pop_load_finish_co_check_helper
       issued in order with read_request *)
       (finished_load_part inst ||
         match inst.subreads.sr_addr with
-        | Nothing -> true (* not a load instruction (because
-                             all_writes_reads_are_calculated) *)
+        (* not a load instruction (because all_writes_reads_are_calculated) *)
+        | Nothing -> true 
 
         | Just read_footprint' ->
             (exists ((w, s) MEM writes_read_from).
@@ -1191,12 +1183,7 @@ let rec pop_load_finish_co_check_helper
       &&
 
       pop_load_finish_co_check_helper
-          params
-          state
-          might_be_restarted
-          read_request
-          writes_read_from
-          active_prefix
+        params state might_be_restarted read_request writes_read_from active_prefix
   end
 
 
@@ -1209,7 +1196,7 @@ let rec pop_load_finish_co_check_helper
 let pop_load_finish_co_check
     (params:             thread_params)
     (state:              thread_state 'i)
-    (inst_context:       instruction_in_context 'i)
+    (iic:       instruction_in_context 'i)
     : bool
   =
   (* any observable behaviour that depends on the load being finished
@@ -1217,28 +1204,23 @@ let pop_load_finish_co_check
      also depends on the po-prefix having fully determined addresses,
      hence it is ok for might_be_restarted to over-approximate if the
      po-prefix does not have fully determined addresses *)
-  let might_be_restarted =
-    if (* all po-previous memory addresses are fully determined *)
-      forall_iprev_with_prefix inst_context.active_prefix $ fun iprev prev_active_prefix ->
-        fully_determined_address prev_active_prefix iprev &&
-        (* to simplify the rest of the checks we also require that iprev
-        has made enough steps to guarantee all the read/write requests
-        are recorded in the instruction_instance state. *)
-        all_writes_reads_are_calculated iprev
-    then
-      pop_might_be_restarted params state inst_context.active_prefix
-    else
-      {inst.instance_ioid | forall (inst MEM inst_context.active_prefix) | not inst.finished}
-  in
 
-  forall ((read_request, writes) MEM inst_context.iic_instance.subreads.sr_writes_read_from).
+  let might_be_restarted =
+    (* to simplify the rest of the checks we also require that iprev
+       has made enough steps to guarantee all the read/write requests
+       are recorded in the instruction_instance state. *)
+    if preceding_memory_accesses_have_fully_determined_address iic &&
+         preceding_reads_writes_are_calculated iic
+    then pop_might_be_restarted params state iic.active_prefix
+    else {inst.instance_ioid | forall (inst MEM iic.active_prefix) 
+                             | not inst.finished}
+  in
+  let writes_read_from =
+    iic.iic_instance.subreads.sr_writes_read_from in
+
+  forall ((read_request, w) MEM writes_read_from).
     pop_load_finish_co_check_helper
-        params
-        state
-        might_be_restarted
-        read_request
-        writes
-        inst_context.active_prefix
+      params state might_be_restarted read_request w iic.active_prefix
 
 
 
@@ -1258,139 +1240,142 @@ let pop_commit_barrier_cand
   (isa.isa_model <> RISCV --> controlflow_committed iic) &&
 
   (* commit order between barriers *)
-  match isa.isa_model with
-  | AARCH64 _ ->
-      if is_flat_model params then
-        (is_pop_strong_memory_barrier (ik inst) -->
-          (forall (iprev MEM iic.active_prefix).
-            (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
-              --> iprev.finished)) &&
-
-        (forall (iprev MEM iic.active_prefix).
-          is_pop_strong_memory_barrier (ik iprev) --> iprev.finished)
-      else
-        forall (iprev MEM iic.active_prefix).
-          (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
-            --> iprev.finished
-
-  | PPC    ->
+  match (isa.isa_model, is_flat_model params) with
+  | (AARCH64 _, true) ->
+     (is_pop_strong_memory_barrier (ik inst) -->
       forall (iprev MEM iic.active_prefix).
-        (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
-          --> iprev.finished
+      (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
+      --> iprev.finished) &&
+       
+     (forall (iprev MEM iic.active_prefix).
+      is_pop_strong_memory_barrier (ik iprev) --> iprev.finished)
 
-  | MIPS      ->
-      forall (iprev MEM iic.active_prefix).
-        (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
-          --> iprev.finished
+  | (AARCH64 _, false) ->
+     forall (iprev MEM iic.active_prefix).
+     (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
+     --> iprev.finished
 
-  | RISCV     -> true
-  | X86       -> true
+  | (PPC, _) ->
+    forall (iprev MEM iic.active_prefix).
+    (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
+    --> iprev.finished
+
+  | (MIPS, _) ->
+     forall (iprev MEM iic.active_prefix).
+     (is_pop_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
+     --> iprev.finished
+
+  | (RISCV, _) -> true
+  | (X86, _) -> true
   end &&
 
   (is_pop_strong_memory_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access_ii iprev --> iprev.finished) &&
+    is_viable_memory_access_ii iprev --> iprev.finished) &&
 
   (is_pop_instruction_barrier (ik inst) -->
-      forall_iprev_with_prefix iic.active_prefix $ fun iprev prev_active_prefix ->
-          fully_determined_address prev_active_prefix iprev) &&
+      preceding_memory_accesses_have_fully_determined_address iic) &&
 
-  (* Additions for barrier.st/ld: *)
-  (is_AArch64_ld_barrier (ik inst) -->
+  (* Additions for barrier.ld / Fence_r_xx: *)
+  ((is_AArch64_ld_barrier (ik inst) || is_RISCV_fence_pr (ik inst)) -->
     forall (iprev MEM iic.active_prefix).
-        is_memory_load_instruction (ik iprev) --> finished_load_part iprev) &&
+    is_memory_load_instruction (ik iprev) --> finished_load_part iprev) &&
 
-  (is_AArch64_st_barrier (ik inst) -->
+  (* Additions for barrier.st / Fence_w_xx: *)
+  ((is_AArch64_st_barrier (ik inst) || is_RISCV_fence_pw (ik inst)) -->
     (forall (iprev MEM iic.active_prefix).
-        is_memory_store_instruction (ik iprev) --> iprev.finished)) &&
+     is_memory_store_instruction (ik iprev) --> iprev.finished)) &&
 
   (* Additions for lwsync: *)
   (is_lwsync (ik inst) -->
     (forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access_ii iprev --> iprev.finished)) &&
+     is_viable_memory_access_ii iprev --> iprev.finished)) &&
 
   (* Additions for eieio: *)
   (is_eieio (ik inst) -->
     (forall (iprev MEM iic.active_prefix).
-        is_memory_store_instruction (ik iprev) --> iprev.finished)) &&
+     is_memory_store_instruction (ik iprev) --> iprev.finished)) &&
 
-  (* Additions for load-reserve/store-conditional: *)
-  (* none *)
-
-  (** Additions for RISC-V *)
-  (is_RISCV_fence_pr (ik inst) -->
-    forall (iprev MEM iic.active_prefix).
-        is_memory_load_instruction (ik iprev) --> finished_load_part iprev) &&
-
-  (is_RISCV_fence_pw (ik inst) -->
-    forall (iprev MEM iic.active_prefix).
-        is_memory_store_instruction (ik iprev) --> iprev.finished) &&
-
-  (* we commit fence.tso only after all po-previous memory accesses are finished;
-  po-later stores can be committed only after the fence.tso is finished;
-  po-later loads can be satisfied only after all loads preceding the fence.tso are satisfied *)
+  (* we commit fence.tso only after all po-previous memory accesses
+     are finished; po-later stores can be committed only after the
+     fence.tso is finished; po-later loads can be satisfied only
+     after all loads preceding the fence.tso are satisfied *)
   (is_RISCV_fence_tso (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access_ii iprev --> iprev.finished) &&
+    is_viable_memory_access_ii iprev --> iprev.finished) &&
 
   (* for IC/DC *)
   (is_AArch64_dc_wait_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_AArch64_dc_instr (ik iprev) --> iprev.finished) &&
+    is_AArch64_dc_instr (ik iprev) --> iprev.finished) &&
 
   (is_AArch64_ic_wait_barrier (ik inst) -->
     forall (iprev MEM iic.active_prefix).
-        is_AArch64_ic_instr (ik iprev) --> iprev.finished)
+    is_AArch64_ic_instr (ik iprev) --> iprev.finished)
+
 
 let pop_commit_store_cand
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     : bool
   =
-  let instruction = iic.iic_instance in
+  let instr = iic.iic_instance in
 
   (* all po-previous memory addresses are fully determined *)
-  (forall_iprev_with_prefix iic.active_prefix $ fun iprev prev_active_prefix ->
-      fully_determined_address prev_active_prefix iprev &&
-      (* to simplify the rest of the checks we also require that iprev
-      has made enough steps to guarantee all the read/write requests
-      are recorded in the instruction_instance state. *)
-      all_writes_reads_are_calculated iprev) &&
+  preceding_memory_accesses_have_fully_determined_address iic &&
+  (* to simplify the rest of the checks we also require that iprev
+     has made enough steps to guarantee all the read/write requests
+     are recorded in the instruction_instance state. *)
+  preceding_reads_writes_are_calculated iic &&
+
 
   dataflow_committed iic &&
   controlflow_committed iic &&
 
   (forall (iprev MEM iic.active_prefix).
-      (is_pop_strong_memory_barrier (ik iprev) || is_pop_instruction_barrier (ik iprev))
-      --> iprev.finished) &&
+    (is_pop_strong_memory_barrier (ik iprev) || 
+       is_pop_instruction_barrier (ik iprev))
+    --> iprev.finished) &&
 
-  (* Additions for barrier.st/ld: *)
+  (* Additions for barrier.st/ld / fence_xx_w: *)
   (forall (iprev MEM iic.active_prefix).
       (is_AArch64_st_barrier (ik iprev) --> iprev.finished) &&
-      (is_AArch64_ld_barrier (ik iprev) --> iprev.finished)) &&
+      (is_AArch64_ld_barrier (ik iprev) --> iprev.finished) &&
+      (is_RISCV_fence_sw (ik iprev) --> iprev.finished)) &&
 
   (* Additions for load.acquire/store.release: *)
   (* TODO: the following might be too strong, a previous read only
   needs to be issued and non-restartable. *)
-  (is_AArch64_store_release (ik instruction) -->
+  ((is_AArch64_store_release (ik instr) || is_RISCV_store_release (ik instr)) -->
     (forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access_ii iprev --> iprev.finished)) &&
+     is_viable_memory_access_ii iprev --> iprev.finished)) &&
 
   (forall (iprev MEM iic.active_prefix).
-      is_AArch64_load_acquire (ik iprev) --> finished_load_part iprev) &&
+   (is_AArch64_load_acquire (ik iprev) || is_RISCV_load_acquire (ik iprev)) --> 
+   finished_load_part iprev) &&
 
-  (* Additions for load/store-exclusive: *)
-  (is_AArch64_store_exclusive (ik instruction) -->
+  (* Additions for ARM load/store-exclusive, RISC-V
+     load-reserve/store-conditional: *)
+  ((is_AArch64_store_exclusive (ik instr)  || 
+      (is_RISCV_store_conditional (ik instr) && not (is_RISCV_AMO (ik instr))))
+   -->
       let atomic_load = ensure_just (paired_atomic_load iic)
           "can't find the paired load of a successful atomic store"
           (* failed store-exclusive uses a different _cand function *)
       in
       finished_load_part atomic_load &&
+      (* RISC-V note: the following matches the RVWMO Atomicity
+         Axiom assertion "then 's' must precede 'w' in the global
+         memory order". When the lr and sc are to the same address
+         this has no effect as the co-check will make sure 's' is
+         done before 'w', but when they are to a different address
+         this is observable. See LR-SC-diff-loc4.litmus (forbidden)
+         *)
       forall ((_, rf) MEM atomic_load.subreads.sr_writes_read_from) ((w, _) MEM rf).
-        w.w_thread = state.thread -->
-          forall (iprev MEM iic.active_prefix).
-              iprev.instance_ioid = w.w_ioid -->
-                  List.elem w iprev.subwrites.sw_propagated_writes) &&
+      w.w_thread = state.thread -->
+      forall (iprev MEM iic.active_prefix).
+      iprev.instance_ioid = w.w_ioid -->
+      List.elem w iprev.subwrites.sw_propagated_writes) &&
 
   (* Additions for lwsync: *)
   (forall (iprev MEM iic.active_prefix).
@@ -1401,45 +1386,19 @@ let pop_commit_store_cand
       is_eieio (ik iprev) --> iprev.finished) &&
 
   (* Additions for load-reserve/store-conditional: *)
-  (is_PPC_store_conditional (ik instruction) -->
+  (is_PPC_store_conditional (ik instr) -->
       paired_atomic_load iic <> Nothing &&
       (forall (iprev MEM iic.active_prefix).
           (is_PPC_load_reserve (ik iprev) || is_PPC_store_conditional (ik iprev))
             --> iprev.finished)) &&
 
-  (*** Additions for RISC-V ***)
-  (forall (iprev MEM iic.active_prefix).
-      is_RISCV_fence_sw (ik iprev) --> iprev.finished) &&
-
+  (*** Additions for RISC-V fence.tso ***)
   (forall (iprev MEM iic.active_prefix).
       is_RISCV_fence_tso (ik iprev) --> iprev.finished) &&
 
+  (*** Additions for RISC-V store acquire ***)
   (forall (iprev MEM iic.active_prefix).
-      is_RISCV_load_acquire (ik iprev) --> finished_load_part iprev) &&
-
-  (forall (iprev MEM iic.active_prefix).
-      is_RISCV_store_acquire (ik iprev) --> iprev.finished) &&
-
-  (is_RISCV_store_release (ik instruction) -->
-    (forall (iprev MEM iic.active_prefix).
-        is_viable_memory_access_ii iprev --> iprev.finished)) &&
-
-  ((is_RISCV_store_conditional (ik instruction) && not (is_RISCV_AMO (ik instruction))) -->
-      let atomic_load = ensure_just (paired_atomic_load iic)
-          "can't find the paired load of a successful atomic store"
-          (* failed store-conditional uses a different _cand function *)
-      in
-      finished_load_part atomic_load &&
-      (* the following matches the RVWMO Atomicity Axiom assertion "then 's'
-      must precede 'w' in the global memory order". When the lr and sc are
-      to the same address this has no effect as the co-check will make sure
-      's' is done before 'w', but when they are to a different address
-      this is observable. See LR-SC-diff-loc4.litmus (forbidden) *)
-      forall ((_, rf) MEM atomic_load.subreads.sr_writes_read_from) ((w, _) MEM rf).
-        w.w_thread = state.thread -->
-          forall (iprev MEM iic.active_prefix).
-              iprev.instance_ioid = w.w_ioid -->
-                  List.elem w iprev.subwrites.sw_propagated_writes)
+      is_RISCV_store_acquire (ik iprev) --> iprev.finished)
 
 
 let pop_finish_simple_cand
@@ -1458,7 +1417,8 @@ let pop_finish_load_cand_barrier_part
   =
   (* Additions for load.acquire/store.release: *)
   (forall (iprev MEM iic.active_prefix).
-      is_AArch64_load_acquire (ik iprev) --> finished_load_part iprev) &&
+   (is_AArch64_load_acquire (ik iprev) || is_RISCV_load_acquire (ik iprev))
+    --> finished_load_part iprev) &&
 
   (* Additions for load-reserve/store-conditional: *)
   (is_PPC_load_reserve (ik iic.iic_instance) -->
@@ -1466,10 +1426,7 @@ let pop_finish_load_cand_barrier_part
         (is_PPC_load_reserve (ik iprev) || is_PPC_store_conditional (ik iprev))
         --> iprev.finished)) &&
 
-  (*** Additions for RISCV ***)
-  (forall (iprev MEM iic.active_prefix).
-      is_RISCV_load_acquire (ik iprev) --> finished_load_part iprev) &&
-
+  (*** Additions for RISCV fences ***)
   (* this is just to make sure "fence r,r" and "fence r,rw" are finished
   (the other fences will already be finished, see read-req-cand) *)
   (forall (iprev MEM iic.active_prefix).
@@ -1501,38 +1458,6 @@ let pop_finish_cand params state (iic: instruction_in_context 'i) : bool =
     true
   else
     pop_finish_simple_cand state iic
-
-
-let pop_propagate_tmstart_cand (iic: instruction_in_context 'i) : bool =
-  let instruction = iic.iic_instance in
-  let () = ensure (is_tstart (ik instruction)) "not a tstart instruction" in
-
-  dataflow_committed iic &&
-  controlflow_committed iic &&
-
-  forall (i MEM iic.active_prefix). i.finished
-  (* TODO: does nested tstart need to wait for the prefix to be finished?
-  I don't think it is observable *)
-
-
-let pop_propagate_tmcommit_cand (iic: instruction_in_context 'i) : bool =
-  let instruction = iic.iic_instance in
-  let () = ensure (is_tcommit (ik instruction)) "not a tcommit instruction" in
-
-  dataflow_committed iic &&
-  controlflow_committed iic &&
-
-  forall (i MEM iic.active_prefix). i.finished
-  (* TODO: does nested tcommit need to wait for the prefix to be finished?
-  I don't think it is observable *)
-
-
-let pop_propagate_tmabort_cand (iic: instruction_in_context 'i) : bool =
-  let instruction = iic.iic_instance in
-  let () = ensure (is_tabort (ik instruction)) "not a tabort instruction" in
-
-  dataflow_committed iic &&
-  controlflow_committed iic
 
 
 (** POP commit/propagate/finish actions **********************************************)
@@ -1571,21 +1496,21 @@ let pop_memory_read_request_cand params (inst_context: instruction_in_context 'i
 
   (* Additions for load.acquire/store.release: *)
   (* A Store-Release followed by a Load-Acquire is observed in program order *)
-  (is_AArch64_load_acquire (ik instruction) -->
+  ((is_AArch64_load_acquire (ik instruction) || 
+    is_RISCV_load_strong_acquire (ik instruction)) -->
       forall (prev_inst MEM inst_context.active_prefix).
-          is_AArch64_store_release (ik prev_inst) --> prev_inst.finished) &&
+          (is_AArch64_store_release (ik prev_inst) || 
+           is_RISCV_store_strong_release (ik prev_inst))
+          --> prev_inst.finished) &&
+
   (* All po-previous Load-acquires must issue their requests before the
   read request. Also see private note THREAD3 *)
   (forall (prev_inst MEM inst_context.active_prefix).
-      is_AArch64_load_acquire (ik prev_inst)
+      (is_AArch64_load_acquire (ik prev_inst) || 
+         is_RISCV_load_acquire (ik prev_inst))
       -->
       (finished_load_part prev_inst ||
       is_entirely_satisfied_load prev_inst)) &&
-
-  (* Additions for transactional memory: *)
-  (forall (prev_inst MEM inst_context.active_prefix).
-      (is_tstart (ik prev_inst)  --> prev_inst.finished) &&
-      (is_tcommit (ik prev_inst) --> prev_inst.finished)) &&
 
   (* Additions for lwsync: *)
   (* all loads that are po-followed by lwsync in active_prefix are finished *)
@@ -1599,7 +1524,7 @@ let pop_memory_read_request_cand params (inst_context: instruction_in_context 'i
           (is_PPC_load_reserve (ik prev_inst) || is_PPC_store_conditional (ik prev_inst))
           --> prev_inst.finished) &&
 
-  (*** Additions for RISCV ***)
+  (*** Additions for RISCV fences ***)
   (forall_iprev_with_prefix inst_context.active_prefix $ fun prev_inst prev_active_prefix ->
       is_RISCV_fence_sr (ik prev_inst) -->
         (prev_inst.finished ||
@@ -1616,23 +1541,36 @@ let pop_memory_read_request_cand params (inst_context: instruction_in_context 'i
             is_memory_load_instruction (ik prev_prev_inst)
               --> is_entirely_satisfied_load prev_prev_inst)) &&
 
-  (is_RISCV_load_strong_acquire (ik instruction) -->
-      forall (prev_inst MEM inst_context.active_prefix).
-          is_RISCV_store_strong_release (ik prev_inst) --> prev_inst.finished) &&
-
+  (*** Additions for RISCV load-release/store-acquire ***)
   (is_RISCV_load_release (ik instruction) -->
       forall (prev_inst MEM inst_context.active_prefix). prev_inst.finished) &&
-
-  (forall (prev_inst MEM inst_context.active_prefix).
-      is_RISCV_load_acquire (ik prev_inst)
-      -->
-      (finished_load_part prev_inst ||
-      is_entirely_satisfied_load prev_inst)) &&
-
   (forall (prev_inst MEM inst_context.active_prefix).
       is_RISCV_store_acquire (ik prev_inst) --> prev_inst.finished)
 
 (** Action *)
+
+let initiate_subreads (addr,size) read_requests = 
+  <|  sr_addr = Just (addr, size);
+      sr_unsat_slices = [(rr, [complete_slice rr.r_addr]) | forall (rr MEM read_requests) | true];
+      sr_writes_read_from = [(rr, []) | forall (rr MEM read_requests) | true];
+      sr_requested = [];
+      sr_assembled_value = Nothing;
+  |>
+
+let initiate_subwrites subwrites (addr,size) potential_write_addresses = 
+  <| subwrites with sw_addr = Just (addr, size);
+                    sw_potential_write_addresses = potential_write_addresses |>
+
+
+let instantiate_writes i writes cont = 
+  let subwrites' = 
+    <| i.subwrites with sw_potential_write_addresses = [];
+                        sw_potential_writes = writes |>
+  in
+  let mos = MOS_potential_mem_write cont in
+  <| i with micro_op_state = mos; subwrites = subwrites' |>
+
+
 
 let pending_memory_read_request_action params
     (isa:          isa 'i)
@@ -1645,39 +1583,23 @@ let pending_memory_read_request_action params
   =
   (* generate the read-requests *)
   let (read_requests, id_state') =
-    if params.thread_restriction = RestrictionSC then
-      Events.make_read_request_events'
-        iic.iic_instance.instance_id_state
-        state.thread iic.iic_instance.instance_ioid addr size size read_kind
-    else
-      make_read_request_events_ii isa
-        state.thread iic.iic_instance (addr, size) read_kind
+    (if params.thread_restriction = RestrictionSC
+     then make_single_atomic_read_request_event_ii
+     else make_read_request_events_ii)
+      isa state.thread iic.iic_instance (addr, size) read_kind
   in
-
-  (* initialise subreads' *)
-  let subreads =
-    <|  sr_addr = Just (addr, size);
-        sr_unsat_slices = [(rr, [complete_slice rr.r_addr]) | forall (rr MEM read_requests) | true];
-        sr_writes_read_from = [(rr, []) | forall (rr MEM read_requests) | true];
-        sr_requested = [];
-        sr_assembled_value = Nothing;
-    |>
-  in
-
+  let subreads = initiate_subreads (addr,size) read_requests in
   let mos =
     if is_RISCV_AMO (ik iic.iic_instance) then MOS_AMO_lock inst_cont
     else MOS_pending_mem_read inst_cont
   in
-
   let instruction' =
-    <|  iic.iic_instance with
-        micro_op_state    = mos;
-        subreads          = subreads;
-        instance_id_state = id_state';
-    |>
+    <|  iic.iic_instance with micro_op_state = mos;
+                              subreads = subreads;
+                              instance_id_state = id_state' |>
   in
-
-  <| state with instruction_tree = apply_tree_context iic.context (instruction', iic.subtree) |>
+  let it = apply_tree_context iic.context (instruction', iic.subtree) in
+  <| state with instruction_tree = it |>
 
 
 (** Satisfy memory read by write received from storage subsystem ****)
@@ -1686,104 +1608,138 @@ let pldi11_memory_read_action_restart_roots params
   (i:instruction_instance 'i)
   (it: instruction_tree 'i)
   (r:read_request)
-  (wss: set (write*slices))   (* the write slices read from by the read being satisfied *)
+  (wss: set (write*slices))   (* the write slices read from by the
+                                 read being satisfied *)
   : set (instruction_instance 'i) =
-  (* check if there's a footprint intersection where they've read from different writes *)
-       let irestart_roots =
-         (* satisfyReadRestarts *)
-         { isucc | forall (isucc IN instructions_of_tree it) |
-           (overlapping_slices_from_different_writes_not_in_set
-              wss
-              (Set.fromList (writes_read_from isucc))
-              (ioids_of_instruction_tree it)) (* i.e. successor of i*)
-(**
- && (* TODOREALLY  the previous code did this ifeed stuff, which I now deal with with the third argument to non_empty_... above. Correctly? *)
-            (not (exists (ifeed IN instructions_of_tree it). (* i.e. successor of i *)
-               ifeed.instance_ioid = w'.w_ioid)) (* XXX: do we need to have it in prefix of isucc? believe not *)
-*)
-(* NEWTODO DONE? handle the write_possibly_done_by stuff - does it need to look at the whole prefix, or the active one, or just after the read?
+  (* check if there's a footprint intersection where they've read from
+     different writes *)
+  (* satisfyReadRestarts *)
+  { isucc | forall (isucc IN instructions_of_tree it) |
+    (overlapping_slices_from_different_writes_not_in_set
+       wss
+       (Set.fromList (writes_read_from isucc))
+       (ioids_of_instruction_tree it)) (* i.e. successor of i*)
+    (** && (* TODOREALLY the previous code did this ifeed stuff, which
+       I now deal with with the third argument to
+       non_empty_... above. Correctly? *) (not (exists (ifeed IN
+       instructions_of_tree it). (* i.e. successor of i *)
+       ifeed.instance_ioid = w'.w_ioid)) (* XXX: do we need to have it
+       in prefix of isucc? believe not *) *)
+    (* NEWTODO DONE? handle the write_possibly_done_by stuff - does it
+       need to look at the whole prefix, or the active one, or just
+       after the read?
 
-            (not (exists (i' IN t.in_flight_instructions).
-(* correspondence between text (which here doesn't say "(where the read was not forwarded)") and the use of write_possibly_done_by below isn't terribly clear *)
-                    write_possibly_done_by t.thread i'.behaviour w'))
-*)
+     (not (exists (i' IN t.in_flight_instructions).
 
-         }
-   in
-   irestart_roots
+    (* correspondence between text (which here doesn't say "(where the
+       read was not forwarded)") and the use of write_possibly_done_by
+       below isn't terribly clear *) write_possibly_done_by t.thread
+       i'.behaviour w')) *)
+
+  }
 
 
 
 (* this function is used by both PLDI11 and POP *)
 let read_unmapped_memory_action state iic rr slices =
-  let i' =
-    <|  iic.iic_instance with
-        micro_op_state = MOS_pending_exception (ET_read_from_unmapped_memory rr slices);
-    |>
-  in
-
-  <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
-  $> make_thread_cont_res {} {}
+  let mos = MOS_pending_exception (ET_read_from_unmapped_memory rr slices) in
+  let i' = <| iic.iic_instance with micro_op_state = mos |> in
+  let it = apply_tree_context iic.context (i', iic.subtree) in
+  let s = <| state with instruction_tree = it |> in
+  make_thread_cont_res {} {} s
 
 let write_unmapped_memory_action state iic writes =
-  let i' =
-    <|  iic.iic_instance with
-        micro_op_state = MOS_pending_exception (ET_write_to_unmapped_memory writes);
-    |>
-  in
+  let mos = MOS_pending_exception (ET_write_to_unmapped_memory writes) in
+  let i' = <| iic.iic_instance with micro_op_state = mos |> in
+  let it = apply_tree_context iic.context (i', iic.subtree) in
+  let s = <| state with instruction_tree = it |> in
+  make_thread_cont_res {} {} s
 
-  <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
-  $> make_thread_cont_res {} {}
+
+let mark_read_as_satisfied i rr unsat_slices writes_read_from = 
+  let sr_unsat_slices' = updateAssocList rr unsat_slices i.subreads.sr_unsat_slices in
+  let sr_writes_read_from' =
+    updateAssocList rr writes_read_from i.subreads.sr_writes_read_from in
+  let subreads' = <| i.subreads with sr_unsat_slices = sr_unsat_slices';
+                                     sr_writes_read_from = sr_writes_read_from' |>
+  in
+  <| i with subreads = subreads' |>
 
 
 let pldi11_satisfy_read_action params state iic rr (mrss: list memory_read_source) =
-  let new_writes_read_from = List.concat ( [ mrs.mrs_writes_read_from | forall (mrs MEM mrss)| true] ) in
-  let writes_previously_read_from =
-    ensure_just (List.lookup rr iic.iic_instance.subreads.sr_writes_read_from)
-      $ "missing a read-request in 'sr_writes_read_from' of ioid " ^ show iic.iic_instance.instance_ioid
-  in
-  let subreads' =
-    <|  iic.iic_instance.subreads with
-                 sr_unsat_slices = updateAssocList rr [] iic.iic_instance.subreads.sr_unsat_slices;
-                 sr_writes_read_from = updateAssocList rr (new_writes_read_from ++ writes_previously_read_from) iic.iic_instance.subreads.sr_writes_read_from;
-               |>
-  in
-  let i' = <| iic.iic_instance with subreads = subreads' |> in
-
+  let i = iic.iic_instance in
+  let new_writes_read_from = List.concatMap (fun mrs -> mrs.mrs_writes_read_from) mrss in
+  let writes_previously_read_from = sat_slices_of_read_request i rr in
+  let writes_read_from = new_writes_read_from ++ writes_previously_read_from in
+  let i' = mark_read_as_satisfied i rr [] writes_read_from in
   (* we do the memory_read_action restart stuff on the suffix *)
   (* (we could defer the restart stuff to the actually_satisfy part,
-  but it's probably clearer in the UI to have it here) *)
+     but it's probably clearer in the UI to have it here) *)
   (* TODO: assuming restarts for the writes_previously_read_from (by forwarding) already dealt with elsewhere*)
-
   let (it', restarted_ioids) =
     let it = iic.subtree in
-    pldi11_memory_read_action_restart_roots params iic.iic_instance it rr (Set.fromList new_writes_read_from)
-    $> restart_dependent_subtrees it
+    let roots = pldi11_memory_read_action_restart_roots
+                  params i it rr (Set.fromList new_writes_read_from) in
+    restart_dependent_subtrees it roots
   in
+  let it'' = apply_tree_context iic.context (i', it') in
+  let state' = <| state with instruction_tree = it'' |> in
+  make_thread_cont_res restarted_ioids {} state'
 
-  <| state with instruction_tree = apply_tree_context iic.context (i', it') |>
-  $> make_thread_cont_res restarted_ioids {}
+
+
+
+let pop_satisfy_stale_read_from_storage_action
+    (state:         thread_state 'i)
+    (iic:           instruction_in_context 'i)
+    (_request:      read_request)
+    (write_slices:  list (write * slices))
+    : thread_cont_res (thread_state 'i)
+  =
+  (* NOTE: maybe, instead of restarting the instruction we should just
+     allow 'request' to be re-issued? Things to consider: - when a
+     write is propagated how do we know an non-finished po-previous
+     read to the same address will not be re-issued?  - when a store
+     is committed and a write from the store was forwarded to a
+     po-after read but only partially satisfied the read, we must make
+     sure the other half of the read was issued and will not be
+     re-issued after the store is committed (since po-after
+     instructions don't have a fully determined addresses this is
+     extra tricky).  - a read can be issued only after all po-previous
+     load-acquires have been issued. Therefore when a load-acquire is
+     allowed to be re-issued we need to do something with po-after
+     loads. *)
+    let (it', restarted_ioids) =
+      restart_dependent_subtrees
+        (T [(iic.iic_instance, iic.subtree)]) {iic.iic_instance}
+    in
+    let inst_and_it' =
+      match it' with
+      | T [inst_and_it'] -> inst_and_it'
+      | _ -> failwith "expected rooted tree"
+      end
+    in
+    let it' = apply_tree_context iic.context inst_and_it' in
+    let state' = <| state with instruction_tree = it' |> in
+    let state'' = remove_reads_from_pop_order state' restarted_ioids in
+    make_thread_cont_res restarted_ioids {} state''
 
 
 let pop_satisfy_read_from_storage_action params
     (state:         thread_state 'i)
-    (inst_context:  instruction_in_context 'i)
+    (iic:           instruction_in_context 'i)
     (request:       read_request)
     (write_slices:  list (write * slices))
     : thread_cont_res (thread_state 'i)
   =
-  let subreads = inst_context.iic_instance.subreads in
-
-  (* the reply from storage includes the forward-writes, but they might
-  be old (from when the read was issued), so we need to set the value
-  for writes that were forwarded without value *)
+  (* NEWTODO: do we need the 'update' part? *)
+  (* the reply from storage includes the forward-writes, but they
+     might be old (from when the read was issued), so we need to set
+     the value for writes that were forwarded without value *)
   let write_slices =
-    (* as this is the point where we get the reply from storage, any write
-    in sr_writes_read_from must be from write-forwarding *)
-    let forward_writes =
-      ensure_just (List.lookup request subreads.sr_writes_read_from)
-        $ "missing a read-request in 'sr_writes_read_from' of ioid " ^ show inst_context.iic_instance.instance_ioid
-    in
+    (* as this is the point where we get the reply from storage, any
+       write in sr_writes_read_from must be from write-forwarding *)
+    let forward_writes = sat_slices_of_read_request iic.iic_instance request in
     let update_write_forwarding_value write =
       match List.find (fun (w', _) -> w'.weiid = write.weiid) forward_writes with
       | Just (w', _)  -> w'
@@ -1792,236 +1748,148 @@ let pop_satisfy_read_from_storage_action params
     in
     [(update_write_forwarding_value w, s) | forall ((w, s) MEM write_slices) | true]
   in
-
-  if pop_is_stale_read params state inst_context request (Set.fromList write_slices) then
-    (* NOTE: maybe, instead of restarting the instruction we should
-        just allow 'request' to be re-issued? Things to consider:
-        - when a write is propagated how do we know an non-finished
-          po-previous read to the same address will not be re-issued?
-        - when a store is committed and a write from the store was
-          forwarded to a po-after read but only partially satisfied the
-          read, we must make sure the other half of the read was issued
-          and will not be re-issued after the store is committed (since
-          po-after instructions don't have a fully determined addresses
-          this is extra tricky).
-        - a read can be issued only after all po-previous load-acquires
-          have been issued. Therefore when a load-acquire is allowed to
-          be re-issued we need to do something with po-after loads. *)
-    let (it', restarted_ioids) =
-      restart_dependent_subtrees
-        (T [(inst_context.iic_instance, inst_context.subtree)])
-        {inst_context.iic_instance}
-    in
-    let inst_and_it' =
-      match it' with
-      | T [inst_and_it'] -> inst_and_it'
-      | _ -> failwith "expected rooted tree"
-      end
-    in
-
-    let pop_substate = get_pop_thread_substate state.thread_substate in
-    let pop_substate = pop_remove_reads_from_order pop_substate restarted_ioids in
-
-    <| state with
-        instruction_tree = apply_tree_context inst_context.context inst_and_it';
-        thread_substate = POP_thread pop_substate;
-    |>
-    $> make_thread_cont_res restarted_ioids {}
+  (* In Flat is_stale_read never holds *)
+  if pop_is_stale_read params state iic request (Set.fromList write_slices)
+  then pop_satisfy_stale_read_from_storage_action state iic request write_slices
   else
-
-  let subreads' =
-    <|  subreads with
-        sr_unsat_slices = updateAssocList request [] subreads.sr_unsat_slices;
-        sr_writes_read_from = updateAssocList request write_slices subreads.sr_writes_read_from;
-        (* don't remove 'request' from 'sr_requested', see comment in machineDefTypes *)
-    |>
-  in
-
-  let instruction' = <| inst_context.iic_instance with subreads = subreads' |> in
-
-  (* do restarts *)
-  let irestart_roots =
-    pop_memory_read_action_restart_roots params
-      state
-      inst_context.subtree
-      request
-      (Just (Set.fromList write_slices))
-  in
-
-  let (it', restarted_ioids) = restart_dependent_subtrees inst_context.subtree irestart_roots in
-  let it'' = handle_restart_dc request.r_addr it' in
-  let pop_substate = get_pop_thread_substate state.thread_substate in
-  let pop_substate' = pop_remove_reads_from_order pop_substate restarted_ioids in
-
-  <| state with
-      instruction_tree = apply_tree_context inst_context.context (instruction', it'');
-      thread_substate = POP_thread pop_substate';
-  |>
-  $> make_thread_cont_res restarted_ioids {}
+    let instruction' =
+      mark_read_as_satisfied iic.iic_instance request [] write_slices in
+    (* do restarts *)
+    let (it', restarted_ioids) =
+      let wss = (Just (Set.fromList write_slices)) in
+      let roots = pop_memory_read_action_restart_roots
+                    params state iic.subtree request wss in
+      restart_dependent_subtrees iic.subtree roots
+    in
+    let it'' = handle_restart_dc request.r_addr it' in
+    let it''' = apply_tree_context iic.context (instruction', it'') in
+    let state' = <| state with instruction_tree = it''' |> in
+    let state'' = remove_reads_from_pop_order state' restarted_ioids in
+    make_thread_cont_res restarted_ioids {} state''
 
 
 let tso_satisfy_read_from_storage_action
     (state:         thread_state 'i)
-    (inst_context:  instruction_in_context 'i)
+    (iic:           instruction_in_context 'i)
     (request:       read_request)
     (write_slices:  list (write * slices))
     : thread_cont_res (thread_state 'i)
   =
-  let subreads = inst_context.iic_instance.subreads in
-
-  let subreads' =
-    <|  inst_context.iic_instance.subreads with
-        sr_unsat_slices = updateAssocList request [] subreads.sr_unsat_slices;
-        sr_writes_read_from = updateAssocList request write_slices subreads.sr_writes_read_from;
-        (* don't remove 'request' from 'sr_requested', see comment in machineDefTypes *)
-    |>
-  in
-
-  let instruction' = <| inst_context.iic_instance with subreads = subreads' |> in
-
-  <| state with
-      instruction_tree = apply_tree_context inst_context.context (instruction', inst_context.subtree);
-  |>
-  $> make_thread_cont_res {} {}
+  let i' = mark_read_as_satisfied iic.iic_instance request [] write_slices in
+  let it' = apply_tree_context iic.context (i', iic.subtree) in
+  let state' = <| state with instruction_tree = it' |> in
+  make_thread_cont_res {} {} state'
 
 
 let relaxed_satisfy_read_from_storage_action
     (state:         thread_state 'i)
-    (inst_context:  instruction_in_context 'i)
+    (iic:           instruction_in_context 'i)
     (request:       read_request)
     (write_slices:  list (write * slices))
     : thread_cont_res (thread_state 'i)
   =
-  let subreads = inst_context.iic_instance.subreads in
-
-  let subreads' =
-    <|  subreads with
-        sr_unsat_slices = updateAssocList request [] subreads.sr_unsat_slices;
-        sr_writes_read_from = updateAssocList request write_slices subreads.sr_writes_read_from;
-    |>
-  in
-
-  let instruction' = <| inst_context.iic_instance with subreads = subreads' |> in
-
-  <| state with
-      instruction_tree = apply_tree_context inst_context.context (instruction', inst_context.subtree);
-  |>
-  $> make_thread_cont_res {} {}
+  let i' = mark_read_as_satisfied iic.iic_instance request [] write_slices in
+  let it' = apply_tree_context iic.context (i', iic.subtree) in
+  let state' = <| state with instruction_tree = it' |> in
+  make_thread_cont_res {} {} state'
 
 
 let satisfy_read_action params
     (state:        thread_state 'i)
-    (inst_context: instruction_in_context 'i)
+    (iic:          instruction_in_context 'i)
     (read:         read_request)
-    : (list memory_read_source) -> thread_cont_res (thread_state 'i)
+    (mrss : list memory_read_source)
+    : thread_cont_res (thread_state 'i)
   =
-  fun mrss ->
-    match params.thread_model with
-    | PLDI11_thread_model -> pldi11_satisfy_read_action params state inst_context read mrss
-    | POP_thread_model _ ->
-        match mrss with
-        | [mrs]  -> pop_satisfy_read_from_storage_action params state inst_context read mrs.mrs_writes_read_from
-        | _ -> failwith "expected one mrs"
-        end
-    | TSO_thread_model ->
-        match mrss with
-        | [mrs]  -> tso_satisfy_read_from_storage_action state inst_context read mrs.mrs_writes_read_from
-        | _ -> failwith "expected one mrs"
-        end
-    | Promising_thread_model -> fail
-    | Relaxed_thread_model ->
-        match mrss with
-        | [mrs]  -> relaxed_satisfy_read_from_storage_action state inst_context read mrs.mrs_writes_read_from
-        | _ -> failwith "expected one mrs"
-        end
-    end
+  match params.thread_model with
+  | PLDI11_thread_model -> pldi11_satisfy_read_action params state iic read mrss
+  | POP_thread_model _ ->
+     let mrs = ensure_singleton mrss "expected one mrs" in
+     pop_satisfy_read_from_storage_action params state iic read mrs.mrs_writes_read_from
+  | TSO_thread_model ->
+     let mrs = ensure_singleton mrss "expected one mrs" in
+     tso_satisfy_read_from_storage_action state iic read mrs.mrs_writes_read_from
+  | Promising_thread_model -> fail
+  | Relaxed_thread_model ->
+     let mrs = ensure_singleton mrss "expected one mrs" in
+     relaxed_satisfy_read_from_storage_action state iic read mrs.mrs_writes_read_from
+  end
 
 
 
 (** Satisfy memory read by forwarding in-flight write directly to reading instruction *)
 
+
+
+let pop_nonforward_writes_of_instr params
+  (from: instruction_instance 'i)
+  (to: instruction_instance 'i)
+   = 
+  if (is_AArch64_load_acquire (ik to) && 
+        is_AArch64_store_exclusive (ik from))
+       || is_RISCV_store_conditional (ik from)
+       || is_PPC_store_conditional (ik from)
+  then
+    all_writes_of_inst from
+  else if is_pop_not_flat params then
+    from.subwrites.sw_propagated_writes
+  else
+    from.subwrites.sw_propagated_writes ++
+      from.subwrites.sw_potential_write_addresses
+
+
 (* TODO: this function was written for POP, Susmit should make sure it works for
 PLDI11 and if it does remove the pop_ prefix from the name *)
-let pop_possible_write_forwarding
-    (params:       thread_params)
-    (isa:          isa 'i)
-    (state:        thread_state 'i)
-    (iic:          instruction_in_context 'i)
-    (rr:           read_request)
-    (unsat_slices: slices)
+let pop_possible_write_forward_slices
+      (params:       thread_params)
+      (isa:          isa 'i)
+      (state:        thread_state 'i)
+      (iic:          instruction_in_context 'i)
+      (rr:           read_request)
+      (unsat_slices: slices)
     : slices * list (write * slices) (* unsat-read-slices, writes-read-from-slices *)
   =
-  (* collect all the write slices that can affect the forward (i.e. be
-  forwarded or block other write slices from being forwarded) *)
-  let write_slices =
-    List.concatMap
-      (fun i ->
-        complete_writes i.subwrites.sw_potential_write_addresses ++
-          
-        (complete_writes i.subwrites.sw_potential_writes) ++
+  let i = iic.iic_instance in
 
-        (* the rest of the writes are used for blocking other writes: *)
-        (* although propagated writes will not be forwarded, we need
-           them in the list so they can cover other writes in the
-           initial call to match_writes *)
-        (complete_writes i.subwrites.sw_propagated_writes) ++
-        (* writes that other loads read from block po-earlier writes, but don't
-           take writes from this thread, we will get them from the store
-           instructions *)
-        (List.filter (fun (write, _) -> write.w_thread <> state.thread) (writes_read_from i))
-      )
-      iic.active_prefix
-  in
+  (* Collect all the write slices that can affect the forward (i.e. be
+     forwarded or block forwarding). The propagated writes are used
+     for blocking other writes: although propagated writes are not
+     forwarded, we record them so they can cover other writes in the
+     initial call to match_writes. We also record writes that other
+     loads read from, to block po-earlier writes; but here we don't
+     take writes from this thread, we will get them from the store
+     instructions *)
+  let relevant_write_slices =
+    let relevant iprev = 
+      complete_writes (unpropagated_writes_of_inst iprev ++
+                       propagated_writes_of_inst iprev) ++
+        [(w,s) | forall ((w,s) MEM (writes_read_from iprev)) 
+               | w.w_thread <> state.thread]
+    in
+    List.concatMap relevant iic.active_prefix in
 
   (* find out what slices can be read from *)
-  let (_, write_slices) = match_writes rr.r_addr unsat_slices write_slices [] in
+  let (_, write_slices) =
+    match_writes rr.r_addr unsat_slices relevant_write_slices [] in
 
+  (* Exclude propagated writes from being forwarded. When running any
+     model other than POP for ARM, also forbid forwarding from writes
+     that do not have their value yet. In POP for ARMv8 we will try to
+     forward these writes, see private comments THREAD4 and THREAD5.
+     Moreover, forbid certain write forwarding: In AArch64, don't
+     forward store-exclusives to load-acquire -- also see private note
+     THREAD6. In PPC, don't forward store-conditionals. In RISC-V,
+     don't forward store-conditionals *)
   let nonforward_writes =
-    Set.fromList
-      (List.concatMap
-          (fun i ->
-            if  (is_AArch64_load_acquire (ik iic.iic_instance) && 
-                   is_AArch64_store_exclusive (ik i))
-                || is_RISCV_store_conditional (ik i)
-                || is_PPC_store_conditional (ik i)
-            then
-              (* AArch64: don't forward store-exclusives to load-acquire.
-                    See also private note THREAD6. *)
-              (* PPC: don't forward store-conditionals *)
-              (* RISC-V: don't forward store-conditionals *)
-              i.subwrites.sw_potential_write_addresses
-              ++ i.subwrites.sw_potential_writes
-              ++ i.subwrites.sw_propagated_writes
-            else
-              (* we don't want propagated writes *)
-              i.subwrites.sw_propagated_writes
-              ++
-                (* When running any model other than POP for ARM,
-                   don't allow forwarding from writes that do not have
-                   their value yet. In POP for ARMv8 we will try to
-                   forward these writes, see private comments THREAD4
-                   and THREAD5 *)
-                (match (isa.isa_model, params.thread_model) with
-                 | (AARCH64 _, POP_thread_model Standard_POP) -> []
-                 | (AARCH64 _, _) -> i.subwrites.sw_potential_write_addresses
-                 | (PPC, _)  -> i.subwrites.sw_potential_write_addresses
-                 | (MIPS, _)    -> i.subwrites.sw_potential_write_addresses
-                 | (RISCV, _)   -> i.subwrites.sw_potential_write_addresses
-                 | (X86, _)     -> i.subwrites.sw_potential_write_addresses
-                 end)
-          )
-          iic.active_prefix)
-  in
+    List.concatMap (fun iprev -> pop_nonforward_writes_of_instr params iprev i)
+      iic.active_prefix in
 
   (* remove slices we should not be forwarding (i.e. propagated or from
   other threads) *)
   let clean_write_slices =
-    List.mapMaybe
-      (fun (w, s) ->
-        if w IN nonforward_writes then Nothing
-        else if w.w_thread <> state.thread then Nothing (* we don't want writes from other threads *)
-        else Just (w, s))
-      write_slices
+    [(w,s) | forall ((w,s) MEM write_slices)
+           | not (List.elem w (nonforward_writes)) &&
+             w.w_thread = state.thread]
   in
 
   (* the second element of the result should be exactly the same as
@@ -2034,39 +1902,25 @@ let pop_possible_write_forwarding
 it to PLDI11, Susmit should check it *)
 let pldi11_satisfy_read_by_forwarding_action params
     (state:        thread_state 'i)
-    (inst_context: instruction_in_context 'i)
+    (iic: instruction_in_context 'i)
     (request:      read_request)
     ((unsat_slices: slices),
      (writes: list (write * slices)))
     : thread_cont_res (thread_state 'i)
   =
-  let i = inst_context.iic_instance in
-  let subreads = i.subreads in
-
-  let writes_read_from = ensure_just (List.lookup request subreads.sr_writes_read_from)
-    $ "missing a read-request in 'sr_writes_read_from' of ioid " ^ show inst_context.iic_instance.instance_ioid
-  in
-  let subreads' =
-    <|  subreads with
-        sr_unsat_slices = updateAssocList request unsat_slices subreads.sr_unsat_slices;
-        sr_writes_read_from = updateAssocList request (writes ++ writes_read_from) subreads.sr_writes_read_from;
-    |>
-  in
-
-  let i' = <| i with subreads = subreads' |> in
-
+  let i = iic.iic_instance in
+  let write_slices = writes ++ (sat_slices_of_read_request i request) in
+  let i' = mark_read_as_satisfied i request unsat_slices write_slices in
   (* do restarts *)
   let (it', restarted_ioids) =
-    let it = inst_context.subtree in
-    Set.fromList writes
-    $> pldi11_memory_read_action_restart_roots params i it request
-    $> restart_dependent_subtrees it
+    let it = iic.subtree in
+    let roots = pldi11_memory_read_action_restart_roots
+                  params i it request (Set.fromList writes) in
+    restart_dependent_subtrees it roots
   in
-
-  <| state with
-      instruction_tree = apply_tree_context inst_context.context (i', it');
-  |>
-  $> make_thread_cont_res restarted_ioids {}
+  let it'' = apply_tree_context iic.context (i', it') in
+  let state' = <| state with instruction_tree = it'' |> in
+  make_thread_cont_res restarted_ioids {} state'
 
 
 let pop_satisfy_read_by_forwarding_action params
@@ -2078,115 +1932,85 @@ let pop_satisfy_read_by_forwarding_action params
     : thread_cont_res (thread_state 'i)
   =
   let i = inst_context.iic_instance in
-  let subreads = i.subreads in
-
-  let writes_read_from = ensure_just (List.lookup request subreads.sr_writes_read_from)
-    $ "missing a read-request in 'sr_writes_read_from' of ioid " ^ show inst_context.iic_instance.instance_ioid
-  in
-  let subreads' =
-    <|  subreads with
-        sr_unsat_slices = updateAssocList request unsat_slices subreads.sr_unsat_slices;
-        sr_writes_read_from = updateAssocList request (writes ++ writes_read_from) subreads.sr_writes_read_from;
-    |>
-  in
-
-  let i' = <| i with subreads = subreads' |> in
-
+  let write_slices = writes ++ (sat_slices_of_read_request i request) in
+  let i' = mark_read_as_satisfied i request unsat_slices write_slices in
   (* do restarts *)
   let (it', restarted_ioids) =
     let it = inst_context.subtree in
-
-    Just (Set.fromList writes)
-    $> pop_memory_read_action_restart_roots params state it request
-    $> restart_dependent_subtrees it
+    let roots =
+      pop_memory_read_action_restart_roots
+        params state it request (Just (Set.fromList writes)) in
+    restart_dependent_subtrees it roots
   in
-
   let it'' = handle_restart_dc request.r_addr it' in
+  let it''' = apply_tree_context inst_context.context (i', it'') in
+  let state' = <| state with instruction_tree = it''' |> in
+  let state'' = remove_reads_from_pop_order state' restarted_ioids in
+  make_thread_cont_res restarted_ioids {} state''
 
-  let pop_substate = get_pop_thread_substate state.thread_substate in
-  let pop_substate' = pop_remove_reads_from_order pop_substate restarted_ioids in
+let have_loop params prefix addr : bool = 
+  exists (i MEM prefix). i.program_loc = addr
 
-  <| state with
-      instruction_tree = apply_tree_context inst_context.context (i', it'');
-      thread_substate  = POP_thread pop_substate';
-  |>
-  $> make_thread_cont_res restarted_ioids {}
+let ensure_no_forbidden_loop params tid prefix addr : unit = 
+  if params.thread_fail_on_loop then
+    ensure (not (have_loop params prefix addr))
+      ("found a loop in thread " ^ show tid)
+  else ()
 
 let init_fetch_instruction params
     (state:           thread_state 'i)
     (complete_prefix: list (instruction_instance 'i))
-    : address -> FreshIds.id_state thread_id * list (instruction_instance 'i)
-  = fun addr ->
-      let () = ensure
-          (params.thread_fail_on_loop -->
-              not (exists (i MEM complete_prefix). i.program_loc = addr))
-          $ "found a loop in thread " ^ show state.thread
-      in
-
-      let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
-      let i' = starting_fetch_inst params ioid' addr in
-
-      match (params.thread_loop_unroll_limit, complete_prefix) with
-      | (Nothing, _) -> (id_state', [i'])
-      | (_, [])      -> (id_state', [i'])
-      | (Just limit, iprev :: _) ->
-          if addr <= iprev.program_loc
-            && (exists (iprev MEM complete_prefix). iprev.program_loc = addr)
-            && (_count_pairs complete_prefix iprev.program_loc addr 0) + 1 >= limit
-          then
-            (* we've hit the unroll limit *)
-            let i' = <| i' with micro_op_state = MOS_pending_exception ET_loop_limit_reached |> in
-            (id_state', [i'])
-          else
-            (id_state', [i'])
-      end
-
-(* FDO cases for decode ...
-  | FDO_address_not_concrete ->
-      let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
-      (id_state', [starting_fetch_exception_inst_instance ioid' FDE_non_concrete_fetch_address_error addr])
-
-  | FDO_illegal_fetch_address ->
-      let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
-      (id_state', [starting_fetch_exception_inst_instance ioid' (FDE_illegal_fetch_address_error addr) addr])
-
-  | FDO_decode_error de ->
-      let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
-      (id_state', [starting_fetch_exception_inst_instance ioid' (FDE_decode_error de addr) addr])
+    (addr : address)
+    : FreshIds.id_state thread_id * list (instruction_instance 'i)
+  =
+  let () = ensure_no_forbidden_loop params state.thread complete_prefix addr in
+  let (ioid', id_state') = FreshIds.gen_fresh_id state.id_state in
+  let i' = starting_fetch_inst params ioid' addr in
+  match (params.thread_loop_unroll_limit, complete_prefix) with
+  | (Nothing, _) -> (id_state', [i'])
+  | (_, [])      -> (id_state', [i'])
+  | (Just limit, iprev :: _) ->
+      if addr <= iprev.program_loc
+        && have_loop params complete_prefix addr
+        && (_count_pairs complete_prefix iprev.program_loc addr 0) + 1 >= limit
+      then
+        (* we've hit the unroll limit *)
+        let mos = MOS_pending_exception ET_loop_limit_reached in
+        let i' = <| i' with micro_op_state = mos |> in
+        (id_state', [i'])
+      else
+        (id_state', [i'])
   end
-*)
-
 
 let get_fetch_instruction_continuation
     (isa :         isa 'i)
     (state:        thread_state 'i)
     (inst_context: instruction_in_context 'i)
     (addr:         address)
-    : (fetched 'i -> thread_cont_res (thread_state 'i))
+    (f : fetched 'i)
+    : thread_cont_res (thread_state 'i)
   =
-  fun f ->
-    let i =
-        match f with
-        | Fetched_FDO FDO_unpredictable_fetch ->
-            <| inst_context.iic_instance with
-                micro_op_state = MOS_unpredictable |>
-        | _ ->
-            <| inst_context.iic_instance with
-                micro_op_state = MOS_fetch (Just f);
-                instruction =
-                    match f with
-                    | Fetched_FDO (FDO_success _ _ ast) -> Fetched ast
-                    | Fetched_Mem _ (FDO_success _ _ ast) -> Fetched ast
-                    | _ -> Fetch_error
-                    end
-            |>
-        end
-    in
-        <|  state with
-            instruction_tree = apply_tree_context inst_context.context (i,inst_context.subtree);
-        |>
-    $> make_old_instructions isa
-    $> make_thread_cont_res {} {}
+  let i =
+    match f with
+    | Fetched_FDO FDO_unpredictable_fetch ->
+       let mos = MOS_unpredictable in
+       <| inst_context.iic_instance with micro_op_state = mos |>
+    | _ ->
+       let fdo = fdo_from_fetched f in
+       let instr = match fdo with
+         | FDO_success _ _ ast -> Fetched ast
+         | _ -> Fetch_error
+       end in
+       <| inst_context.iic_instance with
+           micro_op_state = MOS_fetch (Just f);
+           instruction = instr
+       |>
+    end
+  in
+  let it' = apply_tree_context inst_context.context (i,inst_context.subtree) in
+  let state' = <| state with instruction_tree = it' |> in
+  let state'' = make_old_instructions isa state' in
+  make_thread_cont_res {} {} state''
 
 
 (**: \subsubsection{The Collected Thread Transitions} :*)
@@ -2216,15 +2040,14 @@ let handle_read_mem_outcome params
     (cont: memory_value -> outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
-  let state' = fun () ->
+  let c = fun () ->
     let addr = ensure_just (address_of_address_lifted addr_lifted)
-                        "Read_mem from a non-concrete address"
-    in
-
-    pending_memory_read_request_action params isa state iic read_kind (addr,size) cont
-    $> make_thread_cont_res {} {}
+                        "Read_mem from a non-concrete address" in
+    let state' = pending_memory_read_request_action
+                   params isa state iic read_kind (addr,size) cont in
+    make_thread_cont_res {} {} state'
   in
-  [T_only (make_label state iic T_pending_memory_read_request state')]
+  [T_only (make_label state iic T_pending_memory_read_request c)]
 
 
 let handle_write_ea_outcome
@@ -2254,38 +2077,51 @@ let handle_write_ea_outcome
      MOS_potential_mem_write micro-op state *)
 
   let i = iic.iic_instance in
-  let () = ensure (i.subwrites.sw_addr = Nothing) "already handled Write_ea outcome for this instruction" in
-
-  let address = ensure_just (address_of_address_lifted addr_lifted)
+  let () = ensure (i.subwrites.sw_addr = Nothing) 
+             "already handled Write_ea outcome for this instruction" in
+  let addr = ensure_just (address_of_address_lifted addr_lifted)
                           "Write_mem to a non-concrete address" in
-
-  let (potential_write_addresses, id_state') =
-    if params.thread_restriction = RestrictionSC then
-      Events.make_empty_write_events'
-        i.instance_id_state state.thread i.instance_ioid address size size write_kind
-    else
-      make_empty_write_events_ii isa state.thread i (address, size) write_kind
+  let (potential_write_addrs, id_state') =
+    (if params.thread_restriction = RestrictionSC
+     then make_single_atomic_empty_write_event else make_empty_write_events_ii)
+      isa state.thread i (addr, size) write_kind
   in
-
-  let state' = fun () ->
+  let c = fun () ->
+    let subwrites' =
+      initiate_subwrites i.subwrites (addr,size) potential_write_addrs in
     let i' =
-      <| i with
-          micro_op_state = MOS_plain is';
-          subwrites = <| i.subwrites with
-              sw_addr = Just (address, size);
-              sw_potential_write_addresses = potential_write_addresses;
-          |>;
-          instance_id_state = id_state';
-      |>
+      <| i with micro_op_state = MOS_plain is';
+                subwrites = subwrites';
+                instance_id_state = id_state'; |>
     in
-    <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
-    $> make_thread_cont_res {} {}
+    let it' = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
   in
+  [T_only (make_label state iic (T_mem_write_footprint potential_write_addrs) c)]
 
-  [T_only (make_label state iic (T_mem_write_footprint potential_write_addresses) state')]
 
+let pop_update_write_forwarding_values updated_writes it : instruction_tree 'i = 
+  let update_write write =
+    match List.find (fun w' -> w'.weiid = write.weiid) updated_writes with
+    | Just w' -> w'
+    | Nothing -> write
+    end
+  in
+  let update_write_slices (writes: list (write * slices)) =
+    [(update_write w, s) | forall ((w, s) MEM writes) | true] in
+  let update_instruction i =
+    let writes_read_from = i.subreads.sr_writes_read_from in
+    let writes_read_from' = 
+      [(rr, update_write_slices ws) 
+         | forall ((rr, ws) MEM writes_read_from) | true] in
+    let subreads' =
+      <| i.subreads with sr_writes_read_from = writes_read_from' |> in
+    <| i with subreads = subreads' |>
+  in
+  instruction_tree_map (fun _ i _ -> update_instruction i) [] it
 
-let handle_write_memv_outcome
+let handle_write_memv_outcome params
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     (value: memory_value)
@@ -2293,53 +2129,22 @@ let handle_write_memv_outcome
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
-  let () = ensure (i.subwrites.sw_potential_write_addresses <> []) "expected to have potential_write_addresses" in
-
-  let potential_writes = Events.set_write_values value i.subwrites.sw_potential_write_addresses [] in
-
-  let update_write_forwarding_value it : instruction_tree 'i =
-    let update i =
-      let update_writes (writes: list (write * slices)) =
-        let update_write write =
-          match List.find (fun w' -> w'.weiid = write.weiid) potential_writes with
-          | Just w' -> w'
-          | Nothing -> write
-          end
-        in
-
-        [(update_write w, s) | forall ((w, s) MEM writes) | true]
-      in
-
-      let sr_writes_read_from' =
-        [(rr, update_writes writes) | forall ((rr, writes) MEM i.subreads.sr_writes_read_from) | true]
-      in
-
-      let subreads' =
-        <| i.subreads with sr_writes_read_from = sr_writes_read_from' |>
-      in
-
-      <| i with subreads = subreads'  |>
-    in
-
-    instruction_tree_map (fun _ i _ -> update i) [] it
-  in
+  let () = ensure (i.subwrites.sw_potential_write_addresses <> []) 
+             "expected to have potential_write_addresses" in
+  let writes =
+    Events.set_write_values value i.subwrites.sw_potential_write_addresses [] in
 
   let state' = fun () ->
-    let i' =
-      <| i with
-        micro_op_state = MOS_potential_mem_write cont;
-        subwrites = <| i.subwrites with
-            sw_potential_write_addresses = [];
-            sw_potential_writes = potential_writes;
-        |>
-      |>
+    let i' = instantiate_writes i writes cont in 
+    let it' =
+      if is_flat_model params then iic.subtree
+      else pop_update_write_forwarding_values writes iic.subtree
     in
-
-    let it' = update_write_forwarding_value iic.subtree in
-    <| state with instruction_tree = apply_tree_context iic.context (i', it') |>
-    $> make_thread_cont_res {} {}
+    let it'' = apply_tree_context iic.context (i', it') in
+    let state' = <| state with instruction_tree = it'' |> in
+    make_thread_cont_res {} {} state'
   in
-  [T_only (make_label state iic (T_mem_potential_write potential_writes) state')]
+  [T_only (make_label state iic (T_mem_potential_write writes) state')]
 
 let cache_maintenance_trans_ic
     (state:  thread_state 'i)
@@ -2698,7 +2503,7 @@ let enumerate_write_forward_transitions_pop
   (* filter out already-requested reads *)
   guard (lookup rr i.subreads.sr_requested = Nothing) >>
   let (unsat_slices,sliced_writes) =
-    pop_possible_write_forwarding params isa state iic rr unsat_slices in
+    pop_possible_write_forward_slices params isa state iic rr unsat_slices in
   guard (sliced_writes <> []) >>
   let state' = fun () ->
     pop_satisfy_read_by_forwarding_action params state iic rr (unsat_slices, sliced_writes)
@@ -2722,7 +2527,7 @@ let enumerate_write_forward_transitions_pldi11
   (* TODO: (SF) I copied the write forwarding from POP,
      Susmit should make sure this is good for PLDI11 *)
   let (unsat_slices,sliced_writes) =
-    pop_possible_write_forwarding params isa state iic rr unsat_slices in
+    pop_possible_write_forward_slices params isa state iic rr unsat_slices in
   guard (sliced_writes <> []) >>
   let state' = fun () ->
     pldi11_satisfy_read_by_forwarding_action params state iic rr (unsat_slices, sliced_writes)
@@ -3949,7 +3754,7 @@ let enumerate_transitions_of_instruction
     (* normal outcomes *)
     | Read_mem descr c     -> handle_read_mem_outcome     params isa s iic descr c
     | Write_ea descr o     -> handle_write_ea_outcome     params isa s iic descr o
-    | Write_memv descr c   -> handle_write_memv_outcome   s iic descr c
+    | Write_memv descr c   -> handle_write_memv_outcome   params s iic descr c
     | Excl_res c           -> handle_excl_res_outcome     params isa s iic c
     | Barrier descr o      -> handle_barrier_outcome      params isa s iic descr o
     | Read_reg descr c     -> handle_read_reg_outcome     isa s iic descr c

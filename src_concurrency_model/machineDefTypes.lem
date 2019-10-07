@@ -499,6 +499,12 @@ type fetched 'i =
   | Fetched_FDO of fetch_and_decode_outcome 'i  (* for programs without machine code (like litmus tests) *)
   | Fetched_Mem of memory_read_source * fetch_and_decode_outcome 'i
 
+let fdo_from_fetched = function
+  | Fetched_FDO fdo -> fdo
+  | Fetched_Mem _ fdo -> fdo
+end
+
+
 type micro_op_state 'i =
   | MOS_fetch               of maybe (fetched 'i)
   | MOS_wait_IC             of outcome_S

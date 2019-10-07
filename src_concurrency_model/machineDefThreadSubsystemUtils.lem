@@ -722,14 +722,29 @@ let write_initiated inst = inst.subwrites.sw_addr <> Nothing
 
 let unsat_slices_of_read_request inst rr = 
   ensure_just (List.lookup rr inst.subreads.sr_unsat_slices)
-  $ "missing a read-request in 'sr_unsat_slices' of ioid " ^ show inst.instance_ioid
+  $ "missing a read-request in 'sr_unsat_slices' of ioid " ^
+      show inst.instance_ioid
+
+let sat_slices_of_read_request inst rr = 
+  ensure_just (List.lookup rr inst.subreads.sr_writes_read_from)
+  $ "missing a read-request in 'sr_writes_read_from' of ioid " ^
+      show inst.instance_ioid
+
 
 let propagated_writes_of_inst inst = 
-  complete_writes inst.subwrites.sw_propagated_writes
+  inst.subwrites.sw_propagated_writes
 
 let unpropagated_writes_of_inst inst = 
   inst.subwrites.sw_potential_write_addresses
   ++ inst.subwrites.sw_potential_writes
+
+let initialised_uninstantiated_writes_of_inst inst = 
+  inst.subwrites.sw_potential_write_addresses
+  ++ inst.subwrites.sw_potential_writes
+
+let all_writes_of_inst inst = 
+  propagated_writes_of_inst inst ++ 
+    unpropagated_writes_of_inst inst
 
 
 
@@ -749,7 +764,8 @@ let parts_of_write_not_overwritten_by_write_slices
    
 let parts_of_read_rf_not_overwritten_by_write
       writes_read_from read_request write_instr = 
-  let propagated_writes = propagated_writes_of_inst write_instr in
+  let propagated_writes =
+    complete_writes (propagated_writes_of_inst write_instr) in
   let (_, writes_read_from) =
     match_writes read_request.r_addr [complete_slice read_request.r_addr]
       (propagated_writes ++ writes_read_from) [] in
@@ -1363,6 +1379,13 @@ let make_read_request_events_ii isa tid iic_instance footprint read_kind =
     footprint
     read_kind
 
+(* used to enforce atomicity in SC model *)
+let make_single_atomic_read_request_event_ii _isa tid iic_instance (addr,size) rk =
+  Events.make_read_request_events'
+    iic_instance.instance_id_state
+    tid iic_instance.instance_ioid addr size size rk
+
+
 
 let make_empty_write_events_ii isa tid iic_instance footprint write_kind = 
   isa.make_empty_write_events
@@ -1372,3 +1395,7 @@ let make_empty_write_events_ii isa tid iic_instance footprint write_kind =
     iic_instance.instance_ioid
     footprint
     write_kind
+
+let make_single_atomic_empty_write_event _isa thread i (address, size) write_kind = 
+      Events.make_empty_write_events'
+        i.instance_id_state thread i.instance_ioid address size size write_kind

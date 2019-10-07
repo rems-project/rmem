@@ -58,9 +58,12 @@ let is_fdo_success = function
 end
 
 let ast_from_fdo = function
-  | FDO_success _ _ ast -> ast
-  | _ -> fail
+  | FDO_success _ _ ast -> Just ast
+  | _ -> Nothing
 end
+
+let unsafe_ast_from_fdo fdo =
+  ensure_just (ast_from_fdo fdo) "fail"
 
 
 let decode_error_compare e1 e2 =

@@ -198,8 +198,13 @@ let is_fetch_atomic params = match params.ss_fetch_type with
   | _ -> false
   end
 
-let is_pop_model params = match params.thread_model with
-  | POP_thread_model _ -> true
+(* let is_pop_model params = match params.thread_model with
+ *   | POP_thread_model _ -> true
+ *   | _ -> false
+ * end *)
+
+let is_pop_not_flat params = match params.thread_model with
+  | POP_thread_model Standard_POP -> true
   | _ -> false
 end
 
