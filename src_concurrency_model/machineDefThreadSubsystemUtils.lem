@@ -1371,31 +1371,54 @@ let make_ui_machine_thread_state (_s : 'storage_subsystem_state)
 
 
 let make_read_request_events_ii isa tid iic_instance footprint read_kind = 
-  isa.make_read_request_events
-    tid 
-    (ensure_fetched iic_instance.instruction)
-    iic_instance.instance_id_state
-    iic_instance.instance_ioid
-    footprint
-    read_kind
+  let (read_requests, id_state') = 
+    isa.make_read_request_events
+      tid 
+      (ensure_fetched iic_instance.instruction)
+      iic_instance.instance_id_state
+      iic_instance.instance_ioid
+      footprint
+      read_kind
+  in
+  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
+  (read_requests, iic_instance')
 
 (* used to enforce atomicity in SC model *)
 let make_single_atomic_read_request_event_ii _isa tid iic_instance (addr,size) rk =
-  Events.make_read_request_events'
-    iic_instance.instance_id_state
-    tid iic_instance.instance_ioid addr size size rk
+  let (read_requests, id_state') = 
+    Events.make_read_request_events'
+      iic_instance.instance_id_state
+      tid iic_instance.instance_ioid addr size size rk
+  in
+  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
+  (read_requests, iic_instance')
 
 
 
 let make_empty_write_events_ii isa tid iic_instance footprint write_kind = 
-  isa.make_empty_write_events
-    tid
-    (ensure_fetched iic_instance.instruction)
-    iic_instance.instance_id_state
-    iic_instance.instance_ioid
-    footprint
-    write_kind
+  let (write_requests, id_state') = 
+    isa.make_empty_write_events
+      tid
+      (ensure_fetched iic_instance.instruction)
+      iic_instance.instance_id_state
+      iic_instance.instance_ioid
+      footprint
+      write_kind
+  in
+  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
+  (write_requests, iic_instance')
 
-let make_single_atomic_empty_write_event _isa thread i (address, size) write_kind = 
-      Events.make_empty_write_events'
-        i.instance_id_state thread i.instance_ioid address size size write_kind
+let make_single_atomic_empty_write_event_ii _isa thread i (address, size) write_kind = 
+  let (write_requests, id_state') = 
+    Events.make_empty_write_events'
+      i.instance_id_state thread i.instance_ioid address size size write_kind
+  in
+  let i' = <| i with instance_id_state = id_state' |> in
+  (write_requests, i')
+
+
+let make_barrier_event_ii i tid bk = 
+  let (b, id_state') = 
+    Events.make_barrier_event i.instance_id_state tid i.instance_ioid bk in
+  let i' = <| i with instance_id_state = id_state' |> in
+  (b, i')

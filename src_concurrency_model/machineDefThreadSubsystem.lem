@@ -1557,49 +1557,57 @@ let initiate_subreads (addr,size) read_requests =
       sr_assembled_value = Nothing;
   |>
 
+let initiate_reads i (addr,size) read_requests = 
+  let subreads = initiate_subreads (addr,size) read_requests in
+  <| i with subreads = subreads |>
+
+
+
 let initiate_subwrites subwrites (addr,size) potential_write_addresses = 
   <| subwrites with sw_addr = Just (addr, size);
                     sw_potential_write_addresses = potential_write_addresses |>
 
-
-let instantiate_writes i writes cont = 
-  let subwrites' = 
-    <| i.subwrites with sw_potential_write_addresses = [];
-                        sw_potential_writes = writes |>
-  in
-  let mos = MOS_potential_mem_write cont in
-  <| i with micro_op_state = mos; subwrites = subwrites' |>
+let initiate_writes i (addr,size) potential_write_addresses = 
+  let subwrites' =
+    initiate_subwrites i.subwrites (addr,size) potential_write_addresses in
+  <| i with subwrites = subwrites' |>
 
 
 
-let pending_memory_read_request_action params
+let instantiate_subwrites subwrites writes = 
+  <| subwrites with sw_potential_write_addresses = [];
+                    sw_potential_writes = writes |>
+
+let instantiate_writes i writes = 
+  let subwrites' = instantiate_subwrites i.subwrites writes in
+  <| i with subwrites = subwrites' |>
+
+
+let initiate_read_action params
     (isa:          isa 'i)
     (state:        thread_state 'i)
     (iic:          instruction_in_context 'i)
     (read_kind:    read_kind)
     ((addr, size): footprint)
     (inst_cont:    memory_value -> outcome_S)
-    : thread_state 'i
   =
-  (* generate the read-requests *)
-  let (read_requests, id_state') =
+  let (read_requests, i') =
     (if params.thread_restriction = RestrictionSC
      then make_single_atomic_read_request_event_ii
      else make_read_request_events_ii)
       isa state.thread iic.iic_instance (addr, size) read_kind
   in
-  let subreads = initiate_subreads (addr,size) read_requests in
-  let mos =
-    if is_RISCV_AMO (ik iic.iic_instance) then MOS_AMO_lock inst_cont
-    else MOS_pending_mem_read inst_cont
+  let c () = 
+    let i' = initiate_reads i' (addr,size) read_requests in
+    let mos = if is_RISCV_AMO (ik iic.iic_instance) 
+              then MOS_AMO_lock inst_cont
+              else MOS_pending_mem_read inst_cont in
+    let i' = <|  i' with micro_op_state = mos |> in
+    let it = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it |> in
+    make_thread_cont_res {} {} state'
   in
-  let instruction' =
-    <|  iic.iic_instance with micro_op_state = mos;
-                              subreads = subreads;
-                              instance_id_state = id_state' |>
-  in
-  let it = apply_tree_context iic.context (instruction', iic.subtree) in
-  <| state with instruction_tree = it |>
+  (read_requests,c)
 
 
 (** Satisfy memory read by write received from storage subsystem ****)
@@ -1689,7 +1697,7 @@ let pldi11_satisfy_read_action params state iic rr (mrss: list memory_read_sourc
 
 
 
-let pop_satisfy_stale_read_from_storage_action
+let pop_satisfy_stale_read_from_memory_action
     (state:         thread_state 'i)
     (iic:           instruction_in_context 'i)
     (_request:      read_request)
@@ -1725,7 +1733,7 @@ let pop_satisfy_stale_read_from_storage_action
     make_thread_cont_res restarted_ioids {} state''
 
 
-let pop_satisfy_read_from_storage_action params
+let pop_satisfy_read_from_memory_action params
     (state:         thread_state 'i)
     (iic:           instruction_in_context 'i)
     (request:       read_request)
@@ -1750,7 +1758,7 @@ let pop_satisfy_read_from_storage_action params
   in
   (* In Flat is_stale_read never holds *)
   if pop_is_stale_read params state iic request (Set.fromList write_slices)
-  then pop_satisfy_stale_read_from_storage_action state iic request write_slices
+  then pop_satisfy_stale_read_from_memory_action state iic request write_slices
   else
     let instruction' =
       mark_read_as_satisfied iic.iic_instance request [] write_slices in
@@ -1768,7 +1776,7 @@ let pop_satisfy_read_from_storage_action params
     make_thread_cont_res restarted_ioids {} state''
 
 
-let tso_satisfy_read_from_storage_action
+let tso_satisfy_read_from_memory_action
     (state:         thread_state 'i)
     (iic:           instruction_in_context 'i)
     (request:       read_request)
@@ -1781,7 +1789,7 @@ let tso_satisfy_read_from_storage_action
   make_thread_cont_res {} {} state'
 
 
-let relaxed_satisfy_read_from_storage_action
+let relaxed_satisfy_read_from_memory_action
     (state:         thread_state 'i)
     (iic:           instruction_in_context 'i)
     (request:       read_request)
@@ -1805,14 +1813,14 @@ let satisfy_read_action params
   | PLDI11_thread_model -> pldi11_satisfy_read_action params state iic read mrss
   | POP_thread_model _ ->
      let mrs = ensure_singleton mrss "expected one mrs" in
-     pop_satisfy_read_from_storage_action params state iic read mrs.mrs_writes_read_from
+     pop_satisfy_read_from_memory_action params state iic read mrs.mrs_writes_read_from
   | TSO_thread_model ->
      let mrs = ensure_singleton mrss "expected one mrs" in
-     tso_satisfy_read_from_storage_action state iic read mrs.mrs_writes_read_from
+     tso_satisfy_read_from_memory_action state iic read mrs.mrs_writes_read_from
   | Promising_thread_model -> fail
   | Relaxed_thread_model ->
      let mrs = ensure_singleton mrss "expected one mrs" in
-     relaxed_satisfy_read_from_storage_action state iic read mrs.mrs_writes_read_from
+     relaxed_satisfy_read_from_memory_action state iic read mrs.mrs_writes_read_from
   end
 
 
@@ -2040,14 +2048,36 @@ let handle_read_mem_outcome params
     (cont: memory_value -> outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
+  let addr = ensure_just (address_of_address_lifted addr_lifted)
+               "Read_mem from a non-concrete address" in
+  let (_read_requests,c) = 
+    initiate_read_action params isa state iic read_kind (addr,size) cont in
+  [T_only (make_label state iic T_pending_memory_read_request c)]
+
+
+let initiate_write_action
+    (params: thread_params)
+    (isa: isa 'i)
+    (state: thread_state 'i)
+    (iic: instruction_in_context 'i)
+    ((write_kind: write_kind),(addr: address),(size: nat))
+    (is': outcome_S)
+  = 
+  let i = iic.iic_instance in
+  let (potential_write_addrs, i') =
+    (if params.thread_restriction = RestrictionSC
+     then make_single_atomic_empty_write_event_ii 
+     else make_empty_write_events_ii)
+      isa state.thread i (addr, size) write_kind
+  in
   let c = fun () ->
-    let addr = ensure_just (address_of_address_lifted addr_lifted)
-                        "Read_mem from a non-concrete address" in
-    let state' = pending_memory_read_request_action
-                   params isa state iic read_kind (addr,size) cont in
+    let i' = initiate_writes i (addr,size) potential_write_addrs in
+    let i' = <| i' with micro_op_state = MOS_plain is' |> in
+    let it' = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
     make_thread_cont_res {} {} state'
   in
-  [T_only (make_label state iic T_pending_memory_read_request c)]
+  (potential_write_addrs, c)
 
 
 let handle_write_ea_outcome
@@ -2075,29 +2105,10 @@ let handle_write_ea_outcome
      potentially available for forwarding (but subject to restart) and one
      (T_commit_mem_write_plain) to commit that write, with an intermediate
      MOS_potential_mem_write micro-op state *)
-
-  let i = iic.iic_instance in
-  let () = ensure (i.subwrites.sw_addr = Nothing) 
-             "already handled Write_ea outcome for this instruction" in
   let addr = ensure_just (address_of_address_lifted addr_lifted)
-                          "Write_mem to a non-concrete address" in
-  let (potential_write_addrs, id_state') =
-    (if params.thread_restriction = RestrictionSC
-     then make_single_atomic_empty_write_event else make_empty_write_events_ii)
-      isa state.thread i (addr, size) write_kind
-  in
-  let c = fun () ->
-    let subwrites' =
-      initiate_subwrites i.subwrites (addr,size) potential_write_addrs in
-    let i' =
-      <| i with micro_op_state = MOS_plain is';
-                subwrites = subwrites';
-                instance_id_state = id_state'; |>
-    in
-    let it' = apply_tree_context iic.context (i', iic.subtree) in
-    let state' = <| state with instruction_tree = it' |> in
-    make_thread_cont_res {} {} state'
-  in
+               "Write_mem to a non-concrete address" in
+  let (potential_write_addrs, c) =
+    initiate_write_action params isa state iic (write_kind,addr,size) is' in
   [T_only (make_label state iic (T_mem_write_footprint potential_write_addrs) c)]
 
 
@@ -2121,6 +2132,27 @@ let pop_update_write_forwarding_values updated_writes it : instruction_tree 'i =
   in
   instruction_tree_map (fun _ i _ -> update_instruction i) [] it
 
+let instantiate_write_action params
+    (state: thread_state 'i)
+    (iic: instruction_in_context 'i)
+    (value: memory_value)
+    (cont: bool -> outcome_S)
+  = 
+  let writes =
+    Events.set_write_values
+      value iic.iic_instance.subwrites.sw_potential_write_addresses [] in
+  let c' = fun () ->
+    let i' = instantiate_writes iic.iic_instance writes in
+    let i' = <| i' with micro_op_state = MOS_potential_mem_write cont |> in
+    let it' =
+      if is_flat_model params then iic.subtree
+      else pop_update_write_forwarding_values writes iic.subtree
+    in
+    let it'' = apply_tree_context iic.context (i', it') in
+    <| state with instruction_tree = it'' |>
+  in
+  (writes,c')
+
 let handle_write_memv_outcome params
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
@@ -2128,74 +2160,109 @@ let handle_write_memv_outcome params
     (cont: bool -> outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
-  let i = iic.iic_instance in
-  let () = ensure (i.subwrites.sw_potential_write_addresses <> []) 
+  let () = ensure (iic.iic_instance.subwrites.sw_potential_write_addresses <> []) 
              "expected to have potential_write_addresses" in
-  let writes =
-    Events.set_write_values value i.subwrites.sw_potential_write_addresses [] in
+  let (writes,c) = instantiate_write_action params state iic value cont in
+  let c () = make_thread_cont_res {} {} (c ()) in
+  [T_only (make_label state iic (T_mem_potential_write writes) c)]
 
-  let state' = fun () ->
-    let i' = instantiate_writes i writes cont in 
-    let it' =
-      if is_flat_model params then iic.subtree
-      else pop_update_write_forwarding_values writes iic.subtree
-    in
-    let it'' = apply_tree_context iic.context (i', it') in
-    let state' = <| state with instruction_tree = it'' |> in
-    make_thread_cont_res {} {} state'
-  in
-  [T_only (make_label state iic (T_mem_potential_write writes) state')]
-
-let cache_maintenance_trans_ic
+let cache_maintenance_ic_action
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     (addr:   address) 
-    (o: outcome_S) =
-  guard (
-        forall (iprev MEM iic.active_prefix).
-          (is_AArch64_ic_wait_barrier (ik iprev) --> iprev.finished)
-  ) >>
-
-  let i = iic.iic_instance in
-  let state' =
-      fun () ->
-        let i' = <| i with micro_op_state = MOS_wait_IC o |> in
-        <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
-        $> make_thread_cont_res {} {}
+    (o: outcome_S)
+  =
+  let c () =
+    let i' = <| iic.iic_instance with micro_op_state = MOS_wait_IC o |> in
+    let it' = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
   in
-  let lbl =
-      <| cmr_cmk = CM_IC;
-         cmr_ioid = i.instance_ioid;
-         cmr_addr = addr;
-      |>
-  in
-  [T_sync (T_propagate_cache_maintenance (make_label state iic lbl state')) ()]
+  c
+    
 
-let cache_maintenance_trans_dc
+let cache_maintenance_dc_action
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     (addr:   address)
-    (o:      outcome_S) =
-  (* wait for po-previous DMB/DSB *)
-  guard (
-        forall (iprev MEM iic.active_prefix).
-          (is_AArch64_dc_wait_barrier (ik iprev) --> iprev.finished)
-  ) >>
+    (o:      outcome_S)
+  =
+  let c () =
+    let i' = <| iic.iic_instance with micro_op_state = MOS_plain o |> in
+    let it' = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
+  in
+  c
 
+
+
+let mark_barrier_as_committed b i = 
+  <| i with committed_barriers = b :: i.committed_barriers |>
+
+let commit_isb_action_restart_fetches params it =
+  let restart_fetch _ i _ =
+    match i.micro_op_state with
+    | MOS_fetch _ ->
+       starting_fetch_inst params i.instance_ioid i.program_loc
+    | s -> i
+    end 
+  in
+  instruction_tree_map restart_fetch [] it
+
+
+let commit_barrier_action
+    (params: thread_params)
+    (isa:    isa 'i)
+    (state:  thread_state 'i)
+    (iic:    instruction_in_context 'i)
+    (bk:     barrier_kind)
+    (is':    outcome_S)
+  =
   let i = iic.iic_instance in
-  let state' =
-      fun () ->
-        let i' = <| i with micro_op_state = MOS_plain o |> in
-        <| state with instruction_tree = apply_tree_context iic.context (i', iic.subtree) |>
-        $> make_thread_cont_res {} {}
+  let (b, i') = make_barrier_event_ii i state.thread bk in
+  let c () =
+    let i' = mark_barrier_as_committed b i in
+    let i' = <| i' with  micro_op_state = MOS_plain is' |> in
+    let it' = 
+      if is_AArch64_isb_barrier (ik i)
+      then commit_isb_action_restart_fetches params iic.subtree
+      else iic.subtree
+    in
+    let it' = apply_tree_context iic.context (i', it') in
+    let s' = <| state with instruction_tree = it' |> in
+    match params.thread_model with
+    | PLDI11_thread_model    -> pldi11_commit_barrier_action s' b
+    | POP_thread_model _     -> s'
+    | TSO_thread_model       -> s'
+    | Promising_thread_model -> fail
+    | Relaxed_thread_model   -> s'
+    end
+    $> make_thread_cont_res {} {}
   in
-  let lbl =
-      <| cmr_cmk = CM_DC;
-         cmr_ioid = i.instance_ioid;
-         cmr_addr = addr;
-      |>
-  in
-  [T_sync (T_propagate_cache_maintenance (make_label state iic lbl state')) ()]
+  (b,c)
+
+
+let barrier_is_not_sent_to_storage params isa bk =
+ (* Flat does not send barriers to the storage subsystem *)
+ is_flat_model params
+    (* barriers that are not sent to storage in POP *)
+    (* see discussion on DMB LD in private notes60 *)
+    || is_pop_instruction_barrier bk
+    || is_AArch64_ld_barrier bk
+    || (params.thread_model = TSO_thread_model && 
+          isa.isa_model = RISCV && not (is_RISCV_fence_pw bk))
+    || params.thread_model = Relaxed_thread_model
+
+
+let barrier_commit_cand params isa state iic = 
+  match params.thread_model with
+  | PLDI11_thread_model    -> pldi11_commit_cand state iic
+  | POP_thread_model _     -> pop_commit_barrier_cand params isa iic
+  | TSO_thread_model       -> true
+  | Promising_thread_model -> fail
+  | Relaxed_thread_model   -> true
+  end
 
 let handle_barrier_outcome
     (params: thread_params)
@@ -2208,70 +2275,68 @@ let handle_barrier_outcome
   =
   (* Note: in the new scheme, it's more natural to do the whole barrier commit now *)
   (* NEWTODO: have to do the rest of the barrier action - check what we did in old ppcmem*)
-
-  let i = iic.iic_instance in
-
-  guard match params.thread_model with
-        | PLDI11_thread_model    -> pldi11_commit_cand state iic
-        | POP_thread_model _     -> pop_commit_barrier_cand params isa iic
-        | TSO_thread_model       -> true
-        | Promising_thread_model -> fail
-        | Relaxed_thread_model   -> true
-        end >>
-
-  let (b, id_state') = Events.make_barrier_event i.instance_id_state state.thread i.instance_ioid bk in
-
-  let state' = fun () ->
-    let i' =
-      <| i with
-        instance_id_state  = id_state';
-        micro_op_state     = MOS_plain is';
-        committed_barriers = b :: i.committed_barriers;
-      |>
-    in
-    let sub' = 
-        if is_AArch64_isb_barrier (ik i) then
-            instruction_tree_map
-              (fun _ i _ ->
-                match i.micro_op_state with
-                | MOS_fetch _ ->
-                    starting_fetch_inst params i.instance_ioid i.program_loc
-                | s -> i
-                end)
-            [] iic.subtree
-        else
-            iic.subtree
-    in
-    let s' = <| state with instruction_tree = apply_tree_context iic.context (i', sub') |> in
-
-    match params.thread_model with
-    | PLDI11_thread_model    -> pldi11_commit_barrier_action s' b
-    | POP_thread_model _     -> s'
-    | TSO_thread_model       -> s'
-    | Promising_thread_model -> fail
-    | Relaxed_thread_model   -> s'
-    end
-    $> make_thread_cont_res {} {}
-  in
-
-  if is_flat_model params
-    || is_pop_instruction_barrier (ik i)
-    || is_AArch64_ld_barrier (ik i)
-    || (params.thread_model = TSO_thread_model && 
-          isa.isa_model = RISCV &&  not (is_RISCV_fence_pw (ik i)))
-    || params.thread_model = Relaxed_thread_model
-  then
-    (* barriers that are not sent to storage *)
-    (* see discussion on DMB LD in private notes60 *)
-    [T_only (make_label state iic (T_commit_barrier b) state')]
-  else
-    (* memory barriers are passed to the storage subsystem *)
-    [T_sync (T_propagate_barrier (make_label state iic b state')) ()]
-
+  guard (barrier_commit_cand params isa state iic) >>
+  let (b,c) = commit_barrier_action params isa state iic bk is' in
+  if barrier_is_not_sent_to_storage params isa (ik iic.iic_instance)
+  then [T_only (make_label state iic (T_commit_barrier b) c)]
+  else [T_sync (T_propagate_barrier (make_label state iic b c)) ()]
   (* for barriers with acks (such as sync), how are the commit and the sync
      related?  Not at all - the test that the sync has been ack'd occurs
      elsewhere in the thread semantics, in the commit-cand and read-satisfy-cand
      checking for po-later instructions *)
+
+
+let pseudo_register_read_action
+      (isa:    isa 'i)
+      (state: thread_state 'i)
+      (iic: instruction_in_context 'i)
+      (r: reg_name)
+      (c: register_value -> outcome_S)
+  =
+
+  (* pseudo registers have a predetermined values and the
+  transition is T_internal *)
+  let i = iic.iic_instance in
+  let v = pseudo_register_value isa i.program_loc r in
+  let c = fun () ->
+    let regread = (r,[RRS_pseudoregister],v) in
+    let i' = <| i with micro_op_state = MOS_plain (c v);
+                       reg_reads = regread::i.reg_reads |> in
+    let it' = apply_tree_context iic.context (i',iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
+  in
+  (v,c)
+
+let regular_register_read_action
+      (state: thread_state 'i)
+      (iic: instruction_in_context 'i)
+      (r: reg_name)
+      (c: register_value -> outcome_S)
+  =
+  let i = iic.iic_instance in
+  (* *don't* allow reading from reg writes by the same instruction,
+     otherwise we get self-blocked. But some 2.06B pseudocode does
+     read from self-writes; we allow that by patching the pseudocode
+     (otherwise we'd need more fine-grained dependency tracking *)
+  let full_prefix = iic.active_prefix ++ iic.old_prefix in
+  let initial_values =
+    Just (state.register_data, state.initial_register_state) in
+  match find_reg_read initial_values r full_prefix  with
+  | FRRO_blocked _ -> []
+  | FRRO_not_found -> fail
+  | FRRO_found (rrs:register_read_sources) (v:register_value) ->
+     let c () = 
+       let i' = 
+         <| i with micro_op_state = MOS_plain (c v);
+                   reg_reads = (r,rrs,v)::i.reg_reads;
+         |> in
+       let it' = apply_tree_context iic.context (i',iic.subtree) in
+       let state' = <| state with instruction_tree = it' |> in
+       make_thread_cont_res {} {} state'
+     in
+     [((rrs,v),c)]
+  end
 
 
 let handle_read_reg_outcome
@@ -2280,44 +2345,35 @@ let handle_read_reg_outcome
       (iic: instruction_in_context 'i)
       (r: reg_name)
       (c: register_value -> outcome_S)
-    : list (thread_trans 'i (thread_state 'i)) =
-
-  let i = iic.iic_instance in
-
+    : list (thread_trans 'i (thread_state 'i))
+  =
   if is_pseudo_register isa r then
-    (* pseudo registers have a predetermined values and the
-    transition is T_internal *)
-    let v = pseudo_register_value isa i.program_loc r in
-    let state' = fun () ->
-      let i' = <| i with micro_op_state = MOS_plain (c v);
-                        reg_reads = (r,[RRS_pseudoregister],v)::i.reg_reads;  |> in
-      <| state with instruction_tree = apply_tree_context iic.context (i',iic.subtree) |>
-      $> make_thread_cont_res {} {}
-    in
-    [T_only (make_label state iic (T_pseudoreg_read r v) state')]
-
+    let (v,c) = pseudo_register_read_action isa state iic r c in
+    [T_only (make_label state iic (T_pseudoreg_read r v) c)]
   else
-    (* *don't* allow reading from reg writes by the same instruction,
-       otherwise we get self-blocked. But some 2.06B pseudocode does
-       read from self-writes; we allow that by patching the pseudocode
-       (otherwise we'd need more fine-grained dependency tracking *)
-    match find_reg_read (Just (state.register_data, state.initial_register_state)) r (iic.active_prefix ++ iic.old_prefix)  with
-    | FRRO_blocked _ -> []
-    | FRRO_not_found -> fail
-    | FRRO_found (rrs:register_read_sources) (v:register_value) ->
-        let state' = fun () ->
-          let i' = <| i with (*reg_read_from_ioids =
-                             i.reg_read_from_ioids union
-                             match rrs with RRS_instruction i'' -> {i''.instance_ioid} | RRS_initial_state -> {} end ;*)
-                             micro_op_state = MOS_plain (c v);
-                             reg_reads = (r,rrs,v)::i.reg_reads;
-                  |>
-          in
-          <| state with instruction_tree = apply_tree_context iic.context (i',iic.subtree) |>
-          $> make_thread_cont_res {} {}
-        in
-        [T_only (make_label state iic (T_register_read r rrs v) state')]
-    end
+    regular_register_read_action state iic r c >>= fun ((rrs,v), c) ->
+    [T_only (make_label state iic (T_register_read r rrs v) c)]
+
+
+let write_register_action
+    (isa:    isa 'i)
+    (state:  thread_state 'i)
+    (iic:    instruction_in_context 'i)
+    ((r: reg_name), (v: register_value))
+    (is':    outcome_S)
+  =
+  let c () =
+    let i = iic.iic_instance in
+    let regwrite = (r, (current_reg_write_dependencies i, v)) in
+    let i' =
+      <| i with micro_op_state = MOS_plain is';
+                reg_writes = regwrite :: i.reg_writes |>
+    in
+    let it' = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
+  in
+  c
 
 
 let handle_write_reg_outcome
@@ -2328,30 +2384,19 @@ let handle_write_reg_outcome
     (is':    outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
-  let state' = fun () ->
-    let i = iic.iic_instance in
-    let i' =
-      <| i with micro_op_state = MOS_plain is';
-                reg_writes = (r, (current_reg_write_dependencies i, v)) :: i.reg_writes;
-      |>
-    in
-    <| state with
-        instruction_tree = apply_tree_context iic.context (i', iic.subtree);
-    |>
-    $> make_thread_cont_res {} {}
-  in
-
-  let tot =
+  let c = write_register_action isa state iic (r,v) is' in
+  let label =
     if is_pseudo_register isa r then
       (* the only pseudo_register we expect a write to is the NIA/PC register *)
       let () = ensure (register_base_name r = register_base_name isa.nia_reg)
-        $ "write reg of non-NIA/PC pseudoregister (" ^ show r ^ ")"
+                 ("write reg of non-NIA/PC pseudoregister (" ^ show r ^ ")")
       in
       T_pseudoreg_write r v
     else
       T_register_write r v
   in
-  [T_only (make_label state iic tot state')]
+  [T_only (make_label state iic label c)]
+
 
 let handle_internal_outcome
     (state: thread_state 'i)
@@ -2360,13 +2405,13 @@ let handle_internal_outcome
     (is': outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
-  let state' = fun () ->
-    let i = iic.iic_instance in
-    let i' = <| i with micro_op_state = MOS_plain is' |> in
-    <| state with instruction_tree = apply_tree_context iic.context (i',iic.subtree) |>
-    $> make_thread_cont_res {} {}
+  let c () = 
+    let i' = <| iic.iic_instance with micro_op_state = MOS_plain is' |> in
+    let it' = apply_tree_context iic.context (i',iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
   in
-  [T_only (make_label state iic T_internal_outcome state')]
+  [T_only (make_label state iic T_internal_outcome c)]
 
 
 let handle_footprint_outcome
@@ -2377,17 +2422,16 @@ let handle_footprint_outcome
     (is': outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
+  let () = ensure (isa.isa_model = PPC) "expected PPC" in
   let state' = fun () ->
     let i = iic.iic_instance in
-
-    let () = ensure (isa.isa_model = PPC) "expected PPC" in
-
+    let prefix = iic.active_prefix ++ iic.old_prefix in
     let i' = <| i with micro_op_state = MOS_plain is' |> in
-    let i'' = recalculate_register_footprint isa i' old_outcome
-                                            (iic.active_prefix ++ iic.old_prefix) in
-    let it' = recalculate_ioids_feeding_address (i'' :: (iic.active_prefix ++ iic.old_prefix)) iic.subtree in
-    <| state with instruction_tree = apply_tree_context iic.context (i'',it') |>
-    $> make_thread_cont_res {} {}
+    let i'' = recalculate_register_footprint isa i' old_outcome prefix in
+    let it' = recalculate_ioids_feeding_address (i'' :: prefix) iic.subtree in
+    let it' = apply_tree_context iic.context (i'',it') in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
   in
   [T_only (make_label state iic T_footprint_outcome state')]
 
@@ -3593,11 +3637,16 @@ let handle_ic_ivau
     (value:    register_value)
     (outcome:  outcome_S)
   =
-      match address_of_register_value value with
-      | Nothing -> failwith "TODO: handle_ic_ivau fail invalid addr"
-      | Just addr ->
-            cache_maintenance_trans_ic state iic addr outcome
-      end
+  let addr = ensure_just (address_of_register_value value)
+               "TODO: handle_ic_ivau fail invalid addr" in
+  guard (forall (iprev MEM iic.active_prefix).
+         (is_AArch64_ic_wait_barrier (ik iprev) --> iprev.finished) ) >>
+  let label = <| cmr_cmk = CM_IC; 
+                 cmr_ioid = iic.iic_instance.instance_ioid; 
+                 cmr_addr = addr; |> in
+  let c = cache_maintenance_ic_action state iic addr outcome in
+  [T_sync (T_propagate_cache_maintenance (make_label state iic label c)) ()]
+
 
 let handle_dc_cvau
     (state:    thread_state 'i)
@@ -3605,11 +3654,17 @@ let handle_dc_cvau
     (value:    register_value)
     (outcome:  outcome_S)
   =
-      match address_of_register_value value with
-      | Nothing -> failwith "TODO: handle_dc_cvau fail invalid addr"
-      | Just addr ->
-            cache_maintenance_trans_dc state iic addr outcome
-      end
+  let addr = ensure_just (address_of_register_value value)
+               "TODO: handle_dc_cvau fail invalid addr" in
+  (* wait for po-previous DMB/DSB *)
+  guard (forall (iprev MEM iic.active_prefix).
+         (is_AArch64_dc_wait_barrier (ik iprev) --> iprev.finished) ) >>
+  let lbl = <| cmr_cmk = CM_DC;
+               cmr_ioid = iic.iic_instance.instance_ioid;
+               cmr_addr = addr |> in
+  let c = cache_maintenance_dc_action state iic addr outcome in
+  [T_sync (T_propagate_cache_maintenance (make_label state iic lbl c)) ()]
+
 
 let create_opcode =
     fun mrs ->
