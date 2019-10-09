@@ -495,18 +495,19 @@ type tso_storage_subsystem_state =
 *thread_state* continuations) because the rest of the thread has to be
 able to evolve while a read request is outstanding... *)
 
-type fetched 'i =
+type fetch_result 'i =
   | Fetched_FDO of fetch_and_decode_outcome 'i  (* for programs without machine code (like litmus tests) *)
   | Fetched_Mem of memory_read_source * fetch_and_decode_outcome 'i
 
-let fdo_from_fetched = function
+let fdo_from_fetch_result = function
   | Fetched_FDO fdo -> fdo
   | Fetched_Mem _ fdo -> fdo
 end
 
 
 type micro_op_state 'i =
-  | MOS_fetch               of maybe (fetched 'i)
+  | MOS_not_fetched
+  | MOS_fetched             of fetch_result 'i
   | MOS_wait_IC             of outcome_S
   | MOS_plain               of outcome_S
   | MOS_pending_mem_read    of (memory_value -> outcome_S)
@@ -515,6 +516,8 @@ type micro_op_state 'i =
   | MOS_AMO_unlock          of outcome_S
   | MOS_pending_exception   of exception_type 'i
   | MOS_unpredictable
+
+
 
 (* misaligned writes must be split into multiple subwrites *)
 type subwrites =
@@ -933,7 +936,7 @@ type thread_only_trans 'i =
   | T_footprint_outcome
   | T_actually_satisfy    of memory_value
   | T_init_fetch of address * bool  (* (addr, multiple_speculative_successors?) *)
-  | T_decode of address * fetched 'i
+  | T_decode of address * fetch_result 'i
   (** not internal transitions: *)
   | T_register_read       of reg_name * register_read_sources * register_value
   | T_register_write      of reg_name * register_value
@@ -1003,7 +1006,7 @@ type fetch_request 'i =
 type thread_sync_label 'i 'ts =
   | T_fetch of thread_label
       (fetch_request 'i)
-      (fetched 'i)  (* the value we fetched *)
+      (fetch_result 'i)  (* the value we fetched *)
       'ts
   | T_propagate_cache_maintenance of thread_label
       cache_maintenance_request

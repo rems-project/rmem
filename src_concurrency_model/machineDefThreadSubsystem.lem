@@ -2062,23 +2062,22 @@ let get_fetch_instruction_continuation
     (state:        thread_state 'i)
     (inst_context: instruction_in_context 'i)
     (addr:         address)
-    (f : fetched 'i)
+    (f : fetch_result 'i)
     : thread_cont_res (thread_state 'i)
   =
+  let i = inst_context.iic_instance in
   let i =
     match f with
     | Fetched_FDO FDO_unpredictable_fetch ->
-       let mos = MOS_unpredictable in
-       <| inst_context.iic_instance with micro_op_state = mos |>
+       <| i with micro_op_state = MOS_unpredictable |>
     | _ ->
-       let fdo = fdo_from_fetched f in
+       let fdo = fdo_from_fetch_result f in
        let instr = match fdo with
          | FDO_success _ _ ast -> Fetched ast
          | _ -> Fetch_error
        end in
-       <| inst_context.iic_instance with
-           micro_op_state = MOS_fetch (Just f);
-           instruction = instr
+       <| i with micro_op_state = MOS_fetched f;
+                 instruction = instr
        |>
     end
   in
@@ -2270,7 +2269,9 @@ let mark_barrier_as_committed b i =
 let commit_isb_action_restart_fetches params it =
   let restart_fetch _ i _ =
     match i.micro_op_state with
-    | MOS_fetch _ ->
+    | MOS_not_fetched ->
+       starting_fetch_inst params i.instance_ioid i.program_loc
+    | MOS_fetched _ ->
        starting_fetch_inst params i.instance_ioid i.program_loc
     | s -> i
     end 
@@ -3606,6 +3607,9 @@ let handle_thread_start
 
     [T_thread_start (make_label state iic (addr_v, toc_v) thread_continuation)]
 
+
+
+
 let handle_ic_ivau
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
@@ -3641,26 +3645,24 @@ let handle_dc_cvau
   [T_sync (T_propagate_cache_maintenance (make_label state iic lbl c)) ()]
 
 
-let create_opcode =
-    fun mrs ->
-        match maybe_all (List.map byte_of_byte_lifted (mrs.mrs_value)) with
-        | Nothing -> failwith ("create_opcode lifted byte: " ^ (show mrs.mrs_value))
-        | Just [b0; b1; b2; b3] ->
-            let endianness = E_little_endian in (* TODO: hook this into the arch? *)
-            match endianness with
-            | E_big_endian -> opcode_of_bytes b0 b1 b2 b3
-            | E_little_endian -> opcode_of_bytes b3 b2 b1 b0
-            end
-        | Just _ -> failwith "create_fdo unexpected number of bytes"
-        end
+let create_opcode mrs =
+  match maybe_all (List.map byte_of_byte_lifted (mrs.mrs_value)) with
+  | Nothing -> failwith ("create_opcode lifted byte: " ^ (show mrs.mrs_value))
+  | Just [b0; b1; b2; b3] ->
+      let endianness = E_little_endian in (* TODO: hook this into the arch? *)
+      match endianness with
+      | E_big_endian -> opcode_of_bytes b0 b1 b2 b3
+      | E_little_endian -> opcode_of_bytes b3 b2 b1 b0
+      end
+  | Just _ -> failwith "create_fdo unexpected number of bytes"
+  end
 
 
-let create_fdo isa (a : address)
-    : memory_read_source -> fetch_and_decode_outcome 'i =
-    fun mrs ->
-        let opcode = create_opcode mrs in
-        let fdo = isa.instruction_semantics.decode_to_instruction a opcode in
-        fdo
+let create_fdo isa (a : address) (mrs : memory_read_source) 
+    : fetch_and_decode_outcome 'i =
+  let opcode = create_opcode mrs in
+  let fdo = isa.instruction_semantics.decode_to_instruction a opcode in
+  fdo
 
 
 let enumerate_fetch_transitions_of_instruction
@@ -3670,7 +3672,7 @@ let enumerate_fetch_transitions_of_instruction
     : list (thread_trans 'i (thread_state 'i))
     =
   let i = iic.iic_instance in
-  guard (i.micro_op_state = MOS_fetch Nothing) >>
+  guard (i.micro_op_state = MOS_not_fetched) >>
 
   (* let fetch_kind =
     if not prev_i.finished
@@ -3689,7 +3691,37 @@ let enumerate_fetch_transitions_of_instruction
        fr_decode = create_fdo isa;
     |>
   in
-  [T_sync (T_fetch (make_label state iic (make_fr addr fetch_kind) thread_cont)) ()]
+  let label = (make_fr addr fetch_kind) in
+  [T_sync (T_fetch (make_label state iic label thread_cont)) ()]
+
+
+let successful_decode_action params state iic addr opcode inst =
+  let i = iic.iic_instance in
+  let prefix = (i :: iic.active_prefix ++ iic.old_prefix) in
+  let i' = starting_inst_instance params
+             i.instance_ioid opcode inst addr prefix in
+  let it' = apply_tree_context iic.context (i',iic.subtree) in
+  let state' = <| state with instruction_tree = it' |> in
+  let state' = make_old_instructions params state' in
+  make_thread_cont_res {} {} state'
+  
+
+let decode_error_action params state iic fdo = 
+  let i = iic.iic_instance in
+  let fde =
+    match fdo with
+    | FDO_address_not_concrete -> FDE_non_concrete_fetch_address_error
+    | FDO_illegal_fetch_address -> FDE_illegal_fetch_address_error i.program_loc
+    | FDO_decode_error de -> FDE_decode_error de i.program_loc
+    | _ -> failwith "impossible"
+    end
+  in
+  let mos = MOS_pending_exception (ET_fetch_and_decode fde) in
+  let i' = <| i with micro_op_state = mos |> in
+  let it' = apply_tree_context iic.context (i',iic.subtree) in
+  let state' = <| state with instruction_tree = it' |> in
+  let state' = make_old_instructions params state' in
+  make_thread_cont_res {} {} state'
 
 let enumerate_decode_transitions_of_instruction params
     (state:  thread_state 'i)
@@ -3698,60 +3730,25 @@ let enumerate_decode_transitions_of_instruction params
     =
   let i = iic.iic_instance in
   (* Can only decode after fetched *)
-  guard (match i.micro_op_state with
-         | MOS_fetch (Just _) -> true
-         | _ -> false
-         end) >>
-
+  guard (has_fetched i && not (has_decoded i)) >>
   (* only decode if program-order previous decoded ISBs are finished *)
-  guard (
-        forall (iprev MEM iic.active_prefix).
-          (is_AArch64_isb_barrier (ik iprev) --> iprev.finished)
-  ) >>
-
+  guard (forall (iprev MEM iic.active_prefix).
+         is_AArch64_isb_barrier (ik iprev) --> iprev.finished) >>
   (* Can only decode after parent has decoded or initial fetch *)
-  let prefix = iic.active_prefix ++ iic.old_prefix in
-  guard (match prefix with
-         | hd::_ ->
-            match hd.micro_op_state with
-            | MOS_fetch _ -> false
-            | _ -> true
-            end
+  guard (match iic.active_prefix ++ iic.old_prefix with
+         | hd::_ -> has_decoded hd
          | [] -> true
          end) >>
 
-  let f =
-    match i.micro_op_state with
-    | MOS_fetch (Just f) -> f
+  let f = match i.micro_op_state with
+    | MOS_fetched f -> f
     | _ -> failwith "unreachable"
-    end
-  in
-  let cont () =
-    let fdo = fdo_from_fetched f in
-    let prefix = (i :: iic.active_prefix ++ iic.old_prefix) in
-    match fdo with
+  end in
+  let cont () = match fdo_from_fetched f with
     | FDO_success addr opcode inst ->
-        let i' = starting_inst_instance params i.instance_ioid opcode inst addr prefix in
-            <|  state with
-                instruction_tree = apply_tree_context iic.context (i',iic.subtree);
-            |>
-    | err ->
-      let fde =
-        match err with
-        | FDO_address_not_concrete -> FDE_non_concrete_fetch_address_error
-        | FDO_illegal_fetch_address -> FDE_illegal_fetch_address_error i.program_loc
-        | FDO_decode_error de -> FDE_decode_error de i.program_loc
-        | _ -> failwith "impossible"
-        end
-      in
-        let i' = <| i with micro_op_state = MOS_pending_exception (ET_fetch_and_decode fde) |> in
-            <|  state with
-                instruction_tree = apply_tree_context iic.context (i',iic.subtree);
-            |>
-    end
-    $> make_old_instructions params
-    $> make_thread_cont_res {} {}
-  in
+       successful_decode_action params state iic addr opcode inst
+    | err -> decode_error_action params state iic err
+  end in
   [T_only (make_label state iic (T_decode i.program_loc f) cont)]
 
 
@@ -3767,8 +3764,8 @@ let enumerate_transitions_of_instruction
 
   match iic.iic_instance.micro_op_state with
   | MOS_unpredictable -> []
-  | MOS_fetch Nothing  -> enumerate_fetch_transitions_of_instruction isa s iic
-  | MOS_fetch (Just _) -> enumerate_decode_transitions_of_instruction isa s iic
+  | MOS_not_fetched -> enumerate_fetch_transitions_of_instruction isa s iic
+  | MOS_fetched _ -> enumerate_decode_transitions_of_instruction isa s iic
   | MOS_wait_IC _ -> []
   | MOS_plain is ->
     match fst is with
@@ -3830,6 +3827,7 @@ let enumerate_transitions_of_instruction
 (* declare ocaml target_rep function debug_print s = `Printf.eprintf` "%s%!" s *)
 
 (* TODO: proper fixed-point or enumerate all addrs *)
+
 let potential_next_addresses_of_instruction_relaxed
     (params: thread_params)
     (isa:    isa 'i)
@@ -3837,16 +3835,16 @@ let potential_next_addresses_of_instruction_relaxed
     (iic:    instruction_in_context 'i)
     : set address
   =
-    match iic.iic_instance.micro_op_state with
-    | MOS_fetch _ ->
-        let branch_targets = Map.findWithDefault state.thread Map.empty params.branch_targets in
-        let addrs = Map.findWithDefault iic.iic_instance.program_loc Set.empty branch_targets in
-        let succ = successor_fetch_address iic.iic_instance in
-        if Set.null addrs then {succ}
-        else addrs
-    | _ ->
-        potential_next_addresses_of_instruction params isa state iic
-    end
+  let next_addresses_of_not_decoded_instruction () = 
+    let branch_targets = Map.findWithDefault state.thread Map.empty params.branch_targets in
+    let addrs = Map.findWithDefault iic.iic_instance.program_loc Set.empty branch_targets in
+    let succ = successor_fetch_address iic.iic_instance in
+    if Set.null addrs then {succ}
+    else addrs
+  in
+  if has_decoded iic.iic_instance
+  then potential_next_addresses_of_instruction params isa state iic
+  else next_addresses_of_not_decoded_instruction ()
 
 let enumerate_init_fetch_transitions_of_instruction
     (params: thread_params)
@@ -3872,22 +3870,13 @@ let enumerate_init_fetch_transitions_of_instruction
   guard (
     match params.thread_fetch_limit with
     | Just lim ->
-      let is_not_decoded inst =
-            (match inst.micro_op_state with
-            | MOS_fetch _ -> true
-            | _ -> false
-            end) in
-      let decode_depth = List.length (List.filter is_not_decoded iic.active_prefix) in
-        lim > decode_depth
+      let decode_depth = List.length (List.filter (comb not has_decoded) iic.active_prefix) in
+      lim > decode_depth
     | Nothing -> true
     end) >>
 
   (* init only after previous have been decoded *)
-  guard (params.thread_fetch_order = Fetch_Sequential -->
-      match i.micro_op_state with
-         | MOS_fetch _ -> false
-         | _ -> true
-         end) >>
+  guard (params.thread_fetch_order = Fetch_Sequential --> has_decoded i) >>
 
   let (T iits) = iic.subtree in
   let already_fetched_addrs = { i.program_loc | forall ((i,_) MEM iits) | true } in
@@ -4043,7 +4032,9 @@ let flat_receive_ic_clear_transition params isa state (cmr : cache_maintenance_r
           if i.program_loc <> cmr.cmr_addr then i
           else
             match i.micro_op_state with
-            | MOS_fetch _ ->
+            | MOS_not_fetched ->
+               starting_fetch_inst params i.instance_ioid i.program_loc
+            | MOS_fetched _ ->
                starting_fetch_inst params i.instance_ioid i.program_loc
             | s -> i
             end

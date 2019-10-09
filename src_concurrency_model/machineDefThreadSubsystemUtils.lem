@@ -724,6 +724,16 @@ let write_instantiated inst =
   List.null inst.subwrites.sw_potential_write_addresses
 let write_committed inst = inst.subwrites.sw_committed
 
+let has_fetched inst =
+  inst.micro_op_state <> MOS_not_fetched
+
+let has_decoded inst = 
+  match inst.micro_op_state with
+  | MOS_not_fetched -> false
+  | MOS_fetched _ -> false
+  | _ -> true
+  end
+
 
 (* the following means the domains of the lists are identical *)
 let all_read_requests_issued inst = 
@@ -806,7 +816,7 @@ let starting_fetch_inst
     instruction =       Unfetched;
     instruction_kind =  IK_simple;
 
-    initial_micro_op_state =          MOS_fetch Nothing;
+    initial_micro_op_state =          MOS_not_fetched;
     initial_regs_in =                 Set.empty;
     initial_regs_out =                Set.empty;
     initial_regs_in_feeding_address = Set.empty;
@@ -826,7 +836,7 @@ let starting_fetch_inst
     successful_atomic_store = Nothing;
     committed_barriers = [];
     finished = false;
-    micro_op_state = MOS_fetch Nothing;
+    micro_op_state = MOS_not_fetched;
     rmw_finished_load_snapshot = Nothing;
 |>
 

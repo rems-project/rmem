@@ -2517,7 +2517,8 @@ let pp_micro_op_state_top pp_instruction_ast indent ioid m mos =
   if not(m.pp_style = Globals.Ppstyle_screenshot) then
     match mos with
     | MOS_unpredictable         -> "MOS_unpredictable"
-    | MOS_fetch is              -> "MOS_fetch"
+    | MOS_not_fetched           -> "MOS_not_fetched"
+    | MOS_fetched is            -> "MOS_fetch"
     | MOS_plain is              -> "MOS_plain"
     | MOS_wait_IC is            -> "MOS_wait_IC"
     | MOS_pending_mem_read ic   -> "MOS_pending_mem_read"
@@ -2530,7 +2531,8 @@ let pp_micro_op_state_top pp_instruction_ast indent ioid m mos =
   else
     match mos with
     | MOS_unpredictable         -> ""
-    | MOS_fetch is              -> ""
+    | MOS_not_fetched           -> ""
+    | MOS_fetched is            -> ""
     | MOS_plain is              -> ""
     | MOS_wait_IC is            -> ""
     | MOS_pending_mem_read ic   -> "MOS_pending_mem_read"
@@ -2580,8 +2582,8 @@ let pp_micro_op_state_body pp_instruction_ast indent addr ioid subreads potentia
 (*  let indent = if not(m.pp_screenshot) then indent else indent^"  " in*)
   match mos with
   | MOS_unpredictable  -> "unpredictable"
-  | MOS_fetch None     -> "MOS-fetch Unfetched"
-  | MOS_fetch (Some f) ->
+  | MOS_not_fetched    -> "MOS-fetch Unfetched"
+  | MOS_fetched f ->
       let fetched_type =
           (match f with
            | Fetched_FDO _ -> "(from program)"
