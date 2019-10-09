@@ -32,6 +32,11 @@ type isa_model =
   | RISCV
   | X86
 
+let is_aarch64 = function
+  | AARCH64 _ -> true
+  | _ -> false
+end
+
 
 type thread_start_info =
   <|  (* these registers hold the arguments of the thread_start function *)

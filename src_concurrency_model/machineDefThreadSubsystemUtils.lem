@@ -716,29 +716,44 @@ let empty_subwrites subwrites =
 
 
 let read_initiated inst = inst.subreads.sr_addr <> Nothing
-let read_satisfied inst = inst.subreads.sr_assembled_value <> Nothing
-let read_issued inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
+let read_completed inst = inst.subreads.sr_assembled_value <> Nothing
+let read_requested inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
 let write_initiated inst = inst.subwrites.sw_addr <> Nothing
+let write_instantiated inst = 
+  write_initiated inst && 
+  List.null inst.subwrites.sw_potential_write_addresses
+let write_committed inst = inst.subwrites.sw_committed
+
+
+(* the following means the domains of the lists are identical *)
+let all_read_requests_issued inst = 
+  read_initiated inst &&
+    (List.length inst.subreads.sr_requested = 
+     List.length inst.subreads.sr_unsat_slices)
+
+let all_reads_satisfied inst = 
+  read_initiated inst &&
+  forall ((_, slices) MEM inst.subreads.sr_unsat_slices).
+  slices = []
 
 let unsat_slices_of_read_request inst rr = 
   ensure_just (List.lookup rr inst.subreads.sr_unsat_slices)
   $ "missing a read-request in 'sr_unsat_slices' of ioid " ^
       show inst.instance_ioid
 
+let all_read_writes_have_their_values inst = 
+  forall ((_, wss) MEM inst.subreads.sr_writes_read_from) ((w,_) MEM wss).
+  w.w_value <> Nothing
+
 let sat_slices_of_read_request inst rr = 
   ensure_just (List.lookup rr inst.subreads.sr_writes_read_from)
   $ "missing a read-request in 'sr_writes_read_from' of ioid " ^
       show inst.instance_ioid
 
-
 let propagated_writes_of_inst inst = 
   inst.subwrites.sw_propagated_writes
 
 let unpropagated_writes_of_inst inst = 
-  inst.subwrites.sw_potential_write_addresses
-  ++ inst.subwrites.sw_potential_writes
-
-let initialised_uninstantiated_writes_of_inst inst = 
   inst.subwrites.sw_potential_write_addresses
   ++ inst.subwrites.sw_potential_writes
 
@@ -1155,6 +1170,10 @@ let rec find_propagated_writes (T iits: instruction_tree 'i) (acc: list write) :
   | _ -> acc
   end
 
+let write_was_subsumed params iic write = 
+  params.thread_allow_write_subsumption &&
+    let propagated_writes = find_propagated_writes iic.subtree [] in
+    exists (w MEM propagated_writes). non_empty_intersection write.w_addr w.w_addr
 
 let propagated_write_slices_of_instruction i = 
   complete_writes i.subwrites.sw_propagated_writes

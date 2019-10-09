@@ -61,7 +61,7 @@ type exception_type 'i =
   | ET_fetch_and_decode of fetch_and_decode_exception 'i
   | ET_loop_limit_reached (* this exception will be recorded in the
                           instruction instance of the branch target *)
-  | ET_ISA_termination of string
+  | ET_ISA_error of string
 
 let exception_type_compare e1 e2 =
   match (e1, e2) with
@@ -84,9 +84,9 @@ let exception_type_compare e1 e2 =
   | (ET_loop_limit_reached, _) -> LT
   | (_, ET_loop_limit_reached) -> GT
 
-  | (ET_ISA_termination s1, ET_ISA_termination s2) -> compare s1 s2
-  (* | (ET_ISA_termination _, _) -> LT
-  | (_, ET_ISA_termination _) -> GT *)
+  | (ET_ISA_error s1, ET_ISA_error s2) -> compare s1 s2
+  (* | (ET_ISA_error _, _) -> LT
+  | (_, ET_ISA_error _) -> GT *)
   end
 
 let exception_type_less e1 e2       = exception_type_compare e1 e2 =  LT
@@ -117,7 +117,7 @@ let showFromExceptionType = function
   | ET_write_to_unmapped_memory ws    -> "ET_write_to_unmapped_memory " ^ show ws
   | ET_fetch_and_decode fde           -> "ET_fetch_and_decode [???]"
   | ET_loop_limit_reached             -> "ET_loop_limit_reached"
-  | ET_ISA_termination msg            -> "ET_ISA_termination " ^ msg
+  | ET_ISA_error msg                  -> "ET_ISA_error " ^ msg
   end
 
 instance forall 'i. (Show (exception_type 'i))

@@ -1483,8 +1483,8 @@ let pp_exception pp_instruction_ast m ioid (e: 'i exception_type) =
       sprintf "decode error: %s" (pp_decode_error pp_instruction_ast m decode_error address)
   | ET_loop_limit_reached ->
       "reached loop limit"
-  | ET_ISA_termination msg ->
-      "ISA termination: " ^ msg
+  | ET_ISA_error msg ->
+      "ISA error: " ^ msg
   end
 
 let pp_register_snapshot m ioid rs =
