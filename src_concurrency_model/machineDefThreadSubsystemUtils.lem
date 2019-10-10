@@ -44,7 +44,136 @@ val catch_thread_errors : forall 'a. thread_id -> ioid -> (unit -> 'a) -> 'a
 declare ocaml target_rep function catch_thread_errors = `Debug.catch_thread_errors`
 
 
+(** subreads and subwrites *)
+
+
+
+let write_initiated inst = inst.subwrites.sw_addr <> Nothing
+let write_instantiated inst = 
+  write_initiated inst && 
+  List.null inst.subwrites.sw_potential_write_addresses
+let write_committed inst = inst.subwrites.sw_committed
+
+let all_read_writes_have_their_values inst = 
+  forall ((_, wss) MEM inst.subreads.sr_writes_read_from) ((w,_) MEM wss).
+  w.w_value <> Nothing
+
+let propagated_writes_of_inst inst = 
+  inst.subwrites.sw_propagated_writes
+
+let unpropagated_writes_of_inst inst = 
+  inst.subwrites.sw_potential_write_addresses
+  ++ inst.subwrites.sw_potential_writes
+
+let all_writes_of_inst inst = 
+  propagated_writes_of_inst inst ++ 
+    unpropagated_writes_of_inst inst
+
+
+let mark_write_as_committed i = 
+  let subwrites' = <| i.subwrites with sw_committed = true |> in
+  <| i with subwrites = subwrites' |>
+
+let set_successful_atomic_store i = 
+  <| i with successful_atomic_store = Just true |>
+
+let set_unsuccessful_atomic_store i = 
+  <| i with successful_atomic_store = Just false |>
+
+let mark_write_as_propagated i write = 
+  let subwrites' = 
+    <| i.subwrites with
+         sw_potential_writes = List.delete write i.subwrites.sw_potential_writes;
+         sw_propagated_writes = write :: i.subwrites.sw_propagated_writes;
+    |>
+  in
+  <| i with subwrites = subwrites' |>
+
+
+
+
+
+let read_initiated inst = inst.subreads.sr_addr <> Nothing
+let read_completed inst = inst.subreads.sr_assembled_value <> Nothing
+let read_requested inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
+
+(* the following means the domains of the lists are identical *)
+let all_read_requests_issued inst = 
+  read_initiated inst &&
+    (List.length inst.subreads.sr_requested = 
+     List.length inst.subreads.sr_unsat_slices)
+
+let all_reads_satisfied inst = 
+  read_initiated inst &&
+  forall ((_, slices) MEM inst.subreads.sr_unsat_slices).
+  slices = []
+
+let unsat_slices_of_read_request inst rr = 
+  ensure_just (List.lookup rr inst.subreads.sr_unsat_slices)
+  $ "missing a read-request in 'sr_unsat_slices' of ioid " ^
+      show inst.instance_ioid
+
+let sat_slices_of_read_request inst rr = 
+  ensure_just (List.lookup rr inst.subreads.sr_writes_read_from)
+  $ "missing a read-request in 'sr_writes_read_from' of ioid " ^
+      show inst.instance_ioid
+
+
+let initial_subreads = 
+  <|  sr_addr =             Nothing;
+      sr_unsat_slices =     [];
+      sr_writes_read_from = [];
+      sr_requested =        [];
+      sr_assembled_value =  Nothing;
+  |>
+
+
+
+
+let mark_read_as_requested i rr unsat_slices = 
+  let sr_requested' = (rr, unsat_slices) :: i.subreads.sr_requested in
+  let subreads = <| i.subreads with sr_requested = sr_requested' |> in
+  <| i with subreads = subreads |>
+
+let mark_read_as_satisfied i rr unsat_slices writes_read_from = 
+  let sr_unsat_slices' = updateAssocList rr unsat_slices i.subreads.sr_unsat_slices in
+  let sr_writes_read_from' =
+    updateAssocList rr writes_read_from i.subreads.sr_writes_read_from in
+  let subreads' = <| i.subreads with sr_unsat_slices = sr_unsat_slices';
+                                     sr_writes_read_from = sr_writes_read_from' |>
+  in
+  <| i with subreads = subreads' |>
+
+let mark_read_as_completed i value = 
+  let subreads' = <| i.subreads with sr_assembled_value = Just value; |> in
+  let i' = <| i with subreads = subreads' |> in
+  i'
+
+
+(* return all the read-requests of subreads' *)
+let read_requests_of_subreads subreads : list read_request =
+  fst (List.unzip subreads.sr_unsat_slices)
+
+
 (** Sail_impl_base.reg_name Utils *********************************)
+
+val reg_info : forall 'i. isa 'i -> string -> maybe string -> (nat * nat * direction * (nat * nat))
+let reg_info isa regname regfield =
+  let reg = match regfield with
+    | Just regfield -> reg_field_from_data isa.register_data_info regname regfield
+    | Nothing -> reg_from_data isa.register_data_info regname
+  end in
+  let reg = Maybe_extra.fromJust reg in
+  let sl =
+    let (i, j) = slice_of_reg_name reg in
+    match direction_of_reg_name reg with
+    | D_increasing -> (i, j)
+    | D_decreasing ->
+        let start = start_of_reg_name reg in
+        (start - i, start - j)
+    end
+  in
+  (start_of_reg_name reg, width_of_reg_name reg, direction_of_reg_name reg, sl)
 
 (* return all the slices of r's base-register that i is known to
 write to based on the static footprint analysis (regs_out) *)
@@ -308,6 +437,8 @@ let undetermined_reg_writes_read_from
           | RRS_initial_state _ -> {}
           | RRS_pseudoregister  -> {}
           end))
+
+
 
 (** Instruction Tree Manipulation ***********************************)
 
@@ -612,24 +743,6 @@ let mips_next_next_pc_of_finished_instruction isa (i: instruction_instance 'i) :
 
 (** Initial instruction state, and recalculations, and restarts *)
 
-val reg_info : forall 'i. isa 'i -> string -> maybe string -> (nat * nat * direction * (nat * nat))
-let reg_info isa regname regfield =
-  let reg = match regfield with
-    | Just regfield -> reg_field_from_data isa.register_data_info regname regfield
-    | Nothing -> reg_from_data isa.register_data_info regname
-  end in
-  let reg = Maybe_extra.fromJust reg in
-  let sl =
-    let (i, j) = slice_of_reg_name reg in
-    match direction_of_reg_name reg with
-    | D_increasing -> (i, j)
-    | D_decreasing ->
-        let start = start_of_reg_name reg in
-        (start - i, start - j)
-    end
-  in
-  (start_of_reg_name reg, width_of_reg_name reg, direction_of_reg_name reg, sl)
-
 let analyse_instruction
     isa
     (reanalyse: bool)
@@ -690,117 +803,6 @@ let analyse_instruction
     | _ -> nias
     end in
   (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
-
-
-let initial_subreads = 
-  <|  sr_addr =             Nothing;
-      sr_unsat_slices =     [];
-      sr_writes_read_from = [];
-      sr_requested =        [];
-      sr_assembled_value =  Nothing;
-  |>
-
-let initial_subwrites = 
-  <|  sw_addr =                      Nothing;
-      sw_potential_write_addresses = [];
-      sw_potential_writes =          [];
-      sw_propagated_writes =         [];
-      sw_committed =                 false;
-  |>
-
-let empty_subwrites subwrites = 
-  <| subwrites with sw_potential_write_addresses = [];
-                    sw_potential_writes =          [];
-                    sw_propagated_writes =         []; |>
-
-
-
-let read_initiated inst = inst.subreads.sr_addr <> Nothing
-let read_completed inst = inst.subreads.sr_assembled_value <> Nothing
-let read_requested inst rr = List.lookup rr inst.subreads.sr_requested <> Nothing
-let write_initiated inst = inst.subwrites.sw_addr <> Nothing
-let write_instantiated inst = 
-  write_initiated inst && 
-  List.null inst.subwrites.sw_potential_write_addresses
-let write_committed inst = inst.subwrites.sw_committed
-
-let has_fetched inst =
-  inst.micro_op_state <> MOS_not_fetched
-
-let has_decoded inst = 
-  match inst.micro_op_state with
-  | MOS_not_fetched -> false
-  | MOS_fetched _ -> false
-  | _ -> true
-  end
-
-
-(* the following means the domains of the lists are identical *)
-let all_read_requests_issued inst = 
-  read_initiated inst &&
-    (List.length inst.subreads.sr_requested = 
-     List.length inst.subreads.sr_unsat_slices)
-
-let all_reads_satisfied inst = 
-  read_initiated inst &&
-  forall ((_, slices) MEM inst.subreads.sr_unsat_slices).
-  slices = []
-
-let unsat_slices_of_read_request inst rr = 
-  ensure_just (List.lookup rr inst.subreads.sr_unsat_slices)
-  $ "missing a read-request in 'sr_unsat_slices' of ioid " ^
-      show inst.instance_ioid
-
-let all_read_writes_have_their_values inst = 
-  forall ((_, wss) MEM inst.subreads.sr_writes_read_from) ((w,_) MEM wss).
-  w.w_value <> Nothing
-
-let sat_slices_of_read_request inst rr = 
-  ensure_just (List.lookup rr inst.subreads.sr_writes_read_from)
-  $ "missing a read-request in 'sr_writes_read_from' of ioid " ^
-      show inst.instance_ioid
-
-let propagated_writes_of_inst inst = 
-  inst.subwrites.sw_propagated_writes
-
-let unpropagated_writes_of_inst inst = 
-  inst.subwrites.sw_potential_write_addresses
-  ++ inst.subwrites.sw_potential_writes
-
-let all_writes_of_inst inst = 
-  propagated_writes_of_inst inst ++ 
-    unpropagated_writes_of_inst inst
-
-
-
-(* reduce (write, slices) to the part that is not "overwritten/hidden
-   behind" wss *)
-let parts_of_write_not_overwritten_by_write_slices
-      (wss : write_slices)
-      ((write, slices) : write * slices) 
-  : maybe (write * slices) = 
-  let (_, match_write_slices) =
-    match_writes write.w_addr slices
-      (wss ++ [(write, slices)]) [] in
-  match List.lookup write match_write_slices with
-  | Nothing -> Nothing
-  | Just slices -> Just (write, slices)
-  end
-   
-let parts_of_read_rf_not_overwritten_by_write
-      writes_read_from read_request write_instr = 
-  let propagated_writes =
-    complete_writes (propagated_writes_of_inst write_instr) in
-  let (_, writes_read_from) =
-    match_writes read_request.r_addr [complete_slice read_request.r_addr]
-      (propagated_writes ++ writes_read_from) [] in
-  [(w, s) | forall ((w, s) MEM writes_read_from)
-   | not (List.elem w write_instr.subwrites.sw_propagated_writes)]
-
-let parts_of_read_rf_not_forwarded_from_write
-  writes_read_from _read_request write_instr = 
-  [(w, s) | forall ((w, s) MEM writes_read_from)
-          | not (List.elem w write_instr.subwrites.sw_potential_writes)]
 
 
 let starting_fetch_inst
@@ -1166,11 +1168,6 @@ let thread_is_final_state thread_state = thread_state.instruction_tree = T []
 
 (** Other *******************************************)
 
-let fdo_from_fetched = function
-    | Fetched_FDO fdo -> fdo
-    | Fetched_Mem mrs fdo -> fdo
-    end
-
 let rec find_propagated_writes (T iits: instruction_tree 'i) (acc: list write) : list write =
   match iits with
   (* NOTE: there will not be propagated writes after a branch, hence we
@@ -1187,6 +1184,36 @@ let write_was_subsumed params iic write =
 
 let propagated_write_slices_of_instruction i = 
   complete_writes i.subwrites.sw_propagated_writes
+
+
+(* reduce (write, slices) to the part that is not "overwritten/hidden
+   behind" wss *)
+let parts_of_write_not_overwritten_by_write_slices
+      (wss : write_slices)
+      ((write, slices) : write * slices) 
+  : maybe (write * slices) = 
+  let (_, match_write_slices) =
+    match_writes write.w_addr slices
+      (wss ++ [(write, slices)]) [] in
+  match List.lookup write match_write_slices with
+  | Nothing -> Nothing
+  | Just slices -> Just (write, slices)
+  end
+   
+let parts_of_read_rf_not_overwritten_by_write
+      writes_read_from read_request write_instr = 
+  let propagated_writes =
+    complete_writes (propagated_writes_of_inst write_instr) in
+  let (_, writes_read_from) =
+    match_writes read_request.r_addr [complete_slice read_request.r_addr]
+      (propagated_writes ++ writes_read_from) [] in
+  [(w, s) | forall ((w, s) MEM writes_read_from)
+   | not (List.elem w write_instr.subwrites.sw_propagated_writes)]
+
+let parts_of_read_rf_not_forwarded_from_write
+  writes_read_from _read_request write_instr = 
+  [(w, s) | forall ((w, s) MEM writes_read_from)
+          | not (List.elem w write_instr.subwrites.sw_potential_writes)]
 
 
 
@@ -1323,7 +1350,65 @@ let make_label state iic
 
 
 
+(** Make events *)
 
+let make_read_request_events_ii isa tid iic_instance footprint read_kind = 
+  let (read_requests, id_state') = 
+    isa.make_read_request_events
+      tid 
+      (ensure_fetched iic_instance.instruction)
+      iic_instance.instance_id_state
+      iic_instance.instance_ioid
+      footprint
+      read_kind
+  in
+  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
+  (read_requests, iic_instance')
+
+(* used to enforce atomicity in SC model *)
+let make_single_atomic_read_request_event_ii _isa tid iic_instance (addr,size) rk =
+  let (read_requests, id_state') = 
+    Events.make_read_request_events'
+      iic_instance.instance_id_state
+      tid iic_instance.instance_ioid addr size size rk
+  in
+  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
+  (read_requests, iic_instance')
+
+
+
+let make_empty_write_events_ii isa tid iic_instance footprint write_kind = 
+  let (write_requests, id_state') = 
+    isa.make_empty_write_events
+      tid
+      (ensure_fetched iic_instance.instruction)
+      iic_instance.instance_id_state
+      iic_instance.instance_ioid
+      footprint
+      write_kind
+  in
+  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
+  (write_requests, iic_instance')
+
+let make_single_atomic_empty_write_event_ii _isa thread i (address, size) write_kind = 
+  let (write_requests, id_state') = 
+    Events.make_empty_write_events'
+      i.instance_id_state thread i.instance_ioid address size size write_kind
+  in
+  let i' = <| i with instance_id_state = id_state' |> in
+  (write_requests, i')
+
+
+let make_barrier_event_ii i tid bk = 
+  let (b, id_state') = 
+    Events.make_barrier_event i.instance_id_state tid i.instance_ioid bk in
+  let i' = <| i with instance_id_state = id_state' |> in
+  (b, i')
+
+
+
+
+(** Make the UI state *)
 
 let make_ui_machine_thread_state (_s : 'storage_subsystem_state) 
       (t : maybe (thread_state 'i)) (t' : thread_state 'i)
@@ -1396,58 +1481,3 @@ let make_ui_machine_thread_state (_s : 'storage_subsystem_state)
            )
            ncands;
      |>
-
-
-
-let make_read_request_events_ii isa tid iic_instance footprint read_kind = 
-  let (read_requests, id_state') = 
-    isa.make_read_request_events
-      tid 
-      (ensure_fetched iic_instance.instruction)
-      iic_instance.instance_id_state
-      iic_instance.instance_ioid
-      footprint
-      read_kind
-  in
-  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
-  (read_requests, iic_instance')
-
-(* used to enforce atomicity in SC model *)
-let make_single_atomic_read_request_event_ii _isa tid iic_instance (addr,size) rk =
-  let (read_requests, id_state') = 
-    Events.make_read_request_events'
-      iic_instance.instance_id_state
-      tid iic_instance.instance_ioid addr size size rk
-  in
-  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
-  (read_requests, iic_instance')
-
-
-
-let make_empty_write_events_ii isa tid iic_instance footprint write_kind = 
-  let (write_requests, id_state') = 
-    isa.make_empty_write_events
-      tid
-      (ensure_fetched iic_instance.instruction)
-      iic_instance.instance_id_state
-      iic_instance.instance_ioid
-      footprint
-      write_kind
-  in
-  let iic_instance' = <| iic_instance with instance_id_state = id_state' |> in
-  (write_requests, iic_instance')
-
-let make_single_atomic_empty_write_event_ii _isa thread i (address, size) write_kind = 
-  let (write_requests, id_state') = 
-    Events.make_empty_write_events'
-      i.instance_id_state thread i.instance_ioid address size size write_kind
-  in
-  let i' = <| i with instance_id_state = id_state' |> in
-  (write_requests, i')
-
-
-let make_barrier_event_ii i tid bk = 
-  let (b, id_state') = 
-    Events.make_barrier_event i.instance_id_state tid i.instance_ioid bk in
-  let i' = <| i with instance_id_state = id_state' |> in
-  (b, i')

@@ -882,25 +882,6 @@ let handle_restart_dc fp it =
 let flat_can_finish_dc iic =
   forall (iprev MEM iic.active_prefix). iprev.finished
 
-let mark_write_as_committed i = 
-  let subwrites' = <| i.subwrites with sw_committed = true |> in
-  <| i with subwrites = subwrites' |>
-
-let set_successful_atomic_store i = 
-  <| i with successful_atomic_store = Just true |>
-
-let set_unsuccessful_atomic_store i = 
-  <| i with successful_atomic_store = Just false |>
-
-let mark_write_as_propagated i write = 
-  let subwrites' = 
-    <| i.subwrites with
-         sw_potential_writes = List.delete write i.subwrites.sw_potential_writes;
-         sw_propagated_writes = write :: i.subwrites.sw_propagated_writes;
-    |>
-  in
-  <| i with subwrites = subwrites' |>
-
 let propagate_write_action
     (params:        thread_params)
     (state:         thread_state 'i)
@@ -1519,11 +1500,7 @@ let pop_finish_cand params state (iic: instruction_in_context 'i) : bool =
     pop_finish_simple_cand state iic
 
 
-(** POP commit/propagate/finish actions **********************************************)
-
 (** Transition a load to MOS_pending_mem_read ***********************)
-
-(** candidates *)
 
 let pldi11_memory_read_storage_cand (state: thread_state 'i) (iic: instruction_in_context 'i) : bool =
   let i = iic.iic_instance in
@@ -1721,26 +1698,6 @@ let write_unmapped_memory_action state iic writes =
   let it = apply_tree_context iic.context (i', iic.subtree) in
   let s = <| state with instruction_tree = it |> in
   make_thread_cont_res {} {} s
-
-
-let mark_read_as_requested i rr unsat_slices = 
-  let sr_requested' = (rr, unsat_slices) :: i.subreads.sr_requested in
-  let subreads = <| i.subreads with sr_requested = sr_requested' |> in
-  <| i with subreads = subreads |>
-
-let mark_read_as_satisfied i rr unsat_slices writes_read_from = 
-  let sr_unsat_slices' = updateAssocList rr unsat_slices i.subreads.sr_unsat_slices in
-  let sr_writes_read_from' =
-    updateAssocList rr writes_read_from i.subreads.sr_writes_read_from in
-  let subreads' = <| i.subreads with sr_unsat_slices = sr_unsat_slices';
-                                     sr_writes_read_from = sr_writes_read_from' |>
-  in
-  <| i with subreads = subreads' |>
-
-let mark_read_as_completed i value = 
-  let subreads' = <| i.subreads with sr_assembled_value = Just value; |> in
-  let i' = <| i with subreads = subreads' |> in
-  i'
 
 
 
@@ -3510,14 +3467,7 @@ let handle_thread_start
     let tsi_extra = ensure_just start_info.tsi_extra "fail" in
     handle_read_reg_outcome isa state iic tsi_extra c
   else
-    guard
-      match params.thread_model with
-      | PLDI11_thread_model    -> pldi11_commit_cand state iic
-      | POP_thread_model _     -> pop_finish_cand params state iic
-      | TSO_thread_model       -> true
-      | Promising_thread_model -> fail
-      | Relaxed_thread_model   -> true
-      end >>
+    guard (finish_cand params state iic) >>
 
     guard (forall (iprev MEM iic.active_prefix). 
            if is_pop_strong_memory_barrier (ik iprev)
@@ -3552,9 +3502,10 @@ let handle_thread_start
             finished = true;
         |>
       in
-      <| state with instruction_tree = apply_tree_context iic.context (i',iic.subtree) |>
-      $> make_old_instructions isa
-      $> make_thread_cont_res {} {}
+      let it' = apply_tree_context iic.context (i',iic.subtree) in
+      let state' = <| state with instruction_tree = it' |> in
+      let state' = make_old_instructions isa state' in
+      make_thread_cont_res {} {} state'
     in
 
     [T_thread_start (make_label state iic (addr_v, toc_v) thread_continuation)]
@@ -3692,7 +3643,7 @@ let enumerate_decode_transitions_of_instruction params
          | [] -> true
          end) >>
   let f = ensure_mos_fetched i.micro_op_state in
-  let cont () = match fdo_from_fetched f with
+  let cont () = match fdo_from_fetch_result f with
     | FDO_success addr opcode inst ->
        successful_decode_action params state iic addr opcode inst
     | err -> decode_error_action params state iic err

@@ -517,13 +517,9 @@ type micro_op_state 'i =
   | MOS_pending_exception   of exception_type 'i
   | MOS_unpredictable
 
-
-let ensure_mos_fetched = function
-  | MOS_fetched f -> f
-  | _ -> fail
-end
-
 (* misaligned writes must be split into multiple subwrites *)
+
+(* MachineDefThreadSubsystemUtils has utility functions for subreads *)
 type subwrites =
   <|  (* the footprint of the whole write, when known *)
       sw_addr : maybe footprint;
@@ -542,10 +538,27 @@ type subwrites =
       sw_committed: bool;
   |>
 
+let initial_subwrites = 
+  <|  sw_addr =                      Nothing;
+      sw_potential_write_addresses = [];
+      sw_potential_writes =          [];
+      sw_propagated_writes =         [];
+      sw_committed =                 false;
+  |>
+
+
+let empty_subwrites subwrites = 
+  <| subwrites with sw_potential_write_addresses = [];
+                    sw_potential_writes =          [];
+                    sw_propagated_writes =         []; |>
+
+
 (* misaligned reads must be split into multiple subreads that can be
 satisfied at different points, but with a single thread-state
 continuation in the MOS_pending_mem_read for when they have all been
 satisfied *)
+
+(* MachineDefThreadSubsystemUtils has utility functions for subreads *)
 type subreads =
   <|  (* the footprint of the whole read, when known *)
       sr_addr : maybe footprint;
@@ -571,11 +584,6 @@ type subreads =
       to Just .. after all read requests are fully satisfied *)
       sr_assembled_value : maybe memory_value;
   |>
-
-(* return all the read-requests of subreads' *)
-let read_requests_of_subreads subreads : list read_request =
-  fst (List.unzip subreads.sr_unsat_slices)
-
 
 (* these are the fields of instruction_instance we need for doing a
 partial restart of an rmw instruction *)
@@ -678,8 +686,21 @@ are not going to change *)
 let inline ik ii = ii.instruction_kind
 
 
+let has_fetched inst =
+  inst.micro_op_state <> MOS_not_fetched
+
+let has_decoded inst = 
+  match inst.micro_op_state with
+  | MOS_not_fetched -> false
+  | MOS_fetched _ -> false
+  | _ -> true
+  end
 
 
+let ensure_mos_fetched = function
+  | MOS_fetched f -> f
+  | _ -> fail
+end
 
 
 
