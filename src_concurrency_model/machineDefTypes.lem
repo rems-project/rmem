@@ -518,6 +518,10 @@ type micro_op_state 'i =
   | MOS_unpredictable
 
 
+let ensure_mos_fetched = function
+  | MOS_fetched f -> f
+  | _ -> fail
+end
 
 (* misaligned writes must be split into multiple subwrites *)
 type subwrites =
