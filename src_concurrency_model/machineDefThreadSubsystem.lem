@@ -2535,48 +2535,6 @@ let read_reg_if_needed
   end
 
 
-let thread_start_action
-    (isa: isa 'i)
-    (state:  thread_state 'i)
-    (iic:    instruction_in_context 'i)
-    : list (thread_trans 'i (thread_state 'i))
-  =
-  let prefix = iic.active_prefix ++ iic.old_prefix in
-  let reg_init = (state.register_data, state.initial_register_state) in
-  let start_info = isa.thread_start_info in
-  read_reg reg_init prefix start_info.tsi_addr >>= fun tsi_addr ->
-  read_reg_if_needed reg_init prefix start_info.tsi_toc >>= fun m_tsi_toc ->
-  read_reg_if_needed reg_init prefix start_info.tsi_extra >>= fun m_tsi_extra ->
-  let reg_reads' = List.mapMaybe id [m_tsi_extra; m_tsi_toc; Just tsi_addr] in
-  (* Continuation for the "old" thread. iic is the instruction that
-     started the new thread *)
-  let thread_cont maybe_new_tid = 
-    let rv_integer =
-      match maybe_new_tid with
-      | Just new_tid -> integerFromNat new_tid
-      | Nothing      -> ~1 (* -1, if new thread could not be started *)
-      end
-    in
-    let rv = register_value_for_reg_of_integer
-               start_info.tsi_return rv_integer in
-    let i = iic.iic_instance in
-    let deps = current_reg_write_dependencies i in
-    let reg_write = (start_info.tsi_return, (deps, rv)) in
-    let i' =
-      <| i with reg_reads = reg_reads' ++ i.reg_reads;
-                reg_writes = reg_write :: i.reg_writes;
-                finished = true; |>
-    in
-    let it' = apply_tree_context iic.context (i',iic.subtree) in
-    let state' = <| state with instruction_tree = it' |> in
-    let state'' = make_old_instructions isa state' in
-    make_thread_cont_res {} {} state''
-  in
-  let addr_v = thd3 tsi_addr in
-  let m_toc_v = Maybe.map thd3 m_tsi_toc in
-  [T_thread_start (make_label state iic (addr_v, m_toc_v) thread_cont)]
-
-
 let finish_cand params state iic = 
   match params.thread_model with
   | PLDI11_thread_model    -> pldi11_finish_cand state iic
@@ -2587,12 +2545,6 @@ let finish_cand params state iic =
   end
 
 
-let handle_thread_start_instruction params isa state iic =
-  (* special case for thread creation pseudo-instruction *)
-  guard (forall (iprev MEM iic.active_prefix). 
-         is_pop_strong_memory_barrier (ik iprev) --> iprev.finished) >>
-  thread_start_action isa state iic
-
 let handle_done_outcome
       (params: thread_params)
       (isa: isa 'i)
@@ -2601,13 +2553,10 @@ let handle_done_outcome
     : list (thread_trans 'i (thread_state 'i))
   =
   let instr = ensure_fetched iic.iic_instance.instruction in
-  if isa.is_thread_start_instruction instr then
-    handle_thread_start_instruction params isa state iic
-  else
-    guard (finish_cand params state iic) >>
-    let c () = finish_action isa state iic in
-    let addr = iic.iic_instance.program_loc in
-    [T_only (make_label state iic (T_finish addr instr) c)]
+  guard (finish_cand params state iic) >>
+  let c () = finish_action isa state iic in
+  let addr = iic.iic_instance.program_loc in
+  [T_only (make_label state iic (T_finish addr instr) c)]
 
 
 let handle_sail_error
