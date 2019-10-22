@@ -125,8 +125,6 @@ let model_to_html : unit -> unit = fun () ->
               (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "flowing");
   check_radio "model_pop"
               (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "pop");
-  check_radio "model_nop"
-              (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "nop");
   check_radio "model_flat"
               (List.assoc (Model_aux.model_value !Globals.model_params) Model_aux.model_assoc = "flat");
   check_radio "model_tso"
@@ -186,8 +184,6 @@ let options_of_html : unit -> RunOptions.t = fun () ->
     Globals.model_params := Model_aux.parse_and_update_model "flowing" !Globals.model_params;
   if is_checked_radio "model_pop" then
     Globals.model_params := Model_aux.parse_and_update_model "pop" !Globals.model_params;
-  if is_checked_radio "model_nop" then
-    Globals.model_params := Model_aux.parse_and_update_model "nop" !Globals.model_params;
   if is_checked_radio "model_flat" then
     Globals.model_params := Model_aux.parse_and_update_model "flat" !Globals.model_params;
   if is_checked_radio "model_tso" then
