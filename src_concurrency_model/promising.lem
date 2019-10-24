@@ -509,7 +509,7 @@ let p_make_cex_instruction_info
     cex_instance_ioid = i.ii_ioid;
     cex_program_loc = i.ii_program_loc;
     cex_program_opcode = i.ii_program_opcode;
-    cex_instruction = i.ii_instruction; 
+    cex_instruction = Fetched i.ii_instruction;
     cex_instruction_kind = i.ii_kind;
     (* register part *)
     cex_regs_in = Set.fromList (List.map fst i.ii_reg_reads);

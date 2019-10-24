@@ -372,7 +372,11 @@ let make_tikz_graph
       instructions_path_from_tree [] state.cex_instruction_tree
       |> List.map (fun inst ->
           let pp_instruction =
-            pp_instruction_ast m m.pp_symbol_table inst.cex_instruction inst.cex_program_loc
+            match inst.cex_instruction with
+            | InstructionSemantics.Unfetched -> "UNFETCHED"
+            | InstructionSemantics.Fetched i ->
+                pp_instruction_ast m m.pp_symbol_table i inst.cex_program_loc
+            | InstructionSemantics.Fetch_error -> "FETCH-ERROR"
             (* escape some characters; see the documentation of the
             LaTeX listings package (6.1 Listins inside arguments) *
             |> replace '\\' "\\\\"

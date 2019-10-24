@@ -289,7 +289,7 @@ let enumerate_transitions_of_system
     | Just ioid ->
       (* this is currently dead code, the lock is only used with the
       Flat model which has no ss transitions *)
-      [t | forall (t MEM ss_transitions) | principal_ioid_of_ss_trans t = ioid]
+      [t | forall (t MEM ss_transitions) | principal_ioid_of_ss_trans t = Just ioid]
     end
     $> List.map (storage_trans_to_trans state)
   in
@@ -724,7 +724,7 @@ let make_cex_instruction_instance
     cex_instance_ioid = i.instance_ioid;
     cex_program_loc = i.program_loc;
     cex_program_opcode = i.program_opcode;
-    cex_instruction = ensure_fetched i.instruction; 
+    cex_instruction = (* ensure_fetched *) i.instruction;
     cex_instruction_kind = i.instruction_kind;
     (* register part *)
     cex_regs_in = i.regs_in;
