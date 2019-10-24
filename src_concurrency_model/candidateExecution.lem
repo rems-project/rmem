@@ -58,7 +58,7 @@ type cex_instruction_instance 'i =
     cex_instance_ioid: ioid; 
     cex_program_loc: address;  
     cex_program_opcode: maybe opcode; 
-    cex_instruction: 'i;
+    cex_instruction: InstructionSemantics.instruction 'i;
     cex_instruction_kind: instruction_kind;
     (*cex_aarch64_write_kind: maybe write_kind;*)
     (* register part *)
@@ -113,19 +113,24 @@ type cex_candidate 'i =
     cex_model: model_params;
   |> 
 
-(* We expect co to be transitively closed *)
+(* We expect co to be transitively closed.
+Currently a read might have multiple fr edges to the same write. Consider
+this case:
+  a:W x[0]   = 0x__10
+  b:W x[1]   = 0x11__
+  c:R x[0,1] = 0x1110
+  d:W x[0,1] = 0x2120
+The fr relation will have two pairs: (c,(d,x[0])) and (c,(d,x[1])) because
+the rf relation of c has two pairs.  We could do some union over the
+result, but I'm not sure if that is desirable. *)
 let fr_from_rf_co rf co =
-    let rfConverse = {(((w, sls), r), w) | forall (((w, sls), r) IN rf) | true} in
-    Relation.relComp rfConverse co
-    $> Set.mapMaybe (fun (((wrf, sls), r), wfr) ->
-          match match_write wrf.w_addr sls (write_with_complete_slice wfr) with
-          | Nothing -> Nothing
-          | Just (_, wsls) -> Just (r, wsls)
-          end)
-    (* $> Set.filter (fun (((wrf, sls), r), wfr) ->
-      overlapping_slices (wrf.w_addr, sls) (wfr.w_addr, [complete_slice wfr.w_addr]))
-    $> Set.map (fun ((_, r), wfr) ->
-      (r, wfr)) *)
+  let rfConverse = {(((w, sls), r), w) | forall (((w, sls), r) IN rf) | true} in
+  Relation.relComp rfConverse co
+  $> Set.mapMaybe (fun (((wrf, sls), r), wfr) ->
+        match match_write wrf.w_addr sls (write_with_complete_slice wfr) with
+        | Nothing -> Nothing
+        | Just (_, wsls) -> Just (r, wsls)
+        end)
 
 (** cutting down graphs to the concurrent accesses *)
 
