@@ -260,26 +260,45 @@ let p_enumerate_transitions_of_thread
   transitions ++ promise_transitions
 
 
+let rec enumerate_possible_final_states_aux
+    (params : model_params)
+    (isa : isa 'i)
+    (pss_sem : pss_sem 'pss 'v)
+    (traces_found : list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v))
+    (todo : list (pt_follow_trace 'i 'v * pts 'i 'v * 'pss))
+        : list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)
+  =
+  match todo with
+  | [] -> List.reverse traces_found
+  | (inv_trace_so_far, pts, pss) :: todo ->
+     if is_final_tstate params.t pts
+     then
+       let traces_found' = (pts,pss,List.reverse inv_trace_so_far) :: traces_found in
+       enumerate_possible_final_states_aux params isa pss_sem traces_found' todo
+     else
+       (* guard (quick_detect_deadlock pss pts) >> *)
+       let new_jobs = 
+         next_instruction_transitions_of_thread params isa pts pss_sem pss >>= fun tr ->
+         guard (not (is_shared_pt_write_trans tr)) >>
+         let (pts,pss) = tconf_after_pt_trans (pts,pss) tr in
+         let follow_label = pt_follow_label_of_pt_trans tr in
+         let inv_trace_so_far' = follow_label :: inv_trace_so_far in
+         return (inv_trace_so_far',pts,pss)
+       in
+       let todo' = todo ++ new_jobs in
+       enumerate_possible_final_states_aux params isa pss_sem traces_found todo'
+  end
 
-let rec enumerate_possible_final_states
+let enumerate_possible_final_states
     (params : model_params)
     (isa : isa 'i)
     (pss_sem : pss_sem 'pss 'v)
     (pts : pts 'i 'v)
     (pss : 'pss)
-    (trace_so_far : pt_follow_trace 'i 'v)
-      : list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)
+    : list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)
   =
-  if is_final_tstate params.t pts then return (pts,pss,List.reverse trace_so_far) else
-    (* guard (quick_detect_deadlock pss pts) >> *)
-    next_instruction_transitions_of_thread params isa pts pss_sem pss >>= fun tr ->
-    guard (not (is_shared_pt_write_trans tr)) >>
-    let (pts,pss) = tconf_after_pt_trans (pts,pss) tr in
-    let follow_label = pt_follow_label_of_pt_trans tr in
-    let trace_so_far' = follow_label :: trace_so_far in
-    enumerate_possible_final_states params isa pss_sem pts pss trace_so_far'
-
-
+  let jobs = [([],pts,pss)] in
+  enumerate_possible_final_states_aux params isa pss_sem [] jobs
 
 
 
@@ -325,7 +344,7 @@ let enumerate_finalise_transitions
     let (final_states_per_thread : list (thread_id * (list (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)))) =
       List.map (fun (tid,pts) ->
           (tid, enumerate_possible_final_states state.p_model state.p_isa
-                  state.p_pss_sem pts pss [])) ptss
+                  state.p_pss_sem pts pss)) ptss
     in
     let (combs : list (list (thread_id * (pts 'i 'v * 'pss * pt_follow_trace 'i 'v)))) = 
       all_combinations final_states_per_thread in
@@ -486,8 +505,13 @@ let pst_after_transition
     (t:         p_trans 'i (pts 'i 'v) 'pss 'v)
     : transition_outcome 'i (pst 'i (pts 'i 'v) 'pss 'v)
   =
-  TO_system_state (pst_of_state (pstate_after_transition s.pst_state t))
-  
+  match t with
+  | PT (PT_exception (tid,ioid) e _) ->
+     TO_unhandled_exception tid ioid e
+  | _ ->
+     TO_system_state (pst_of_state (pstate_after_transition s.pst_state t))
+  end
+
 
 let p_is_final_state (s : p_state 'i (pts 'i 'v) 'pss 'v) : bool =
   s.p_model.t.p_promise_first --> s.p_stopped_promising &&

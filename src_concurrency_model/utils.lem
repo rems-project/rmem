@@ -20,6 +20,7 @@
 
 open import Relation
 open import Pervasives_extra
+open import Sail_impl_base
 
 (* Help emacs fontification -*-caml-*- *)
 
@@ -323,3 +324,19 @@ let list_to_rel (xs : list 'a) : Relation.rel 'a 'a =
 let fst3 (x,_,_) = x
 let snd3 (_,y,_) = y
 let thd3 (_,_,z) = z
+
+
+
+
+
+
+(* used for detecting loops *)
+let rec _count_pairs_aux (prefix:list 'ii) (program_loc : 'ii -> address) (us:address) (them:address) (acc:nat) =
+  match prefix with
+  | [] -> acc
+  | [x] -> acc
+  (* note prefix is in reverse program order *)
+  | x::y::l ->
+     let acc' = if program_loc x = them && program_loc y = us then acc + 1 else acc in
+     _count_pairs_aux (y::l) program_loc us them acc'
+end

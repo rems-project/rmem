@@ -80,6 +80,9 @@ let opts = [
 ("-loop_limit",
  Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with t = { (!Globals.model_params).t with thread_loop_unroll_limit = Some i }}),
  ("<integer> automatically unroll loops to this depth (default: off)"));
+("-promising_fuel",
+ Arg.Int (fun i -> Globals.model_params := { !Globals.model_params with t = { (!Globals.model_params).t with p_fuel = Some i }}),
+ ("<integer> automatically unroll loops to this depth (default: off)"));
 ("-topauto",
     Arg.Bool (fun b -> Globals.topauto := b; Globals.flowing_topologies := []),
     (Printf.sprintf "<bool> for Flowing model: iterate over all possible topologies (%b)" !Globals.topauto));

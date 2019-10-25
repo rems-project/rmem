@@ -691,16 +691,8 @@ let rec tree_of_old_and_new_instructions_helper
 let tree_of_old_and_new_instructions (s: thread_state 'i) : instruction_tree 'i =
   tree_of_old_and_new_instructions_helper s.instruction_tree s.old_instructions
 
-
-let rec _count_pairs (prefix:list (instruction_instance 'i)) (us:address) (them:address) (acc:nat) =
-  match prefix with
-  | [] -> acc
-  | [x] -> acc
-  (* note prefix is in reverse program order *)
-  | x::y::l ->
-     _count_pairs (y::l) us them (if x.program_loc = them && y.program_loc = us then acc + 1 else acc)
-end
-
+let _count_pairs (prefix:list (instruction_instance 'i)) (us:address) (them:address) (acc:nat) =
+  _count_pairs_aux prefix (fun ii -> ii.program_loc) us them acc
 
 
 (** The Default Successor Instruction Address ***********************)

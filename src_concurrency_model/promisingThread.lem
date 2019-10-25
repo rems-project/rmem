@@ -361,10 +361,25 @@ let rec do_local_effs ((ts,(ii,view,o)) : iconf 'i 'v) =
   | Footprint o ->       failwith "footprint recalculation not supported"
 end
 
-let write_cia_arm isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
+(* stolen from machineDefThreadSubsystem *)
+let reached_loop_limit params s = 
+  let addr = ensure_just s.cia "must have cia set" in
+  match (params.t.thread_loop_unroll_limit, s.instrs) with
+  | (Nothing, _) -> false
+  | (_, [])      -> false
+  | (Just limit, iprev :: _) ->
+     addr <= iprev.ii_program_loc
+     && exists (i MEM s.instrs). i.ii_program_loc = addr
+     && (_count_pairs_aux s.instrs (fun ii -> ii.ii_program_loc)
+           iprev.ii_program_loc addr 0) + 1 >= limit
+  end
+
+
+
+let write_cia_arm has_branched isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
   let cia_reg = isa.cia_reg in
   let cia_rbn = register_base_name cia_reg in
-  if ii.ii_kind = IK_branch && isJust (List.lookup cia_reg ii.ii_reg_writes)
+  if has_branched
   then
     let cia_a = snd (cia_of_reg_state isa ts) in
     let ts = <| ts with cia = Just cia_a |> in
@@ -377,12 +392,12 @@ let write_cia_arm isa ((ts,(ii,view,o)) : iconf 'i 'v) =
     let ts = <| ts with cia = Just cia_v |> in
     (ts,(ii,view,o))
 
-let write_cia_nia_riscv isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
+let write_cia_nia_riscv has_branched isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
   let cia_reg = isa.cia_reg in
   let cia_rbn = register_base_name cia_reg in
   let nia_reg = isa.nia_reg in
   let nia_rbn = register_base_name nia_reg in
-  if ii.ii_kind = IK_branch && isJust (List.lookup nia_reg ii.ii_reg_writes)
+  if has_branched
   then
     let (nia_rv,nia_a) = nia_of_reg_state isa ts in
     let ts = set_reg cia_rbn nia_rv ts in
@@ -399,16 +414,16 @@ let write_cia_nia_riscv isa ((ts,(ii,view,o)) : iconf 'i 'v) =
     let ts = <| ts with cia = Just nia_v |> in
     (ts,(ii,view,o))
 
-let write_cia_nia isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
+let write_cia_nia has_branched isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
   match isa.isa_model with
-  | AARCH64 _ -> write_cia_arm isa (ts,(ii,view,o))
-  | RISCV -> write_cia_nia_riscv isa (ts,(ii,view,o))
+  | AARCH64 _ -> write_cia_arm has_branched isa (ts,(ii,view,o))
+  | RISCV -> write_cia_nia_riscv has_branched isa (ts,(ii,view,o))
   | _ -> fail
   end
 
-let finish_instruction isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
+let finish_non_branch_instruction isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
   let () = ensure_done_outcome o in
-  let (ts,(ii,view,o)) = write_cia_nia isa (ts,(ii,view,o)) in
+  let (ts,(ii,view,o)) = write_cia_nia false isa (ts,(ii,view,o)) in
   let ts = <| ts with instrs = ii :: ts.instrs |> in
   (ts,ii)
 
@@ -458,20 +473,44 @@ let run_barrier_instruction isa ((s,(ii,view,o)) : iconf 'i 'v)
   let s = <| s with vRp = joinS (s.vRp :: Rp);
                     vWp = joinS (s.vWp :: Wp); |> in
   let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
-  make_plain_transition (finish_instruction isa (s,(ii,view,o)))
+  make_plain_transition (finish_non_branch_instruction isa (s,(ii,view,o)))
 
-let run_branch_instruction isa ((s,(ii,view,o)) : iconf 'i 'v)
+val make_loop_limit_reached_transition :
+  forall 'i 'v 'pss. View 'v => 
+  pts 'i 'v * instruction_info 'i ->
+  list (pt_trans 'i (pts 'i 'v) 'pss 'v)
+
+let make_loop_limit_reached_transition (s,ii) =
+  let s' = <| s with raised_exception = Just ET_loop_limit_reached |> in
+  return (PT_exception (s.tid,ii.ii_ioid) ET_loop_limit_reached s')
+
+let has_branched isa ii =
+  match isa.isa_model with
+  | AARCH64 _ -> isJust (List.lookup isa.cia_reg ii.ii_reg_writes)
+  | RISCV ->  isJust (List.lookup isa.nia_reg ii.ii_reg_writes)
+  | _ -> fail
+  end
+
+
+let run_branch_instruction params isa ((ts,(ii,view,o)) : iconf 'i 'v)
     : list (pt_trans 'i (pts 'i 'v) 'pss 'v) = 
   let ii = <| ii with ii_kind = IK_branch |> in
-  let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
-  let s = <| s with vCAP = join s.vCAP view |> in
-  make_plain_transition (finish_instruction isa (s,(ii,view,o)))
+  let (ts,(ii,view,o)) = do_local_effs (ts,(ii,view,o)) in
+  let ts = <| ts with vCAP = join ts.vCAP view |> in
+  let () = ensure_done_outcome o in
+  let has_branched = has_branched isa ii in
+  let (ts,(ii,view,o)) = write_cia_nia has_branched isa (ts,(ii,view,o)) in
+  let ts = <| ts with instrs = ii :: ts.instrs |> in
+  if has_branched && reached_loop_limit params ts 
+  then make_loop_limit_reached_transition (ts,ii)
+  else make_plain_transition (ts,ii)
+
 
 let run_plain_instruction isa ((s,(ii,view,o)) : iconf 'i 'v)
     : list (pt_trans 'i (pts 'i 'v) 'pss 'v) =
   let ii = <| ii with ii_kind = IK_simple |> in
   let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
-  make_plain_transition (finish_instruction isa (s,(ii,view,o)))
+  make_plain_transition (finish_non_branch_instruction isa (s,(ii,view,o)))
 
 let run_failed_store_exclusive_instruction isa
       ((s,(ii,_view,o)) : iconf 'i 'v)
@@ -479,7 +518,7 @@ let run_failed_store_exclusive_instruction isa
   let view = bot in (* revisit to check if still good *)
   let s = <| s with xcl_bank = Nothing |> in
   let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
-  let (s,ii) = finish_instruction isa (s,(ii,view,o)) in
+  let (s,ii) = finish_non_branch_instruction isa (s,(ii,view,o)) in
   return (PT_failed_store_excl (s.tid,ii.ii_ioid) s)
 
 let run_amo_instruction isa ((s,(ii,view,o)) : iconf 'i 'v) = 
@@ -534,7 +573,7 @@ let run_load_instruction
       |>
   in
   let (s,(ii,view,o)) = do_local_effs (s,(ii,post_view,c mv)) in
-  let s = fst (finish_instruction isa (s,(ii,view,o))) in
+  let s = fst (finish_non_branch_instruction isa (s,(ii,view,o))) in
   return (PT_Read (s.tid,ii.ii_ioid) (rr,view_constraint) (w,t) s)
 
 
@@ -588,7 +627,7 @@ let run_store_instruction
       |>
     in
     let (s,(ii,view,o)) = do_local_effs (s,(ii,post_view,c true)) in
-    fst (finish_instruction isa (s,(ii,view,o)))
+    fst (finish_non_branch_instruction isa (s,(ii,view,o)))
   in
   if exists ((p,_,_) IN s.promises). p = w.weiid then
     pss_sem.handle_fulfil pss wd >>= fun post_view ->
@@ -629,7 +668,7 @@ let run_instruction
   : list (pt_trans 'i (pts 'i 'v) 'pss 'v) = 
   let (s,(ii,view,o)) = initialise_instruction isa s (addr,opcode,instr) in
   if isa.is_branch instr then 
-    run_branch_instruction isa (s,(ii,view,o))
+    run_branch_instruction params isa (s,(ii,view,o))
   else
     let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
     match fst o with
