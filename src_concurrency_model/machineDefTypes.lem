@@ -843,20 +843,20 @@ type ss_only_trans =
   | SS_Flat_icache_update of thread_id * address * (write * slices)
 
 let principal_ioid_of_ss_only_trans = function
-  | SS_PLDI11_partial_coherence_commit w1 _      -> w1.w_ioid (* or maybe the other one? *)
-  | SS_PLDI11_propagate_write_to_thread (w, _) _ -> w.w_ioid
-  | SS_PLDI11_write_reaches_coherence_point w    -> w.w_ioid
-  | SS_PLDI11_propagate_barrier_to_thread b _    -> b.b_ioid
-  | SS_POP_propagate_event_to_thread e tid       -> principal_ioid_of_flowing_event e
-  | SS_POP_partially_satisfy_read r _            -> r.r_ioid
-  | SS_Flowing_flow_write_to_memory w            -> w.w_ioid
-  | SS_Flowing_flow_barrier_to_memory b          -> b.b_ioid
-  | SS_Flowing_flow_satisfied_read_to_memory r   -> r.r_ioid
-  | SS_Flowing_reorder_events e1 _               -> principal_ioid_of_flowing_event e1
-  | SS_Flowing_flow_to_segment e                 -> principal_ioid_of_flowing_event e
-  | SS_Flowing_partially_satisfy_read r _        -> r.r_ioid
-  | SS_TSO_propagate_write_to_memory w           -> w.w_ioid
-  | SS_Flat_icache_update _ _ _                  -> (0, 0) (* TODO: is this right? *)
+  | SS_PLDI11_partial_coherence_commit w1 _      -> Just w1.w_ioid (* or maybe the other one? *)
+  | SS_PLDI11_propagate_write_to_thread (w, _) _ -> Just w.w_ioid
+  | SS_PLDI11_write_reaches_coherence_point w    -> Just w.w_ioid
+  | SS_PLDI11_propagate_barrier_to_thread b _    -> Just b.b_ioid
+  | SS_POP_propagate_event_to_thread e tid       -> Just (principal_ioid_of_flowing_event e)
+  | SS_POP_partially_satisfy_read r _            -> Just r.r_ioid
+  | SS_Flowing_flow_write_to_memory w            -> Just w.w_ioid
+  | SS_Flowing_flow_barrier_to_memory b          -> Just b.b_ioid
+  | SS_Flowing_flow_satisfied_read_to_memory r   -> Just r.r_ioid
+  | SS_Flowing_reorder_events e1 _               -> Just (principal_ioid_of_flowing_event e1)
+  | SS_Flowing_flow_to_segment e                 -> Just (principal_ioid_of_flowing_event e)
+  | SS_Flowing_partially_satisfy_read r _        -> Just r.r_ioid
+  | SS_TSO_propagate_write_to_memory w           -> Just w.w_ioid
+  | SS_Flat_icache_update _ _ _                  -> Nothing
   end
 
 (* transitions that are initiated by the storage subsystem but also change the thread state *)
@@ -917,7 +917,7 @@ type sys_ss_trans 'ts 'ss = ss_trans_t 'ss (maybe (thread_cont unit 'ts))
 
 let principal_ioid_of_ss_trans = function
   | SS_only t _   -> principal_ioid_of_ss_only_trans t
-  | SS_sync t _ _ -> principal_ioid_of_ss_sync_trans t
+  | SS_sync t _ _ -> Just (principal_ioid_of_ss_sync_trans t)
   end
 
 (** thread transitions *)
@@ -1153,7 +1153,7 @@ type trans 'i 'ts 'ss =
 
 let principal_ioid_of_trans (t: trans 'i 'ts 'ss) =
   match t with
-  | SS_trans t -> Just (principal_ioid_of_ss_trans t)
+  | SS_trans t -> principal_ioid_of_ss_trans t
   | T_trans t  -> Just (ioid_of_thread_trans t)
   end
    
@@ -1245,7 +1245,7 @@ type ui_icache =
      ui_ic_tid: thread_id;
   |>
 
-type flat_ui_storage_subsystem_state 'ts 'ss =
+type flat_ui_storage_subsystem_state 'i 'ts 'ss =
   <|  (* storage state *)
       ui_flat_ss_memory_writes : list (changed3 (write * slices));
       (* storage transitions: none *)
@@ -1256,6 +1256,7 @@ type flat_ui_storage_subsystem_state 'ts 'ss =
       ui_flat_ss_icaches : map thread_id ui_icache;
       (* the global buffer of writes that can be fetched from *)
       ui_flat_ss_fetch_buf : list (changed3 write);
+      ui_flat_ss_transitions_icache_update: list (ui_trans 'i 'ts 'ss);
   |>
 
 type tso_ui_storage_subsystem_state 'i 'ts 'ss =
@@ -1271,7 +1272,7 @@ type tso_ui_storage_subsystem_state 'i 'ts 'ss =
 type ui_storage_subsystem_state 'i 'ts 'ss =
   | PLDI11_UI_storage  of pldi11_ui_storage_subsystem_state 'i 'ts 'ss
   | Flowing_UI_storage of flowing_ui_storage_subsystem_state 'i 'ts 'ss
-  | Flat_UI_storage    of flat_ui_storage_subsystem_state 'ts 'ss
+  | Flat_UI_storage    of flat_ui_storage_subsystem_state 'i 'ts 'ss
   | POP_UI_storage     of pop_ui_storage_subsystem_state 'i 'ts 'ss
   | TSO_UI_storage     of tso_ui_storage_subsystem_state 'i 'ts 'ss
 

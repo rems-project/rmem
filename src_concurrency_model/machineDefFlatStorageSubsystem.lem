@@ -661,6 +661,15 @@ let flat_make_ui_storage_subsystem_state
           | Nothing ->
               flat_ui_ic_writes_unchanged ss'.flat_ss_ic_writes
           end;
+
+        ui_flat_ss_transitions_icache_update =
+          List.filter
+            (fun (n, t) ->
+              match t with
+              | SS_trans (SS_only (SS_Flat_icache_update _ _ _) _) -> true
+              | _ -> false
+              end)
+            transitions;
     |>
 
 

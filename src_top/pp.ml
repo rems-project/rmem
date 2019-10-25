@@ -2267,7 +2267,7 @@ let flowing_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   end*)
 
 
-let flat_pp_ui_storage_subsystem_state m model ss =
+let flat_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   let memory =
     pp_changed3_list m pp_write_slices_uncoloured ss.ui_flat_ss_memory_writes in
 
@@ -2293,6 +2293,8 @@ let flat_pp_ui_storage_subsystem_state m model ss =
     sprintf "[%s]"
       (pp_list m pp_ic_write (Pmap.bindings_list ss.ui_flat_ss_ic_writes)) in
 
+  let pp_ss_transitions ts =
+    String.concat "\n" (List.map (pp_cand pp_instruction_ast m) ts) ^ "\n" in
 
   (*begin match m.Globals.pp_kind with
   | Ascii ->*)
@@ -2302,6 +2304,7 @@ let flat_pp_ui_storage_subsystem_state m model ss =
        if m.pp_kind <> Hash then "" else
        sprintf "  Old writes = %s"            old_writes; !linebreak;
        sprintf "  Icaches = %s"                 icaches; !linebreak;
+       sprintf "%s"                             (pp_ss_transitions ss.ui_flat_ss_transitions_icache_update);
        sprintf "  Buffer = %s"                  buffer; !linebreak;
        sprintf "  IC waiting = %s"              ic_writes; !linebreak;
       ]
@@ -2455,7 +2458,7 @@ let pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
   match ss with
   | PLDI11_UI_storage  ui_storage_subsystem -> pldi11_pp_ui_storage_subsystem_state  pp_instruction_ast m model ui_storage_subsystem
   | Flowing_UI_storage ui_storage_subsystem -> flowing_pp_ui_storage_subsystem_state pp_instruction_ast m model ui_storage_subsystem
-  | Flat_UI_storage    ui_storage_subsystem -> flat_pp_ui_storage_subsystem_state    m model ui_storage_subsystem
+  | Flat_UI_storage    ui_storage_subsystem -> flat_pp_ui_storage_subsystem_state    pp_instruction_ast m model ui_storage_subsystem
   | POP_UI_storage     ui_storage_subsystem -> pop_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
   | TSO_UI_storage     ui_storage_subsystem -> tso_pp_ui_storage_subsystem_state     pp_instruction_ast m model ui_storage_subsystem
 
