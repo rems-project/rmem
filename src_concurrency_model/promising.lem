@@ -119,6 +119,7 @@ type certjob 'pts 'pss 'v =
      CJfulfilled : bool;
      CJcert_no_write : bool;
      CJfuel : maybe nat; 
+     CJpss_view : 'v;
   |>
 
 type cert 'v = 
@@ -137,36 +138,22 @@ let warn_empty_fuel () =
   print_endline "\nWarning: ran out of fuel\n"
 
 
-(* TODO: implement these, so we can prune out loops leading to exactly
-   the same state *)
-let already_seen _ = false
-let record_seen cj _ = cj
-
-
 let certjob_after_t
-    (pss_sem : pss_sem 'pss 'v)
     (cj : certjob (pts 'i 'v) 'pss 'v)
     (trans : pt_trans 'i (pts 'i 'v) 'pss 'v)
-  : maybe (certjob (pts 'i 'v) 'pss 'v)
+  : certjob (pts 'i 'v) 'pss 'v
   = 
-  let ((pts',pss') as newC) = tconf_after_pt_trans (cj.CJpts,cj.CJpss) trans in
-  if already_seen (pts',pss')
-  then Nothing
-  else 
-    let shared_wds = Set.fromList (wd_of_shared_pt_write_trans trans) in
-    let newp = {wd | forall (wd IN shared_wds) 
-                   | promisable wd.wd_req_view (pss_sem.pss_view cj.CJpss)} in
-    let promises = newp union cj.CJpromises in
-    let cert_no_write = cj.CJcert_no_write && Set.null shared_wds in
-    let cj' = 
-      <| cj with CJpts = pts';
-                 CJpss = pss';
-                 CJpromises = promises;
-                 CJfuel = Maybe.map (fun f -> f - 1) cj.CJfuel; 
-                 CJcert_no_write = cert_no_write |>
-    in
-    let cj' = record_seen cj' (pts',pss') in
-    Just cj'
+  let (pts',pss') = tconf_after_pt_trans (cj.CJpts,cj.CJpss) trans in
+  let shared_wds = Set.fromList (wd_of_shared_pt_write_trans trans) in
+  let newp = {wd | forall (wd IN shared_wds) 
+                 | promisable wd.wd_req_view cj.CJpss_view} in
+  let promises = newp union cj.CJpromises in
+  let cert_no_write = cj.CJcert_no_write && Set.null shared_wds in
+  <| cj with CJpts = pts';
+             CJpss = pss';
+             CJpromises = promises;
+             CJfuel = Maybe.map (fun f -> f - 1) cj.CJfuel; 
+             CJcert_no_write = cert_no_write |>
 
 let rec certprom_s params
     (isa : isa 'i)
@@ -187,7 +174,7 @@ let rec certprom_s params
     in 
     let cj = <| cj with CJfulfilled = fulfilled |> in
     let new_cjs =
-      List.mapMaybe (certjob_after_t pss_sem cj) next_transitions in
+      List.map (certjob_after_t cj) next_transitions in
     if not (List.null next_transitions) then
       certprom_s params isa pss_sem (new_cjs ++ cjs) cert
     else if not fulfilled then
@@ -220,6 +207,7 @@ let certprom_transition params isem
               CJfulfilled = false;
               CJfuel = params.t.p_fuel;
               CJcert_no_write = no_write;
+              CJpss_view = pss_sem.pss_view pss;
            |> in
   certprom_s params isem pss_sem [cj] NotCertified
 
