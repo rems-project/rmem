@@ -85,9 +85,10 @@ let init_instruction_info ioid addr opcode i =
 
 
 type pts 'i 'v = 
+  (* dynamic *)
   <| reg : map reg_base_name register_value
-   ; vCoh : map address 'v
    ; vReg : map reg_base_name 'v
+   ; vCoh : map address 'v
    ; vRm  : 'v
    ; vRp  : 'v
    ; vWm  : 'v
@@ -97,19 +98,23 @@ type pts 'i 'v =
    ; fwd_bank : map address (w_eiid * bool * 'v)
    ; xcl_bank : maybe ((w_eiid * address) * 'v) (* v is read exclusive view, for RISCV *)
    ; promises : set (w_eiid * 'v * address)
-   ; prog     : address -> fetch_and_decode_outcome 'i
    ; initAddr : maybe address
-   ; cia      : maybe address
    ; retAddr  : address
-   ; tid      : thread_id
+   ; cia      : maybe address
    ; ids      : id_state thread_id
    ; wids     : Map.map addrNat nat
+   ; raised_exception: maybe (exception_type 'i)
+   (* static *)
+   ; prog     : address -> fetch_and_decode_outcome 'i
+   ; tid      : thread_id
    ; regdata  : registerdata
    (* information for user-interface purposes only *)
    ; instrs   : list (instruction_info 'i)
    ; initRegS : (reg_base_name -> register_value)
-   ; raised_exception: maybe (exception_type 'i)
   |>
+
+(*  *)
+
 
 
 (** Thread Subsystem **********************************************************)

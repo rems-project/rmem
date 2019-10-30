@@ -28,6 +28,7 @@ open import Utils
 open import Params
 open import Isa
 open import RegUtils
+open import ExceptionTypes
 open import UiTypes
      import Map
 open import MachineDefUI
@@ -51,8 +52,6 @@ type pts_ui_state' 'i 'ui_view =
     <|
     ui_promising_reg: list (changed3 (reg_base_name * register_value));
     ui_promising_vReg: list (changed3 (reg_base_name * 'ui_view));
-    ui_promising_regdata: registerdata;
-
 
     ui_promising_vCoh: list (changed3 (address * 'ui_view));
     ui_promising_vRm: changed2b 'ui_view;
@@ -62,15 +61,19 @@ type pts_ui_state' 'i 'ui_view =
     ui_promising_vCAP: changed2b 'ui_view;
     ui_promising_vRel: changed2b 'ui_view;
 
-    ui_promising_thread: thread_id;
-
     ui_promising_fwd_bank: list (changed3 (address * (w_eiid * bool * 'ui_view)));
     ui_promising_xcl_bank : changed2b (maybe ((w_eiid * address) * 'ui_view));
 
-    ui_promising_initAddr: changed2b (maybe address);
     ui_promising_promises: list (changed3 w_eiid);
+    ui_promising_initAddr: changed2b (maybe address);
+    ui_promising_retAddr: changed2b address;
+    ui_promising_raised_exception: changed2b (maybe (exception_type 'i));
+
     ui_promising_instrs: ui_instruction_info_list 'i;
     ui_promising_initRegS: (reg_base_name -> register_value);
+
+    ui_promising_thread: thread_id;
+    ui_promising_regdata: registerdata;
 
     ui_promising_last_ioid : maybe ioid;
     |>
@@ -126,9 +129,11 @@ let make_pts_ui_state_1 (t' : pts 'i t) =
      ui_promising_xcl_bank =
        C2b_unchanged (Maybe.map (fun (x,v) -> (x,v)) (t'.xcl_bank));
      ui_promising_promises = unchanged3_set (Set.map (fun (p,_,_) -> p) t'.promises);
-     ui_promising_initAddr = C2b_unchanged t'.initAddr ;
+     ui_promising_initAddr = C2b_unchanged t'.initAddr;
+     ui_promising_retAddr = C2b_unchanged t'.retAddr;
      ui_promising_initRegS = t'.initRegS;
      ui_promising_last_ioid = Maybe.map (fun i -> i.ii_ioid) (index t'.instrs 0);
+     ui_promising_raised_exception = C2b_unchanged t'.raised_exception;
   |>
 
 
@@ -174,6 +179,8 @@ let make_pts_ui_state_2 t t' ncands =
        ui_list_diff3 fwd fwd';
      ui_promising_promises = ui_set_diff3 (Set.map (fun (p,_,_) -> p) t.promises) (Set.map (fun (p,_,_) -> p) t'.promises);
      ui_promising_initAddr = ui_eq_diff2b t.initAddr t'.initAddr;
+     ui_promising_retAddr = ui_eq_diff2b t.retAddr t'.retAddr;
+     ui_promising_raised_exception = ui_eq_diff2b t.raised_exception t'.raised_exception;
      ui_promising_initRegS = t'.initRegS;
      ui_promising_last_ioid = Maybe.map (fun i -> i.ii_ioid) (index t'.instrs 0);
   |>

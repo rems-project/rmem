@@ -3263,6 +3263,31 @@ let pp_ui_promising_thread_state pp_instruction_ast m (tid,ts) =
       )
       ts.ui_promising_fwd_bank in
 
+  let ppd_initAddr =
+    colour_changed2b_f m
+      (fun m maddr ->
+        match maddr with
+        | None -> "thread not started"
+        | Some addr -> pp_address m ts.ui_promising_last_ioid addr
+      ) ts.ui_promising_initAddr
+  in
+
+  let ppd_retAddr =
+    colour_changed2b_f m
+      (fun m addr -> pp_address m ts.ui_promising_last_ioid addr)
+      ts.ui_promising_retAddr
+  in
+
+  let ppd_raised_exception =
+    colour_changed2b_f m
+      (fun m mex ->
+        match mex with
+        | Some e -> pp_exception pp_instruction_ast m last_ioid e
+        | None -> "none")
+    ts.ui_promising_raised_exception
+  in
+
+
   let ppd_vRm = pp_ui_c2_t m ts.ui_promising_vRm in
   let ppd_vRp = pp_ui_c2_t m ts.ui_promising_vRp in
   let ppd_vWm = pp_ui_c2_t m ts.ui_promising_vWm in
@@ -3282,18 +3307,21 @@ let pp_ui_promising_thread_state pp_instruction_ast m (tid,ts) =
 
   t_state ^ (if m.pp_style = Globals.Ppstyle_compact then "    " else
                !linebreak ^
-               sprintf "Promises: %s" ppd_promises ^ !linebreak ^
-               sprintf "reg:      %s" ppd_reg ^ !linebreak ^
-               sprintf "vReg:     %s" ppd_vReg ^ !linebreak ^
-               sprintf "vCoh:     %s" ppd_vCoh ^ !linebreak ^
-               sprintf "vRm:      %s" ppd_vRm ^ !linebreak ^
-               sprintf "vRp:      %s" ppd_vRp ^ !linebreak ^
-               sprintf "vWm:      %s" ppd_vWm ^ !linebreak ^
-               sprintf "vWp:      %s" ppd_vWp ^ !linebreak ^
-               sprintf "vCAP:     %s" ppd_vCAP ^ !linebreak ^
-               sprintf "vRel:     %s" ppd_vRel ^ !linebreak ^
-               sprintf "xcl_bank: %s" ppd_xcl_bank ^ !linebreak ^
-               sprintf "fwd_bank: %s" ppd_fwd_bank ^ !linebreak ^
+               sprintf "Promises:          %s" ppd_promises ^ !linebreak ^
+               sprintf "reg:               %s" ppd_reg ^ !linebreak ^
+               sprintf "vReg:              %s" ppd_vReg ^ !linebreak ^
+               sprintf "vCoh:              %s" ppd_vCoh ^ !linebreak ^
+               sprintf "vRm:               %s" ppd_vRm ^ !linebreak ^
+               sprintf "vRp:               %s" ppd_vRp ^ !linebreak ^
+               sprintf "vWm:               %s" ppd_vWm ^ !linebreak ^
+               sprintf "vWp:               %s" ppd_vWp ^ !linebreak ^
+               sprintf "vCAP:              %s" ppd_vCAP ^ !linebreak ^
+               sprintf "vRel:              %s" ppd_vRel ^ !linebreak ^
+               sprintf "xcl_bank:          %s" ppd_xcl_bank ^ !linebreak ^
+               sprintf "fwd_bank:          %s" ppd_fwd_bank ^ !linebreak ^
+               sprintf "init_addr:         %s" ppd_initAddr ^ !linebreak ^
+               sprintf "ret_addr:          %s" ppd_retAddr ^ !linebreak ^
+               sprintf "raised_exception:  %s" ppd_raised_exception ^ !linebreak ^
                !linebreak)
   ^ t_instructions
 
