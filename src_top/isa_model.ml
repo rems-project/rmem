@@ -192,23 +192,27 @@ module Make
          | Ast.Defs [], _ -> raise (Misc.Fatal "Empty ISA defs (use '-shallow_embedding true')")
          | defs, env ->
             let open Value in
-            let primops = StringMap.add "Platform.dram_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-            let primops = StringMap.add "Platform.dram_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "00000000ffffffff")) primops in
-            let primops = StringMap.add "Platform.rom_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-            let primops = StringMap.add "Platform.rom_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-            let primops = StringMap.add "Platform.clint_base" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-            let primops = StringMap.add "Platform.clint_size" (fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000")) primops in
-            let primops = StringMap.add "Platform.enable_dirty_update" (fun _ -> V_bool false) primops in
-            let primops = StringMap.add "Platform.enable_misaligned_access" (fun _ -> V_bool false) primops in
-            let primops = StringMap.add "Platform.enable_pmp" (fun _ -> V_bool false) primops in
-            let primops = StringMap.add "Platform.mtval_has_illegal_inst_bits" (fun _ -> V_bool false) primops in
-            let primops = StringMap.add "Platform.insns_per_tick" (fun _ -> V_int (Nat_big_num.of_string "100")) primops in
-            let primops = StringMap.add "Platform.load_reservation" (fun _ -> V_unit) primops in
-            let primops = StringMap.add "Platform.match_reservation" (fun _ -> V_bool true) primops in
-            let primops = StringMap.add "Platform.cancel_reservation" (fun _ -> V_unit) primops in
+            let primop_updates =
+              [ ("Platform.dram_base", fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000"))
+              ; ("Platform.dram_size", fun _ -> Value.mk_vector (Sail_lib.bits_of_string "00000000ffffffff"))
+              ; ("Platform.rom_base", fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000"))
+              ; ("Platform.rom_size", fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000"))
+              ; ("Platform.clint_base", fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000"))
+              ; ("Platform.clint_size", fun _ -> Value.mk_vector (Sail_lib.bits_of_string "0000000000000000"))
+              ; ("Platform.enable_dirty_update", fun _ -> V_bool false)
+              ; ("Platform.enable_misaligned_access", fun _ -> V_bool false)
+              ; ("Platform.enable_pmp", fun _ -> V_bool false)
+              ; ("Platform.mtval_has_illegal_inst_bits", fun _ -> V_bool false)
+              ; ("Platform.insns_per_tick", fun _ -> V_int (Nat_big_num.of_string "100"))
+              ; ("Platform.load_reservation", fun _ -> V_unit)
+              ; ("Platform.match_reservation", fun _ -> V_bool true)
+              ; ("Platform.cancel_reservation", fun _ -> V_unit)
+              ]
+            in
+            let _ = List.map (fun (name,func) -> primops := StringMap.add name func !primops) primop_updates in
             let interp_state =
               (* try *)
-              Interpreter.initial_state defs env primops
+              Interpreter.initial_state defs env !primops
               (* with (Reporting.Fatal_error e) as exn ->
                *   begin
                *     prerr_endline "Error constructing new-interpreter initial state:";
