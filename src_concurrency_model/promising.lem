@@ -53,6 +53,8 @@ type p_state 'i 'ts 'ss 'v =
   |>
 
 
+
+
 (* type pts' 'i = pts 'i t *)
 
 let p_initial_state
@@ -68,7 +70,8 @@ let p_initial_state
         state_record.isr_isa
         tid
         prog
-        (ensure_just (List.lookup tid state_record.isr_return_addr) "missing return address for thread")
+        (ensure_just (List.lookup tid state_record.isr_return_addr)
+           "missing return address for thread")
         register_data
         (state_record.isr_register_data tid)
         (state_record.isr_register_values register_data tid)
@@ -77,12 +80,19 @@ let p_initial_state
     in
     [(tid, init tid) | forall (tid MEM state_record.isr_thread_ids) | true]
   in
+
+  let threads_active =
+    List.map (fun tid ->
+        (tid, isJust (state_record.isr_first_instruction tid)))
+      state_record.isr_thread_ids
+  in
+
   <| p_program_memory    = prog;
      p_initial_writes    = state_record.isr_memory;
      p_thread_states     = Map.fromList initial_thread_states;
      p_storage_state     = PromisingStorage.pss_initial_state
-                               (Set.fromList state_record.isr_thread_ids)
-                               state_record.isr_memory;
+                             threads_active
+                             state_record.isr_memory;
      p_model             = state_record.isr_params;
      p_isa = state_record.isr_isa;
      p_stopped_promising = false;
@@ -102,13 +112,13 @@ let promise_write
       (wd : writedata 'v)
       shared 
     : list (pt_trans 'i (pts 'i 'v) ('pss) 'v) = 
-  pss_sem.handle_write pss wd shared >>= fun (v,pss') ->
+  pss_sem.handle_write pss wd shared >>= fun (v,pss',mtid) ->
   let pts' = 
-    let promise = (wd.wd_w.weiid,v,fst wd.wd_w.w_addr) in
+    let promise = (wd.wd_w.weiid,v,fst wd.wd_w.w_addr, wd.wd_is_thread_start) in
     <| pts with promises = Set.insert promise pts.promises |>
   in
   return (PT_Write (wd.wd_w.w_thread, wd.wd_w.w_ioid) 
-            (wd,Promise,shared) v (pts',pss'))
+            (wd,Promise,shared) (v,mtid) (pts',pss'))
 
 
 
@@ -196,7 +206,9 @@ let rec certprom_s params
 let certprom_transition params isem
       (pss_sem : pss_sem 'pss 'v)
       (pts : pts 'i 'v)
-      (pss : 'pss) tr = 
+      (pss : 'pss)
+      tr
+  = 
   (* let fulfilled = Set.null pts.promises in *)
   let no_write = List.null (wd_of_shared_pt_write_trans tr) in
   (* let cert = if fulfilled then Certified no_write Set.empty else NotCertified in *)
@@ -336,7 +348,8 @@ let rec all_combinations l =
 
 
 let enumerate_finalise_transitions
-      (state : p_state 'i (pts 'i 'v) 'pss 'v) : list (p_trans 'i (pts 'i 'v) 'pss 'v)
+      (state : p_state 'i (pts 'i 'v) 'pss 'v)
+    : list (p_trans 'i (pts 'i 'v) 'pss 'v)
   = 
   if Map.all (fun _ ts -> is_final_tstate state.p_model.t ts) state.p_thread_states
   then []
@@ -355,7 +368,8 @@ let enumerate_finalise_transitions
 
 
 let p_enumerate_follow_transition
-  (state : p_state 'i (pts 'i 'v) 'pss 'v) (l : pt_follow_label 'i 'v)
+      (state : p_state 'i (pts 'i 'v) 'pss 'v)
+      (l : pt_follow_label 'i 'v)
     : list (p_trans 'i (pts 'i 'v) 'pss 'v) =
 
   let tid = tid_of_pt_trans l in
@@ -387,7 +401,8 @@ let p_enumerate_transitions_of_threads state =
     )
     state.p_thread_states
 
-let p_normally_enumerate_transitions (state: p_state 'i (pts 'i 'v) 'pss 'v)
+let p_normally_enumerate_transitions
+      (state: p_state 'i (pts 'i 'v) 'pss 'v)
     : list (p_trans 'i (pts 'i 'v) 'pss 'v)
   =
 
@@ -480,14 +495,10 @@ let pstate_after_transition
     : p_state 'i (pts 'i 'v) 'pss 'v =
   let s' = 
     match t with
-    | PSys_thread_start _ _ _ _ -> fail
     | PSys_stop_promising -> 
        <| s with p_stopped_promising = true |>
-    | PSys_finish ptss pss trace -> 
-       <| s with (* p_thread_states = ptss; 
-                  * p_storage_state = pss; *)
-                 p_follow_trace = trace;
-       |>
+    | PSys_finish _ptss _pss trace -> 
+       <| s with p_follow_trace = trace |>
     | PT t -> 
        let tid = tid_of_pt_trans t in
        let pts = Map_extra.find tid s.p_thread_states in

@@ -70,7 +70,13 @@ let p_fuzzy_compare_pt_trans trans1 trans2 =
   | PT_exception (ids, _, _), PT_exception (ids', _, _) ->
      Pervasives.compare ids ids'
   (* | PT_exception _, _ -> 1
-   * | _, PT_exception _ -> 1   *)
+   * | _, PT_exception _ -> 1 *)
+
+  (* | PT_Start_thread (ids, req, repl, _), PT_Start_thread (ids', req', repl', _) ->
+   *    cmps [ (fun () -> Pervasives.compare ids ids');
+   *           (fun () -> Pervasives.compare req req'); 
+   *           (fun () -> Pervasives.compare repl repl'); 
+   *      ] *)
 
 let fuzzy_compare_p_trans trans1 trans2 =
   match (trans1, trans2) with
@@ -80,14 +86,14 @@ let fuzzy_compare_p_trans trans1 trans2 =
   | (_, PT _) -> -1
     
 
-  | (PSys_thread_start ((tid,ioid), tl, mtid, _),
-     PSys_thread_start ((tid',ioid'), tl', mtid', _)) ->
-     cmps [ (fun () -> Pervasives.compare (tid,ioid) (tid',ioid'));
-            (fun () -> Pervasives.compare mtid mtid');
-            (fun () -> Pervasives.compare tl tl');
-           ]
-  | (PSys_thread_start _, _) -> 1
-  | (_, PSys_thread_start _) -> -1
+  (* | (PSys_thread_start ((tid,ioid), tl, mtid, _),
+   *    PSys_thread_start ((tid',ioid'), tl', mtid', _)) ->
+   *    cmps [ (fun () -> Pervasives.compare (tid,ioid) (tid',ioid'));
+   *           (fun () -> Pervasives.compare mtid mtid');
+   *           (fun () -> Pervasives.compare tl tl');
+   *          ]
+   * | (PSys_thread_start _, _) -> 1
+   * | (_, PSys_thread_start _) -> -1 *)
 
   | (PSys_stop_promising, PSys_stop_promising) -> 0
   | (PSys_stop_promising, _) -> 1

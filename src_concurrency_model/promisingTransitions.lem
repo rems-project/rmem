@@ -11,13 +11,25 @@ open import Utils
 open import Assert_extra
 open ListMonad
 
+
+(* type tss_start_regs = register_value * maybe register_value
+ * type tss_request 'v = (w_eiid * tss_start_regs * 'v) *)
+
+
 type writedata 'v = 
   <| wd_w : write; 
      wd_rexinfo : maybe (w_eiid * address); 
-     wd_req_view : 'v |>   
+     wd_req_view : 'v;
+     wd_is_thread_start : bool |>   
+(* thread starts are modelled as promised writes with tsi_addr 
+   as memory value *)
+
 
 let show_writedata wd = 
-  show (show wd.wd_w, (show wd.wd_rexinfo, show wd.wd_req_view))
+  "<| wd_w = " ^ show wd.wd_w ^ ", " ^
+     "wd_rexinfo = " ^ show wd.wd_rexinfo ^ ", " ^
+     "wd_req_view = " ^ show wd.wd_req_view ^ ", " ^
+     "wd_is_thread_start = " ^ show wd.wd_is_thread_start ^ "|>"
 
 instance forall 'a. Show 'a => (Show (writedata 'a))
   let show = show_writedata
@@ -45,34 +57,85 @@ instance (Show (promised))
   let show = show_promised
 end
 
+
+
 (* abstracts from the storage subsystem *)
 type pss_sem 'pss 'v = 
-  <| handle_write : 'pss -> writedata 'v -> shared -> list ('v * 'pss);
-     handle_fulfil : 'pss -> writedata 'v -> list 'v;
-     handle_read : 'pss -> read_request -> 'v -> shared -> list (write * 'v);
-     pss_view : 'pss -> 'v;
-     merge_pss_states : 'pss -> 'pss -> 'pss;
-     (* is_final_state : ss_params -> 'pss -> bool;
-      * stopped_promising : 'pss -> bool;
-      * transitions : ss_params -> 'pss ->  *)
+  <| handle_write :
+       'pss ->
+       writedata 'v -> shared ->
+       list ('v * 'pss * maybe thread_id);
+
+     handle_fulfil : 
+       'pss ->
+       writedata 'v ->
+       list ('v * maybe thread_id);
+
+     handle_read :
+       'pss ->
+       read_request -> 'v -> shared ->
+       list (write * 'v);
+
+     pss_view :
+       'pss -> 'v;
+
+     merge_pss_states :
+       'pss -> 'pss -> 'pss;
+
+     (* handle_thread_start_write :
+      *   'pss ->
+      *   tss_request 'v ->
+      *   list (maybe thread_id * 'pss);
+      * 
+      * handle_thread_start_fulfil : 
+      *   'pss -> 
+      *   tss_request 'v ->
+      *   list (maybe thread_id); *)
+
+     handle_can_thread_start :
+       'pss ->
+       thread_id ->
+       list (memory_value * 'v)
+
   |>
 
 
 type pt_trans 'i 'ts 'ss 'v = 
   (* thread sync transitions *)
-  | PT_Write of (thread_id * ioid) * (writedata 'v * promised * shared) * 'v * ('ts * 'ss)
-  | PT_Fulfil of (thread_id * ioid) * (writedata 'v) * ('v) * 'ts
-  | PT_Read of (thread_id * ioid) * (read_request * 'v) * (write * 'v) * 'ts (* second view is view of write read *)
+  | PT_Write of 
+      (thread_id * ioid) * 
+      (writedata 'v * promised * shared) * 
+      ('v * maybe thread_id) *
+      ('ts * 'ss)
+  | PT_Fulfil of 
+      (thread_id * ioid) * 
+      (writedata 'v) * 
+      ('v * maybe thread_id) *
+      'ts
+  | PT_Read of 
+      (thread_id * ioid) * 
+      (read_request * 'v) * 
+      (write * 'v) * 
+      'ts (* second view is view of write read *)
   (* thread only transitions *)
-  | PT_finish of (thread_id * ioid) * (address * 'i) * 'ts
-  | PT_failed_store_excl of (thread_id * ioid) * 'ts
-  | PT_exception of (thread_id * ioid) * exception_type 'i * 'ts
+  | PT_finish of 
+      (thread_id * ioid) * 
+      (address * 'i) * 
+      'ts
+  | PT_failed_store_excl of 
+      (thread_id * ioid) * 
+      'ts
+  | PT_exception of 
+      (thread_id * ioid) * 
+      exception_type 'i * 
+      'ts
 
 
 
 let show_pt_trans = function
   | PT_Write ids (wd,pr,sh) t _ ->
-     "PT_Write " ^ show ids ^ " (, " ^ show wd ^ ", " ^ show pr ^ ", " ^ show sh ^" ) " ^ show t
+     "PT_Write " ^ show ids ^ " (, " ^ show wd ^ ", " ^
+       show pr ^ ", " ^ show sh ^" ) " ^ show t
   | PT_Fulfil ids req t _ ->
      "PT_Fulfil " ^ show ids ^ " " ^ show req ^ " " ^ show t
   | PT_Read ids req repl _ ->
@@ -93,7 +156,7 @@ end
 type pt_follow_label 'i 'v = pt_trans 'i unit unit 'v
 type pt_follow_trace 'i 'v = list (pt_follow_label 'i 'v)
 
-let pt_follow_label_of_pt_trans (t : pt_trans 'i 'ts 'ss 'v) : pt_trans 'i unit unit 'v =
+let pt_follow_label_of_pt_trans (t : pt_trans 'i 'ts 'ss 'v) : pt_follow_label 'i 'v = 
   match t with
   | PT_Write ids req repl _ -> PT_Write ids req repl ((),())
   | PT_Fulfil ids req repl _ -> PT_Fulfil ids req repl ()
@@ -112,12 +175,6 @@ let pt_trans_matches_pt_follow_label follow_label t =
    subsystem *)
 type p_trans 'i 'ts 'ss 'v =
   | PT of pt_trans 'i 'ts 'ss 'v
-  (* system transition *)
-  | PSys_thread_start of
-      (thread_id * ioid) * 
-        (register_value * maybe register_value) * (* (opd address, opd toc), only PPCGEN has toc *)
-        (maybe thread_id) * (* the thread_id of the new thread *)
-        'ts
   | PSys_stop_promising
   | PSys_finish of (map thread_id 'ts) * 'ss * pt_follow_trace 'i 'v
 
@@ -242,7 +299,8 @@ let ptrans_writes_footprint
   
 
 
-let tconf_after_pt_trans (pts,pss) : pt_trans 'i 'pts 'pss 'v -> ('pts * 'pss) = 
+let tconf_after_pt_trans (pts,pss) : 
+      pt_trans 'i 'pts 'pss 'v -> ('pts * 'pss) = 
   function
   (* thread sync transitions *)
   | PT_Write _ _ _ (pts,pss)    -> (pts,pss)

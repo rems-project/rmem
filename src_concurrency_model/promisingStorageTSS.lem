@@ -1,0 +1,65 @@
+open import Pervasives
+open import Sail_impl_base
+open import ExceptionTypes
+open import Isa
+open import InstructionSemantics
+open import Fragments
+open import PromisingViews
+open import Params
+open import Events
+open import Utils
+open import Assert_extra
+open import PromisingTransitions
+open ListMonad
+
+type tsi_active 'v = 
+  | Inactive
+  | Active
+  | Activated of memory_value * 'v * w_eiid
+
+type tss 'v = list (thread_id * tsi_active 'v)
+    
+let tss_initial_state threads_active = 
+  let do_active = function
+    | (tid,true) -> (tid,Active)
+    | (tid,false) -> (tid,Inactive)
+  end in
+  List.map do_active threads_active
+
+let tss_next_unstarted_tid tss = 
+  let maybe_si = List.find (fun tsi -> snd tsi = Inactive) tss in
+  Maybe.map fst maybe_si
+
+let rec tss_activate_thread tss tid address v weiid = 
+  let ma (tid',a) =
+    if tid' = tid
+    then (tid', Activated address v weiid)
+    else (tid',a)
+  in
+  List.map ma tss
+
+let tss_maybe_activate_thread tss wd = 
+  let mtid = tss_next_unstarted_tid tss in
+  let tss = match mtid with
+    | Nothing -> tss
+    | Just tid -> 
+       let v = ensure_just wd.wd_w.w_value "fail" in
+       tss_activate_thread tss tid v wd.wd_req_view wd.wd_w.weiid
+  end in
+  (tss, mtid)
+
+
+let tss_can_thread_start (tss : tss 'v) tid = 
+  match snd (List_extra.findNonPure (fun (tid',_) -> tid = tid') tss) with
+  | Activated mv v _ -> [(mv,v)]
+  | _ -> []
+  end
+
+let tss_thread_activated_by_write tss weiid = 
+  let activated_by_weiid = function
+    | (_, Activated _ _ weiid') -> weiid' = weiid
+    | _ -> false
+  end in
+  (* if a thread-start write is promised but is unsuccessful, it is not
+     in the tss list *)
+  Maybe.map fst (List.find activated_by_weiid tss)

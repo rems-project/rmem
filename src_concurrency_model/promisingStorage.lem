@@ -30,6 +30,7 @@ open import Isa
 open ListMonad
 open import PromisingViews
 open import PromisingTransitions
+open import PromisingStorageTSS
 
 
 
@@ -39,8 +40,12 @@ open import PromisingTransitions
 
 (* write promising write IDS are (tid,addr,number of writes by tid to addr) *)
 
-type pss = list (write * t * maybe thread_id)
 
+
+
+type pss =
+  <| pss_memory : list (write * t * maybe thread_id);
+     pss_tss : tss t |>
 
 
 (** Storage Subsystem *********************************************************)
@@ -48,28 +53,27 @@ type pss = list (write * t * maybe thread_id)
 
 (* initial state *)
 
-let pss_initial_state threads iws = 
+let pss_initial_state threads_active iws : pss = 
   let make_write i w = (w, List.length iws - i, Nothing) in
-  List.mapi make_write iws
+  let memory = List.mapi make_write iws in
+  let tss = tss_initial_state threads_active in
+  <| pss_memory = memory; pss_tss = tss |>
 
 (* NOTE: returns current time, not next timestamp *)
 val pss_view : pss -> t
-let pss_view = function
+let pss_view pss = 
+  match pss.pss_memory with
   | [] -> (0 : nat)
   | (w,t,_) :: _ -> t
   end
 
 let pss_find_write pss weiid =
-  List_extra.findNonPure (fun (w,_,_) -> w.weiid = weiid) pss
-
-(* let pss_view_of_write pss id =
- *   let (_,t,_) = pss_find_write pss id in t *)
-  
+  List_extra.findNonPure (fun (w,_,_) -> w.weiid = weiid) pss.pss_memory
 
 (* read transition *)
 
-let pss_possible_read_writes pss (rr,t) =
-  let addr_writes = [(w,t) | forall ((w,t,_) MEM pss) 
+let pss_possible_read_writes memory (rr,t) =
+  let addr_writes = [(w,t) | forall ((w,t,_) MEM memory) 
                            | sub_footprint rr.r_addr w.w_addr] in
   let (after,before) = splitWhile (fun (w,wt) -> wt > t) addr_writes in
   let ws = match before with
@@ -80,22 +84,22 @@ let pss_possible_read_writes pss (rr,t) =
   ws
 
 let pss_receive_read pss rr t (_ : shared) = 
-  pss_possible_read_writes pss (rr,t)
+  pss_possible_read_writes pss.pss_memory (rr,t)
 
 
 (* write transition *)
 
-let pss_can_be_atomic pss w rf_weiid = 
-  let before_w = tail (dropWhile (fun (w',_,_) -> w <> w') pss) in
+let pss_can_be_atomic memory w rf_weiid = 
+  let before_w = tail (dropWhile (fun (w',_,_) -> w <> w') memory) in
   let between = takeWhile (fun (w',_,_) -> w'.weiid <> rf_weiid) before_w in
   forall ((w',_,_) MEM between).
   (fst w'.w_addr <> fst w.w_addr || w'.w_thread = w.w_thread)
 
-let pss_can_store_xcl_succeed pss w rxinfo =
+let pss_can_store_xcl_succeed memory w rxinfo =
   match rxinfo with
   | Nothing -> true
   | Just (rf_weiid,r_addr) ->
-     (fst w.w_addr <> r_addr) || (pss_can_be_atomic pss w rf_weiid)
+     (fst w.w_addr <> r_addr) || (pss_can_be_atomic memory w rf_weiid)
   end
 
 (* Assumes w' has sub-footprint of w *)
@@ -125,12 +129,19 @@ let pss_receive_write pss wd shared =
   match shared with
   | Shared ->
      let t = pss_view pss in
-     let pss = (wd.wd_w,t+1,Nothing) :: pss in
-     guard (pss_can_store_xcl_succeed pss wd.wd_w wd.wd_rexinfo) >>
-     return (t+1, pss)
+     let memory = (wd.wd_w,t+1,Nothing) :: pss.pss_memory in
+     guard (pss_can_store_xcl_succeed memory wd.wd_w wd.wd_rexinfo) >>
+     let (tss,mtid) = 
+       if wd.wd_is_thread_start
+       then tss_maybe_activate_thread pss.pss_tss wd
+       else (pss.pss_tss, Nothing)
+     in
+     let pss = <| pss_memory = memory; pss_tss = tss |> in
+     return (t+1, pss, mtid)
   | NonShared ->
-     let (pss,t) = pss_replace_write wd.wd_w pss in
-     return (wd.wd_req_view, pss)
+     let (memory,t) = pss_replace_write wd.wd_w pss.pss_memory in
+     let pss = <| pss with pss_memory = memory |> in
+     return (wd.wd_req_view, pss, Nothing)
   end
 
 
@@ -142,8 +153,13 @@ let pss_receive_fulfil pss wd =
   let required_view = wd.wd_req_view in
   let (w,t,_) = pss_find_write pss wd.wd_w.weiid in
   guard (wd.wd_w = w && required_view < t &&
-         pss_can_store_xcl_succeed pss wd.wd_w wd.wd_rexinfo) >>
-  return t
+         pss_can_store_xcl_succeed pss.pss_memory wd.wd_w wd.wd_rexinfo) >>
+  let mtid =
+    if wd.wd_is_thread_start 
+    then tss_thread_activated_by_write pss.pss_tss wd.wd_w.weiid
+    else Nothing
+  in
+  return (t,mtid)
 
 
 
@@ -154,18 +170,19 @@ let pss_receive_fulfil pss wd =
 (* final state logging *)
 
 let pss_coherence pss =
-  {(w,w') | forall (((w',_,_),(w,_,_)) IN list_to_rel pss)
+  {(w,w') | forall (((w',_,_),(w,_,_)) IN list_to_rel pss.pss_memory)
           | w.w_addr = w'.w_addr}
 
 
-let pss_memory_value_of_footprint s fp = 
-  let writes = List.map (fun (w,_,_) -> write_with_complete_slice w) s in
+let pss_memory_value_of_footprint pss fp = 
+  let writes = List.map (fun (w,_,_) -> write_with_complete_slice w)
+                 pss.pss_memory in
   let mrs = ensure_just (mrs_from_writes fp writes)
               "promising_ss_thread_memory_value_of_footprints" in
   mrs.mrs_value
 
-let pss_memory_value_of_footprints s fps =
-  List.map (fun fp -> (fp,pss_memory_value_of_footprint s fp)) fps
+let pss_memory_value_of_footprints pss fps =
+  List.map (fun fp -> (fp,pss_memory_value_of_footprint pss fp)) fps
 
 (* let pss_enumerate_transitions params s = 
  *   guard (params.ss.promise_first && not s.pss_stopped_promising) >>
@@ -176,7 +193,7 @@ let pss_memory_value_of_footprints s fps =
  *   params.promise_first --> s.pss_stopped_promising *)
 
 
-let rec merge_pss_memories m1 m2 =
+let rec merge_memories m1 m2 =
   match (m1,m2) with
   | ([], []) -> []
   | (_ :: _, []) -> failwith "merge_memories: different length"
@@ -187,20 +204,21 @@ let rec merge_pss_memories m1 m2 =
         failwith ("merge_pss_memories: non-shared "^
                     "location accessed by different threads")
      | (Just _, _) ->
-        (w1,t1,maybetid1) :: merge_pss_memories ws1 ws2
+        (w1,t1,maybetid1) :: merge_memories ws1 ws2
      | (_, Just _) ->
-        (w2,t2,maybetid2) :: merge_pss_memories ws1 ws2
+        (w2,t2,maybetid2) :: merge_memories ws1 ws2
      | _ -> 
-        (w1,t1,maybetid1) :: merge_pss_memories ws1 ws2
+        (w1,t1,maybetid1) :: merge_memories ws1 ws2
      end
   end
 
-(* let merge_pss_states s1 s2 =
- *   let memory = merge_pss_memories s1.pss_memory s2.pss_memory in
- *   <| s1 with pss_memory = memory |>
- * 
- * let pss_stopped_promising pss =
- *   pss.pss_stopped_promising *)
+let merge_pss_memories pss1 pss2 = 
+  let () = ensure (pss1.pss_tss = pss2.pss_tss) "mismatch in tss" in
+  let memory' = merge_memories pss1.pss_memory pss2.pss_memory in
+  <| pss1 with pss_memory = memory' |>
+
+let pss_can_thread_start pss tid = 
+  tss_can_thread_start pss.pss_tss tid
 
 let pss_sem = 
   <| handle_write = pss_receive_write;
@@ -208,4 +226,6 @@ let pss_sem =
      handle_read = pss_receive_read;
      pss_view = pss_view;
      merge_pss_states = merge_pss_memories;
+     handle_can_thread_start = pss_can_thread_start;
   |>
+

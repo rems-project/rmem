@@ -97,7 +97,7 @@ type pts 'i 'v =
    ; vRel : 'v
    ; fwd_bank : map address (w_eiid * bool * 'v)
    ; xcl_bank : maybe ((w_eiid * address) * 'v) (* v is read exclusive view, for RISCV *)
-   ; promises : set (w_eiid * 'v * address)
+   ; promises : set (w_eiid * 'v * address * bool) (* bool is whether thread start *)
    ; initAddr : maybe address
    ; retAddr  : address
    ; cia      : maybe address
@@ -138,8 +138,8 @@ let inc_vmap m k v' =
   let v = Map.findWithDefault k bot m in
   Map.insert k (join v v') m
 
-let remove_promise wid promises = 
-  Set.filter (fun (w,_,_) -> w <> wid) promises
+let remove_promise tstart wid promises = 
+  Set.filter (fun (w,_,_,tstart') -> w <> wid && tstart = tstart') promises
 
 
 
@@ -179,30 +179,49 @@ let p_registers_final_state s =
 let p_update_initial_register_state t updates = 
   List.foldl (fun s (x,y) -> set_reg x y s) t updates
 
-let p_update_initial_fetch_address isa (t : pts 'i 'v) addr = 
+let p_update_initial_fetch_address isa (t : pts 'i 'v) mv = 
   let cia_reg = isa.cia_reg in
-  let rv = register_value_of_address addr (direction_of_reg_name cia_reg) in
-  <| t with reg = Map.insert (register_base_name cia_reg) rv t.reg;
-            initAddr = Just addr;
-            cia      = Just addr 
-  |>
+  let dir = direction_of_reg_name cia_reg in
+  let addr_rv = register_value_of_memory_value mv dir in
+  let addr = ensure_just (address_of_register_value addr_rv) "fail" in
+  let ts = 
+    <| t with reg = Map.insert (register_base_name cia_reg) addr_rv t.reg;
+              initAddr = Just addr;
+              cia      = Just addr; |>
+  in
+  (ts,addr)
 
 
 let inline dummy_ioid tid : ioid = (tid,0)
 let inline dummy_eiid tid : eiid = (dummy_ioid tid,0)
 
 
-let make_write_events isa s ii (wk,addr,sz,memv) =
-  let (write_addresses, _) =
+let make_write_events_aux isa s ii (wk,addr,sz,memv) =
+  let (writes, _) =
     isa.make_empty_write_events s.tid
       ii.ii_instruction ii.ii_id_state ii.ii_ioid
       (addr,sz) wk in
   let (s,wid) = gen_fresh_wid addr s in
-  let writes = Events.set_write_values memv write_addresses [] in
+  let writes = match memv with
+    | Just memv -> Events.set_write_values memv writes []
+    | Nothing -> writes
+  end in
   let write = ensure_singleton writes
                 "no/multiple write events generated for store" in
   let write = <| write with w_ioid = dummy_ioid s.tid; weiid = wid |> in
   (s,write)
+
+let make_write_events isa s ii (wk,addr,sz,memv) =
+  make_write_events_aux isa s ii (wk,addr,sz, Just memv)
+
+(* hard coded special address for thread start *)
+let thread_start_write_address = address_of_integer 0
+
+let make_thread_start_write_events isa s ii mv =
+  let size = List.length mv in
+  make_write_events_aux isa s ii
+    (Write_plain, thread_start_write_address, size, Just mv)
+
 
 let make_read_events isa tid ii (rk,addr,sz) = 
   let (read_requests, id_state') =
@@ -256,6 +275,7 @@ let update_reg_value r v' s =
   let () = ensure (null left) "fail" in
   let v'' = ensure_just (reassemble_register_value base_reg found) "fail" in
   set_reg rbn v'' s
+
 
 let cia_of_reg_state isa s = 
   let cia_rv = reg_value isa.cia_reg s in
@@ -327,13 +347,13 @@ type iconf 'i 'v = (pts 'i 'v * istate 'i 'v outcome_S)
 
 
 (* these do not handle mixed-size register accesses *)
-let read_reg ((ts,(ii,view,o)) : iconf' 'i 'v (register_value -> outcome_S)) r = 
+let read_reg ((ts,(ii,view,o)) : iconf' 'i 'v (register_value -> 'o)) r = 
   let rbn = register_base_name r in
   let (v,view') = (reg_value r ts, vReg rbn ts) in
   let ii = <| ii with ii_reg_reads = (r,v) :: ii.ii_reg_reads |> in
   (ts,(ii,join view view',o v))
 
-let write_reg ((ts,(ii,view,o)) : iconf 'i 'v) (r,v,rview) = 
+let write_reg ((ts,(ii,view,o)) : iconf' 'i 'v 'o) (r,v,rview) = 
   let rbn = register_base_name r in
   let ii = <| ii with ii_reg_writes = (r,v) :: ii.ii_reg_writes |> in
   let ts = ts $> update_reg_value r v
@@ -381,11 +401,10 @@ let reached_loop_limit params s =
 
 
 
-let write_cia_arm has_branched isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
+let write_cia_arm has_branched isa (ts,(ii,view,o)) = 
   let cia_reg = isa.cia_reg in
   let cia_rbn = register_base_name cia_reg in
-  if has_branched
-  then
+  if has_branched then
     let cia_a = snd (cia_of_reg_state isa ts) in
     let ts = <| ts with cia = Just cia_a |> in
     (ts,(ii,view,o))
@@ -397,13 +416,12 @@ let write_cia_arm has_branched isa ((ts,(ii,view,o)) : iconf 'i 'v) =
     let ts = <| ts with cia = Just cia_v |> in
     (ts,(ii,view,o))
 
-let write_cia_nia_riscv has_branched isa ((ts,(ii,view,o)) : iconf 'i 'v) = 
+let write_cia_nia_riscv has_branched isa (ts,(ii,view,o)) = 
   let cia_reg = isa.cia_reg in
   let cia_rbn = register_base_name cia_reg in
   let nia_reg = isa.nia_reg in
   let nia_rbn = register_base_name nia_reg in
-  if has_branched
-  then
+  if has_branched then
     let (nia_rv,nia_a) = nia_of_reg_state isa ts in
     let ts = set_reg cia_rbn nia_rv ts in
     let ts = set_vReg cia_rbn bot ts in
@@ -595,9 +613,8 @@ let run_store_instruction
   = 
   let (s,(ii,addr_view,o)) = do_local_effs (s,(ii,view,o)) in
   let ii = set_regs_feeding_address_regs_so_far ii in
-  let ((wk,addr,sz),o) = ensure_write_ea_outcome o in
+  let ((wk,addr,sz),o) = ensure_write_ea_outcome o in 
   let addr = addr_of_addr_lifted addr in
-  let _ = natFromInteger (integer_of_address addr) in
   let (s,(ii,addr_data_view,o)) = do_local_effs (s,(ii,addr_view,o)) in
   let (mv,c) = ensure_write_memv_outcome o in
   let (s,w) = make_write_events isa s ii (wk,addr,sz,mv) in
@@ -614,7 +631,8 @@ let run_store_instruction
   let (req_view : 'v) = join pre_view (vCoh addr s) in
   let wd = <| wd_w = w; 
               wd_rexinfo = Maybe.map fst xinfo; 
-              wd_req_view = req_view |> in
+              wd_req_view = req_view;
+              wd_is_thread_start = false |> in
   let ii = <| ii with ii_kind = IK_mem_write wk;
                       ii_propagated_writes = [w] |> in
   let c post_view = 
@@ -628,20 +646,85 @@ let run_store_instruction
                 xcl_bank = if is_exclusive_W wk then Nothing else s.xcl_bank;
                 fwd_bank = let e = (w.weiid,is_exclusive_W wk, addr_data_view) in
                            Map.insert addr e s.fwd_bank;
-                promises = remove_promise w.weiid s.promises
+                promises = remove_promise false w.weiid s.promises
       |>
     in
     let (s,(ii,view,o)) = do_local_effs (s,(ii,post_view,c true)) in
     fst (finish_non_branch_instruction isa (s,(ii,view,o)))
   in
-  if exists ((p,_,_) IN s.promises). p = w.weiid then
-    pss_sem.handle_fulfil pss wd >>= fun post_view ->
-    return (PT_Fulfil (s.tid,ii.ii_ioid) wd post_view (c post_view))
+  if exists ((p,_,_,tstart) IN s.promises). p = w.weiid && not tstart then
+    pss_sem.handle_fulfil pss wd >>= fun (post_view,_) ->
+    return (PT_Fulfil (s.tid,ii.ii_ioid) wd (post_view,Nothing) (c post_view))
   else
     let sh = if in_shared_memory params (addr,sz) then Shared else NonShared in
-    pss_sem.handle_write pss wd sh >>= fun (post_view,pss) ->
+    pss_sem.handle_write pss wd sh >>= fun (post_view,pss,_) ->
     return (PT_Write (s.tid,ii.ii_ioid) (wd,NonPromise,sh)
-              post_view (c post_view, pss))
+              (post_view,Nothing) (c post_view, pss))
+
+
+
+let run_thread_start_instruction
+      params
+      isa
+      ((s,(ii,view,o)) : iconf 'i 'v)
+      (pss_sem : pss_sem 'pss 'v)
+      (pss : 'pss)
+      : list (pt_trans 'i (pts 'i 'v) 'pss 'v)
+  = 
+
+  let (s,(ii,view,tsi_addr_rv)) =
+    read_reg (s,(ii,view,id)) isa.thread_start_info.tsi_addr in
+  let tsi_addr_mv = memory_value_of_register_value tsi_addr_rv in
+  let (s,w) = make_thread_start_write_events isa s ii tsi_addr_mv in
+
+  (* let (s,(ii,view,tsi_toc_rv)) =
+   *   match isa.thread_start_info.tsi_toc with
+   *   | Just tsi_toc -> read_reg (s,(ii,view,fun rv -> Just rv)) tsi_toc
+   *   | Nothing -> (s,(ii,view,Nothing))
+   * end in *)
+
+  (* let (s,(ii,view,tsi_extra_rv)) =
+   *   match isa.thread_start_info.tsi_extra with
+   *   | Just tsi_extra -> read_reg (s,(ii,view,fun rv -> Just rv)) tsi_extra
+   *   | Nothing -> (s,(ii,view,Nothing))
+   * end in *)
+
+  let dep_view = view in
+
+  let pre_view = joinS [dep_view; s.vCAP; s.vWp] in
+  let req_view = join pre_view (vCoh thread_start_write_address s) in
+
+  let wd = <| wd_w = w; 
+              wd_rexinfo = Nothing; 
+              wd_req_view = req_view;
+              wd_is_thread_start = true |> in
+  let c (post_view,mtid) = 
+    let s = 
+      <| s with vCoh = inc_vmap s.vCoh thread_start_write_address post_view;
+                vCAP = join s.vCAP dep_view;
+                vWm  = join s.vWm post_view;
+                promises = remove_promise true w.weiid s.promises
+      |>
+    in
+    let new_tid = match mtid with
+      | Just new_tid -> integerFromNat new_tid
+      | Nothing      -> ~1
+    end in
+    let tsi_return = isa.thread_start_info.tsi_return in
+    let new_tid_rv = register_value_for_reg_of_integer tsi_return new_tid in
+    let (s,(ii,view,o)) =
+      write_reg (s,(ii,view,o)) (tsi_return,new_tid_rv,post_view) in
+    fst (finish_non_branch_instruction isa (s,(ii,view,o)))
+  in
+  if exists ((p,_,_,tstart) IN s.promises). p = w.weiid && tstart then
+    pss_sem.handle_fulfil pss wd >>= fun (post_view,mtid) ->
+    return (PT_Fulfil (s.tid,ii.ii_ioid) wd (post_view,mtid) (c (post_view,mtid)))
+  else
+    pss_sem.handle_write pss wd Shared >>= fun (post_view,pss,mtid) ->
+    return (PT_Write (s.tid,ii.ii_ioid) (wd,NonPromise,Shared)
+              (post_view,mtid) (c (post_view,mtid), pss))
+
+
 
 let run_store_exclusive_instruction params isa 
       ((s,(ii,view,o)) : iconf 'i 'v)
@@ -674,6 +757,8 @@ let run_instruction
   let (s,(ii,view,o)) = initialise_instruction isa s (addr,opcode,instr) in
   if isa.is_branch instr then 
     run_branch_instruction params isa (s,(ii,view,o))
+  else  if isa.is_thread_start_instruction instr then 
+    run_thread_start_instruction params isa (s,(ii,view,o)) pss_sem pss
   else
     let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
     match fst o with
@@ -715,12 +800,45 @@ let run_addr params isa
 
 
 let quick_detect_deadlock ts = 
-  exists ((wid,v,addr) IN ts.promises). 
+  exists ((wid,v,addr,_) IN ts.promises). 
   not ((joinS [ts.vWp;ts.vCAP;vCoh addr ts]) < v)
 
 
 let quick_quick_detect_deadlock ts = 
-  exists ((wid,v,addr) IN ts.promises). not (ts.vCAP < v)
+  exists ((wid,v,addr,_) IN ts.promises). not (ts.vCAP < v)
+
+
+(* copying over logic from start_thread in MachineDefSystem *)
+let start_thread_and_run params isa ts pss_sem pss mv view =
+  
+  let updates = 
+    let tsi_f_tid = isa.thread_start_info.tsi_f_tid in
+    let tid = integerFromNat ts.tid in
+    let rv_new_tid = register_value_for_reg_of_integer tsi_f_tid tid in
+    [(register_base_name tsi_f_tid,rv_new_tid)]
+  in
+
+  let updates = match isa.thread_start_info.tsi_f_addr with
+    | Just tsi_f_addr ->
+       let tsi_f_addr_bn = register_base_name tsi_f_addr in
+       let dir = direction_of_reg_name tsi_f_addr in
+       let addr_rv = register_value_of_memory_value mv dir in
+       (tsi_f_addr_bn,addr_rv) :: updates
+    | _ -> updates
+  end in
+
+  (* let tsi_f_toc = isa.thread_start_info.tsi_f_toc in *)
+  (* let updates = match (tsi_f_toc, rv_toc) with
+   *   | (Just tsi_f_toc, Just rv_toc) ->
+   *      (register_base_name tsi_f_toc,rv_toc) :: updates
+   *   | _ -> updates
+   * end in *)
+  let ts = p_update_initial_register_state ts updates in
+  let (ts,addr) = p_update_initial_fetch_address isa ts mv in
+  let ts = <| ts with vWm = view; vWp = view; vRm = view;
+                      vRp = view; vCAP = view |> in
+  run_addr params isa ts pss_sem pss addr
+
 
 
 let next_instruction_transitions_of_thread
@@ -730,11 +848,16 @@ let next_instruction_transitions_of_thread
     (pss_sem : pss_sem 'pss 'v)
     (pss : 'pss)
   : list (pt_trans 'i (pts 'i 'v) 'pss 'v) =
-  option_guard s.cia >>= fun cia ->
-  guard (cia <> s.retAddr &&
-         isNothing s.raised_exception &&
-         not (quick_quick_detect_deadlock s)) >>
-  run_addr params isa s pss_sem pss cia
+  match s.cia with
+  | Just cia ->
+     guard (cia <> s.retAddr &&
+            isNothing s.raised_exception &&
+            not (quick_quick_detect_deadlock s)) >>
+     run_addr params isa s pss_sem pss cia
+  | Nothing ->
+     pss_sem.handle_can_thread_start pss s.tid >>= fun (mv,v) ->
+     start_thread_and_run params isa s pss_sem pss mv v
+  end
 
 
 (* fix the params.thread_run_after_stop_promising case *)

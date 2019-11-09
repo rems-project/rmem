@@ -36,6 +36,7 @@ open ListMonad
 open import PromisingViews
 open import PromisingTransitions
 open import PromisingThread
+open import PromisingStorageTSS
 open import PromisingStorage
 open import Promising
 
@@ -43,8 +44,12 @@ open import Promising
 
 type ui_p_trans 'i 'ts 'ss 'v = nat * p_trans 'i 'ts 'ss 'v
 
-type pss_ui_state = list (changed3 (write * t * maybe thread_id))
+type tss_ui_state = list (changed3 (thread_id * tsi_active t))
+type pss_ui_memory = list (changed3 (write * t * maybe thread_id))
 
+type pss_ui_state = 
+  <| pss_ui_memory : pss_ui_memory;
+     pss_ui_tss : tss_ui_state; |>
 
 type ui_instruction_info_list 'i = list (changed2 (instruction_info 'i))
 
@@ -64,7 +69,7 @@ type pts_ui_state' 'i 'ui_view =
     ui_promising_fwd_bank: list (changed3 (address * (w_eiid * bool * 'ui_view)));
     ui_promising_xcl_bank : changed2b (maybe ((w_eiid * address) * 'ui_view));
 
-    ui_promising_promises: list (changed3 w_eiid);
+    ui_promising_promises: list (changed3 (w_eiid * bool));
     ui_promising_initAddr: changed2b (maybe address);
     ui_promising_retAddr: changed2b address;
     ui_promising_raised_exception: changed2b (maybe (exception_type 'i));
@@ -81,9 +86,21 @@ type pts_ui_state' 'i 'ui_view =
 type pts_ui_state 'i = pts_ui_state' 'i t
 
 
+let make_tss_ui_state_1 tss' = unchanged3_list tss'
 
-let make_pss_ui_state_1 ss' = unchanged3_list ss'
-let make_pss_ui_state_2 ss ss' =  ui_list_diff3 ss ss'
+let make_tss_ui_state_2 tss tss' = ui_list_diff3 tss tss'
+
+
+let make_memory_ui_state_1 ss' = unchanged3_list ss'
+let make_memory_ui_state_2 ss ss' =  ui_list_diff3 ss ss'
+
+let make_pss_ui_state_1 ss' = 
+  <| pss_ui_memory = make_memory_ui_state_1 ss'.pss_memory;
+     pss_ui_tss = make_tss_ui_state_1 ss'.pss_tss |>
+
+let make_pss_ui_state_2 ss ss' = 
+  <| pss_ui_memory = make_memory_ui_state_2 ss.pss_memory ss'.pss_memory;
+     pss_ui_tss = make_tss_ui_state_2 ss.pss_tss ss'.pss_tss |>
 
      
 
@@ -128,7 +145,8 @@ let make_pts_ui_state_1 (t' : pts 'i t) =
          (Map_extra.toList t'.fwd_bank) ;
      ui_promising_xcl_bank =
        C2b_unchanged (Maybe.map (fun (x,v) -> (x,v)) (t'.xcl_bank));
-     ui_promising_promises = unchanged3_set (Set.map (fun (p,_,_) -> p) t'.promises);
+     ui_promising_promises =
+       unchanged3_set (Set.map (fun (p,_,_,tss) -> (p,tss)) t'.promises);
      ui_promising_initAddr = C2b_unchanged t'.initAddr;
      ui_promising_retAddr = C2b_unchanged t'.retAddr;
      ui_promising_initRegS = t'.initRegS;
@@ -168,7 +186,8 @@ let make_pts_ui_state_2 t t' ncands =
      ui_promising_vCAP = ui_eq_diff2b (t.vCAP) (t'.vCAP);
      ui_promising_vRel = ui_eq_diff2b (t.vRel) (t'.vRel);
      ui_promising_thread = t'.tid;
-     ui_promising_instrs = ui_diff_instrs t.instrs t'.instrs;
+     ui_promising_instrs = ui_diff_instrs (List.reverse t.instrs)
+                             (List.reverse t'.instrs);
      ui_promising_xcl_bank =
        let xcl = Maybe.map (fun (x,v) -> (x,v)) t.xcl_bank in
        let xcl' = Maybe.map (fun (x,v) -> (x,v)) t'.xcl_bank in
@@ -177,7 +196,9 @@ let make_pts_ui_state_2 t t' ncands =
        let fwd = List.map (fun (a,(x,b,v)) -> (a,(x,b,v))) (Map_extra.toList t.fwd_bank) in
        let fwd' = List.map (fun (a,(x,b,v)) -> (a,(x,b,v))) (Map_extra.toList t'.fwd_bank) in
        ui_list_diff3 fwd fwd';
-     ui_promising_promises = ui_set_diff3 (Set.map (fun (p,_,_) -> p) t.promises) (Set.map (fun (p,_,_) -> p) t'.promises);
+       ui_promising_promises = ui_set_diff3
+                                 (Set.map (fun (p,_,_,tss) -> (p,tss)) t.promises)
+                                 (Set.map (fun (p,_,_,tss) -> (p,tss)) t'.promises);
      ui_promising_initAddr = ui_eq_diff2b t.initAddr t'.initAddr;
      ui_promising_retAddr = ui_eq_diff2b t.retAddr t'.retAddr;
      ui_promising_raised_exception = ui_eq_diff2b t.raised_exception t'.raised_exception;

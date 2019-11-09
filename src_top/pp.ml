@@ -754,15 +754,15 @@ let maybe_pp_corresponding_symbol m mioid (ma:Sail_impl_base.address option) =
   else ""
 
 (* This is bad performance-wise: we always compute symo, even if we don't need it *)
-let deprecated__pp_value_and_or_corresponding_symbol m (v:string) (symo:string option) =
-  if m.pp_prefer_symbolic_values then
-    match symo with
-    | None -> v
-    | Some sym -> sym
-  else
-    match symo with
-    | None -> v
-    | Some sym -> v ^ "(" ^ sym ^ ")"
+(* let deprecated__pp_value_and_or_corresponding_symbol m (v:string) (symo:string option) =
+ *   if m.pp_prefer_symbolic_values then
+ *     match symo with
+ *     | None -> v
+ *     | Some sym -> sym
+ *   else
+ *     match symo with
+ *     | None -> v
+ *     | Some sym -> v ^ "(" ^ sym ^ ")" *)
 
 (* TODO: check Printing_functions.bit_lifteds_to_string. We should probably rewrite *)
 let pp_register_value m ioid (rv:Sail_impl_base.register_value) =
@@ -1898,6 +1898,38 @@ let pp_t_thread_start_label_aux graph m (r_address, r_toc) ioid suppl =
   | None -> assert false
   end
 
+
+let pp_pt_thread_start_label_aux graph m (mv_address, r_toc) ioid suppl =
+  begin match suppl with
+  | Some (Some new_tid) ->
+      let info =
+        sprintf "addr = %s%s, new_tid = %d"
+          (pp_memory_value m ioid mv_address)
+          (match r_toc with
+            | Some r_toc ->
+                ", toc = " ^ pp_register_value m ioid r_toc
+            | None -> "")
+          new_tid
+      in
+      ("thread start", Some info)
+
+  | Some None ->
+      let info =
+        sprintf "addr=%s%s"
+          (pp_memory_value m ioid mv_address)
+          (match r_toc with
+            | Some r_toc ->
+                ", toc=" ^ pp_register_value m ioid r_toc
+            | None -> "")
+      in
+      ("thread start (unsuccessful)", Some info)
+
+  | None -> assert false
+  end
+
+
+
+
 let pp_t_thread_start_label ?(graph=false) m tl =
   pp_t_thread_start_label_aux graph m tl.tl_label tl.tl_cont.tc_ioid tl.tl_suppl
 
@@ -1973,12 +2005,20 @@ let pp_pt_trans_aux pp_instruction_ast ?(graph=false) m t =
       let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
      ("fulfill promise", Some info)
 
-  | PT_Write (_, (wd,pr,_), _, _) ->
-      let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
-      begin match pr with
-      | Promise -> ("promise write", Some info)
-      | NonPromise -> ("write", Some info)
-      end
+  | PT_Write ((_,ioid), (wd,pr,_), (_,mtid), _) ->
+
+     if wd.wd_is_thread_start then
+       let mv = match wd.wd_w.w_value with
+         | Some mv -> mv
+         | _ -> failwith "thread start write has no value"
+       in
+       pp_pt_thread_start_label_aux graph m (mv,None) ioid (Some mtid)
+     else
+        let info = colour_memory_action m (pp_writedata_uncoloured m wd) in
+        begin match pr with
+        | Promise -> ("promise write", Some info)
+        | NonPromise -> ("write", Some info)
+        end
 
   | PT_finish (_, (addr, instr), _) ->
       let instr_pped = pp_instruction_ast m m.pp_symbol_table instr addr in
@@ -1995,6 +2035,9 @@ let pp_pt_trans_aux pp_instruction_ast ?(graph=false) m t =
 
   | PT_exception ((_,ioid), exception_type, _) ->
       ("raise exception", Some (pp_exception pp_instruction_ast m ioid exception_type))
+
+  (* | PT_Start_thread ((_,ioid),(wd,promised),(mtid,(rv,mrv)),_) ->
+   *    pp_t_thread_start_label_aux graph m (rv,mrv) ioid (Some mtid) *)
 
 
 let pp_pt_trans pp_instruction_ast ?(graph=false) m t =
@@ -2020,8 +2063,8 @@ let pp_pt_thread_start_trans ?(graph=false) m (tid,ioid) (rv,mrv) mtid' =
 let pp_p_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss,PromisingViews.t0) p_trans) =
   match t with
   | PT t -> pp_pt_trans pp_instruction_ast ~graph m t
-  | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
-     pp_pt_thread_start_trans ~graph m (tid,ioid) (rv,mrv) tid'
+  (* | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
+   *    pp_pt_thread_start_trans ~graph m (tid,ioid) (rv,mrv) tid' *)
   | PSys_stop_promising -> "Stop promising"
   | PSys_finish (_, _, _) -> "Finalise Promising execution"
 
@@ -2388,16 +2431,48 @@ let tso_pp_ui_storage_subsystem_state pp_instruction_ast m model ss =
 
 
 let pp_pssto_state m model ss =
+
+  let open PromisingStorageTSS in
+
   let memory =
     pp_changed3_list_body m
-      pp_write_time_and_maybetid_uncoloured ss
+      pp_write_time_and_maybetid_uncoloured ss.pss_ui_memory
   in
+
+  let pp_tsi _m (tid,active) =
+    match active with
+    | Active -> sprintf "tid %d active" tid
+    | Activated _ -> sprintf "tid %d active" tid
+    | Inactive -> sprintf "tid %d inactive" tid
+  in
+
+  let tss = pp_changed3_list_body m pp_tsi ss.pss_ui_tss in
+
+  (* let pp_req (m : ppmode) ((weiid,(reg,mreg),t),mtid) =
+   *   let ioid = fst weiid in
+   *   sprintf "weiid %s -> %s, %s @%s -> %s"
+   *     (pp_pretty_eiid m weiid)
+   *     (pp_register_value m ioid reg)
+   *     (match mreg with
+   *      | Some reg2 -> pp_register_value m ioid reg2 ^ ", "
+   *      | None -> "")
+   *   (pp_t m t)
+   *   (match mtid with
+   *    | Some tid -> sprintf "%d" tid
+   *    | None -> "(no thread started)")
+   * in
+   * 
+   * let reqs = pp_changed3_list_body m pp_req ss.pss_ui_tss.tss_ui_reqs in *)
+
+  
+
 
     (*begin match m.Globals.pp_kind with
     | Ascii ->*)
       String.concat ""
        [sprintf "%s:"                           (colour_bold m "Storage subsystem state (Promising)"); !linebreak;
         "memory:  " ^ memory; !linebreak;
+        "(tss):  " ^ tss; !linebreak;
        ]
     (*| Html ->
     end*)
@@ -3130,7 +3205,10 @@ let pp_ui_instruction_list pp_instruction_ast m tid (indent:string) instrs : str
  *                        (pp_view m t)
  *                        (pp_address m (Some last_ioid) addr) *)
 
-let pp_promise _m = pp_eiid
+ let pp_promise _m (p,b) =
+   if b
+   then "(thread start) " ^ pp_eiid p
+   else pp_eiid p
 
 let pp_ui_machine_thread_state pp_instruction_ast m (tid,ts) =
   let initial_ioid = (tid,0) in (* hack for dwarf pp... *)
@@ -3267,7 +3345,7 @@ let pp_ui_promising_thread_state pp_instruction_ast m (tid,ts) =
     colour_changed2b_f m
       (fun m maddr ->
         match maddr with
-        | None -> "thread not started"
+        | None -> "--"
         | Some addr -> pp_address m ts.ui_promising_last_ioid addr
       ) ts.ui_promising_initAddr
   in
@@ -3442,7 +3520,7 @@ let pp_ui_system_state pp_instruction_ast m s =
 
 
 
-let pp_ui_pstate pp_instruction_ast m s =
+let pp_ui_pstate pp_instruction_ast m (s : ('i, 'i pts_ui_state, pss_ui_state, 'v) p_ui_state) =
 
   let stopped_promising = 
     let pp _m = function
