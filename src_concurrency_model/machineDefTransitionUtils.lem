@@ -226,70 +226,25 @@ let is_register_read_or_write_transition : (trans 'i 'ts 'ss -> bool) = function
 
 (* Eager Fetchness:
  *  Atomic:
- *    By Default:  fetch/decode eager
- *    if eager_fetch_*  then init_fetch and all cache transitions
+ *    if eager_fetch_*  then init_fetch
+ *    if eager_memory_aux then satisfy/decode + cache transitions
  * Relaxed
- *    By default:  None
- *    if eager_fetch  then init_fetch, ic intermediates, i$ update,
- *    and fetch/decode for non-modified-code locations
+ *    if eager_fetch  then init_fetch
+ *    if eager_memory_aux then cache transitions
+ *    if eager_fetch_unmodified then satisfy/decode for unmodiifed locations
  *)
 
-let is_always_eager_atomic_fetch params = function
-  | T_trans thread_trans ->
-      match thread_trans with
-      | T_only tl ->
-          match tl.tl_label with
-          | T_init_fetch _ m        -> false
-          | T_decode _ _            -> true
-          | _                       -> false
-          end
-      | T_sync tsl _ ->
-          match tsl with
-          | T_fetch _               -> true
-          | _ -> false
-          end
-      | _ -> false
-      end
-  | _ -> false
-  end
-
-let is_eager_atomic_fetch_transition : (trans 'i 'ts 'ss -> bool) = function
-  | SS_trans ss_trans ->
-      match ss_trans with
-      | SS_only ss_only_trans _ ->
-          match ss_only_trans with
-          | SS_Flat_icache_update _ _ _ -> true
-          | _ -> false
-          end
-      | SS_sync ss_sync_trans _ _ ->
-          match ss_sync_trans with
-          | SS_Flat_thread_ic _ _ -> true
-          | SS_Flat_ic_finish _ -> true
-          | _ -> false
-          end
-      end
-  | T_trans thread_trans ->
-      match thread_trans with
-      | T_only tl ->
-          match tl.tl_label with
-          | T_init_fetch _ m        -> not m
-          | _                       -> false
-          end
-      | _ -> false
-      end
-  end
-
-let is_eager_relaxed_fetch_speculate_transition params : (trans 'i 'ts 'ss -> bool) =
+let is_eager_fetch_speculate_transition params allow_multi : (trans 'i 'ts 'ss -> bool) =
   function
   | T_trans (T_only tl) ->
       match tl.tl_label with
-      | T_init_fetch addr m -> not m || params.t.thread_allow_tree_speculation
+      | T_init_fetch addr m -> (not m) || allow_multi
       | _ -> false
       end
   | _ -> false
   end
 
-let is_eager_relaxed_fetch_fetch_transition params : (trans 'i 'ts 'ss -> bool) =
+let is_eager_relaxed_fetch_decode_transition params : (trans 'i 'ts 'ss -> bool) =
   let seen addr =
       let addr_fp = (addr, 4) in
       let seen_loc =
@@ -317,51 +272,49 @@ let is_eager_relaxed_fetch_fetch_transition params : (trans 'i 'ts 'ss -> bool) 
   | _ -> false
   end
 
-let is_eager_relaxed_fetch_ic_transition : (trans 'i 'ts 'ss -> bool) = function
-  | SS_trans ss_trans ->
-      match ss_trans with
-      | SS_only ss_only_trans _ ->
-          match ss_only_trans with
-          | SS_Flat_icache_update _ _ _ -> true
-          | _ -> false
-          end
-      | SS_sync ss_sync_trans _ _ ->
-          match ss_sync_trans with
-          | SS_Flat_thread_ic _ _ -> true
-          | SS_Flat_ic_finish _ -> true
-          | _ -> false
-          end
+let is_eager_fetch_decode_transition params t =
+  if is_fetch_relaxed params.ss then
+    is_eager_relaxed_fetch_decode_transition params t
+  else
+    failwith "eager_fetch_unmodified only valid in relaxed mode"
+
+(* aux fetch tranistions are satisfy/decode/icache updates/ic propagations *)
+let is_eager_fetch_aux_storage_transition = function
+  | SS_only ss_only_trans _ ->
+      match ss_only_trans with
+      | SS_Flat_icache_update _ _ _ -> true
+      | _ -> false
       end
-  | T_trans thread_trans ->
-      match thread_trans with
-      | T_only tl ->
-          match tl.tl_label with
-          | T_init_fetch _ _        -> false
-          | T_decode _ _            -> false
-          | _ -> false
-          end
-      | T_sync tsl _ ->
-          match tsl with
-          | T_propagate_cache_maintenance _ -> false
-          | T_fetch _                      -> false
-          | _ -> false
-          end
-      | T_thread_start _ -> false
+  | SS_sync ss_sync_trans _ _ ->
+      match ss_sync_trans with
+      | SS_Flat_thread_ic _ _ -> true
+      | SS_Flat_ic_finish _ -> true
+      | _ -> false
       end
   end
 
-let is_eager_fetch_fetch_transition params t =
-    if is_fetch_relaxed params.ss then
-      is_eager_relaxed_fetch_fetch_transition params t
-    else
-      true
+let is_eager_fetch_aux_thread_transition relaxed =
+  function
+  | T_only tl ->
+      match tl.tl_label with
+      | T_init_fetch _ m -> false
+      | T_decode _ _ -> true
+      | _ -> false
+      end
+  | T_sync tsl _ ->
+      match tsl with
+      | T_fetch _ -> not relaxed
+      | _ -> false
+      end
+  | _ -> false
+  end
 
-let is_eager_fetch_transition params t =
-    if is_fetch_relaxed params.ss then
-      is_eager_relaxed_fetch_speculate_transition params t
-      || is_eager_relaxed_fetch_ic_transition t
-    else
-      is_eager_atomic_fetch_transition t
+let is_eager_fetch_aux_transition params =
+  function
+  | SS_trans ss_trans -> is_eager_fetch_aux_storage_transition ss_trans
+  | T_trans thread_trans -> is_eager_fetch_aux_thread_transition (is_fetch_relaxed params.ss) thread_trans
+  | _ -> false
+  end
 
 let is_memory_auxiliary_steps_transition params : (trans 'i 'ts 'ss -> bool) = function
   | SS_trans ss_trans ->
@@ -504,8 +457,8 @@ let is_eager_transition params isa
     (t:             trans 'i 'ts 'ss)
     : bool
   =
-     (eager_mode.eager_fetch_single        && is_eager_fetch_transition params t && is_fetch_single_transition t)
-  || (eager_mode.eager_fetch_multi         && is_eager_fetch_transition params t && params.t.thread_allow_tree_speculation && is_fetch_multi_transition t)
+     (eager_mode.eager_fetch_single        && is_eager_fetch_speculate_transition params false t)
+  || (eager_mode.eager_fetch_multi         && is_eager_fetch_speculate_transition params true t && params.t.thread_allow_tree_speculation )
   || (eager_mode.eager_pseudocode_internal && is_pseudocode_internal_step_transition t)
   || (eager_mode.eager_constant_reg_read   && is_constant_register_read_transition isa t)
   || (eager_mode.eager_reg_rw              && is_register_read_or_write_transition t)
@@ -514,9 +467,8 @@ let is_eager_transition params isa
   || (eager_mode.eager_fp_recalc           && is_footprint_recalculation_transition t)
   || (eager_mode.eager_thread_start        && is_thread_start_transition t)
   || (eager_mode.eager_local_mem           && is_local_mem_transition eager_mode.em_shared_memory t)
-  || (eager_mode.eager_fetch_unmodified    && is_eager_fetch_fetch_transition params t)
-  || (eager_mode.eager_memory_aux          && is_eager_fetch_transition params t)
-  || ((not (is_fetch_relaxed params.ss))   && is_always_eager_atomic_fetch params t)
+  || (eager_mode.eager_fetch_unmodified    && is_eager_fetch_decode_transition params t)
+  || (eager_mode.eager_memory_aux          && is_eager_fetch_aux_transition params t)
 
 
 
