@@ -138,8 +138,8 @@ let inc_vmap m k v' =
   let v = Map.findWithDefault k bot m in
   Map.insert k (join v v') m
 
-let remove_promise tstart wid promises = 
-  Set.filter (fun (w,_,_,tstart') -> w <> wid && tstart = tstart') promises
+let remove_promise wid promises = 
+  Set.filter (fun (w,_,_,_) -> w <> wid) promises
 
 
 
@@ -646,13 +646,13 @@ let run_store_instruction
                 xcl_bank = if is_exclusive_W wk then Nothing else s.xcl_bank;
                 fwd_bank = let e = (w.weiid,is_exclusive_W wk, addr_data_view) in
                            Map.insert addr e s.fwd_bank;
-                promises = remove_promise false w.weiid s.promises
+                promises = remove_promise w.weiid s.promises
       |>
     in
     let (s,(ii,view,o)) = do_local_effs (s,(ii,post_view,c true)) in
     fst (finish_non_branch_instruction isa (s,(ii,view,o)))
   in
-  if exists ((p,_,_,tstart) IN s.promises). p = w.weiid && not tstart then
+  if exists ((p,_,_,_) IN s.promises). p = w.weiid then
     pss_sem.handle_fulfil pss wd >>= fun (post_view,_) ->
     return (PT_Fulfil (s.tid,ii.ii_ioid) wd (post_view,Nothing) (c post_view))
   else
@@ -703,7 +703,7 @@ let run_thread_start_instruction
       <| s with vCoh = inc_vmap s.vCoh thread_start_write_address post_view;
                 vCAP = join s.vCAP dep_view;
                 vWm  = join s.vWm post_view;
-                promises = remove_promise true w.weiid s.promises
+                promises = remove_promise w.weiid s.promises
       |>
     in
     let new_tid = match mtid with
@@ -716,7 +716,7 @@ let run_thread_start_instruction
       write_reg (s,(ii,view,o)) (tsi_return,new_tid_rv,post_view) in
     fst (finish_non_branch_instruction isa (s,(ii,view,o)))
   in
-  if exists ((p,_,_,tstart) IN s.promises). p = w.weiid && tstart then
+  if exists ((p,_,_,_) IN s.promises). p = w.weiid then
     pss_sem.handle_fulfil pss wd >>= fun (post_view,mtid) ->
     return (PT_Fulfil (s.tid,ii.ii_ioid) wd (post_view,mtid) (c (post_view,mtid)))
   else
