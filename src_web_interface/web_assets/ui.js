@@ -115,7 +115,7 @@ $(document).ready(function () {
             };
 
             if ($("#link_follow_list").prop("checked")) {
-                obj.follow = follow_history.join(",");
+                obj.follow = follow_history.join(";");
                 if ($("#link_include_commands").prop("checked")) {
                     obj.history = command_history.join(";");
                 }
