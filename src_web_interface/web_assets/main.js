@@ -157,9 +157,11 @@ function hash_changed () {
     if (obj.history && obj.history.length > 0) {
         interact_lib.input_str(obj.history);
     }
+    /*
     if (obj.follow && obj.follow.length > 0) {
         interact_lib.input_str("set follow_list " + obj.follow);
     }
+    */
     if (obj.panes) {
         restore_split(obj.panes);
     } else {

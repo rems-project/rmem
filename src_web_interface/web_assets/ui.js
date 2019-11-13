@@ -98,6 +98,7 @@ $(document).ready(function () {
     $("#link_copy_button").click(function () {
         if (STATE.test_type() === "litmus") {
             var total_history = interact_lib.get_history();
+            /*
             var i;
             for (i = total_history.length; i > 0; i--) {
                 // skip backwards until the first non-number -> non-transition
@@ -108,12 +109,16 @@ $(document).ready(function () {
 
             var command_history = total_history.slice(0, i);
             var follow_history = total_history.slice(i);
+            */
 
 
             var obj = {
                 test: load_litmus_editor.getValue().trim()
             };
 
+            obj.history = total_history.join(";");
+
+            /*
             if ($("#link_follow_list").prop("checked")) {
                 obj.follow = follow_history.join(";");
                 if ($("#link_include_commands").prop("checked")) {
@@ -124,6 +129,7 @@ $(document).ready(function () {
                     obj.history = total_history.join(";");
                 }
             }
+            */
 
             if ($("#link_model_options").prop("checked")) {
                 obj.model_options = {
