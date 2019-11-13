@@ -37,6 +37,14 @@ function graph_outdated() {
 }
 
 function do_display_dot(html) {
+    // before setting the new graph HTML, disable all the clicks on the
+    // old graph as it is not disposed when the new graph is set.
+    // If we do not do that, clicking on a transition after doing refresh
+    // the transition is taken twice, once by the click on the old graph
+    // and once by the click on the new graph.
+    $(".graph g.node text[fill='#0000ff'], .graph g.node text[fill='#006400']").each(function (i) {
+        $(this).off("click");
+    });
     STATE.graph_html(html);
     ko.tasks.schedule(function () {
         $(".graph g.node text[fill='#0000ff'], .graph g.node text[fill='#006400']").each(function (i) {
