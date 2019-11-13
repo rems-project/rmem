@@ -22,6 +22,7 @@ var model_options_dialog = $("#options").dialog({
         autoOpen: false,
         modal: true,
         width: 500,
+        height: Math.min(700, window.innerHeight - 40),
         buttons: {
             "Cancel": function () {
                 $(this).dialog("close");
