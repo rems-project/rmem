@@ -468,7 +468,7 @@ let is_eager_transition params isa
   || (eager_mode.eager_thread_start        && is_thread_start_transition t)
   || (eager_mode.eager_local_mem           && is_local_mem_transition eager_mode.em_shared_memory t)
   || (eager_mode.eager_fetch_unmodified    && is_eager_fetch_decode_transition params t)
-  || (eager_mode.eager_memory_aux          && is_eager_fetch_aux_transition params t)
+  || ((eager_mode.eager_memory_aux || is_fetch_relaxed params.ss)          && is_eager_fetch_aux_transition params t)
 
 
 
