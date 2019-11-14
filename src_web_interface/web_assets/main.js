@@ -67,7 +67,7 @@ function clear_screen () {
 }
 
 function quit () {
-    // what to do here?
+    // nothing to do
 }
 
 function restart () {
@@ -145,23 +145,17 @@ function hash_changed () {
         $("input[type='radio'][name='force_sc'][value='" + obj.model_options.force_sc + "']").prop("checked", true);
         $("input[type='radio'][name='tree_speculation'][value='" + obj.model_options.tree_speculation + "']").prop("checked", true);
         $("input[type='radio'][name='promise_first'][value='" + obj.model_options.promise_first + "']").prop("checked", true);
-        $("input[type='radio'][name='flowing_topology_2'][value='" + obj.model_options.flowing_topology_2 + "']").prop("checked", true);
-        $("input[type='radio'][name='flowing_topology_3'][value='" + obj.model_options.flowing_topology_3 + "']").prop("checked", true);
-        $("input[type='radio'][name='flowing_topology_4'][value='" + obj.model_options.flowing_topology_4 + "']").prop("checked", true);
+        $("input[type='radio'][name='topology_2'][value='" + obj.model_options.flowing_topology_2 + "']").prop("checked", true);
+        $("input[type='radio'][name='topology_3'][value='" + obj.model_options.flowing_topology_3 + "']").prop("checked", true);
+        $("input[type='radio'][name='topology_4'][value='" + obj.model_options.flowing_topology_4 + "']").prop("checked", true);
     }
     load_litmus_editor.setValue(obj.test);
     load_litmus();
-    if (obj.options) {
-        set_all_options(obj.options);
+    if (obj.history) {
+        obj.history.forEach( function (cmd, i) {
+            do_command(cmd, true);
+        });
     }
-    if (obj.history && obj.history.length > 0) {
-        interact_lib.input_str(obj.history);
-    }
-    /*
-    if (obj.follow && obj.follow.length > 0) {
-        interact_lib.input_str("set follow_list " + obj.follow);
-    }
-    */
     if (obj.panes) {
         restore_split(obj.panes);
     } else {

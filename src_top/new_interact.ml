@@ -1989,19 +1989,11 @@ let do_set key args interact_state =
 
 exception DoCmdError of interact_state * string
 
-let rec do_cmd
-    (history:        bool) (* append ast to cmd_history *)
+let rec do_cmd_aux
     (ast:            Interact_parser_base.ast)
     (interact_state: interact_state)
     : interact_state
   =
-  (* Add the command to cmd_history *)
-  let interact_state =
-    if history then
-      {interact_state with cmd_history = ast :: interact_state.cmd_history}
-    else interact_state
-  in
-
   (* Drop the head of follow_suffix *)
   let interact_state =
     match interact_state.follow_suffix with
@@ -2021,8 +2013,12 @@ let rec do_cmd
 
   match ast with
   | Interact_parser_base.Quit ->
+      (* The text/terminal frontend quit function does not return; the
+      web-interface frontend quit function does return *)
       Screen.quit ();
-      assert false
+      SO.strLine "Can't quit now, try again later"
+      |> Screen.show_warning ppmode;
+      interact_state
 
   | Interact_parser_base.Help args ->
       do_help ppmode args;
@@ -2104,12 +2100,12 @@ let rec do_cmd
 
   | Interact_parser_base.Default ->
       (* Currently the same as Step. *)
-      do_cmd false (Interact_parser_base.Step None) interact_state
+      do_cmd_aux (Interact_parser_base.Step None) interact_state
 
   | Interact_parser_base.Step None ->
       begin match interact_state.default_cmd with
       | None     -> interact_state
-      | Some ast -> do_cmd false ast interact_state
+      | Some ast -> do_cmd_aux ast interact_state
       end
 
   | Interact_parser_base.Step (Some i) when i > 0 ->
@@ -2121,7 +2117,7 @@ let rec do_cmd
             |> Screen.show_warning ppmode;
             interact_state
         | Some ast ->
-            do_cmd false ast interact_state
+            do_cmd_aux ast interact_state
             |> do_step (i - 1)
         end
       in
@@ -2147,7 +2143,7 @@ let rec do_cmd
         SO.strLine "the follow-list is empty"
         |> Screen.show_warning ppmode;
       List.fold_left
-        (fun interact_state ast -> do_cmd false ast interact_state)
+        (fun interact_state ast -> do_cmd_aux ast interact_state)
         interact_state
         interact_state.follow_suffix
 
@@ -2161,7 +2157,7 @@ let rec do_cmd
           match interact_state.default_cmd with
           | None -> interact_state
           | Some ast ->
-              do_cmd false ast interact_state
+              do_cmd_aux ast interact_state
               |> do_auto
         in
         do_auto interact_state
@@ -2253,6 +2249,14 @@ let rec do_cmd
   | Interact_parser_base.DeleteBreakpoint n ->
       do_delete_breakpoint n interact_state
 
+let do_cmd
+    (ast:            Interact_parser_base.ast)
+    (interact_state: interact_state)
+    : interact_state
+  =
+  (* Add the command to cmd_history and then execute it *)
+  {interact_state with cmd_history = ast :: interact_state.cmd_history}
+  |> do_cmd_aux ast
 
 let make_prompt interact_state : SO.t =
   begin match interact_state.interact_nodes with
@@ -2329,7 +2333,7 @@ and parse_and_loop interact_state = fun cmd ->
     | ParserASTs input_asts ->
         begin try
           List.fold_left
-            (fun interact_state ast -> do_cmd true ast interact_state)
+            (fun interact_state ast -> do_cmd ast interact_state)
             interact_state
             input_asts
         with

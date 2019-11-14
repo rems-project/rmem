@@ -24,4 +24,6 @@
 /sail_version.ml
 /sail2_version.ml
 /sanity.xml
+/system.js
+/console_help_printer.native
 

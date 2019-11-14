@@ -97,42 +97,9 @@ $(document).ready(function () {
 
     $("#link_copy_button").click(function () {
         if (STATE.test_type() === "litmus") {
-            var total_history = interact_lib.get_history();
-            /*
-            var i;
-            for (i = total_history.length; i > 0; i--) {
-                // skip backwards until the first non-number -> non-transition
-                if (!total_history[i - 1].match(/^\d+$/)) {
-                    break;
-                }
-            }
-
-            var command_history = total_history.slice(0, i);
-            var follow_history = total_history.slice(i);
-            */
-
-
             var obj = {
-                test: load_litmus_editor.getValue().trim()
-            };
-
-            obj.history = total_history.join(";");
-
-            /*
-            if ($("#link_follow_list").prop("checked")) {
-                obj.follow = follow_history.join(";");
-                if ($("#link_include_commands").prop("checked")) {
-                    obj.history = command_history.join(";");
-                }
-            } else {
-                if ($("#link_include_commands").prop("checked")) {
-                    obj.history = total_history.join(";");
-                }
-            }
-            */
-
-            if ($("#link_model_options").prop("checked")) {
-                obj.model_options = {
+                test: load_litmus_editor.getValue().trim(),
+                model_options: {
                     model: $("input[type='radio'][name='model']:checked").val(),
                     embedding: $("input[type='radio'][name='semantics']:checked").val(),
                     force_sc: $("input[type='radio'][name='force_sc']:checked").val(),
@@ -145,24 +112,15 @@ $(document).ready(function () {
                     flowing_topology_2: $("input[type='radio'][name='topology_2']:checked").val(),
                     flowing_topology_3: $("input[type='radio'][name='topology_3']:checked").val(),
                     flowing_topology_4: $("input[type='radio'][name='topology_4']:checked").val()
-                };
-            }
-
-            if ($("#link_all_options").prop("checked")) {
-                obj.options = last_options;
-            }
+                },
+                history: interact_lib.get_history()
+            };
 
             if ($("#link_window_layout").prop("checked")) {
                 obj.panes = serialize_split();
             }
 
             var path = window.location.toString().split("#")[0];
-
-            // TODO FIXME TEMPORARY
-            if ($("#link_use_redirect").prop("checked")) {
-                path = path.replace("/~jf451/", "/~pes20/");
-            }
-
             var link = path + "#" + encodeURIComponent(JSON.stringify(obj));
 
             var fallback = function (url) {
@@ -176,7 +134,7 @@ $(document).ready(function () {
             if ($("#link_shorten_url").prop("checked")) {
                 confirm_dialog("Creating a short URL leaks potentially-confidential\n"
                                + "information, e.g. your litmus test, to the operators\n"
-                               + 'of the URL shortening service (in our case, <a href="http://is.gd/" target="_blank">is.gd</a>).\n\n'
+                               + 'of the URL shortening service (<a href="http://is.gd/" target="_blank">is.gd</a>).\n\n'
                                + "Are you sure you want to do this?",
                                function () {
                                    var close_loading_dialog = processing_dialog("Requesting short URL...");
@@ -192,12 +150,10 @@ $(document).ready(function () {
                                        timeout: 10000,
                                        success: function (data, text_status, jqXHR) {
                                            if (data.shorturl) {
+                                               clipboard.copy(data.shorturl).catch(fallback(data.shorturl));
                                                message_dialog("Short URL created:\n\n"
                                                               + '<a href="' + data.shorturl + '" target="_blank">' + data.shorturl + '</a>\n\n'
-                                                              + "Click OK to copy to clipboard.",
-                                                              function () {
-                                                                  clipboard.copy(data.shorturl).catch(fallback(data.shorturl));
-                                                              });
+                                                              + "(copied to clipboard).");
                                            } else {
                                                show_error(data.errormessage);
                                            }

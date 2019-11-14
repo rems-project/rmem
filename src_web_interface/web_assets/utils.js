@@ -87,7 +87,7 @@ function confirm_dialog (msg, callback) {
     });
 }
 
-function message_dialog (msg, callback) {
+function message_dialog (msg) {
     var div = $('<div class="popup_dialog"><span class="ui-icon ui-icon-info" style="margin: 5px"></span><div class="msg">' + msg + '</div></div>');
     var closer = function () {
         if (div.dialog("instance") !== undefined) {
@@ -104,12 +104,7 @@ function message_dialog (msg, callback) {
         width: "auto",
         minWidth: 150,
         maxWidth: window.innerWidth - 100,
-        buttons: {
-            "OK": function () {
-                closer();
-                callback();
-            }
-        },
+        buttons: { "OK": closer },
         close: closer
     });
 }

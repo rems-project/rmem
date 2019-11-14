@@ -49,24 +49,25 @@ let getElementById x =
       assert false)
 ;;
 
-let radio_with_handler value name checked handler =
-  let p = Dom_html.createDiv document in
-
-  let lab = Dom_html.createLabel Dom_html.document in
-  Dom.appendChild p lab;
-
+let topo_radio name value =
   let b =
     Dom_html.createInput
-    ~name:(js name) ~_type:(js "radio") Dom_html.document in
-  b##.checked := Js.bool checked;
+      ~_type:(js "radio")
+      ~name:(js name)
+      Dom_html.document
+  in
+  b##.id := js (name ^ "_" ^ value);
   b##.value := js value;
-  b##.onclick :=
-    Dom_html.handler (fun _ -> handler (); Js._true);
-  Dom.appendChild lab b;
-  Dom.appendChild lab (Dom_html.document##(createTextNode (js value)));
 
-  p
+  let label = Dom_html.createLabel Dom_html.document in
+  Dom.appendChild label b;
+  Dom.appendChild label (Dom_html.document##(createTextNode (js value)));
+
+  let div = Dom_html.createDiv document in
+  Dom.appendChild div label;
+  div
 ;;
+
 
 let check_checkbox (id: string) (checked: bool) : unit =
   (Js.Unsafe.coerce (getElementById id))##.checked := (Js.bool checked)
@@ -173,6 +174,19 @@ let options_to_html run_options : unit =
 
   check_radio "semantics_shallow_embedding" (not run_options.RunOptions.interpreter);
   check_radio "semantics_interpreter"       (    run_options.RunOptions.interpreter);
+
+  List.iter
+    (fun top_string ->
+      check_radio ("topology_2_" ^ top_string) (!Globals.topology_2 = top_string))
+    (Model_aux.ui_topologies 2);
+  List.iter
+    (fun top_string ->
+      check_radio ("topology_3_" ^ top_string) (!Globals.topology_3 = top_string))
+    (Model_aux.ui_topologies 3);
+  List.iter
+    (fun top_string ->
+      check_radio ("topology_4_" ^ top_string) (!Globals.topology_4 = top_string))
+    (Model_aux.ui_topologies 4);
 ;;
 
 let options_of_html : unit -> RunOptions.t = fun () ->
@@ -232,6 +246,22 @@ let options_of_html : unit -> RunOptions.t = fun () ->
   Globals.elf_threads := read_number "elf_threads";
 
   Globals.use_dwarf := is_checked_checkbox "use_dwarf";
+
+  List.iter
+    (fun top_string ->
+      if is_checked_radio ("topology_2_" ^ top_string) then
+        Globals.topology_2 := top_string;)
+    (Model_aux.ui_topologies 2);
+  List.iter
+    (fun top_string ->
+      if is_checked_radio ("topology_3_" ^ top_string) then
+        Globals.topology_3 := top_string;)
+    (Model_aux.ui_topologies 3);
+  List.iter
+    (fun top_string ->
+      if is_checked_radio ("topology_4_" ^ top_string) then
+        Globals.topology_4 := top_string;)
+    (Model_aux.ui_topologies 4);
 
   { run_options with
     RunOptions.interpreter = (not (is_checked_radio "semantics_shallow_embedding"))
@@ -323,31 +353,19 @@ let load : unit -> unit  = fun () ->
   let topos_div = getElementById "topos_two_threads" in
   List.iter
     (fun top_string ->
-      Dom.appendChild topos_div (radio_with_handler
-                                    top_string
-                                    "topology_2"
-                                    (!Globals.topology_2 = top_string)
-                                    (fun () -> Globals.topology_2 := top_string)))
+      Dom.appendChild topos_div (topo_radio "topology_2" top_string))
     (Model_aux.ui_topologies 2);
 
   let topos_div = getElementById "topos_three_threads" in
   List.iter
     (fun top_string ->
-      Dom.appendChild topos_div (radio_with_handler
-                                    top_string
-                                    "topology_3"
-                                    (!Globals.topology_3 = top_string)
-                                    (fun () -> Globals.topology_3 := top_string)))
+      Dom.appendChild topos_div (topo_radio "topology_3" top_string))
     (Model_aux.ui_topologies 3);
 
   let topos_div = getElementById "topos_four_threads" in
   List.iter
     (fun top_string ->
-      Dom.appendChild topos_div (radio_with_handler
-                                    top_string
-                                    "topology_4"
-                                    (!Globals.topology_4 = top_string)
-                                    (fun () -> Globals.topology_4 := top_string)))
+      Dom.appendChild topos_div (topo_radio "topology_4" top_string))
     (Model_aux.ui_topologies 4);
 
   options_to_html default_run_options

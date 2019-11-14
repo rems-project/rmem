@@ -136,7 +136,7 @@ let pp : ast -> string = function
          "stepi"
     end
   | PeekInstruction (i, j) -> Printf.sprintf "peeki %d %d" i j
-  | Back i            -> Printf.sprintf "back%s" (pp_int_option i)
+  | Back i            -> Printf.sprintf "back %s" (pp_int_option i)
   | Undo              -> "undo"
   | Follow            -> "follow"
   | Auto             -> "auto"
