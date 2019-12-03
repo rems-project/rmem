@@ -766,6 +766,7 @@ ifeq ($(filter RISCV,$(ISA_LIST)),)
   ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
 else
   RISCV_FILES += build_isa_models/riscv/riscv_extras.lem
+  RISCV_FILES += build_isa_models/riscv/mem_metadata.lem
   RISCV_FILES += build_isa_models/riscv/riscv_types.lem
   RISCV_FILES += build_isa_models/riscv/riscv.lem
   # FIXME: using '-wl_pat_red ign' is very bad but because riscv.lem is
