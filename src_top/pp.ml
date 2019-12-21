@@ -177,7 +177,7 @@ let pp_dwarf_source_file_lines m ds (pp_actual_line: bool) (a: Sail_impl_base.ad
         (String.concat
            ", "
            (List.map
-              (fun (s,n,lnr) ->
+              (fun (comp_dir,dir,s,n,lnr) ->
                 s ^ ":" ^ Nat_big_num.to_string n ^ if pp_actual_line then pp_source_line (source_line s (Nat_big_num.to_int n))  else ""
               )
               sls
