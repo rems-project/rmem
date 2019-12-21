@@ -1450,7 +1450,7 @@ let do_add_breakpoint_line filename line interact_state : interact_state =
         | Some ds ->
                let lines = Dwarf.source_lines_of_address ds (Sail_impl_base.integer_of_address addr) in
                List.exists
-                 (fun (filename', line', _) ->
+                 (fun (comp_dir, dir, filename', line', _) ->
                    filename' = filename && (Nat_big_num.to_int line') = line)
                  lines
         | None ->
