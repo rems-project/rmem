@@ -395,12 +395,12 @@ define _require_package
   else
     ifneq ($(2),)
       ifneq ($(OPAM),)
-        ifeq ($(shell [ "$$($(OPAM) show -f version $(1) 2> /dev/null)" == "$(2)" ] || echo missing),missing)
+        ifeq ($(shell [ "$$($(OPAM) show -f version $(1) 2> /dev/null)" = "$(2)" ] || echo missing),missing)
           MISSING_PKG_PINS += $(1)@$(2)
         else
           PKGS += $(1)
         endif
-      else ifeq ($(shell [ "$$($(_OCAMLFIND) query -format '%v' $(1) 2> /dev/null)" == "$(2)" ] || echo missing),missing)
+      else ifeq ($(shell [ "$$($(_OCAMLFIND) query -format '%v' $(1) 2> /dev/null)" = "$(2)" ] || echo missing),missing)
         MISSING_PKG_PINS += $(1)@$(2)
       else
         PKGS += $(1)
