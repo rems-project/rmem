@@ -398,12 +398,12 @@ define _require_package
         ifeq ($(shell [ "$$($(OPAM) show -f version $(1) 2> /dev/null)" == "$(2)" ] || echo missing),missing)
           MISSING_PKG_PINS += $(1)@$(2)
         else
-          PKGS += $(1)@$(2)
+          PKGS += $(1)
         endif
       else ifeq ($(shell [ "$$($(_OCAMLFIND) query -format '%v' $(1) 2> /dev/null)" == "$(2)" ] || echo missing),missing)
         MISSING_PKG_PINS += $(1)@$(2)
       else
-        PKGS += $(1)@$(2)
+        PKGS += $(1)
       endif
     else
       PKGS += $(1)
@@ -424,7 +424,8 @@ endif
 
 ifeq ($(UI),text)
   $(call require_package,zarith)
-  $(call require_package,lwt,4.2.1)
+# lwt 4.2.1 also works but is not avilable in older opam
+  $(call require_package,lwt,4.1.0)
   $(call require_package,lambda-term,1.13)
   OCAMLBUILD_FLAGS += -tag-line '"src_top/main.$(EXT)" : package(lambda-term)'
 else ifeq ($(UI),headless)
