@@ -416,6 +416,7 @@ endef
 $(call require_package,omd)
 $(call require_package,linenoise)
 $(call require_package,yojson)
+$(call require_package,pprint)
 
 ifneq ($(UI),isabelle)
   $(call require_package,base64,2.2.0)
