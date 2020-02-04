@@ -61,3 +61,5 @@ let enable_writable_misa () = true
 let enable_rvc () = true
 
 let enable_pmp () = false
+
+let enable_fdext () = false
