@@ -51,9 +51,6 @@ let inline ensure_singleton (xs : list 'x) (err : string) : 'x =
   | _ -> failwith err
   end
 
-val head : forall 'a. list 'a -> 'a
-let head l = ensure_just (index l 0) "head: empty list"
-
 let add_event l e = List.snoc e l
 let add_events l es = l ++ es
 
