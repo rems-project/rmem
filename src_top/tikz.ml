@@ -103,7 +103,16 @@ let make_tikz_graph
       | _ -> (Pp.pp_byte_list m (byte_list_of_address addr), 0)
     in
 
-    let slices = List.map (fun (i, j) -> sprintf "%d/%d" (i + offset) (j + offset)) ss in
+    let slices =
+      List.fast_sort compare ss
+      (*|>
+        begin if Globals.get_endianness () = Sail_impl_base.E_little_endian then
+          List.rev
+        else
+          (fun x -> x)
+        end*)
+      |> List.map (fun (i, j) -> sprintf "%d/%d" (i + offset) (j + offset))
+    in
 
     sprintf "{%s}{%s}" loc (String.concat "," slices)
   in
@@ -451,7 +460,7 @@ let make_tikz_graph
     | rf ->
       let edges =
         List.map
-          (fun ((w, ss), r) -> (* TODO: slices *)
+          (fun ((w, ss), r) ->
               if List.mem w cex.cex_initial_writes then
                 let pp_eiid = pp_tikz_pretty_eiid m r.reiid in
                 sprintf "node[/litmus/init=%s] {} edge[/litmus/rf'=%s] (%s)"
