@@ -20,7 +20,7 @@
 let marshal_isa defs filename =
   let f = open_out_bin filename in
   Marshal.to_string defs [Marshal.No_sharing; Marshal.Compat_32]
-  |> B64.encode
+  |> Base64.encode_string
   |> output_string f;
   close_out f
 

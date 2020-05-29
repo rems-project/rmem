@@ -92,7 +92,7 @@ module Make (Pr : Printers) : S = struct
     in
     let str = Pr.read_filename (isa_name ^ ".defs") in
     try
-      ((Marshal.from_string (B64.decode str) 0) : Interp_interface.specification)
+      ((Marshal.from_string (Base64.decode_exn str) 0) : Interp_interface.specification)
     with Failure s -> bail s
        | Sys_error s -> bail s
        | Not_found -> bail "invalid base64"
@@ -103,7 +103,7 @@ module Make (Pr : Printers) : S = struct
     in
     let str = Pr.read_filename (isa_name ^ ".defs") in
     try
-      let (defs, env) = ((Marshal.from_string (B64.decode str) 0) : (Type_check.tannot Ast.defs * Type_check.Env.t)) in
+      let (defs, env) = ((Marshal.from_string (Base64.decode_exn str) 0) : (Type_check.tannot Ast.defs * Type_check.Env.t)) in
       let replace_prover (l, tannot) =
         if Type_check.is_empty_tannot tannot then
           (l, tannot)
