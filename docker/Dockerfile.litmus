@@ -1,0 +1,73 @@
+################################################################################
+## Fetch litmus tests and the regression machinery in a temporary stage as some
+## litmus test repos are private and we don't want to expose the SSH_KEY in the
+## final image.
+################################################################################
+
+FROM debian:10-slim as temp-private-github
+LABEL stage=temp-private-github
+# Use 'docker rmi -f $(docker images --all --filter label=stage=temp-private-github)'
+# to remove this image.
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+## Some of the litmus test repos are private so we need an ssh key of a github
+## user that has access to those repos.
+ARG SSH_KEY
+
+ARG REGRESSION_GIT=git@github.com:litmus-tests/litmus-tests-regression-machinery.git
+ARG A64_GIT=git@github.com:litmus-tests/litmus-tests-armv8a-private.git
+ARG A64_SYS_GIT=git@github.com:litmus-tests/litmus-tests-armv8a-system.git
+ARG PPC_GIT=git@github.com:litmus-tests/litmus-tests-power-private.git
+ARG RISCV_GIT=git@github.com:litmus-tests/litmus-tests-riscv.git
+ARG X86_GIT=git@github.com:litmus-tests/litmus-tests-x86-private.git
+
+
+RUN apt-get update -y -q \
+        && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            git \
+            openssh-client \
+            make \
+        && rm -rf /var/lib/apt/lists/* \
+        # Setup ssh
+        && mkdir -p /root/.ssh \
+        && echo "${SSH_KEY}" > /root/.ssh/id_rsa \
+        && ssh-keyscan -t rsa github.com >> /root/.ssh/known_hosts \
+        && chmod -R 600 /root/.ssh/ \
+        # Clone the litmus tests
+        && mkdir /litmus-tests \
+        && cd /litmus-tests \
+        && git clone ${REGRESSION_GIT} \
+        && mkdir -p litmus-tests-regression-machinery/tests \
+        && git clone ${A64_GIT} \
+        && ln -rsf "$(basename -s '.git' ${A64_GIT})/tests" litmus-tests-regression-machinery/tests/AArch64 \
+        && git clone ${A64_SYS_GIT} \
+        && ln -rsf "$(basename -s '.git' ${A64_SYS_GIT})/tests" litmus-tests-regression-machinery/tests/AArch64-system \
+        && git clone ${PPC_GIT} \
+        && ln -rsf "$(basename -s '.git' ${PPC_GIT})/tests" litmus-tests-regression-machinery/tests/PPC \
+        && git clone ${RISCV_GIT} \
+        && ln -rsf "$(basename -s '.git' ${RISCV_GIT})/tests" litmus-tests-regression-machinery/tests/RISCV \
+        && git clone ${X86_GIT} \
+        && ln -rsf "$(basename -s '.git' ${X86_GIT})/tests" litmus-tests-regression-machinery/tests/x86 \
+        # Clean-up
+        && rm -rf /root/.ssh
+
+
+################################################################################
+## We now start a new clean image, with no trace of SSH_KEY.
+################################################################################
+
+FROM debian:10-slim
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ARG GUEST_UID=1000
+ARG GUEST_GID=${GUEST_UID}
+ARG GUEST_USER=rems
+ARG GUEST_GROUP=${GUEST_USER}
+
+RUN mkdir -p /home/${GUEST_USER} \
+        && chown ${GUEST_UID}:${GUEST_GID} /home/${GUEST_USER}
+
+# Copy all the litmus tests from the previous image to the final image
+COPY --from=temp-private-github --chown=${GUEST_UID}:${GUEST_GID} /litmus-tests /home/${GUEST_USER}/
