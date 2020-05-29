@@ -313,7 +313,6 @@ let is_eager_fetch_aux_transition params =
   function
   | SS_trans ss_trans -> is_eager_fetch_aux_storage_transition ss_trans
   | T_trans thread_trans -> is_eager_fetch_aux_thread_transition (is_fetch_relaxed params.ss) thread_trans
-  | _ -> false
   end
 
 let is_memory_auxiliary_steps_transition params : (trans 'i 'ts 'ss -> bool) = function
