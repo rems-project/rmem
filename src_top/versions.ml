@@ -79,10 +79,10 @@ end (* Make_git *)
 (********************************************************************)
 
 module Rmem    = Make_git(Version)
-module Lem     = Make_git(Lem_version)
-module Sail    = Make_git(Sail_version)
-module Sail2   = Make_git(Sail2_version)
-module Linksem = Make_git(Linksem_version)
+(* module Lem     = Make_git(Lem_version)
+ * module Sail    = Make_git(Sail_version)
+ * module Sail2   = Make_git(Sail2_version)
+ * module Linksem = Make_git(Linksem_version) *)
 
 let print : unit -> unit = fun () ->
   Printf.printf "Version: %s\n" Rmem.describe;
@@ -92,13 +92,13 @@ let print : unit -> unit = fun () ->
     Printf.printf "** RMEM: ***********************************\n";
     Printf.printf "%s\n" Rmem.str;
     Printf.printf "** Lem: ************************************\n";
-    Printf.printf "%s\n" Lem.str;
+    Printf.printf "%s\n" Version.lem;
+    Printf.printf "** Sail-legacy: ****************************\n";
+    Printf.printf "%s\n" Version.sail_legacy;
     Printf.printf "** Sail: ***********************************\n";
-    Printf.printf "%s\n" Sail.str;
-    Printf.printf "** Sail2: ***********************************\n";
-    Printf.printf "%s\n" Sail2.str;
-    Printf.printf "** linksem: ********************************\n";
-    Printf.printf "%s\n" Linksem.str;
+    Printf.printf "%s\n" Version.sail;
+    (* Printf.printf "** linksem: ********************************\n";
+     * Printf.printf "%s\n" Linksem.str; *)
     Printf.printf "** libraries: ******************************\n";
     List.iter
       (fun (lib, ver) -> Printf.printf "%s: %s\n" lib ver)
