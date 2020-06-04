@@ -11,6 +11,6 @@ PKG lem lem_num lem_zarith
 PKG linksem linksem_num linksem_zarith
 PKG uint zarith
 PKG lambda-term zed lwt react
-PKG js_of_ocaml js_of_ocaml.ppx
+PKG js_of_ocaml js_of_ocaml-ppx
 PKG base64
 PKG sail

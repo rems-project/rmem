@@ -18,6 +18,7 @@
 (*===============================================================================*)
 
 open Params
+open Js_of_ocaml
 
 let set_state_output str = ()
 let set_trace_output str = ()

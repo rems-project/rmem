@@ -39,7 +39,7 @@
 #
 # files that use js_of_ocaml special syntax:
 #
-<src_top/web/*.{ml,mli}> or <src_top/webppc.ml> : package(js_of_ocaml), package(js_of_ocaml.ppx)
+<src_top/web/*.{ml,mli}> or <src_top/webppc.ml> : package(js_of_ocaml), package(js_of_ocaml-ppx)
 
 #
 # library dependencies:

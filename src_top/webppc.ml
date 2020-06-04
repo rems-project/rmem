@@ -23,6 +23,7 @@
 
 open InstructionSemantics
 open Params
+open Js_of_ocaml
 
 let js = Js.string;;
 let document = Dom_html.window##.document;;

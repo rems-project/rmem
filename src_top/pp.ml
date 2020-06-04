@@ -369,7 +369,7 @@ let pp_pretty_eiid m eiid =
 (** ******************* *)
 
 
-(* js_of_ocaml cann't use Str.split (or Str in general), use the
+(* js_of_ocaml can't use Str.split (or Str in general), use the
    following function instead.
    split del str splits str into substrings, taking as delimiters the
    substrings del, and returns the list of substrings. An occurrence

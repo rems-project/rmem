@@ -14,6 +14,8 @@
 (*                                                                               *)
 (*===============================================================================*)
 
+open Js_of_ocaml
+
 (* val exit_on_bad_fetch : Globals.ppmode -> MachineDefTypes.trans -> unit *)
 
 (* The info structure of state of search procedure *)

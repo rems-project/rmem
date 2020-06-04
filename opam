@@ -8,7 +8,7 @@ The rmem tool comprises executable operational models for the relaxed-memory con
 maintainer: "rmem devs <cl-rmem-dev@lists.cam.ac.uk>"
 authors: "authors"
 license: ""
-homepage: ""
+homepage: "https://github.com/rems-project/rmem"
 bug-reports: ""
 dev-repo: "git+https://github.com/rems-project/rmem.git"
 depends: [ 

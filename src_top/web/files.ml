@@ -17,7 +17,10 @@
 
 let sources = ref ([] : (string * string array) list)
 
+open Js_of_ocaml
+
 let update_sources new_sources =
+  let open Js_of_ocaml in
   (* Ew, javascript (again) *)
   let objects = Array.to_list (Js.to_array new_sources) in
   sources := List.map
