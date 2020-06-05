@@ -9,7 +9,7 @@
 /build_sail_interp
 /build_sail_shallow_embedding
 /build_sail2_shallow_embedding
-/*.defs
+/lib/*.defs
 /rmem
 /main.d.byte
 /main.byte
