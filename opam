@@ -13,15 +13,14 @@ bug-reports: ""
 dev-repo: "git+https://github.com/rems-project/rmem.git"
 depends: [ 
   "ocaml" {>= "4.06.1"}
-  "ocamlfind" {build}
+  "ocamlfind"
   "lem" {>= "2018-12-14"}
   "linksem" {>= "0.3"}
   "sail-legacy" {>= "0.1"}
   "sail"
   "sail-riscv"
   "conf-gmp"
-  "lwt" {>= "4.1.0"} & {< "4.5.0"}
-  # probably have to have lwt lower than 5.0.0 https://github.com/ocaml/opam-repository/commit/47cd7faaa06dc2e777a982a490fbfe2a2921fd47
+  "lwt" {>= "4.1.0" & <= "4.5.0"}
   "lambda-term" {>= "1.13"}
   "zarith"
   "js_of_ocaml"
@@ -29,5 +28,4 @@ depends: [
   "base64"
 ]
 build: [make]
-
 install: [make "install"]

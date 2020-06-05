@@ -273,7 +273,7 @@ clean: clean_ocaml
 
 ## marshal defs ######################################################
 
-MARSHAL_DEFS_FILES = PPCGen.defs AArch64.defs MIPS64.defs X86.defs
+MARSHAL_DEFS_FILES = lib/PPCGen.defs lib/AArch64.defs lib/MIPS64.defs lib/X86.defs
 
 marshal_defs: build_concurrency_model/make_sentinel
 	rm -f marshal_defs.native
@@ -284,10 +284,21 @@ marshal_defs: build_concurrency_model/make_sentinel
 	$(MAKE) $(MARSHAL_DEFS_FILES)
 .PHONY: marshal_defs
 CLEANFILES += marshal_defs.native
+CLEANFILES += MARSHAL_DEFS_FILES
 
-$(MARSHAL_DEFS_FILES): %.defs: marshal_defs.native
+$(MARSHAL_DEFS_FILES): lib/%.defs: marshal_defs.native
 	./marshal_defs.native -$* $@
 CLEANFILES += $(MARSHAL_DEFS_FILES)
+
+
+
+## install for opam ##################################################
+
+install: 
+	if [ -z "$(SHARE_DIR)" ]; then echo SHARE_DIR is not set; false; fi
+	mkdir -p $(INSTALL_DIR)/bin
+	cp rmem bin/
+
 
 ## install the web-interface #########################################
 
@@ -437,7 +448,7 @@ endif
 
 linksemdir ?= $(shell opam var linksem:share)
 ifeq ($(linksemdir),)
-  $(error cannot find (the share directory of) the opam package sail-legacy)
+  $(error cannot find (the share directory of) the opam package linksem)
 endif
 
 
@@ -522,7 +533,7 @@ get_isa_model_%: FORCE
 	{ [ ! -f src_top/$(ISANAME)_toFromInterp2.ml.stub ] || cp -a src_top/$(ISANAME)_toFromInterp2.ml.stub $(ISABUILDDIR); }
 	mkdir -p $(ISABUILDDIR)/gen
 	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
-	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) . ,)
+	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) lib ,)
 	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
@@ -583,8 +594,8 @@ get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/0.11/*.lem
 get_isa_model_riscv: ISA_INTERPCONVERT=$(ISADIR)/generated_definitions/for-rmem/riscv_toFromInterp2.ml
 get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
 get_isa_model_riscv: ISADEFSFILES=$(ISADIR)/generated_definitions/for-rmem/riscv.defs
-INSTALL_DEFS_FILES += riscv.defs
-CLEANFILES += riscv.defs
+INSTALL_DEFS_FILES += lib/riscv.defs
+CLEANFILES += lib/riscv.defs
 
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
