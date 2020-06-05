@@ -14,6 +14,7 @@ dev-repo: "git+https://github.com/rems-project/rmem.git"
 depends: [ 
   "ocaml" {>= "4.06.1"}
   "ocamlfind"
+  "ocamlbuild"
   "lem" {>= "2018-12-14"}
   "linksem" {>= "0.3"}
   "sail-legacy" {>= "0.1"}
