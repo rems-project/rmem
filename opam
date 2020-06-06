@@ -10,7 +10,7 @@ authors: "the rmem developers (see homepage)"
 license: ""
 homepage: "https://github.com/rems-project/rmem"
 bug-reports: "https://github.com/rems-project/rmem/issues"
-dev-repo: ""
+dev-repo: "https://github.com/cp526/private-rmem-test"
 depends: [ 
   "ocaml" {>= "4.06.1"}
   "ocamlfind"
@@ -28,5 +28,5 @@ depends: [
   "js_of_ocaml-ppx"
   "base64"
 ]
-build: [make]
-install: [make "install"]
+build: [make "SHARE_DIR=%{rmem:share}%"]
+install: [make "INSTALL_DIR=%{prefix}%" "SHARE_DIR=%{rmem:share}%" "install"]

@@ -528,6 +528,13 @@ let main = fun () ->
       );
 
       (fun () ->
+        let open Filename in
+        match Pidpath.find_self () with
+        | p -> Some Share_dir.share_dir
+        | exception _ -> None
+      );
+
+      (fun () ->
         match Pidpath.find_self () with
         | p ->
             let open Filename in

@@ -231,7 +231,7 @@ isabelle:
 .PHONY: get_all_deps
 
 HIGHLIGHT := $(if $(MAKE_TERMOUT),| scripts/highlight.sh -s)
-main webppc: version.ml build_concurrency_model/make_sentinel marshal_defs
+main webppc: src_top/share_dir.ml version.ml build_concurrency_model/make_sentinel marshal_defs
 	rm -f $@.$(EXT)
 	$(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
 #	when piping through the highlight script we lose the exit status
@@ -273,7 +273,9 @@ clean: clean_ocaml
 
 ## marshal defs ######################################################
 
-MARSHAL_DEFS_FILES = lib/PPCGen.defs lib/AArch64.defs lib/MIPS64.defs lib/X86.defs
+MARSHAL_DEFS_FILES = PPCGen.defs AArch64.defs MIPS64.defs X86.defs
+
+
 
 marshal_defs: build_concurrency_model/make_sentinel
 	rm -f marshal_defs.native
@@ -286,7 +288,7 @@ marshal_defs: build_concurrency_model/make_sentinel
 CLEANFILES += marshal_defs.native
 CLEANFILES += MARSHAL_DEFS_FILES
 
-$(MARSHAL_DEFS_FILES): lib/%.defs: marshal_defs.native
+$(MARSHAL_DEFS_FILES): %.defs: marshal_defs.native
 	./marshal_defs.native -$* $@
 CLEANFILES += $(MARSHAL_DEFS_FILES)
 
@@ -294,10 +296,18 @@ CLEANFILES += $(MARSHAL_DEFS_FILES)
 
 ## install for opam ##################################################
 
+INSTALL_DIR ?= .
+SHARE_DIR ?= share
+
+src_top/share_dir.ml:
+	echo "let share_dir = \"$(SHARE_DIR)\"" > src_top/share_dir.ml
+CLEANFILES += src_top/share_dir.ml
+
 install: 
-	if [ -z "$(SHARE_DIR)" ]; then echo SHARE_DIR is not set; false; fi
 	mkdir -p $(INSTALL_DIR)/bin
-	cp rmem bin/
+	mkdir -p $(SHARE_DIR)
+	cp rmem $(INSTALL_DIR)/bin
+	cp *.defs $(SHARE_DIR)
 
 
 ## install the web-interface #########################################
@@ -358,72 +368,13 @@ serve:
 .PHONY: serve
 
 
-## external dependencies: ############################################
-#  these dependencies must be installed using OPAM or from source;
-#  we expect to find them using ocamlfind;
-#  we expect the ocamlfind and OPAM packages to have the same name;
-#  the _tags file adds the appropriate package tags;
-
-# require_package=$(eval $(call _require_package,$(1)))
-# define _require_package
-#   ifeq ($(shell which $(_OCAMLFIND) 2> /dev/null),)
-#     MISSING_PKGS ?= ocamlfind
-#     MISSING_PKGS += $(1)
-#   else ifeq ($(shell $(_OCAMLFIND) query $(1) 2> /dev/null),)
-#     MISSING_PKGS += $(1)
-#   else
-#     PKGS += $(1)
-#   endif
-# endef
-
-
-# $(call require_package,lem)
-# $(call require_package,linksem)
-# $(call require_package,sail-legacy)
-# $(call require_package,sail)
-# $(call require_package,sail-riscv)
-
-
-# ifneq ($(UI),isabelle)
-#   $(call require_package,base64)
-#   $(call require_package,num)
-# endif
 
 ifeq ($(UI),text)
-  # $(call require_package,zarith)
-# lwt 4.2.1 also works but is not avilable in older opam
-  # $(call require_package,lwt)
-  # $(call require_package,lambda-term)
   OCAMLBUILD_FLAGS += -tag-line '"src_top/main.$(EXT)" : package(lambda-term)'
 else ifeq ($(UI),headless)
-  # $(call require_package,zarith)
 else ifeq ($(UI),web)
-  # $(call require_package,js_of_ocaml)
-  # $(call require_package,js_of_ocaml-ppx)
-  # the nozarith predicate makes ocamlfind pick the versions of lem and
-  # linksem that don't use zarith (has no effect on other packages):
-  # OCAMLBUILD_FLAGS += -tag 'predicate(nozarith)'
 endif
 
-
-# # this now just checks whether packages are installed, not the version numbers
-
-# check_external_deps:
-# ifeq ($(OCAMLBUILD),)
-# 	$(error cannot find ocamlbuild, please install it or set OCAMLBUILD to point to it)
-# endif
-# ifneq ($(MISSING_PKGS),)
-# 	$(warning The following required OCaml packages were not found:)
-# 	$(warning $(MISSING_PKGS) $(MISSING_PKG_PINS))
-# 	$(warning if you have OPAM installed 'make fetch_external_deps UI=$(UI)' will install the missing packages)
-# 	$(error missing OCaml packages)
-# endif
-# .PHONY: check_external_deps
-# get_all_deps: check_external_deps
-
-
-## internal dependencies: ############################################
-#  these are dependencies we build from source
 
 
 saildir ?= $(shell opam var sail-legacy:share)
@@ -533,7 +484,7 @@ get_isa_model_%: FORCE
 	{ [ ! -f src_top/$(ISANAME)_toFromInterp2.ml.stub ] || cp -a src_top/$(ISANAME)_toFromInterp2.ml.stub $(ISABUILDDIR); }
 	mkdir -p $(ISABUILDDIR)/gen
 	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
-	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) lib ,)
+	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) .,)
 	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
@@ -594,8 +545,8 @@ get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/0.11/*.lem
 get_isa_model_riscv: ISA_INTERPCONVERT=$(ISADIR)/generated_definitions/for-rmem/riscv_toFromInterp2.ml
 get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
 get_isa_model_riscv: ISADEFSFILES=$(ISADIR)/generated_definitions/for-rmem/riscv.defs
-INSTALL_DEFS_FILES += lib/riscv.defs
-CLEANFILES += lib/riscv.defs
+INSTALL_DEFS_FILES += riscv.defs
+CLEANFILES += riscv.defs
 
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
