@@ -10,7 +10,7 @@ authors: "the rmem developers (see homepage)"
 license: ""
 homepage: "https://github.com/rems-project/rmem"
 bug-reports: "https://github.com/rems-project/rmem/issues"
-dev-repo: "https://github.com/cp526/private-rmem-test"
+dev-repo: "https://github.com/rems-project/rmem"
 depends: [ 
   "ocaml" {>= "4.06.1"}
   "ocamlfind"
