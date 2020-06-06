@@ -6,11 +6,11 @@ description: """
 The rmem tool comprises executable operational models for the relaxed-memory concurrency semantics of the Power, ARMv8, RISC-V, and x86 (TSO) processor architectures, as well as machinery for executing the models on litmus tests and ELF binaries: allowing one to interactively step through the legal concurrency behaviours, pseudorandomly find legal outcomes, and exhaustively enumerate all architecturally allowed outcomes of small bounded concurrent programs. For ARM, it supports both the current ARMv8-A multicopy atomic model and the earlier ARMv8-A non-multicopy-atomic model.
 """
 maintainer: "rmem devs <cl-rmem-dev@lists.cam.ac.uk>"
-authors: "authors"
+authors: "the rmem developers (see homepage)"
 license: ""
 homepage: "https://github.com/rems-project/rmem"
-bug-reports: ""
-dev-repo: "git+https://github.com/rems-project/rmem.git"
+bug-reports: "https://github.com/rems-project/rmem/issues"
+dev-repo: ""
 depends: [ 
   "ocaml" {>= "4.06.1"}
   "ocamlfind"
