@@ -4,7 +4,7 @@
 
 FROM debian:10-slim
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+SHELL ["/bin/bash", "-o", "pipefail", "-ceu"]
 
 ################################################################################
 ## Setup a user
@@ -85,42 +85,17 @@ ARG OCAML="4.07.1"
 
 ENV OPAMPRECISETRACKING="1"
 
-# The following packages are needed only by one target
-# rmem/text: zarith, lwt, lambda-term
-# rmem/web: js_of_ocaml, js_of_ocaml-ppx
+# Run opam init but do not install dependencies yet
 RUN opam init --auto-setup --yes --jobs=${NJOBS} --compiler=${OCAML} --disable-sandboxing \
-        && eval $(opam env) \
-        && opam update -y \
-        && opam pin add -n -k version lwt 4.1.0 \
-        && opam pin add -n -k version lambda-term 1.13 \
-        && opam pin add -n -k version js_of_ocaml 3.3.0 \
-        && opam pin add -n -k version js_of_ocaml-ppx 3.3.0 \
-        && opam install -y -v -j ${NJOBS} \
-            ocamlbuild \
-            menhir \
-            ocamlfind \
-            omd \
-            linenoise \
-            yojson \
-            pprint \
-            num \
-            base64 \
-            herdtools7 \
-            # For the text image
-            zarith \
-            lwt \
-            lambda-term \
-            # For the web image
-            js_of_ocaml \
-            js_of_ocaml-ppx \
-        # Clean-up
-        && opam clean -a -c -s --logs \
-        && opam config list && opam list
+    && eval $(opam env) \
+    && opam update -y
 
 ################################################################################
 ## Fetch and build herdtools7/diy7 from source, instead of the herdtools7 opam
 ## package above
 ################################################################################
+
+# BS: should dev- do this or only use rems things from the HEAD ?
 
 # ARG HERDTOOLS_GIT=https://github.com/herd/herdtools7.git
 
@@ -138,7 +113,7 @@ RUN opam init --auto-setup --yes --jobs=${NJOBS} --compiler=${OCAML} --disable-s
 
 ################################################################################
 ## Fetch and build all the rems dependencies
-# Use HEAD of each branch rather than opam head for dev
+# Use HEAD of each branch rather than opam for dev
 ################################################################################
 
 ARG LEM_GIT=https://github.com/rems-project/lem.git
@@ -158,26 +133,20 @@ RUN git clone ${RISCV_GIT}
 
 # these must run in dependency-order
 
-RUN pushd ott \
-    && opam install . -y \
-    && popd
+RUN cd ott \
+    && opam install . -y
 
-RUN pushd lem \
-    && opam install . -y \
-    && popd
+RUN cd lem \
+    && opam install . -y
 
-RUN pushd linksem \
-    && opam install . -y \
-    && popd
+RUN cd linksem \
+    && opam install . -y
 
-RUN pushd sail \
-    && opam install . -y \
-    && popd
+RUN cd sail \
+    && opam install . -y
 
-RUN pushd sail2 \
-    && opam install . -y \
-    && popd
+RUN cd sail2 \
+    && opam install . -y
 
-RUN pushd sail-riscv \
-    && opam install . -y \
-    && popd
+RUN cd sail-riscv \
+    && opam install . -y
