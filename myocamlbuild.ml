@@ -90,6 +90,7 @@ let () = dispatch begin function
         end;
 
   | After_rules ->
+     flag ["ocaml";"compile";"native";"linscan"] (S [A "-linscan"]);
       ocaml_lib ~extern:true ~dir:"../src_elf_libraries/batteries/_build/src" "batteries"
 
   | _ -> ()

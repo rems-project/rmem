@@ -233,7 +233,7 @@ isabelle:
 HIGHLIGHT := $(if $(MAKE_TERMOUT),| scripts/highlight.sh -s)
 main webppc: src_top/share_dir.ml version.ml build_concurrency_model/make_sentinel marshal_defs
 	rm -f $@.$(EXT)
-	$(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
+	ulimit -s 33000; $(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
 #	when piping through the highlight script we lose the exit status
 #	of ocamlbuild; check for the target existence instead:
 	@[ -f $@.$(EXT) ]

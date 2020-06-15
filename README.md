@@ -28,7 +28,7 @@ with Relaxed Memory Models" (EP/F036345, 2008-2012).
 
 ## Dependencies
 
-rmem relies on the following dependencies:
+rmem relies on a number of dependencies, including:
 - The concurrency models are defined in the [Lem specification
   language](https://github.com/rems-project/lem/).
 - The instruction semantics are written in the [Sail ISA description
@@ -38,34 +38,31 @@ rmem relies on the following dependencies:
   tool](https://github.com/ott-lang/ott).
 - For reading ELF binaries and their DWARF debug information, rmem uses the [Linksem model](https://github.com/rems-project/linksem).
 
-rmem also depends on OCaml (version greater than 4.02.*, we are
-testing rmem with versions 4.05 and 4.07 daily), ocamlbuild,
-ocamlfind, opam, and the following opam packages: `omd`, `base64`,
-`num`, `zarith`, and `lambda-term`.
-
-Most dependencies can be installed automatically as part of the rmem build process, as detailed below.
+The dependencies can be installed automatically as part of the rmem build process, as detailed below.
 
 
 ## Building and running rmem with command-line interface
 
-1. Make sure the GMP library, Z3, OCaml, ocamlbuild, ocamlfind, opam,
-   and menhir are installed.
+1. Run `ulimit -s 33000` This is to work around the problem of the
+   OCaml compiler running out of memory when processing the ISA
+   semantics.
 
-2. Run `ulimit -s unlimited; make fetch_external_deps` to install the
-   opam packages rmem depends on. (The `ulimit` part is to work around
-   the problem of the OCaml compiler running out of memory when
-   processing the ISA semantics.)
+2. Run `opam install .` in the rmem directory. 
 
-3. Run `make MODE=opt`. This will download and build Lem, Sail (in
-   versions 1 and 2), ott, and Linksem, fetch the Sail ISA models, and
-   build a native rmem OCaml binary. Alternatively run `make
-   MODE=debug` for an OCaml bytecode version. To build rmem for only a
-   specific ISA, for instance AArch64, run `make rmem MODE=opt
-   ISA=AArch64`. For additional information and build options see
-   `make help`.
+Alternatively, after having installed the dependencies, rmem can be
+built manually as follows:
 
-4. Finally run `rmem --help` for information on how to run rmem and
-   the available options.
+1. Run `ulimit -s 33000` (as above)
+
+2. Run `make MODE=opt`. This will build a native rmem OCaml binary.
+   The invocation `make MODE=debug` builds an OCaml bytecode
+   version. To build rmem for only a specific ISA, for instance
+   AArch64, run `make rmem MODE=opt ISA=AArch64`. For additional
+   information and build options see `make help`.
+
+
+Finally run `rmem --help` for information on how to run rmem and the
+available options.
 
 
 

@@ -76,3 +76,11 @@
 <build_concurrency_model/riscv.ml>                  : warn_a
 <build_concurrency_model/*_toFromInterp.ml>         : warn_p, warn_y
 <build_sail_interp/pretty_interp.ml>                : warn_p, warn_u
+
+
+
+<build_isa_models/*/armV8.ml>  : linscan
+<build_isa_models/*/power.ml>  : linscan
+<build_isa_models/*/riscv.ml>  : linscan
+<build_isa_models/*/mips.ml>  : linscan
+<build_isa_models/*/x86.ml>  : linscan
