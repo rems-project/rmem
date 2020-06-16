@@ -160,7 +160,7 @@ module Make (ISAModel: Isa_model.S) :
   let threadid_of_thread_trans = PromisingTransitions.tid_of_p_trans
   let ioid_of_thread_trans = PromisingTransitions.ioid_of_p_trans
   let is_storage_trans = PromisingTransitions.p_is_storage_transition
-  let pp_transition_history = fun _ -> failwith "pp_transition_history"
+  let pp_transition_history = fun _ ?filter _ -> "(not recorded)"
   let pp_cand = Pp.pp_pcand pp_instruction_ast
   let pp_trans = Pp.pp_p_trans pp_instruction_ast
   let pp_ui_state = Pp.pp_ui_pstate pp_instruction_ast
