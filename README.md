@@ -132,7 +132,7 @@ includes several concurrency models:
 	- [Promising-ARM/RISC-V: a simpler and faster operational
       concurrency model.](https://sf.snu.ac.kr/promising-arm-riscv/)
       Christopher Pulte, Jean Pichon-Pharabod, Jeehoon Kang, Sung-Hwan
-      Lee, and Chung-Kil Hur. Under submission.
+      Lee, and Chung-Kil Hur. In PLDI 2019.
 
 ### Model validation
 
