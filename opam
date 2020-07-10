@@ -10,7 +10,7 @@ authors: "the rmem developers (see homepage)"
 license: "2-Clause BSD"
 homepage: "https://github.com/rems-project/rmem"
 bug-reports: "https://github.com/rems-project/rmem/issues"
-dev-repo: "git://github.com:rems-project/rmem"
+dev-repo: "git+https://github.com/rems-project/rmem.git"
 depends: [ 
   "ocaml" {>= "4.06.1"}
   "ocamlfind"
