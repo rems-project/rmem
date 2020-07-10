@@ -43,6 +43,9 @@ The dependencies can be installed automatically as part of the rmem build proces
 
 ## Building and running rmem with command-line interface
 
+0. Run `opam repository add rems https://github.com/rems-project/opam-repository.git` to add the REMS opam repository containing some of rmem's dependencies.
+
+
 1. Run `ulimit -s 33000` This is to work around the problem of the
    OCaml compiler running out of memory when processing the ISA
    semantics.
