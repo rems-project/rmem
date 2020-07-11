@@ -24,8 +24,8 @@ depends: [
   "lwt" {>= "4.1.0" & <= "4.5.0"}
   "lambda-term" {>= "1.13"}
   "zarith"
-  "js_of_ocaml"
-  "js_of_ocaml-ppx"
+  "js_of_ocaml" {<= 3.3.0}
+  "js_of_ocaml-ppx" {<= 3.3.0}
   "base64"
   "zed" {>= "1.6"}
 ]
