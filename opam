@@ -27,7 +27,7 @@ depends: [
   "js_of_ocaml"
   "js_of_ocaml-ppx"
   "base64"
-  "zed" {>= "2.0"}
+  "zed" {>= "1.6"}
 ]
 build: [make "SHARE_DIR=%{rmem:share}%"]
 install: [make "INSTALL_DIR=%{prefix}%" "SHARE_DIR=%{rmem:share}%" "install"]
