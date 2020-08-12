@@ -436,6 +436,13 @@ let p_par_pts_search_update params value =
   {params with t = {params.t with p_par_pts_search = value}}
 let p_par_pts_search_value params = params.t.p_par_pts_search
 
+let p_par_pts_search_follow_trace_assoc =
+  [(true,       "promising_parallel_with_follow_trace");
+   (false,      "promising_parallel_without_follow_trace")]
+let p_par_pts_search_follow_trace_update params value = 
+  {params with t = {params.t with p_par_pts_search_follow_trace = value}}
+let p_par_pts_search_follow_trace_value params = params.t.p_par_pts_search_follow_trace
+
 
 
 (* storage: *)
@@ -480,6 +487,7 @@ let parsers =
     gen_parser thread_allow_write_subsumption_assoc thread_allow_write_subsumption_update;
     gen_parser thread_fail_on_loop_assoc thread_fail_on_loop_update;
     gen_parser p_par_pts_search_assoc p_par_pts_search_update;
+    gen_parser p_par_pts_search_follow_trace_assoc p_par_pts_search_follow_trace_update;
 
 (*    gen_parser coherence_commit_assoc coherence_commit_update;*)
     gen_parser new_coh_assoc new_coh_update;
@@ -497,6 +505,7 @@ let model_strings =
   (assoc_image thread_allow_write_subsumption_assoc) @
   (assoc_image thread_fail_on_loop_assoc) @
   (assoc_image p_par_pts_search_assoc) @
+  (assoc_image p_par_pts_search_follow_trace_assoc) @
   (* storage: *)
 (*  (assoc_image coherence_commit_assoc) @*)
   (assoc_image new_coh_assoc) @
@@ -514,6 +523,7 @@ let current_model params =
     (List.assoc (thread_allow_write_subsumption_value params) thread_allow_write_subsumption_assoc);
     (List.assoc (thread_fail_on_loop_value params) thread_fail_on_loop_assoc);
     (List.assoc (p_par_pts_search_value params) p_par_pts_search_assoc);
+    (List.assoc (p_par_pts_search_follow_trace_value params) p_par_pts_search_follow_trace_assoc);
     (* storage: *)
 (*    (List.assoc (coherence_commit_value params) coherence_commit_assoc);*)
     (List.assoc (new_coh_value params) new_coh_assoc);

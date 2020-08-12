@@ -497,8 +497,10 @@ let pstate_after_transition
     match t with
     | PSys_stop_promising -> 
        <| s with p_stopped_promising = true |>
-    | PSys_finish _ptss _pss trace -> 
-       <| s with p_follow_trace = trace |>
+    | PSys_finish ptss pss trace -> 
+       if s.p_model.t.p_par_pts_search_follow_trace 
+       then <| s with p_follow_trace = trace |>
+       else <| s with p_thread_states = ptss; p_storage_state = pss |>
     | PT t -> 
        let tid = tid_of_pt_trans t in
        let pts = Map_extra.find tid s.p_thread_states in

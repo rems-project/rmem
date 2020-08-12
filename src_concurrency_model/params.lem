@@ -113,6 +113,7 @@ type thread_params =
      thread_modified_code_footprints: set footprint;
 
      p_par_pts_search : bool;
+     p_par_pts_search_follow_trace : bool;
      p_fuel : maybe nat;
      p_promise_first: bool;
   |>
@@ -348,6 +349,7 @@ let default_model_params =
 
         p_promise_first                = false;
         p_par_pts_search               = false;
+        p_par_pts_search_follow_trace  = true;
         p_fuel                         = Nothing;
 
         branch_targets                 = Map.empty;
