@@ -379,27 +379,27 @@ endif
 
 saildir ?= $(shell opam var sail-legacy:share)
 ifeq ($(saildir),)
-  $(error cannot find (the share directory of) the opam package sail-legacy)
+  saildir = $(error cannot find (the share directory of) the opam package sail-legacy)
 endif
 
 sail2dir ?= $(shell opam var sail:share)
 ifeq ($(sail2dir),)
-  $(error cannot find (the share directory of) the opam package sail)
+  sail2dir = $(error cannot find (the share directory of) the opam package sail)
 endif
 
 riscvdir ?= $(shell opam var sail-riscv:share)
 ifeq ($(riscvdir),)
-  $(error cannot find (the share directory of) the opam package sail-riscv)
+  riscvdir = $(error cannot find (the share directory of) the opam package sail-riscv)
 endif
 
 lemdir ?= $(shell opam var lem:share)
 ifeq ($(lemdir),)
-  $(error cannot find (the share directory of) the opam package lem)
+  lemdir = $(error cannot find (the share directory of) the opam package lem)
 endif
 
 linksemdir ?= $(shell opam var linksem:share)
 ifeq ($(linksemdir),)
-  $(error cannot find (the share directory of) the opam package linksem)
+  linksemdir = $(error cannot find (the share directory of) the opam package linksem)
 endif
 
 
