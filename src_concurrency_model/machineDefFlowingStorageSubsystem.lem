@@ -782,13 +782,13 @@ let flowing_ss_satisfy_read_from_memory_cand _params state feic =
 let flowing_ss_satisfy_read_from_memory params state feic =
   guard (flowing_ss_satisfy_read_from_memory_cand params state feic) >>
 
+  let state_cont write_slices = fun () ->
+    flowing_ss_satisfy_read_from_memory_action params state feic write_slices
+  in
+
   match feic.feic_event with
   | FRead read [] sliced_writes -> (* acquire token flowing to memory *)
-      let state_cont = fun () ->
-        flowing_ss_satisfy_read_from_memory_action params state feic []
-      in
-
-      SS_only (SS_Flowing_flow_satisfied_read_to_memory read) state_cont
+      SS_only (SS_Flowing_flow_satisfied_read_to_memory read) (state_cont [])
       $> return
 
   | FRead read read_slices write_slices ->
@@ -800,10 +800,6 @@ let flowing_ss_satisfy_read_from_memory params state feic =
           write_slices
       with
       | ([], write_slices') ->
-          let state_cont = fun () ->
-            flowing_ss_satisfy_read_from_memory_action params state feic write_slices'
-          in
-
           let mrs=
             <|  mrs_footprint = read.r_addr;
                 mrs_value = value_of_write_slices_with_unknowns read.r_addr write_slices';
@@ -811,7 +807,7 @@ let flowing_ss_satisfy_read_from_memory params state feic =
             |>
           in
 
-          SS_sync (SS_Flowing_mem_read_response read mrs) state_cont ()
+          SS_sync (SS_Flowing_mem_read_response read mrs) (state_cont write_slices') ()
           $> return
       | _ -> failwith "read from uninitialized address"
       end

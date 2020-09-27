@@ -2934,7 +2934,6 @@ let enumerate_commit_store_transition
     (params: thread_params)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (c:      bool -> outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2999,7 +2998,6 @@ let enumerate_propagate_write_transitions
     (isa:    isa 'i)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (c:      bool -> outcome_S)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -3164,11 +3162,11 @@ let handle_memory_write
     if is_RISCV_store_conditional (ik i) then
       enumerate_commit_and_prop_RISCV_store_cond_transition params state iic c
     else
-      enumerate_commit_store_transition params state iic c
+      enumerate_commit_store_transition params state iic
   else if List.null (i.subwrites.sw_potential_writes) then
     enumerate_complete_store_transition params state iic c 
   else
-    enumerate_propagate_write_transitions params isa state iic c
+    enumerate_propagate_write_transitions params isa state iic
 
 let last_preceding_instruction_finished iic = 
   match iic.active_prefix with 
@@ -3276,14 +3274,16 @@ let enumerate_excl_res_success_outcome_transition_pop
       if List.null load.subreads.sr_requested then
         [(T_only (make_label state iic T_successful_store_excl state'))]
       else
-        let (r, rf) = ensure_paired_load_unsat_slices_singleton load in
+        let (r, unsat_slices) = ensure_paired_load_unsat_slices_singleton load in
         let rf =
-          (* the read request was requested but not satisfied yet, i.e., it's in
-             storage, no need to include the 'rf' in the transition *)
-          if rf <> [] then Nothing else
-            (* the read request is completely satisfied, we need to include
-               the 'rf' in the transition *)
+          if unsat_slices = [] then
+            (* the read request is completely satisfied, hence it's not in
+               storage, so we need to include its 'rf' in the transition *)
             Just (sat_slices_of_read_request load r)
+          else
+            (* the read request was requested but not satisfied yet, hence it's
+               in storage, so no need to include its 'rf' in the transition *)
+            Nothing
         in
 
         let label = (make_label state iic (r, rf, i.instance_ioid) state') in
