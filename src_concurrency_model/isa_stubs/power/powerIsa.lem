@@ -18,3 +18,5 @@
 open import Isa
 
 let ppc_isa = isa_stub
+
+let available = false

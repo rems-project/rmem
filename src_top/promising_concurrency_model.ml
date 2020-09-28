@@ -20,7 +20,7 @@ module Make (ISAModel: Isa_model.S) :
 
   type instruction_ast = ISAModel.instruction_ast
 
-  type thread_subsystem_state = (instruction_ast,PromisingViews.t0) PromisingThread.pts
+  type thread_subsystem_state = (instruction_ast,PromisingViews.t) PromisingThread.pts
 
   type storage_subsystem_state = PromisingStorage.pss
 
@@ -30,14 +30,14 @@ module Make (ISAModel: Isa_model.S) :
     (instruction_ast,
      thread_subsystem_state,
      storage_subsystem_state,
-     PromisingViews.t0)
+     PromisingViews.t)
       Promising.p_state
 
   type ui_state =
     (instruction_ast,
      instruction_ast PromisingUI.pts_ui_state,
      PromisingUI.pss_ui_state,
-     PromisingViews.t0)
+     PromisingViews.t)
       PromisingUI.p_ui_state 
 
   (* For efficiency, 'state' also includes all the enabled transitions *)
@@ -45,14 +45,14 @@ module Make (ISAModel: Isa_model.S) :
     (instruction_ast,
      thread_subsystem_state,
      storage_subsystem_state,
-     PromisingViews.t0)
+     PromisingViews.t)
       Promising.pst
 
   type trans =
     (instruction_ast,
      thread_subsystem_state,
      storage_subsystem_state,
-     PromisingViews.t0)
+     PromisingViews.t)
       PromisingTransitions.p_trans
 
   type ui_trans = int * trans

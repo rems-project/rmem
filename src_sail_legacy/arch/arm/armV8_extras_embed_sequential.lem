@@ -1,0 +1,96 @@
+open import Pervasives
+open import Sail_impl_base
+open import Sail_values
+open import State
+
+val rMem_NORMAL         : (vector bitU * integer) -> M (vector bitU)
+val rMem_STREAM         : (vector bitU * integer) -> M (vector bitU)
+val rMem_ORDERED        : (vector bitU * integer) -> M (vector bitU)
+val rMem_ATOMICL        : (vector bitU * integer) -> M (vector bitU)
+val rMem_ATOMIC_ORDERED : (vector bitU * integer) -> M (vector bitU)
+
+let rMem_NORMAL (addr,size)         = read_mem false Read_plain addr size
+let rMem_STREAM (addr,size)         = read_mem false Read_stream addr size
+let rMem_ORDERED (addr,size)        = read_mem false Read_acquire addr size
+let rMem_ATOMIC (addr,size)         = read_mem false Read_exclusive addr size
+let rMem_ATOMIC_ORDERED (addr,size) = read_mem false Read_exclusive_acquire addr size
+
+val wMem_Addr_NORMAL         : (vector bitU * integer) -> M unit
+val wMem_Addr_ORDERED        : (vector bitU * integer) -> M unit
+val wMem_Addr_ATOMIC         : (vector bitU * integer) -> M unit
+val wMem_Addr_ATOMIC_ORDERED : (vector bitU * integer) -> M unit
+
+let wMem_Addr_NORMAL (addr,size)         = write_mem_ea Write_plain addr size
+let wMem_Addr_ORDERED (addr,size)        = write_mem_ea Write_release addr size
+let wMem_Addr_ATOMIC (addr,size)         = write_mem_ea Write_exclusive addr size
+let wMem_Addr_ATOMIC_ORDERED (addr,size) = write_mem_ea Write_exclusive_release addr size
+
+
+val wMem_Val_NORMAL : (integer * vector bitU) -> M unit
+val wMem_Val_ATOMIC : (integer * vector bitU) -> M bitU
+
+let wMem_Val_NORMAL (_,v) = write_mem_val v >>= fun _ -> return ()
+(* in ARM the status returned is inversed *)
+let wMem_Val_ATOMIC (_,v) = write_mem_val v >>= fun b -> return (if b then B0 else B1)
+
+let speculate_exclusive_success () = excl_result () >>= fun b -> return (if b then B1 else B0)
+
+val DataMemoryBarrier_NonShReads    : unit -> M unit
+val DataMemoryBarrier_NonShWrites   : unit -> M unit
+val DataMemoryBarrier_NonShAll      : unit -> M unit
+val DataMemoryBarrier_InnerShReads  : unit -> M unit
+val DataMemoryBarrier_InnerShWrites : unit -> M unit
+val DataMemoryBarrier_InnerShAll    : unit -> M unit
+val DataMemoryBarrier_OuterShReads  : unit -> M unit
+val DataMemoryBarrier_OuterShWrites : unit -> M unit
+val DataMemoryBarrier_OuterShAll    : unit -> M unit
+val DataMemoryBarrier_FullShReads   : unit -> M unit
+val DataMemoryBarrier_FullShWrites  : unit -> M unit
+val DataMemoryBarrier_FullShAll     : unit -> M unit
+let DataMemoryBarrier_NonShReads ()    = barrier (Barrier_DMB (A64_NonShare,   A64_barrier_LD))
+let DataMemoryBarrier_NonShWrites ()   = barrier (Barrier_DMB (A64_NonShare,   A64_barrier_ST))
+let DataMemoryBarrier_NonShAll ()      = barrier (Barrier_DMB (A64_NonShare,   A64_barrier_all))
+let DataMemoryBarrier_InnerShReads ()  = barrier (Barrier_DMB (A64_InnerShare, A64_barrier_LD))
+let DataMemoryBarrier_InnerShWrites () = barrier (Barrier_DMB (A64_InnerShare, A64_barrier_ST))
+let DataMemoryBarrier_InnerShAll ()    = barrier (Barrier_DMB (A64_InnerShare, A64_barrier_all))
+let DataMemoryBarrier_OuterShReads ()  = barrier (Barrier_DMB (A64_OuterShare, A64_barrier_LD))
+let DataMemoryBarrier_OuterShWrites () = barrier (Barrier_DMB (A64_OuterShare, A64_barrier_ST))
+let DataMemoryBarrier_OuterShAll ()    = barrier (Barrier_DMB (A64_OuterShare, A64_barrier_all))
+let DataMemoryBarrier_FullShReads ()   = barrier (Barrier_DMB (A64_FullShare,  A64_barrier_LD))
+let DataMemoryBarrier_FullShWrites ()  = barrier (Barrier_DMB (A64_FullShare,  A64_barrier_ST))
+let DataMemoryBarrier_FullShAll ()     = barrier (Barrier_DMB (A64_FullShare,  A64_barrier_all))
+
+val DataSynchronizationBarrier_NonShReads    : unit -> M unit
+val DataSynchronizationBarrier_NonShWrites   : unit -> M unit
+val DataSynchronizationBarrier_NonShAll      : unit -> M unit
+val DataSynchronizationBarrier_InnerShReads  : unit -> M unit
+val DataSynchronizationBarrier_InnerShWrites : unit -> M unit
+val DataSynchronizationBarrier_InnerShAll    : unit -> M unit
+val DataSynchronizationBarrier_OuterShReads  : unit -> M unit
+val DataSynchronizationBarrier_OuterShWrites : unit -> M unit
+val DataSynchronizationBarrier_OuterShAll    : unit -> M unit
+val DataSynchronizationBarrier_FullShReads   : unit -> M unit
+val DataSynchronizationBarrier_FullShWrites  : unit -> M unit
+val DataSynchronizationBarrier_FullShAll     : unit -> M unit
+let DataSynchronizationBarrier_NonShReads ()    = barrier (Barrier_DSB (A64_NonShare,   A64_barrier_LD))
+let DataSynchronizationBarrier_NonShWrites ()   = barrier (Barrier_DSB (A64_NonShare,   A64_barrier_ST))
+let DataSynchronizationBarrier_NonShAll ()      = barrier (Barrier_DSB (A64_NonShare,   A64_barrier_all))
+let DataSynchronizationBarrier_InnerShReads ()  = barrier (Barrier_DSB (A64_InnerShare, A64_barrier_LD))
+let DataSynchronizationBarrier_InnerShWrites () = barrier (Barrier_DSB (A64_InnerShare, A64_barrier_ST))
+let DataSynchronizationBarrier_InnerShAll ()    = barrier (Barrier_DSB (A64_InnerShare, A64_barrier_all))
+let DataSynchronizationBarrier_OuterShReads ()  = barrier (Barrier_DSB (A64_OuterShare, A64_barrier_LD))
+let DataSynchronizationBarrier_OuterShWrites () = barrier (Barrier_DSB (A64_OuterShare, A64_barrier_ST))
+let DataSynchronizationBarrier_OuterShAll ()    = barrier (Barrier_DSB (A64_OuterShare, A64_barrier_all))
+let DataSynchronizationBarrier_FullShReads ()   = barrier (Barrier_DSB (A64_FullShare,  A64_barrier_LD))
+let DataSynchronizationBarrier_FullShWrites ()  = barrier (Barrier_DSB (A64_FullShare,  A64_barrier_ST))
+let DataSynchronizationBarrier_FullShAll ()     = barrier (Barrier_DSB (A64_FullShare,  A64_barrier_all))
+
+val InstructionSynchronizationBarrier  : unit -> M unit
+let InstructionSynchronizationBarrier () = barrier Barrier_ISB
+
+val TMCommitEffect : unit -> M unit
+let TMCommitEffect () = barrier Barrier_TM_COMMIT
+
+let duplicate_bits (Vector bits start direction,len) =
+  let bits' = repeat bits len in
+  Vector bits' start direction

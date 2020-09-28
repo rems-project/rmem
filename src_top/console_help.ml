@@ -246,7 +246,7 @@ let cmd_info : ast -> (string * string) list = function
         ("set max_finished (<N>|none)",
           "Set the maximum number of finished instructions printed at the start of each thread.");
         ("set pp_sail <bool>",
-          "Enable or disable showing the Sail interpreter state and code for instructions (if interpreter enabled).");
+          "Enable or disable showing the Sail state and code for instructions.");
       ]
 
   | SetOption ("verbosity", _) ->
@@ -555,7 +555,6 @@ let help_interface pad : SO.t =
     SetOption ("pp_style", []);
     (*SetOption ("condense_finished_instructions", _)*)
     (*SetOption ("max_finished", _)*)
-    (*SetOption ("pp_sail", _)*)
     SetOption ("verbosity", []);
     SetOption ("choice_history_limit", []);
     SetOption ("always_print", []);

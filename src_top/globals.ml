@@ -43,8 +43,6 @@ let logdir = ref None
 
 let dont_tool = ref false (* "Dont" output *)
 
-let debug_sail_interp = ref false
-
 (** model options ***************************************************)
 
 (* model_params should probably not be changed after the initial state
@@ -247,9 +245,8 @@ type ppmode =
     ppg_trans:                         bool;
     pp_pretty_eiid_table:              (Events.eiid * string) list;
     pp_trans_prefix:                   bool;
-    pp_sail:                           bool;
     pp_default_cmd:             Interact_parser_base.ast option;
-
+    pp_sail:                           bool;
   }
 
 (* ppmode lenses *)

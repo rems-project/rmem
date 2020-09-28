@@ -325,7 +325,7 @@ let initial_state_record
         ([], FreshIds.initial_id_state init_thread)
         init_mem_values
     in
-    let write_events = List.sort (fun w1 w2 -> Pervasives.compare w1.Events.w_addr w2.Events.w_addr) write_events in
+    let write_events = List.sort (fun w1 w2 -> Stdlib.compare w1.Events.w_addr w2.Events.w_addr) write_events in
 
     (write_events, ist)
   in
@@ -550,9 +550,6 @@ let read_channel
   let (do_graph_init_function, (module CII : Test_file.ConcModel_Info_Init)) =
     let open Params in
     let open Isa_model in
-    let module IsShallowEmbedding = 
-      (struct let b = not runOptions.RunOptions.interpreter end)
-    in
     (* let open Globals in *)
     let params = !Globals.model_params in
 
@@ -562,7 +559,7 @@ let read_channel
     | (AARCH64 Hand, Flat_storage_model, POP_thread_model _)
     | (AARCH64 Hand, Flat_storage_model, Relaxed_thread_model) -> 
         let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
-        let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
+        let module ISA = AARCH64_HGEN_ISA in
         let test = Parser.parse in_chan test_splitted in
         let info = make_info test in
         let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -575,7 +572,7 @@ let read_channel
 
     | (AARCH64 Hand, Promising_storage_model, Promising_thread_model) ->
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64HGenTransSail)(AArch64HGenLexParse) in
-       let module ISA = Make (IsShallowEmbedding) (AARCH64_HGEN_ISA) (AArch64ISADefs) in
+       let module ISA = AARCH64_HGEN_ISA in
        let test = Parser.parse in_chan test_splitted in
        let info = make_info test in
        (do_graph_init test info, (module struct
@@ -590,7 +587,7 @@ let read_channel
     | (AARCH64 Gen, Flat_storage_model, POP_thread_model _)
     | (AARCH64 Gen, Flat_storage_model, Relaxed_thread_model) ->
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
-       let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
+       let module ISA = AARCH64_GEN_ISA in
        let test = Parser.parse in_chan test_splitted in
        let info = make_info test in
        let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -604,7 +601,7 @@ let read_channel
     | (AARCH64 Gen, Promising_storage_model, Promising_thread_model) ->
 
        let module Parser = Make_litmus_parser(AArch64HGen)(AArch64GenTransSail)(AArch64HGenLexParse) in
-       let module ISA = Make (IsShallowEmbedding) (AARCH64_GEN_ISA) (AArch64GenISADefs) in
+       let module ISA = AARCH64_GEN_ISA in
        let test = Parser.parse in_chan test_splitted in
         let info = make_info test in
        (do_graph_init test info, (module struct
@@ -619,7 +616,7 @@ let read_channel
     | (PPC, PLDI11_storage_model, PLDI11_thread_model)
     | (PPC, Flat_storage_model, Relaxed_thread_model) ->
         let module Parser = Make_litmus_parser(PPC)(PPCGenTransSail)(PPCLexParse) in
-        let module ISA = Make (IsShallowEmbedding) (PPCGEN_ISA) (PPCGenISADefs) in
+        let module ISA = PPCGEN_ISA in
         let test = Parser.parse in_chan test_splitted in
         let info = make_info test in
         let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -635,7 +632,7 @@ let read_channel
     | (MIPS, Flat_storage_model, POP_thread_model _)
     | (MIPS, Flat_storage_model, Relaxed_thread_model) ->
         let module Parser = Make_litmus_parser(MIPSHGen)(MIPSHGenTransSail)(MIPSHGenLexParse) in
-        let module ISA = Make(IsShallowEmbedding)(MIPS_ISA)(MIPS64ISADefs) in
+        let module ISA = MIPS_ISA in
         let test = Parser.parse in_chan test_splitted in
         let info = make_info test in
         let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -655,7 +652,7 @@ let read_channel
     | (RISCV, TSO_storage_model, TSO_thread_model)
     | (RISCV, Flat_storage_model, Relaxed_thread_model) ->
        let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
-       let module ISA = Make(IsShallowEmbedding)(RISCV_ISA)(RISCVISADefs) in
+       let module ISA = RISCV_ISA in
        let test = Parser.parse in_chan test_splitted in
         let info = make_info test in
         let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -668,7 +665,7 @@ let read_channel
 
     | (RISCV, Promising_storage_model, Promising_thread_model) ->
        let module Parser = Make_litmus_parser(RISCVHGen)(RISCVHGenTransSail)(RISCVHGenLexParse) in
-       let module ISA = Make(IsShallowEmbedding)(RISCV_ISA)(RISCVISADefs) in
+       let module ISA = RISCV_ISA in
        let test = Parser.parse in_chan test_splitted in
         let info = make_info test in
        (do_graph_init test info, (module struct
@@ -684,7 +681,7 @@ let read_channel
         | "gas" ->
             Globals.x86syntax := Some X86_gas;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseGas) in
-            let module ISA = Make(IsShallowEmbedding)(X86_ISA)(X86ISADefs) in
+            let module ISA = X86_ISA in
             let test = Parser.parse in_chan test_splitted in
             let info = make_info test in
             let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -697,7 +694,7 @@ let read_channel
         | "intel" ->
             Globals.x86syntax := Some X86_intel;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
-            let module ISA = Make(IsShallowEmbedding)(X86_ISA)(X86ISADefs) in
+            let module ISA = X86_ISA in
             let test = Parser.parse in_chan test_splitted in
             let info = make_info test in
             let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
@@ -713,7 +710,7 @@ let read_channel
         | exception Not_found -> (* intel by default *)
             Globals.x86syntax := Some X86_intel;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
-            let module ISA = Make(IsShallowEmbedding)(X86_ISA)(X86ISADefs) in
+            let module ISA = X86_ISA in
             let test = Parser.parse in_chan test_splitted in
             let info = make_info test in
             let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in

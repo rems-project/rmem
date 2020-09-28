@@ -24,7 +24,6 @@ open import Pervasives_extra
 open import Sail_impl_base
 open import Utils
 open import Sail_values
-open import Sail_1_2_convert
 
 
 

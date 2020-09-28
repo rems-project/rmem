@@ -19,3 +19,5 @@ open import Isa
 import X86_embed_types
 
 let x86_isa : isa X86_embed_types.ast = isa_stub
+
+let available = false

@@ -34,6 +34,7 @@
 "build_concurrency_model"       : include
 "build_sail_interp"             : include
 "build_sail_interp/pprint/src"  : include
+"build_sail_shallow_embedding"  : include
 "build_sail2_shallow_embedding" : include
 
 #
@@ -48,6 +49,7 @@
 <src_top/text/*.{ml,mli}>                  : package(lambda-term), package(sail)
 <build_concurrency_model/*.{ml,mli}>       : package(lem)
 <build_isa_models/**/*.{ml,mli}>           : package(lem), package(sail)
+<build_sail_shallow_embedding/*.{ml,mli}> : package(lem)
 <build_sail_interp/**/*.{ml,mli}>          : package(lem), package(sail)
 <build_sail2_shallow_embedding/*.{ml,mli}> : package(lem)
 <src_marshal_defs/*.{ml,mli}>              : package(lem), package(base64), package(sail)
@@ -68,14 +70,10 @@
 #
 # ignore warnings
 #
-<build_concurrency_model/interp*.ml>                : warn_p, warn_y
-<build_concurrency_model/instruction_extractor.ml>  : warn_p
 <build_concurrency_model/*_embed_types.ml>          : warn_p, warn_y
 <build_concurrency_model/*_embed.ml>                : warn_p, warn_y
 <build_concurrency_model/*_embed_sequential.ml>     : warn_p, warn_y
 <build_concurrency_model/riscv.ml>                  : warn_a
-<build_concurrency_model/*_toFromInterp.ml>         : warn_p, warn_y
-<build_sail_interp/pretty_interp.ml>                : warn_p, warn_u
 
 
 

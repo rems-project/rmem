@@ -47,14 +47,15 @@ let should_list_isas = ref false
 
 let do_list_isas () =
   let s =
-    String.concat " " (MlUtils.option_map
-                       (fun isa ->
-                         let module Isa = (val isa : Isa_model.ISADefs) in
-                         if Isa.isa_defs_thunk () <> Interp_ast.Defs [] then
-                           Some Isa.name
-                         else
-                           None)
-                       Isa_model.all_isa_defs)
+    String.concat " " 
+      (MlUtils.option_map
+         (fun isa ->
+           let module Isa = (val isa : Isa_model.S) in
+           if Isa.available 
+           then Some Isa.name
+           else None
+         )
+         Isa_model.all_isa_defs)
   in
   Printf.printf "%s\n" s;
   exit 0
@@ -187,12 +188,6 @@ let opts = [
     (Printf.sprintf "<bool> in interactive mode, automatically take internal transitions (%b)" !Globals.auto_internal));
 
 (** optimizations ***************************************************)
-("-shallow_embedding",
-    Arg.Bool (fun b -> run_options := {!run_options with RunOptions.interpreter = not b}),
-    (Printf.sprintf "<bool> Run shallow embedding instruction semantics (%b)" (not !run_options.RunOptions.interpreter)));
-("-compare_analyses",
-    Arg.Bool (fun b -> run_options := {!run_options with RunOptions.compare_analyses = b}),
-    (Printf.sprintf "<bool> Compare the exhaustive and the handwritten analysis (%b)" !run_options.RunOptions.compare_analyses));
 ("-eager",
     Arg.Bool (fun b -> run_options :=
         {!run_options with RunOptions.eager_mode =
@@ -287,8 +282,6 @@ let opts = [
     Arg.Unit (fun () -> Debug.enable_debug ();
                         SO.verbosity := SO.Debug),
     " highest level of verbosity (for debugging)");
-("-debug_sail_interp",
-    Arg.Bool (fun b -> Globals.debug_sail_interp := b), (Printf.sprintf " enable Sail interpreter debug AST printing (%b)" !Globals.debug_sail_interp));
 ("-perfdebug",
     Arg.Unit (fun () -> Debug.enable_perfdebug ();
                         (* FIXME: (SF) high verbosity will affect performance *)
@@ -397,10 +390,6 @@ let opts = [
     Arg.String (fun s -> Globals.dwarf_source_dir := s),
     Printf.sprintf "<string> directory containing source files, for DWARF debug output (%s)" !Globals.dwarf_source_dir);
 
-("-isa_defs_path",
- Arg.String (fun s -> Screen.isa_defs_path := Some s),
- Printf.sprintf "<string> directory containing ISA .defs files previously marshalled out (default: autodetect)");
-
 
 (** version *)
 ("-version",
@@ -470,93 +459,6 @@ let main = fun () ->
   (* this ppmode is just for printing some messages, don't use it for anything else *)
   let ppmode = Globals.get_ppmode () in
 
-  (fun () -> SO.strLine "*** BEGIN ISA DEFS PATH AUTODETECTION")
-  |> Screen.show_debug ppmode;
-
-  let check_isa_path path =
-    List.for_all
-      (fun isa ->
-        let module Isa = (val isa : Isa_model.ISADefs) in
-        let old_val = !Screen.isa_defs_path in
-        Screen.isa_defs_path := Some path;
-        try
-          Isa.isa_defs_thunk ~no_memo:true () |> ignore;
-          Screen.isa_defs_path := old_val;
-          true
-        with
-        | Screen_base.Isa_defs_unmarshal_error (basename, msg) ->
-            (fun () -> SO.strLine "(while checking currently ISA defs path candidate %s, got error '%s' for %s" path msg basename)
-            |> Screen.show_debug ppmode;
-            Screen.isa_defs_path := old_val;
-            false)
-      Isa_model.all_isa_defs
-  in
-
-  let try_isa_path_candidate path_thunk =
-    if !Screen.isa_defs_path = None then begin
-        match path_thunk () with
-        | Some path ->
-            (fun () -> SO.strLine "trying candidate %s for ISA defs path" path)
-            |> Screen.show_debug ppmode;
-            if check_isa_path path then
-                Screen.isa_defs_path := Some path
-        | None -> ()
-    end;
-    ()
-  in
-
-  if !Screen.isa_defs_path <> None then
-    (fun () -> SO.strLine "have ISA defs path from command line")
-    |> Screen.show_debug ppmode;
-
-  let isa_path_candidates = [
-      (fun () ->
-        try
-          let path = Sys.getenv "ISA_DEFS_PATH" in
-          (fun () -> SO.strLine "have ISA defs path from ISA_DEFS_PATH env var")
-          |> Screen.show_debug ppmode;
-          Some path
-        with
-          Not_found -> None);
-
-      (fun () -> Some (Filename.current_dir_name));
-
-      (fun () ->
-        match Pidpath.find_self () with
-        | p -> Some (Filename.dirname p)
-        | exception _ -> None
-      );
-
-      (fun () ->
-        let open Filename in
-        match Pidpath.find_self () with
-        | p -> Some Share_dir.share_dir
-        | exception _ -> None
-      );
-
-      (fun () ->
-        match Pidpath.find_self () with
-        | p ->
-            let open Filename in
-            (* Also try pidpath/../.. because of build dir layout *)
-            Some (concat (dirname p) (concat parent_dir_name parent_dir_name))
-        | exception _ -> None
-      );
-    ] in
-
-  List.iter try_isa_path_candidate isa_path_candidates;
-
-  begin match !Screen.isa_defs_path with
-  | Some path ->
-      (fun () -> SO.strLine "found ISA defs in %s" path)
-      |> Screen.show_debug ppmode
-  | None ->
-      SO.strLine "no valid ISA defs path found, trying passing one with -isa_defs_path <path> or the ISA_DEFS_PATH env var. Pass -debug for more details"
-      |> Screen.show_warning ppmode
-  end;
-
-  (fun () -> SO.strLine "*** ISA DEFS PATH AUTODETECTION COMPLETE")
-  |> Screen.show_debug ppmode;
 
   if !should_list_isas then
     do_list_isas ();

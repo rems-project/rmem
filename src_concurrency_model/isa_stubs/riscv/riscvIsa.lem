@@ -23,3 +23,5 @@ let riscv_isa : isa Riscv_types.ast = isa_stub
 
 
 let continue_to_sail2_done callee o = failwith "stub"
+
+let available = false

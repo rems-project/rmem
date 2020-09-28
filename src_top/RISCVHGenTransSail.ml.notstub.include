@@ -19,7 +19,6 @@ open Big_int
 open RISCVHGenBase
 
 
-open Interp_interface
 open Sail_impl_base
 
 type instruction = RISCVHGenBase.instruction
@@ -28,7 +27,6 @@ type instruction_ast = Riscv_types.ast
 type labelmap = (string * int) list
 
 module IInt = Sail_impl_base
-module IImp = Interp_inter_imp
 
 let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
@@ -45,13 +43,6 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
       end
   in
   instr
-
-
-let instruction_to_interp_instruction _ = failwith "not implemented"
-let interp_instruction_to_instruction _ = failwith "not implemented"
-
-let instruction_to_interp2_instruction = Riscv_toFromInterp2.astToInterpValue 
-let interp2_instruction_to_instruction = Riscv_toFromInterp2.astFromInterpValue
 
 
 
@@ -163,25 +154,7 @@ let trans_out_reg flv =
   | 31 -> R31
   | _  -> failwith "trans_out_reg number not 0 to 31"
 
-let interp_instruction_to_herdtools_ast inst : instruction = failwith "RISCV interp_instruction_to_herdtools_ast stub"
-  (* let (name, parms) = inst in
-   * begin match (name, parms) with
-   * (\* #dontinclude "build_isa_models/riscv/gen/sail_trans_out.hgen" *\)
-   * | _ -> failwith ("unrecognized instruction: " ^ name)
-   * end *)
-
-
 (* #dontinclude "build_isa_models/riscv/gen/types_trans_sail.hgen" *)
-
-let herdtools_ast_to_interp_instruction (i : instruction) = failwith "RISCV herdtools_ast_to_interp_instruction stub"
-  (* let (instr,parms,_) = match i with
- * (\* #dontinclude "build_isa_models/riscv/gen/trans_sail.hgen" *\)
- *   | i ->
- *       begin
- *         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
- *         failwith "Translation failure"
- *       end in
- *   (instr,parms) *)
 
     
 let labelize_ins

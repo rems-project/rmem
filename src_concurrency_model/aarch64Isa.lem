@@ -810,3 +810,4 @@ let aarch64gen_isa : isa ArmV8_embed_types.ast =
 
 
 
+let available = true

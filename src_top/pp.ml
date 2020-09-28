@@ -29,7 +29,6 @@
 
 open Printf
 
-open Interp_interface
 open Sail_impl_base
 open Utils
 open Events
@@ -51,9 +50,6 @@ open Types
 open Model_aux
 
 open Globals
-
-(*open Printing_functions *)  (* the interpreter printing functions *)
-
 
 
 let init_thread = Globals.init_thread
@@ -921,37 +917,37 @@ let pp_instruction
   | Fetched ast -> sprintf "fetched %s" (pp_instruction_ast m symbol_table ast program_loc)
   end
 
-let pp_instruction_state
-      indent (m:Globals.ppmode)
-      (instruction_state_pp : unit -> (string * string)) =
-  Printing_functions.set_interp_ppmode
-    (match m.Globals.pp_kind with
-    | Ascii | Hash -> Printing_functions.Interp_ascii
-    | Latex -> Printing_functions.Interp_latex
-    | Html -> Printing_functions.Interp_html);
-
-  let ((instruction_stack_to_string_output : string),
-       (local_variables_to_string_output : string)) =
-    instruction_state_pp () in
-
-(*  let s = Printing_functions.top_instruction_state_to_string is in*)
-  let s = instruction_stack_to_string_output in
-  let ss = split "\n" s in
-
-  let ss =
-    if false (*not(m.pp_screenshot)*) then ss else
-    begin match ss with
-    | "{" :: ss' ->
-        begin match List.rev ss' with
-        | "}" :: ss' -> List.rev ss'
-        | _ -> ss
-        end
-    | _ -> ss
-    end
-  in
-
-  String.concat "" (List.map (fun s -> indent ^ "| " ^ colour_sail m s ^ "\n") ss)
-  ^ indent ^ "Env: " ^ local_variables_to_string_output ^ " \n"
+(* let pp_instruction_state
+ *       indent (m:Globals.ppmode)
+ *       (instruction_state_pp : unit -> (string * string)) =
+ *   Printing_functions.set_interp_ppmode
+ *     (match m.Globals.pp_kind with
+ *     | Ascii | Hash -> Printing_functions.Interp_ascii
+ *     | Latex -> Printing_functions.Interp_latex
+ *     | Html -> Printing_functions.Interp_html);
+ * 
+ *   let ((instruction_stack_to_string_output : string),
+ *        (local_variables_to_string_output : string)) =
+ *     instruction_state_pp () in
+ * 
+ * (\*  let s = Printing_functions.top_instruction_state_to_string is in*\)
+ *   let s = instruction_stack_to_string_output in
+ *   let ss = split "\n" s in
+ * 
+ *   let ss =
+ *     if false (\*not(m.pp_screenshot)*\) then ss else
+ *     begin match ss with
+ *     | "{" :: ss' ->
+ *         begin match List.rev ss' with
+ *         | "}" :: ss' -> List.rev ss'
+ *         | _ -> ss
+ *         end
+ *     | _ -> ss
+ *     end
+ *   in
+ * 
+ *   String.concat "" (List.map (fun s -> indent ^ "| " ^ colour_sail m s ^ "\n") ss)
+ *   ^ indent ^ "Env: " ^ local_variables_to_string_output ^ " \n" *)
 
 let pp_bool m b =
   match b with  (* TODO should use k pp to match her output? not sure*)
@@ -960,14 +956,10 @@ let pp_bool m b =
 
 
 let pp_decode_error pp_instruction_ast m de addr = match de with
-  | Unsupported_instruction_error0 (_opcode, (i: 'i)) ->
+  | Unsupported_instruction_error (_opcode, (i: 'i)) ->
      sprintf "Unsupported instruction (%s)" (pp_instruction_ast m m.pp_symbol_table i addr)
-  | Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
+  | Not_an_instruction_error (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
   | Internal_decode_error (s:string) -> "Internal error "^s
-
-(* TODO: need to feed in a pp mode (part of m) into the
-interpreter code so that special characters can be printed in
-Ascii/Latex/HTML form *)
 
 (* let pp_hash = "#" *)
 (* (\* m = match m with *\) *)
@@ -1676,7 +1668,7 @@ let pp_t_only_label pp_instruction_ast ?(graph=false) m tl =
       ("register write", Some info)
 
   | T_internal_outcome ->
-      ("interpreter", None)
+      ("sail-internal outcome", None)
 
   | T_pending_memory_read_request ->
       ("initiate memory reads of load instruction", None)
@@ -2060,7 +2052,7 @@ let pp_pt_thread_start_trans ?(graph=false) m (tid,ioid) (rv,mrv) mtid' =
 
 
 
-let pp_p_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss,PromisingViews.t0) p_trans) =
+let pp_p_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss,PromisingViews.t) p_trans) =
   match t with
   | PT t -> pp_pt_trans pp_instruction_ast ~graph m t
   (* | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
@@ -2620,10 +2612,10 @@ let pp_micro_op_state_top pp_instruction_ast indent ioid m mos =
     | MOS_pending_exception exception_type ->
         "MOS_pending_exception " ^ (pp_exception pp_instruction_ast m ioid exception_type)
 
-let pp_outcome_S indent m is =
-  begin match is with
-  | (_, Some (instruction_state_pp, _)) -> "\n" ^ pp_instruction_state indent m instruction_state_pp
-  | (o, None) ->
+let pp_outcome_S indent m (o,_) =
+  (* begin match is with
+   * | (_, Some (instruction_state_pp, _)) -> "\n" ^ pp_instruction_state indent m instruction_state_pp
+   * | (o, None) -> *)
       " " ^
       begin match o with
       (* these are special outcomes that we abuse instead of adding new effect kinds *)
@@ -2653,7 +2645,7 @@ let pp_outcome_S indent m is =
       | Fail None         -> "Fail"
       end
       ^ "\n"
-  end
+  (* end *)
 
 
 let pp_micro_op_state_body pp_instruction_ast indent addr ioid subreads potential_writes m mos =

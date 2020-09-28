@@ -1,0 +1,210 @@
+open import Pervasives_extra
+open import Sail_impl_base
+open import Sail_values
+
+(* 'a is result type *)
+
+type memstate = map integer memory_byte
+type tagstate = map integer bitU
+type regstate = map string (vector bitU)
+
+type sequential_state = <| regstate : regstate;
+                           memstate : memstate; 
+                           tagstate : tagstate;
+                           write_ea : maybe (write_kind * integer * integer);
+                           last_exclusive_operation_was_load : bool|>
+
+type M 'a = sequential_state -> list ((either 'a string) * sequential_state)
+
+val return : forall 'a. 'a -> M 'a
+let return a s = [(Left a,s)]
+
+val bind : forall 'a 'b. M 'a -> ('a -> M 'b) -> M 'b
+let bind m f (s : sequential_state) =
+  List.concatMap (function
+                  | (Left a, s') -> f a s'
+                  | (Right e, s') -> [(Right e, s')]
+                  end) (m s)
+
+let inline (>>=) = bind
+val (>>): forall 'b. M unit -> M 'b -> M 'b
+let inline (>>) m n = m >>= fun _ -> n
+
+val exit : forall 'e 'a. 'e -> M 'a
+let exit _ s = [(Right "exit",s)]
+
+
+val range : integer -> integer -> list integer
+let rec range i j = 
+  if i = j then [i]
+  else i :: range (i+1) j
+
+val get_reg : sequential_state -> string -> vector bitU
+let get_reg state reg = Map_extra.find reg state.regstate
+
+val set_reg : sequential_state -> string -> vector bitU -> sequential_state
+let set_reg state reg bitv =
+  <| state with regstate = Map.insert reg bitv state.regstate |>
+
+
+let is_exclusive = function 
+  | Sail_impl_base.Read_plain -> false
+  | Sail_impl_base.Read_reserve -> true
+  | Sail_impl_base.Read_acquire -> false
+  | Sail_impl_base.Read_weak_acquire -> false
+  | Sail_impl_base.Read_exclusive -> true
+  | Sail_impl_base.Read_exclusive_acquire -> true
+  | Sail_impl_base.Read_stream -> false
+  | Sail_impl_base.Read_RISCV_acquire_RCpc             -> false
+  | Sail_impl_base.Read_RISCV_acquire_RCsc             -> false
+  | Sail_impl_base.Read_RISCV_acquire_release          -> false
+  | Sail_impl_base.Read_RISCV_reserved                 -> true
+  | Sail_impl_base.Read_RISCV_reserved_acquire_RCpc    -> true
+  | Sail_impl_base.Read_RISCV_reserved_acquire_RCsc    -> true
+  | Sail_impl_base.Read_RISCV_reserved_acquire_release -> true
+  | Sail_impl_base.Read_X86_locked -> true
+end
+
+
+val read_mem : bool -> read_kind -> vector bitU -> integer -> M (vector bitU)
+let read_mem dir read_kind addr sz state =
+  let addr = integer_of_address (address_of_bitv addr) in
+  let addrs = range addr (addr+sz-1) in
+  let memory_value = List.map (fun addr -> Map_extra.find addr state.memstate) addrs in
+  let value = Sail_values.internal_mem_value dir memory_value in
+
+  if is_exclusive read_kind
+  then [(Left value, <| state with last_exclusive_operation_was_load = true |>)]
+  else [(Left value, state)]
+
+(* caps are aligned at 32 bytes *)
+let cap_alignment = (32 : integer)
+
+val read_tag : bool -> read_kind -> vector bitU -> M bitU
+let read_tag dir read_kind addr state =
+  let addr = (integer_of_address (address_of_bitv addr)) / cap_alignment in
+  let tag = match (Map.lookup addr state.tagstate) with
+    | Just t -> t
+    | Nothing -> B0
+  end in
+  (* TODO Should reading a tag set the exclusive flag? *)
+  if is_exclusive read_kind
+  then [(Left tag, <| state with last_exclusive_operation_was_load = true |>)]
+  else [(Left tag, state)]
+
+val excl_result : unit -> M bool
+let excl_result () state =
+  let success =
+    (Left true,  <| state with last_exclusive_operation_was_load = false |>) in
+  (Left false, state) :: if state.last_exclusive_operation_was_load then [success] else []
+
+val write_mem_ea : write_kind -> vector bitU -> integer -> M unit
+let write_mem_ea write_kind addr sz state = 
+  let addr = integer_of_address (address_of_bitv addr) in
+  [(Left (), <| state with write_ea = Just (write_kind,addr,sz) |>)]
+
+val write_mem_val : vector bitU -> M bool
+let write_mem_val v state =
+  let (write_kind,addr,sz) = match state.write_ea with
+    | Nothing -> failwith "write ea has not been announced yet"
+    | Just write_ea -> write_ea end in
+  let addrs = range addr (addr+sz-1) in
+  let v = external_mem_value v in
+  let addresses_with_value = List.zip addrs v in
+  let memstate = List.foldl (fun mem (addr,v) -> Map.insert addr v mem)
+                            state.memstate addresses_with_value in
+  [(Left true,  <| state with memstate = memstate |>)]
+
+val write_tag : bitU -> M bool
+let write_tag t state =
+  let (write_kind,addr,sz) = match state.write_ea with
+    | Nothing -> failwith "write ea has not been announced yet"
+    | Just write_ea -> write_ea end in
+  let taddr = addr / cap_alignment in
+  let tagstate = Map.insert taddr t state.tagstate in
+  [(Left true,  <| state with tagstate = tagstate |>)]
+
+val read_reg : register -> M (vector bitU)
+let read_reg reg state =
+  let v = Map_extra.find (name_of_reg reg) state.regstate in
+  [(Left v,state)]
+let read_reg_range reg i j =
+  read_reg reg >>= fun rv ->
+  return (slice rv i j)
+let read_reg_bit reg i =
+  read_reg_range reg i i >>= fun v ->
+  return (extract_only_bit v)
+let read_reg_field reg regfield =
+  let (i,j) = register_field_indices reg regfield in
+  read_reg_range reg i j
+let read_reg_bitfield reg regfield =
+  let (i,_) = register_field_indices reg regfield in
+  read_reg_bit reg i 
+
+val write_reg : register -> vector bitU -> M unit
+let write_reg reg v state =
+  [(Left (),<| state with regstate = Map.insert (name_of_reg reg) v state.regstate |>)]
+let write_reg_range reg i j v =
+  read_reg reg >>= fun current_value ->
+  let new_value = update current_value i j v in
+  write_reg reg new_value
+let write_reg_bit reg i bit =
+  write_reg_range reg i i (Vector [bit] i (is_inc_of_reg reg))
+let write_reg_field reg regfield =
+  let (i,j) = register_field_indices reg regfield in  
+  write_reg_range reg i j
+let write_reg_bitfield reg regfield =
+  let (i,_) = register_field_indices reg regfield in  
+  write_reg_bit reg i
+let write_reg_field_range reg regfield i j v =
+  read_reg_field reg regfield >>= fun current_field_value ->
+  let new_field_value = update current_field_value i j v in
+  write_reg_field reg regfield new_field_value
+
+
+val barrier : barrier_kind -> M unit
+let barrier _ = return ()
+
+val footprint : M unit
+let footprint = return ()
+
+
+val foreachM_inc : forall 'vars. (integer * integer * integer) -> 'vars ->
+                  (integer -> 'vars -> M 'vars) -> M 'vars
+let rec foreachM_inc (i,stop,by) vars body =
+  if i <= stop
+  then
+    body i vars >>= fun vars ->
+    foreachM_inc (i + by,stop,by) vars body
+  else return vars
+
+
+val foreachM_dec : forall 'vars. (integer * integer * integer) -> 'vars ->
+                  (integer -> 'vars -> M 'vars) -> M 'vars
+let rec foreachM_dec (i,stop,by) vars body =
+  if i >= stop
+  then
+    body i vars >>= fun vars ->
+    foreachM_dec (i - by,stop,by) vars body
+  else return vars
+
+let write_two_regs r1 r2 vec =
+  let is_inc =
+    let is_inc_r1 = is_inc_of_reg r1 in
+    let is_inc_r2 = is_inc_of_reg r2 in
+    let () = ensure (is_inc_r1 = is_inc_r2)
+                    "write_two_regs called with vectors of different direction" in
+    is_inc_r1 in
+
+  let (size_r1 : integer) = size_of_reg r1 in
+  let (start_vec : integer) = get_start vec in
+  let size_vec = length vec in
+  let r1_v =
+    if is_inc
+    then slice vec start_vec (size_r1 - start_vec - 1)
+    else slice vec start_vec (start_vec - size_r1 - 1) in
+  let r2_v =
+    if is_inc
+    then slice vec (size_r1 - start_vec) (size_vec - start_vec)
+    else slice vec (start_vec - size_r1) (start_vec - size_vec) in
+  write_reg r1 r1_v >> write_reg r2 r2_v

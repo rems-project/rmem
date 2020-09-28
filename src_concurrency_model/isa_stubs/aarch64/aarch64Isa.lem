@@ -20,3 +20,4 @@ import ArmV8_embed_types
 
 let aarch64hand_isa   : isa ArmV8_embed_types.ast  = isa_stub
 let aarch64gen_isa    : isa ArmV8_embed_types.ast  = isa_stub
+let available = false

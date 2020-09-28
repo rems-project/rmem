@@ -1,0 +1,149 @@
+open import Pervasives_extra
+open import Sail_impl_base
+open import Sail_values
+
+val return : forall 'a. 'a -> outcome 'a
+let return a = Done a
+
+val bind : forall 'a 'b. outcome 'a -> ('a -> outcome 'b) -> outcome 'b
+let rec bind m f = match m with
+  | Done a ->              f a
+  | Read_mem descr k ->    Read_mem descr   (fun v -> let (o,opt) = k v in (bind o f,opt))
+  | Read_reg descr k ->    Read_reg descr   (fun v -> let (o,opt) = k v in (bind o f,opt))
+  | Write_memv descr k ->  Write_memv descr (fun v -> let (o,opt) = k v in (bind o f,opt))
+  | Excl_res k ->          Excl_res         (fun v -> let (o,opt) = k v in (bind o f,opt))
+  | Write_ea descr o_s ->  Write_ea descr   (let (o,opt) = o_s in (bind o f,opt))
+  | Barrier descr o_s ->   Barrier descr    (let (o,opt) = o_s in (bind o f,opt))
+  | Footprint o_s ->       Footprint        (let (o,opt) = o_s in (bind o f,opt))
+  | Write_reg descr o_s -> Write_reg descr  (let (o,opt) = o_s in (bind o f,opt))
+  | Escape descr ->        Escape descr
+  | Fail descr ->          Fail descr
+  | Error descr ->         Error descr
+  | Internal descr o_s ->  Internal descr   (let (o,opt) = o_s in (bind o f ,opt))
+end
+
+
+type M 'a = outcome 'a
+
+let inline (>>=) = bind
+val (>>) : forall 'b. M unit -> M 'b -> M 'b
+let inline (>>) m n = m >>= fun _ -> n
+
+val exit : forall 'a 'b. 'b -> M 'a
+let exit s = Fail Nothing
+
+val read_mem : bool -> read_kind -> vector bitU -> integer -> M (vector bitU)
+let read_mem dir rk addr sz =
+  let addr = address_lifted_of_bitv addr in
+  let sz = natFromInteger sz in
+  let k memory_value =
+    let bitv = internal_mem_value dir memory_value in
+    (Done bitv,Nothing) in
+  Read_mem (rk,addr,sz) k
+
+val excl_result : unit -> M bool
+let excl_result () =
+  let k successful = (return successful,Nothing) in
+  Excl_res k
+
+val write_mem_ea : write_kind -> vector bitU -> integer -> M unit
+let write_mem_ea wk addr sz =
+  let addr = address_lifted_of_bitv addr in
+  let sz = natFromInteger sz in
+  Write_ea (wk,addr,sz) (Done (),Nothing)
+
+val write_mem_val : vector bitU -> M bool
+let write_mem_val v =
+  let v = external_mem_value v in
+  let k successful = (return successful,Nothing) in
+  Write_memv v k
+
+val read_reg_aux : reg_name -> M (vector bitU)
+let read_reg_aux reg = 
+  let k reg_value =
+    let v = internal_reg_value reg_value in
+    (Done v,Nothing) in
+  Read_reg reg k
+
+let read_reg reg =
+  read_reg_aux (external_reg_whole reg)
+let read_reg_range reg i j =
+  read_reg_aux (external_reg_slice reg (natFromInteger i,natFromInteger j))
+let read_reg_bit reg i =
+  read_reg_aux (external_reg_slice reg (natFromInteger i,natFromInteger i)) >>= fun v ->
+  return (extract_only_bit v)
+let read_reg_field reg regfield =
+  read_reg_aux (external_reg_field_whole reg regfield)
+let read_reg_bitfield reg regfield =
+  read_reg_aux (external_reg_field_whole reg regfield) >>= fun v ->
+  return (extract_only_bit v)
+
+val write_reg_aux : reg_name -> vector bitU -> M unit
+let write_reg_aux reg_name v =
+  let regval = external_reg_value reg_name v in
+  Write_reg (reg_name,regval) (Done (), Nothing)
+
+let write_reg reg v =
+  write_reg_aux (external_reg_whole reg) v
+let write_reg_range reg i j v =
+  write_reg_aux (external_reg_slice reg (natFromInteger i,natFromInteger j)) v
+let write_reg_bit reg i bit =
+  let iN = natFromInteger i in
+  write_reg_aux (external_reg_slice reg (iN,iN)) (Vector [bit] i (is_inc_of_reg reg))
+let write_reg_field reg regfield v =
+  write_reg_aux (external_reg_field_whole reg regfield) v
+let write_reg_bitfield reg regfield bit =
+  write_reg_aux (external_reg_field_whole reg regfield)
+                (Vector [bit] 0 (is_inc_of_reg reg))
+let write_reg_field_range reg regfield i j v =
+  write_reg_aux (external_reg_field_slice reg regfield (natFromInteger i,natFromInteger j)) v
+
+
+
+val barrier : barrier_kind -> M unit
+let barrier bk = Barrier bk (Done (), Nothing)
+
+
+val footprint : M unit
+let footprint = Footprint (Done (),Nothing)
+
+
+val foreachM_inc : forall 'vars. (integer * integer * integer) -> 'vars ->
+                  (integer -> 'vars -> M 'vars) -> M 'vars
+let rec foreachM_inc (i,stop,by) vars body =
+  if i <= stop
+  then
+    body i vars >>= fun vars ->
+    foreachM_inc (i + by,stop,by) vars body
+  else return vars
+
+
+val foreachM_dec : forall 'vars. (integer * integer * integer) -> 'vars ->
+                  (integer -> 'vars -> M 'vars) -> M 'vars
+let rec foreachM_dec (i,stop,by) vars body =
+  if i >= stop
+  then
+    body i vars >>= fun vars ->
+    foreachM_dec (i - by,stop,by) vars body
+  else return vars
+
+let write_two_regs r1 r2 vec =
+  let is_inc =
+    let is_inc_r1 = is_inc_of_reg r1 in
+    let is_inc_r2 = is_inc_of_reg r2 in
+    let () = ensure (is_inc_r1 = is_inc_r2)
+                    "write_two_regs called with vectors of different direction" in
+    is_inc_r1 in
+
+  let (size_r1 : integer) = size_of_reg r1 in
+  let (start_vec : integer) = get_start vec in
+  let size_vec = length vec in
+  let r1_v =
+    if is_inc
+    then slice vec start_vec (size_r1 - start_vec - 1)
+    else slice vec start_vec (start_vec - size_r1 - 1) in
+  let r2_v =
+    if is_inc
+    then slice vec (size_r1 - start_vec) (size_vec - start_vec)
+    else slice vec (start_vec - size_r1) (start_vec - size_vec) in
+  write_reg r1 r1_v >> write_reg r2 r2_v

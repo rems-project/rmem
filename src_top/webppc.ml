@@ -116,7 +116,6 @@ let default_options : unit -> RunOptions.t = fun () ->
       RunOptions.pseudorandom        = false;
       RunOptions.pseudorandom_traces = 1;
       RunOptions.always_print        = false;
-      RunOptions.interpreter         = true;
   }
 ;;
 
@@ -172,9 +171,6 @@ let options_to_html run_options : unit =
   assign_number "elf_threads" !Globals.elf_threads;
 
   check_checkbox "use_dwarf" !Globals.use_dwarf;
-
-  check_radio "semantics_shallow_embedding" (not run_options.RunOptions.interpreter);
-  check_radio "semantics_interpreter"       (    run_options.RunOptions.interpreter);
 
   List.iter
     (fun top_string ->
@@ -263,9 +259,6 @@ let options_of_html : unit -> RunOptions.t = fun () ->
       if is_checked_radio ("topology_4_" ^ top_string) then
         Globals.topology_4 := top_string;)
     (Model_aux.ui_topologies 4);
-
-  { run_options with
-    RunOptions.interpreter = (not (is_checked_radio "semantics_shallow_embedding"))
   }
 ;;
 

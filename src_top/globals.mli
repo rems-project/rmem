@@ -36,8 +36,6 @@ val logdir: (string option) ref
 
 val dont_tool: bool ref (* "Dont" output *)
 
-val debug_sail_interp : bool ref
-
 val init_thread : int
 
 
@@ -172,8 +170,8 @@ type ppmode =
     ppg_trans:                         bool;
     pp_pretty_eiid_table:              (Events.eiid * string) list;
     pp_trans_prefix:                   bool;
-    pp_sail:                           bool;
     pp_default_cmd:                    Interact_parser_base.ast option;
+    pp_sail:                           bool;
 
   }
 

@@ -20,7 +20,6 @@ open Big_int
 open X86HGenBase
 
 
-open Interp_interface
 open Sail_impl_base
 
 type instruction = X86HGenBase.instruction
@@ -29,17 +28,6 @@ type instruction_ast = X86_embed_types.ast3
 type labelmap = (string * int) list
 
 module IInt = Sail_impl_base
-module IImp = Interp_inter_imp
-
-let instruction_to_interp2_instruction _ = failwith "not implemented"
-let interp2_instruction_to_instruction _ = failwith "not implemented"
-
-
-let instruction_to_interp_instruction = X86_toFromInterp.astToInterpValue3
-let interp_instruction_to_instruction = X86_toFromInterp.astFromInterpValue3
-
-
-let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
 open X86_embed_types
 (* #include "build_isa_models/x86/gen/herdtools_types_to_shallow_types.hgen" *)
@@ -131,8 +119,6 @@ let shallow_ast_to_herdtools_ast instr : instruction =
 
 
 
-(* #include "build_isa_models/x86/gen/types_sail_trans_out.hgen" *)
-
 let trans_out_int ( _fname, _fsize, fbits ) =
   Nat_big_num.to_int (IInt.integer_of_bit_list fbits)
 
@@ -157,25 +143,7 @@ let trans_out_reg flv =
   | 15 -> R15
   | _  -> failwith "trans_out_reg number not 0 to 15"
 
-let interp_instruction_to_herdtools_ast inst : instruction =
-  let (name, parms) = inst in
-  begin match (name, parms) with
-  (* #include "build_isa_models/x86/gen/sail_trans_out.hgen" *)
-  | _ -> failwith ("unrecognized instruction: " ^ name)
-  end
 
-
-(* #include "build_isa_models/x86/gen/types_trans_sail.hgen" *)
-
-let herdtools_ast_to_interp_instruction (i : instruction) = 
-  let (instr,parms,_) = match i with
-(* #include "build_isa_models/x86/gen/trans_sail.hgen" *)
-  | i ->
-      begin
-        Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
-        failwith "Translation failure"
-      end in
-  (instr,parms)
 
     
 let labelize_ins

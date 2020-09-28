@@ -393,3 +393,4 @@ let ppc_isa : isa Power_embed_types.ast =
       make_read_request_events = ppcgen_make_read_request_events;
   |>
 
+let available = true

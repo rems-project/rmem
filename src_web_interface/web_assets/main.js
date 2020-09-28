@@ -141,7 +141,6 @@ function hash_changed () {
     var obj = JSON.parse(decodeURIComponent(window.location.hash.substr(1)));
     if (obj.model_options) {
         $("input[type='radio'][name='model'][value='" + obj.model_options.model + "']").prop("checked", true);
-        $("input[type='radio'][name='semantics'][value='" + obj.model_options.embedding + "']").prop("checked", true);
         $("input[type='radio'][name='force_sc'][value='" + obj.model_options.force_sc + "']").prop("checked", true);
         $("input[type='radio'][name='tree_speculation'][value='" + obj.model_options.tree_speculation + "']").prop("checked", true);
         $("input[type='radio'][name='promise_first'][value='" + obj.model_options.promise_first + "']").prop("checked", true);

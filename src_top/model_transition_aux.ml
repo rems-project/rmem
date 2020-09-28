@@ -28,8 +28,8 @@ open MachineDefTypes
 open Model_aux
 
 let cmp_tc tc1 tc2 =
-    cmps  [ (fun () -> Pervasives.compare tc1.tc_tid tc2.tc_tid);
-            (fun () -> Pervasives.compare tc1.tc_ioid tc2.tc_ioid);
+    cmps  [ (fun () -> Stdlib.compare tc1.tc_tid tc2.tc_tid);
+            (fun () -> Stdlib.compare tc1.tc_ioid tc2.tc_ioid);
           ]
 
 let cmp_tl cmp tl1 tl2 =
@@ -45,8 +45,8 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (SS_PLDI11_partial_coherence_commit (write1, write1'),
        SS_PLDI11_partial_coherence_commit (write2, write2'))
         ->
-        cmps [ (fun () -> Pervasives.compare write1  write2);
-               (fun () -> Pervasives.compare write1' write2');
+        cmps [ (fun () -> Stdlib.compare write1  write2);
+               (fun () -> Stdlib.compare write1' write2');
              ]
     | (SS_PLDI11_partial_coherence_commit _, _) -> 1
     | (_, SS_PLDI11_partial_coherence_commit _) -> -1
@@ -54,23 +54,23 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (SS_PLDI11_propagate_write_to_thread ((write1, _), tid1),
        SS_PLDI11_propagate_write_to_thread ((write2, _), tid2))
         ->
-        cmps [ (fun () -> Pervasives.compare write1 write2);
-               (fun () -> Pervasives.compare tid1 tid2);
+        cmps [ (fun () -> Stdlib.compare write1 write2);
+               (fun () -> Stdlib.compare tid1 tid2);
              ]
     | (SS_PLDI11_propagate_write_to_thread _, _) -> 1
     | (_, SS_PLDI11_propagate_write_to_thread _) -> -1
 
     | (SS_PLDI11_write_reaches_coherence_point write1,
        SS_PLDI11_write_reaches_coherence_point write2)
-        -> Pervasives.compare write1 write2
+        -> Stdlib.compare write1 write2
     | (SS_PLDI11_write_reaches_coherence_point _, _) -> 1
     | (_, SS_PLDI11_write_reaches_coherence_point _) -> -1
 
     | (SS_PLDI11_propagate_barrier_to_thread (barrier1, tid1),
        SS_PLDI11_propagate_barrier_to_thread (barrier2, tid2))
         ->
-        cmps [ (fun () -> Pervasives.compare barrier1 barrier2);
-               (fun () -> Pervasives.compare tid1 tid2);
+        cmps [ (fun () -> Stdlib.compare barrier1 barrier2);
+               (fun () -> Stdlib.compare tid1 tid2);
              ]
     | (SS_PLDI11_propagate_barrier_to_thread _, _) -> 1
     | (_, SS_PLDI11_propagate_barrier_to_thread _) -> -1
@@ -79,7 +79,7 @@ let fuzzy_compare_transitions trans1 trans2 =
        SS_POP_propagate_event_to_thread (event2, tid2))
         ->
         cmps [ (fun () -> flowing_eventCompare event1 event2);
-               (fun () -> Pervasives.compare tid1 tid2);
+               (fun () -> Stdlib.compare tid1 tid2);
              ]
     | (SS_POP_propagate_event_to_thread _, _) -> 1
     | (_, SS_POP_propagate_event_to_thread _) -> -1
@@ -88,20 +88,20 @@ let fuzzy_compare_transitions trans1 trans2 =
        SS_POP_partially_satisfy_read (read2, sliced_write2))
         ->
         cmps [ (fun () -> read_requestCompare read1 read2);
-               (fun () -> Pervasives.compare sliced_write1 sliced_write2) 
+               (fun () -> Stdlib.compare sliced_write1 sliced_write2) 
           ]
     | (SS_POP_partially_satisfy_read _, _) -> 1
     | (_, SS_POP_partially_satisfy_read _) -> -1
 
     | (SS_Flowing_flow_write_to_memory writes1,
        SS_Flowing_flow_write_to_memory writes2)
-        -> Pervasives.compare writes1 writes2
+        -> Stdlib.compare writes1 writes2
     | (SS_Flowing_flow_write_to_memory _, _) -> 1
     | (_, SS_Flowing_flow_write_to_memory _) -> -1
 
     | (SS_Flowing_flow_barrier_to_memory barrier1,
        SS_Flowing_flow_barrier_to_memory barrier2)
-        -> Pervasives.compare barrier1 barrier2
+        -> Stdlib.compare barrier1 barrier2
     | (SS_Flowing_flow_barrier_to_memory _, _) -> 1
     | (_, SS_Flowing_flow_barrier_to_memory _) -> -1
 
@@ -131,13 +131,13 @@ let fuzzy_compare_transitions trans1 trans2 =
         ->
         cmps [ (fun () -> read_requestCompare read1 read2);
                (* Fix this below *)
-               (fun () -> Pervasives.compare sliced_write1 sliced_write2);
+               (fun () -> Stdlib.compare sliced_write1 sliced_write2);
              ]
     | (SS_Flowing_partially_satisfy_read _, _) -> 1
     | (_, SS_Flowing_partially_satisfy_read _) -> -1
 
 	| (SS_TSO_propagate_write_to_memory write1, SS_TSO_propagate_write_to_memory write2) ->
-		Pervasives.compare write1 write2
+		Stdlib.compare write1 write2
 	(* unused case (last):
 	| (SS_TSO_propagate_write_to_memory _, _) -> 1
 	| (_, SS_TSO_propagate_write_to_memory _) -> -1
@@ -146,9 +146,9 @@ let fuzzy_compare_transitions trans1 trans2 =
      * | (SS_Promising_stop_promising, _) -> 1
      * | (_, SS_Promising_stop_promising) -> -1 *)
     | (SS_Flat_icache_update (tid, addr, mrs), SS_Flat_icache_update (tid2, addr2, mrs2)) -> 
-            cmps [ (fun () -> Pervasives.compare tid tid2)
+            cmps [ (fun () -> Stdlib.compare tid tid2)
                  ; (fun () -> Sail_impl_base.addressCompare addr addr2)
-                 ; (fun () -> Pervasives.compare mrs mrs2)
+                 ; (fun () -> Stdlib.compare mrs mrs2)
                  ]
     | (SS_Flat_icache_update (_, _, _), _) -> 1
     | (_, SS_Flat_icache_update (_, _, _)) -> -1
@@ -163,14 +163,14 @@ let fuzzy_compare_transitions trans1 trans2 =
 
   let cmrCompare cmr1 cmr2 = 
       cmps [ (fun () -> Sail_impl_base.addressCompare cmr1.cmr_addr cmr2.cmr_addr);
-             (fun () -> Pervasives.compare cmr1.cmr_ioid cmr2.cmr_ioid);
+             (fun () -> Stdlib.compare cmr1.cmr_ioid cmr2.cmr_ioid);
              (fun () -> cmkCompare cmr1.cmr_cmk cmr2.cmr_cmk) ] in
 
   let cmp_ss_sync_trans l1 l2 =
     match (l1, l2) with
     | (SS_PLDI11_acknowledge_sync_barrier barrier1,
        SS_PLDI11_acknowledge_sync_barrier barrier2)
-        -> Pervasives.compare barrier1 barrier2
+        -> Stdlib.compare barrier1 barrier2
     | (SS_PLDI11_acknowledge_sync_barrier _, _) -> 1
     | (_, SS_PLDI11_acknowledge_sync_barrier _) -> -1
 
@@ -191,7 +191,7 @@ let fuzzy_compare_transitions trans1 trans2 =
         -> read_requestCompare read1 read2
     | (SS_Flat_thread_ic (cmr1, tid1),
        SS_Flat_thread_ic (cmr2, tid2))
-        -> cmps [ (fun () -> Pervasives.compare tid1 tid2);
+        -> cmps [ (fun () -> Stdlib.compare tid1 tid2);
                   (fun () -> cmrCompare cmr1 cmr2) ]
     | (SS_Flat_thread_ic _, _) -> 1
     | (_, SS_Flat_thread_ic _) -> -1
@@ -216,7 +216,7 @@ let fuzzy_compare_transitions trans1 trans2 =
 
     | (T_decode (addr1, fetched1), T_decode (addr2, fetched2))  ->
         cmps [ (fun () -> Sail_impl_base.addressCompare addr1 addr2)
-             ; (fun () -> Pervasives.compare fetched1 fetched2)
+             ; (fun () -> Stdlib.compare fetched1 fetched2)
              ]
     | (T_decode _, _)  -> 1
     | (_, T_decode _)  -> -1
@@ -230,12 +230,12 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_pending_memory_read_request) -> -1
 
     | (T_pseudoreg_read (reg_name1, _), T_pseudoreg_read (reg_name2, _))
-        -> Pervasives.compare reg_name1 reg_name2
+        -> Stdlib.compare reg_name1 reg_name2
     | (T_pseudoreg_read _, _) -> 1
     | (_, T_pseudoreg_read _) -> -1
 
     | (T_pseudoreg_write (reg_name1, _), T_pseudoreg_write (reg_name2, _))
-        -> Pervasives.compare reg_name1 reg_name2
+        -> Stdlib.compare reg_name1 reg_name2
     | (T_pseudoreg_write _, _) -> 1
     | (_, T_pseudoreg_write _) -> -1
 
@@ -248,12 +248,12 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_actually_satisfy _) -> -1
 
     | (T_register_read (reg_name1, _, _), T_register_read (reg_name2, _, _))
-        -> Pervasives.compare reg_name1 reg_name2
+        -> Stdlib.compare reg_name1 reg_name2
     | (T_register_read _, _) -> 1
     | (_, T_register_read _) -> -1
 
     | (T_register_write (reg_name1, _), T_register_write (reg_name2, _))
-        -> Pervasives.compare reg_name1 reg_name2
+        -> Stdlib.compare reg_name1 reg_name2
     | (T_register_write _, _) -> 1
     | (_, T_register_write _) -> -1
 
@@ -264,12 +264,12 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_mem_forward_write _) -> -1
 
     | (T_mem_write_footprint write1, T_mem_write_footprint write2)
-        -> Pervasives.compare write1 write2
+        -> Stdlib.compare write1 write2
     | (T_mem_write_footprint _, _) -> 1
     | (_, T_mem_write_footprint _) -> -1
 
     | (T_mem_potential_write write1, T_mem_potential_write write2)
-        -> Pervasives.compare write1 write2
+        -> Stdlib.compare write1 write2
     | (T_mem_potential_write _, _) -> 1
     | (_, T_mem_potential_write _) -> -1
 
@@ -295,7 +295,7 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_complete_store) -> -1
 
     | (T_commit_barrier barrier1, T_commit_barrier barrier2)
-        -> Pervasives.compare barrier1 barrier1
+        -> Stdlib.compare barrier1 barrier1
     | (T_commit_barrier _, _) -> 1
     | (_, T_commit_barrier _) -> -1
 
@@ -316,7 +316,7 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_prev_excl_result _) -> -1
 
     | (T_POP_subsumed_write write1, T_POP_subsumed_write write2)
-        -> Pervasives.compare write1 write2
+        -> Stdlib.compare write1 write2
     | (T_POP_subsumed_write _, _) -> 1
     | (_, T_POP_subsumed_write _) -> -1
 
@@ -340,13 +340,13 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_mem_read_request _) -> -1
 
     | (T_propagate_write tl1, T_propagate_write tl2) ->
-        let cmp (write1, _, _) (write2, _, _) = Pervasives.compare write1 write2 in
+        let cmp (write1, _, _) (write2, _, _) = Stdlib.compare write1 write2 in
         cmp_tl cmp tl1 tl2
     | (T_propagate_write _, _) -> 1
     | (_, T_propagate_write _) -> -1
 
     | (T_propagate_barrier tl1, T_propagate_barrier tl2) ->
-        let cmp (b1: barrier) (b2: barrier) = Pervasives.compare b1 b2 in
+        let cmp (b1: barrier) (b2: barrier) = Stdlib.compare b1 b2 in
         cmp_tl cmp tl1 tl2
     | (T_propagate_barrier _, _) -> 1
     | (_, T_propagate_barrier _) -> -1
@@ -364,7 +364,7 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_Flat_mem_satisfy_read _) -> -1
 
     | (T_Flat_try_commit_store_cond tl1, T_Flat_try_commit_store_cond tl2) ->
-        let cmp (write1, _) (write2, _) = Pervasives.compare write1 write2 in
+        let cmp (write1, _) (write2, _) = Stdlib.compare write1 write2 in
         cmp_tl cmp tl1 tl2
     | (T_Flat_try_commit_store_cond _, _) -> 1
     | (_, T_Flat_try_commit_store_cond _) -> -1
@@ -418,19 +418,19 @@ let fuzzy_compare_transitions trans1 trans2 =
      * | (_, T_Promising_mem_satisfy_read_nonshared _) -> -1
      * 
      * | (T_Promising_propagate_write tl1, T_Promising_propagate_write tl2) -> -1
-     *     (\* let cmp (w1, _) (w2, _) = Pervasives.compare w1 w2 in
+     *     (\* let cmp (w1, _) (w2, _) = Stdlib.compare w1 w2 in
      *      * cmp_tl cmp tl1 tl2 *\)
      * | (T_Promising_propagate_write _, _) -> 1
      * | (_, T_Promising_propagate_write _) -> -1
      * 
      * | (T_Promising_fulfil_promise tl1, T_Promising_fulfil_promise tl2) -> -1
-     *     (\* let cmp w1 w2 = Pervasives.compare w1 w2 in
+     *     (\* let cmp w1 w2 = Stdlib.compare w1 w2 in
      *      * cmp_tl cmp tl1 tl2 *\)
      * | (T_Promising_fulfil_promise _, _) -> 1
      * | (_, T_Promising_fulfil_promise _) -> -1
      * 
      * | (T_Promising_propagate_write_nonshared tl1, T_Promising_propagate_write_nonshared tl2) -> -1
-     *     (\* let cmp w1 w2 = Pervasives.compare w1 w2 in
+     *     (\* let cmp w1 w2 = Stdlib.compare w1 w2 in
      *      * cmp_tl cmp tl1 tl2 *\)
      * | (T_Promising_propagate_write_nonshared _, _) -> 1
      * | (_, T_Promising_propagate_write_nonshared _) -> -1 *)
@@ -468,7 +468,7 @@ let fuzzy_compare_transitions trans1 trans2 =
     | (_, T_sync _) -> -1
 
     | (T_thread_start tl1, T_thread_start tl2) ->
-        let cmp (r_address1, _) (r_address2, _) = Pervasives.compare r_address1 r_address2 in
+        let cmp (r_address1, _) (r_address2, _) = Stdlib.compare r_address1 r_address2 in
         cmp_tl cmp tl1 tl2
     (* unused case (last):
     | (T_thread_start _, _) -> 1

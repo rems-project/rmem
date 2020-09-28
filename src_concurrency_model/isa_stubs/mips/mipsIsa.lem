@@ -19,3 +19,5 @@ open import Isa
 import Mips_embed_types
 
 let mips_isa : isa Mips_embed_types.ast = isa_stub
+
+let available = false

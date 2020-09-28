@@ -280,3 +280,4 @@ let riscv_isa : isa Riscv_types.ast =
 
 
 
+let available = true

@@ -231,7 +231,7 @@ isabelle:
 .PHONY: get_all_deps
 
 HIGHLIGHT := $(if $(MAKE_TERMOUT),| scripts/highlight.sh -s)
-main webppc: src_top/share_dir.ml version.ml build_concurrency_model/make_sentinel marshal_defs
+main webppc: src_top/share_dir.ml version.ml build_concurrency_model/make_sentinel
 	rm -f $@.$(EXT)
 	ulimit -s 33000; $(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
 #	when piping through the highlight script we lose the exit status
@@ -263,7 +263,7 @@ CLEANFILES += version.ml
 # that has to be done manually before updating system.js
 system.js: webppc.$(EXT)
 	rm -f system.map
-	js_of_ocaml $(JSOCFLAGS) +nat.js src_web_interface/web_assets/BigInteger.js src_web_interface/web_assets/zarith.js src_marshal_defs/primitives.js $< -o $@
+	js_of_ocaml $(JSOCFLAGS) +nat.js src_web_interface/web_assets/BigInteger.js src_web_interface/web_assets/zarith.js $< -o $@
 CLEANFILES += system.js system.map
 
 clean: clean_ocaml
@@ -271,26 +271,7 @@ clean: clean_ocaml
 	rm -rf $(CLEANDIRS)
 .PHONY: clean
 
-## marshal defs ######################################################
 
-MARSHAL_DEFS_FILES = PPCGen.defs AArch64.defs MIPS64.defs X86.defs
-
-
-
-marshal_defs: build_concurrency_model/make_sentinel
-	rm -f marshal_defs.native
-	$(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_marshal_defs/marshal_defs.native $(HIGHLIGHT)
-#	when piping through the highlight script we lose the exit status
-#	of ocamlbuild; check for the target existance instead:
-	@[ -f marshal_defs.native ]
-	$(MAKE) $(MARSHAL_DEFS_FILES)
-.PHONY: marshal_defs
-CLEANFILES += marshal_defs.native
-CLEANFILES += MARSHAL_DEFS_FILES
-
-$(MARSHAL_DEFS_FILES): %.defs: marshal_defs.native
-	./marshal_defs.native -$* $@
-CLEANFILES += $(MARSHAL_DEFS_FILES)
 
 
 
@@ -307,7 +288,6 @@ install:
 	mkdir -p $(INSTALL_DIR)/bin
 	mkdir -p $(SHARE_DIR)
 	cp rmem $(INSTALL_DIR)/bin
-	cp *.defs $(SHARE_DIR)
 
 
 ## install the web-interface #########################################
@@ -343,8 +323,6 @@ $(INSTALLDIR)/help.html: src_web_interface/help.md console_help_printer.native |
 install_web_interface: web $(INSTALLDIR)
 # TODO:	rm -rf $(INSTALLDIR)/*
 	cp -r src_web_interface/* $(INSTALLDIR)/
-	cp $(MARSHAL_DEFS_FILES) $(INSTALLDIR)
-	cp $(INSTALL_DEFS_FILES) $(INSTALLDIR)
 	cp system.js $(INSTALLDIR)
 	[ ! -e system.map ] || cp system.map $(INSTALLDIR)
 	$(MAKE) console_help_printer
@@ -376,8 +354,8 @@ else ifeq ($(UI),web)
 endif
 
 
-
-saildir ?= $(shell opam var sail-legacy:share)
+# temporarily
+saildir ?= src_sail_legacy
 ifeq ($(saildir),)
   saildir = $(error cannot find (the share directory of) the opam package sail-legacy)
 endif
@@ -405,43 +383,15 @@ endif
 
 ######################################################################
 
-# get_lem_library: MAKEOVERRIDES := $(filter-out INSTALLDIR=%,$(MAKEOVERRIDES))
-# get_lem_library:
-# 	LEM -v > lem_version.ml
-# .PHONY: get_lem_library
-# get_all_deps: get_lem_library
-# CLEANFILES += lem_version.ml
-
-# get_linksem: MAKEOVERRIDES := $(filter-out INSTALLDIR=%,$(MAKEOVERRIDES))
-# get_linksem:
-# 	$(MAKE) -C $(linksemdir) install
-# 	$(call git_version,$(linksemdir)) > linksem_version.ml
-# .PHONY: get_linksem
-# get_all_deps: get_linksem
-# CLEANFILES += linksem_version.ml
-
 get_sail:
-	rm -rf build_sail_interp
-	mkdir -p build_sail_interp
-	cp -a $(saildir)/src/lem_interp/instruction_extractor.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/interp.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/interp_ast.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/interp_lib.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/interp_interface.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/interp_inter_imp.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/interp_utilities.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/sail_impl_base.lem build_sail_interp
-	cp -a $(saildir)/src/lem_interp/printing_functions.ml* build_sail_interp
-	cp -a $(saildir)/src/lem_interp/pretty_interp.ml* build_sail_interp
-#	mkdir -p build_sail_interp/pprint/src
-#	cp -a $(saildir)/src/pprint/src/*.ml* build_sail_interp/pprint/src
 	rm -rf build_sail_shallow_embedding
 	mkdir -p build_sail_shallow_embedding
-	cp -a $(saildir)/src/gen_lib/*.lem  build_sail_shallow_embedding
-	# sail-legacy -v > sail_version.ml
+	cp -a $(saildir)/src/lem_interp/sail_impl_base.lem build_sail_shallow_embedding
+	cp -a $(saildir)/src/gen_lib/*.lem build_sail_shallow_embedding
+	cp -a $(saildir)/src/lem_interp/printing_functions.ml* build_sail_shallow_embedding
+#	sail-legacy -v > sail_version.ml
 .PHONY: get_sail
 get_all_deps: get_sail
-CLEANDIRS += build_sail_interp
 CLEANDIRS += build_sail_shallow_embedding
 # CLEANFILES += sail_version.ml
 
@@ -449,10 +399,9 @@ get_sail2:
 	rm -rf build_sail2_shallow_embedding
 	mkdir -p build_sail2_shallow_embedding
 	cp -a $(sail2dir)/src/gen_lib/*.lem  build_sail2_shallow_embedding
-	cp -a $(sail2dir)/src/lem_interp/*.lem build_sail2_shallow_embedding
 #	cp -a $(sail2dir)/src/sail_lib.ml build_sail2_shallow_embedding
 #	cp -a $(sail2dir)/src/util.ml build_sail2_shallow_embedding
-	# sail -v > sail2_version.ml
+#	sail -v > sail2_version.ml
 .PHONY: get_sail2
 get_all_deps: get_sail2
 CLEANDIRS += build_sail2_shallow_embedding
@@ -469,22 +418,15 @@ get_isa_model_%: BUILDISATARGET ?= all
 get_isa_model_%: ISASAILFILES ?= $(ISADIR)/*.sail
 get_isa_model_%: ISALEMFILES ?= $(ISADIR)/*.lem
 get_isa_model_%: ISAGENFILES ?= $(ISADIR)/gen/*
-get_isa_model_%: ISA_INTERPCONVERT ?= $(ISADIR)/$(ISANAME)_toFromInterp2.ml
-get_isa_model_%: ISADEFSFILES ?=
 get_isa_model_%: FORCE
 	rm -rf $(ISABUILDDIR)
 	mkdir -p $(ISABUILDDIR)
 	$(if $(call equal,$(BUILDISA),true),\
 	  $(if $(call equal,$(CLEANDEPS),true),$(MAKE) -C $(ISADIR) clean &&)\
 	  cp -a $(ISASAILFILES) $(ISABUILDDIR) &&\
-	  cp -a $(ISALEMFILES) $(ISABUILDDIR) &&\
-	  { [ ! -f $(ISADIR)/$(ISANAME).ml ] || cp -a $(ISADIR)/$(ISANAME).ml $(ISABUILDDIR)/$(ISANAME).ml.notstub; } &&\
-	  { [ ! -f $(ISA_INTERPCONVERT) ] || cp -a $(ISA_INTERPCONVERT) $(ISABUILDDIR)/$(ISANAME)_toFromInterp2.ml.notstub; })
-	cp -a src_top/generic_sail_ast_def_stub.ml $(ISABUILDDIR)/$(ISANAME).ml.stub
-	{ [ ! -f src_top/$(ISANAME)_toFromInterp2.ml.stub ] || cp -a src_top/$(ISANAME)_toFromInterp2.ml.stub $(ISABUILDDIR); }
+	  cp -a $(ISALEMFILES) $(ISABUILDDIR))
 	mkdir -p $(ISABUILDDIR)/gen
 	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
-	$(if $(ISADEFSFILES), cp -a $(ISADEFSFILES) .,)
 	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
@@ -495,7 +437,6 @@ get_isa_model_power: ISANAME=power
 get_isa_model_power: ISADIR=$(saildir)/arch/power
 ifeq ($(filter PPCGEN,$(ISA_LIST)),)
   get_isa_model_power: BUILDISA=false
-  RMEMSTUBS += build_isa_models/power/power.ml
   RMEMSTUBS += src_top/PPCGenTransSail.ml
 endif
 get_all_isa_models: get_isa_model_power
@@ -521,7 +462,6 @@ get_isa_model_aarch64: ISANAME=armV8
 get_isa_model_aarch64: ISADIR=$(saildir)/arch/arm
 ifeq ($(filter AArch64,$(ISA_LIST)),)
   get_isa_model_aarch64: BUILDISA=false
-  RMEMSTUBS += build_isa_models/aarch64/armV8.ml
   RMEMSTUBS += src_top/AArch64HGenTransSail.ml
 endif
 get_all_isa_models: get_isa_model_aarch64
@@ -533,7 +473,6 @@ get_isa_model_mips: ISANAME=mips
 get_isa_model_mips: ISADIR=$(saildir)/arch/mips
 ifeq ($(filter MIPS,$(ISA_LIST)),)
   get_isa_model_mips: BUILDISA=false
-  RMEMSTUBS += build_isa_models/mips/mips.ml
   RMEMSTUBS += src_top/MIPSHGenTransSail.ml
 endif
 get_all_isa_models: get_isa_model_mips
@@ -543,20 +482,14 @@ get_isa_model_riscv: ISADIR=$(riscvdir)
 get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
 get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/for-rmem/*.lem
 get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/0.11/*.lem
-get_isa_model_riscv: ISA_INTERPCONVERT=$(ISADIR)/generated_definitions/for-rmem/riscv_toFromInterp2.ml
 get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
-get_isa_model_riscv: ISADEFSFILES=$(ISADIR)/generated_definitions/for-rmem/riscv.defs
-INSTALL_DEFS_FILES += riscv.defs
-CLEANFILES += riscv.defs
 
 # By assigning a value to SAIL_DIR we force riscv to build with the
 # checked-out Sail2 instead of Sail2 from opam:
 get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv_rmem
 ifeq ($(filter RISCV,$(ISA_LIST)),)
   get_isa_model_riscv: BUILDISA=false
-  RMEMSTUBS += build_isa_models/riscv/riscv.ml
   RMEMSTUBS += src_top/RISCVHGenTransSail.ml
-  RMEMSTUBS += build_isa_models/riscv/riscv_toFromInterp2.ml
 endif
 get_all_isa_models: get_isa_model_riscv
 
@@ -564,7 +497,6 @@ get_isa_model_x86: ISANAME=x86
 get_isa_model_x86: ISADIR=$(saildir)/arch/x86
 ifeq ($(filter X86,$(ISA_LIST)),)
   get_isa_model_x86: BUILDISA=false
-  RMEMSTUBS += build_isa_models/x86/x86.ml
   RMEMSTUBS += src_top/X86HGenTransSail.ml
 endif
 get_all_isa_models: get_isa_model_x86
@@ -601,52 +533,39 @@ ifeq ($(filter PPCGEN,$(ISA_LIST)),)
   POWER_FILES += src_concurrency_model/isa_stubs/power/power_embed_types.lem
   POWER_FILES += src_concurrency_model/isa_stubs/power/power_embed.lem
   POWER_FILES += src_concurrency_model/isa_stubs/power/powerIsa.lem
-  POWER_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/power/power_extras.lem)
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/power/power_toFromInterp.lem
 else
   POWER_FILES += build_isa_models/power/power_extras_embed.lem
   POWER_FILES += build_isa_models/power/power_embed_types.lem
   POWER_FILES += build_isa_models/power/power_embed.lem
   POWER_FILES += src_concurrency_model/powerIsa.lem
-  POWER_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/power/power_extras.lem)
-  ISA_TOFROM_INTERP_FILES += build_isa_models/power/power_toFromInterp.lem
 endif
 
 ifeq ($(filter AArch64,$(ISA_LIST)),)
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_embed_types.lem
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_embed.lem
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/aarch64Isa.lem
-  AARCH64_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/aarch64/armV8_extras.lem)
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_toFromInterp.lem
 else
   AARCH64_FILES += build_isa_models/aarch64/armV8_extras_embed.lem
   AARCH64_FILES += build_isa_models/aarch64/armV8_embed_types.lem
   AARCH64_FILES += build_isa_models/aarch64/armV8_embed.lem
   AARCH64_FILES += src_concurrency_model/aarch64Isa.lem
-  AARCH64_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/aarch64/armV8_extras.lem)
-  ISA_TOFROM_INTERP_FILES += build_isa_models/aarch64/armV8_toFromInterp.lem
 endif
 
 ifeq ($(filter MIPS,$(ISA_LIST)),)
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mips_embed_types.lem
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mips_embed.lem
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mipsIsa.lem
-  MIPS_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/mips/mips_extras.lem)
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/mips/mips_toFromInterp.lem
 else
   MIPS_FILES += build_isa_models/mips/mips_extras_embed.lem
   MIPS_FILES += build_isa_models/mips/mips_embed_types.lem
   MIPS_FILES += build_isa_models/mips/mips_embed.lem
   MIPS_FILES += src_concurrency_model/mipsIsa.lem
-  MIPS_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/mips/mips_extras.lem)
-  ISA_TOFROM_INTERP_FILES += build_isa_models/mips/mips_toFromInterp.lem
 endif
 
 ifeq ($(filter RISCV,$(ISA_LIST)),)
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscv_types.lem
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscv.lem
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscvIsa.lem
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
 else
   RISCV_FILES += build_isa_models/riscv/riscv_extras.lem
   RISCV_FILES += build_isa_models/riscv/riscv_extras_fdext.lem
@@ -657,26 +576,21 @@ else
   # generated by shallow embedding there is not much we can do
   LEMFLAGS += -wl_pat_red ign
   RISCV_FILES += src_concurrency_model/riscvIsa.lem
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/riscv/riscv_toFromInterp.lem
-#  ISA_TOFROM_INTERP_FILES += build_isa_models/riscv/riscv_toFromInterp.lem
 endif
 
 ifeq ($(filter X86,$(ISA_LIST)),)
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86_embed_types.lem
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86_embed.lem
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86Isa.lem
-  X86_FILES += $(if $(call notequal,$(UI),isabelle),src_concurrency_model/isa_stubs/x86/x86_extras.lem)
-  ISA_TOFROM_INTERP_FILES += src_concurrency_model/isa_stubs/x86/x86_toFromInterp.lem
 else
   X86_FILES += build_isa_models/x86/x86_extras_embed.lem
   X86_FILES += build_isa_models/x86/x86_embed_types.lem
   X86_FILES += build_isa_models/x86/x86_embed.lem
   X86_FILES += src_concurrency_model/x86Isa.lem
-  X86_FILES += $(if $(call notequal,$(UI),isabelle),build_isa_models/x86/x86_extras.lem)
-  ISA_TOFROM_INTERP_FILES += build_isa_models/x86/x86_toFromInterp.lem
 endif
 
-MACHINEFILES-PRE=\
+MACHINEFILES=\
+  build_sail_shallow_embedding/sail_impl_base.lem\
   build_sail_shallow_embedding/sail_values.lem\
   build_sail_shallow_embedding/prompt.lem\
   build_sail2_shallow_embedding/sail2_instr_kinds.lem\
@@ -726,26 +640,21 @@ MACHINEFILES-PRE=\
   src_concurrency_model/promisingUI.lem\
   src_concurrency_model/sail_1_2_convert.lem
 
-MACHINEFILES=\
-  $(wildcard build_sail_interp/*.lem)\
-  build_sail_shallow_embedding/deep_shallow_convert.lem\
-  $(MACHINEFILES-PRE)\
-  $(ISA_TOFROM_INTERP_FILES)
-
 build_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	rm -rf $(dir $@)
 	mkdir -p $(dir $@)
 	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(MACHINEFILES)
+#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(RISCV_FILES)
+#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(POWER_FILES)
+#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(AARCH64_FILES)
+#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(MIPS_FILES)
+#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(X86_FILES)
 	echo '$(ISA)' > $@
 CLEANDIRS += build_concurrency_model
 
 ######################################################################
 
-MACHINEFILES-ISABELLE=\
-  build_sail_interp/sail_impl_base.lem\
-  $(MACHINEFILES-PRE)
-
-build_isabelle_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES-ISABELLE)
+build_isabelle_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	rm -rf $(dir $@)
 	mkdir -p $(dir $@)
 	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -isa $(MACHINEFILES-ISABELLE)
