@@ -72,7 +72,7 @@ Alternatively, rmem can be built using `make` as follows:
 $ opam repository add rems https://github.com/rems-project/opam-repository.git
 $ opam install --deps-only .
 $ ulimit -s 33000
-$ make MODE=opt. 
+$ make MODE=opt 
 ```
 
 This will build a native rmem OCaml binary.
