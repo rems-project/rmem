@@ -33,7 +33,7 @@ module System = struct
     "ARM";
     "MIPS";
     "PPC";
-    "X86";
+    "X86"; "X86_64";
     "RISCV";
   ]
 
@@ -43,6 +43,7 @@ module System = struct
     | "MIPS" -> Some `MIPS
     | "PPC" -> Some `PPC
     | "X86" -> Some `X86
+    | "X86_64" -> Some `X86
     | "RISCV"|"RISC-V" -> Some `RISCV
     | _ -> None
 
