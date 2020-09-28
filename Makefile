@@ -500,12 +500,12 @@ ifeq ($(filter PPCGEN,$(ISA_LIST)),)
 endif
 get_all_isa_models: get_isa_model_power
 
-# use $(call patch,<original_file>,<path_file>) in the recipe of a rule;
+# use $(call patch,<original_file>,<patch_file>) in the recipe of a rule;
 # this will patch <original_file> without changing its modiffication time
-# patch = modtime="$$(stat --printf '%y' $(1))" &&\
-#   patch $(1) $(2) &&\
-#   touch -d "$$modtime" $(1)
-patch = patch $(1) $(2)
+patch = touch -r $(1) $(1).timestamp_temp &&\
+  patch $(1) $(2) &&\
+  touch -r $(1).timestamp_temp $(1) &&\
+  rm -f $(1).timestamp_temp
 
 patch_isa_model_power:
 # the shallow embedding generates bad code because of some typing issue
