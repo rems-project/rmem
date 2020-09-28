@@ -129,5 +129,7 @@ addr:
    }
 | LPAR qreg RPAR
    { Mem (None, RegBase $2, bit64_of_int 0) }
+| LPAR NAME RPAR
+   { Sym ($2) }
 | big_num
    { Mem (None, NoBase, $1) }
