@@ -381,33 +381,6 @@ ifeq ($(linksemdir),)
 endif
 
 
-######################################################################
-
-get_sail:
-	rm -rf build_sail_shallow_embedding
-	mkdir -p build_sail_shallow_embedding
-	cp -a $(saildir)/src/lem_interp/sail_impl_base.lem build_sail_shallow_embedding
-	cp -a $(saildir)/src/gen_lib/*.lem build_sail_shallow_embedding
-	cp -a $(saildir)/src/lem_interp/printing_functions.ml* build_sail_shallow_embedding
-#	sail-legacy -v > sail_version.ml
-.PHONY: get_sail
-get_all_deps: get_sail
-CLEANDIRS += build_sail_shallow_embedding
-# CLEANFILES += sail_version.ml
-
-get_sail2:
-	rm -rf build_sail2_shallow_embedding
-	mkdir -p build_sail2_shallow_embedding
-	cp -a $(sail2dir)/src/gen_lib/*.lem  build_sail2_shallow_embedding
-	cp -a $(sail2dir)/src/util.ml  build_sail2_shallow_embedding
-	cp -a $(sail2dir)/src/sail_lib.ml  build_sail2_shallow_embedding
-#	cp -a $(sail2dir)/src/sail_lib.ml build_sail2_shallow_embedding
-#	cp -a $(sail2dir)/src/util.ml build_sail2_shallow_embedding
-#	sail -v > sail2_version.ml
-.PHONY: get_sail2
-get_all_deps: get_sail2
-CLEANDIRS += build_sail2_shallow_embedding
-#CLEANFILES += sail2_version.ml
 
 ## import ISA models #################################################
 
@@ -429,11 +402,8 @@ get_isa_model_%: FORCE
 	  cp -a $(ISALEMFILES) $(ISABUILDDIR))
 	mkdir -p $(ISABUILDDIR)/gen
 	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
-	$(MAKE) patch_isa_model_$*
 CLEANDIRS += build_isa_models
 
-patch_isa_model_%:
-	echo "no patches for $*"
 
 get_isa_model_power: ISANAME=power
 get_isa_model_power: ISADIR=$(saildir)/arch/power
@@ -443,22 +413,6 @@ ifeq ($(filter PPCGEN,$(ISA_LIST)),)
 endif
 get_all_isa_models: get_isa_model_power
 
-# use $(call patch,<original_file>,<patch_file>) in the recipe of a rule;
-# this will patch <original_file> without changing its modification time
-patch = touch -r $(1) $(1).timestamp_temp &&\
-  patch $(1) $(2) &&\
-  touch -r $(1).timestamp_temp $(1) &&\
-  rm -f $(1).timestamp_temp
-
-patch_isa_model_power:
-# the shallow embedding generates bad code because of some typing issue
-ifeq ($(filter PPCGEN,$(ISA_LIST)),)
-else
-	$(call patch,build_isa_models/power/power_embed.lem,patches/power_embed.lem.patch)
-endif
-
-gen_patch_isa_model_power:
-	diff -au $(saildir)/arch/power/power_embed.lem build_isa_models/power/power_embed.lem > patches/power_embed.lem.patch || true
 
 get_isa_model_aarch64: ISANAME=armV8
 get_isa_model_aarch64: ISADIR=$(saildir)/arch/arm
@@ -592,16 +546,16 @@ else
 endif
 
 MACHINEFILES=\
-  build_sail_shallow_embedding/sail_impl_base.lem\
-  build_sail_shallow_embedding/sail_values.lem\
-  build_sail_shallow_embedding/prompt.lem\
-  build_sail2_shallow_embedding/sail2_instr_kinds.lem\
-  build_sail2_shallow_embedding/sail2_values.lem\
-  build_sail2_shallow_embedding/sail2_operators.lem\
-  build_sail2_shallow_embedding/sail2_operators_mwords.lem\
-  build_sail2_shallow_embedding/sail2_prompt_monad.lem\
-  build_sail2_shallow_embedding/sail2_prompt.lem\
-  build_sail2_shallow_embedding/sail2_string.lem\
+  $(saildir)/src/lem_interp/sail_impl_base.lem\
+  $(saildir)/src/gen_lib/sail_values.lem\
+  $(saildir)/src/gen_lib/prompt.lem\
+  $(sail2dir)/src/gen_lib/sail2_instr_kinds.lem\
+  $(sail2dir)/src/gen_lib/sail2_values.lem\
+  $(sail2dir)/src/gen_lib/sail2_operators.lem\
+  $(sail2dir)/src/gen_lib/sail2_operators_mwords.lem\
+  $(sail2dir)/src/gen_lib/sail2_prompt_monad.lem\
+  $(sail2dir)/src/gen_lib/sail2_prompt.lem\
+  $(sail2dir)/src/gen_lib/sail2_string.lem\
   src_concurrency_model/utils.lem\
   src_concurrency_model/freshIds.lem\
   src_concurrency_model/instructionSemantics.lem\
@@ -637,20 +591,20 @@ MACHINEFILES=\
   src_concurrency_model/promisingUI.lem
 
 SAIL1_LEM_INPUT_FILES=\
-  -i build_sail_shallow_embedding/sail_values.lem\
-  -i build_sail_shallow_embedding/prompt.lem\
-  -i build_sail_shallow_embedding/sail_impl_base.lem\
+  -i $(saildir)/src/gen_lib/sail_values.lem\
+  -i $(saildir)/src/gen_lib/prompt.lem\
+  -i $(saildir)/src/lem_interp/sail_impl_base.lem\
   -i src_concurrency_model/isa.lem
 
 SAIL2_LEM_INPUT_FILES=\
   $(SAIL1_LEM_INPUT_FILES)\
-  -i build_sail2_shallow_embedding/sail2_instr_kinds.lem\
-  -i build_sail2_shallow_embedding/sail2_values.lem\
-  -i build_sail2_shallow_embedding/sail2_operators.lem\
-  -i build_sail2_shallow_embedding/sail2_operators_mwords.lem\
-  -i build_sail2_shallow_embedding/sail2_prompt_monad.lem\
-  -i build_sail2_shallow_embedding/sail2_prompt.lem\
-  -i build_sail2_shallow_embedding/sail2_string.lem
+  -i $(sail2dir)/src/gen_lib/sail2_instr_kinds.lem\
+  -i $(sail2dir)/src/gen_lib/sail2_values.lem\
+  -i $(sail2dir)/src/gen_lib/sail2_operators.lem\
+  -i $(sail2dir)/src/gen_lib/sail2_operators_mwords.lem\
+  -i $(sail2dir)/src/gen_lib/sail2_prompt_monad.lem\
+  -i $(sail2dir)/src/gen_lib/sail2_prompt.lem\
+  -i $(sail2dir)/src/gen_lib/sail2_string.lem
 
 
 build_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)

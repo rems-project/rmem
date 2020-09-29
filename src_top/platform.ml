@@ -16,7 +16,7 @@
 
 (* Platform info for RISCV model *)
 
-open Sail_lib
+(* open Sail_lib *)
 
 let dram_base  = "0x00000000";;  (* Spike::DRAM_BASE *)
 (* dram_size has to be big enough to include Elf_test_file.stack_base_address *)
@@ -27,11 +27,11 @@ let rom_base   = "0x80001000";;  (* Spike::DEFAULT_RSTVEC *)
 let cpu_hz = "1000000000";;
 let insns_per_tick = "100";;
 
-let bits_of_int i =
-  get_slice_int (Nat_big_num.of_int 64, Nat_big_num.of_int i, Nat_big_num.zero)
+(* let bits_of_int i =
+ *   get_slice_int (Nat_big_num.of_int 64, Nat_big_num.of_int i, Nat_big_num.zero) *)
 
-let bits_of_int64 i =
-  get_slice_int (Nat_big_num.of_int 64, Nat_big_num.of_int64 i, Nat_big_num.zero)
+(* let bits_of_int64 i =
+ *   get_slice_int (Nat_big_num.of_int 64, Nat_big_num.of_int64 i, Nat_big_num.zero) *)
 
 
 let rom_base () = Lem_machine_word.wordFromInteger Lem_machine_word.instance_Machine_word_Size_Machine_word_ty64_dict (Nat_big_num.of_string rom_base)
