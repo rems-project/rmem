@@ -449,7 +449,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
            make_line("Execution",         "eager_sep");
         make_toggler("Execution",         "eager_fetch_single",                    "Eager fetch (single-successor)", "Are single-successor fetches considered eagerly takeable?");
         make_toggler("Execution",         "eager_fetch_multi",                     "Eager fetch (multiple-successor)", "Are multiple-successor fetches (e.g. branches) considered eagerly takeable?");
-        make_toggler("Execution",         "eager_pseudocode_internal",             "Eager pseudocode internal", "Are pseudocode-internal transitions considered eagerly takeable?", "css: { disabled: embedding() !== 'interpreter' }", "N/A to shallow embedding");
+        make_toggler("Execution",         "eager_pseudocode_internal",             "Eager pseudocode internal", "Are pseudocode-internal transitions considered eagerly takeable?");
         make_toggler("Execution",         "eager_constant_reg_read",               "Eager constant reg reads",  "Are constant reg reads considered eagerly takeable?");
         make_toggler("Execution",         "eager_reg_rw",                          "Eager register read/write", "Are all register reads/writes considered eagerly takeable?");
         make_toggler("Execution",         "eager_memory_aux",                      "Eager memory aux",          "Are memory auxiliary transitions considered eagerly takeable?");
@@ -461,8 +461,7 @@ make_button_row("Execution", "eager_shortcut_buttons_none", {
 
 
  make_custom_toggler("Interface",         "pp_style",                              "Show instruction metadata", "Show or hide instruction bookkeeping/metadata in state printing, e.g. register read/writes", ["full", "compact"]);
-        make_toggler("Interface",         "pp_sail",                               "Show Sail state and code",  "Show the Sail interpreter state and code for each in-flight instruction. Note: " +
-                                                                                                                "only works if the Sail interpreter is being used, as opposed to the shallow embedding.", "css: { disabled: embedding() !== 'interpreter' }", "N/A to shallow embedding")
+        make_toggler("Interface",         "pp_sail",                               "Show Sail state and code",  "Show the Sail state and code for each in-flight instruction.")
         make_toggler("Interface",         "condense_finished_instructions",        "Condense finished instructions", "Condense finished instructions in states");
      make_int_option("Interface",         "max_finished",                          "Hide finished instructions but last", "Maximum number of finished instructions printed at the start of each thread");
 
