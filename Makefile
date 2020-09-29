@@ -399,6 +399,8 @@ get_sail2:
 	rm -rf build_sail2_shallow_embedding
 	mkdir -p build_sail2_shallow_embedding
 	cp -a $(sail2dir)/src/gen_lib/*.lem  build_sail2_shallow_embedding
+	cp -a $(sail2dir)/src/util.ml  build_sail2_shallow_embedding
+	cp -a $(sail2dir)/src/sail_lib.ml  build_sail2_shallow_embedding
 #	cp -a $(sail2dir)/src/sail_lib.ml build_sail2_shallow_embedding
 #	cp -a $(sail2dir)/src/util.ml build_sail2_shallow_embedding
 #	sail -v > sail2_version.ml
