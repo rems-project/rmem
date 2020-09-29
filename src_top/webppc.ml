@@ -259,7 +259,7 @@ let options_of_html : unit -> RunOptions.t = fun () ->
       if is_checked_radio ("topology_4_" ^ top_string) then
         Globals.topology_4 := top_string;)
     (Model_aux.ui_topologies 4);
-  }
+  run_options
 ;;
 
 let isa_callback (isa: Isa.isa_model) =

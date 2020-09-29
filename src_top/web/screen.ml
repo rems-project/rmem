@@ -94,7 +94,6 @@ let current_options (options : options_state) =
     val priority_reduction_ = run_options.priority_reduction
     val hash_prune_ = run_options.hash_prune
     val partial_order_reduction_ = run_options.partial_order_reduction
-    val compare_analyses_ = run_options.compare_analyses
     val prune_restarts_ = run_options.prune_restarts
     val prune_discards_ = run_options.prune_discards
     val ppg_shared_ = ppmode.ppg_shared
