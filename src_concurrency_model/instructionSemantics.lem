@@ -137,7 +137,7 @@ let print_register_environment environment =
 
 val handle_reg_reads : forall 'a. list (reg_name * register_value) -> outcome 'a -> 'a
 let rec handle_reg_reads environment outcome = match outcome with
-  | Read_reg reg_name c ->
+  | O_Read_reg reg_name c ->
      let regval = match List.lookup reg_name environment with
        | Just v -> v
        | Nothing -> 
@@ -145,29 +145,29 @@ let rec handle_reg_reads environment outcome = match outcome with
                       print_register_environment environment)
      end in
      handle_reg_reads environment (c regval)
-  | Fail (Just err) -> failwith ("handle_reads: Fail " ^ err)
-  | Fail Nothing -> failwith ("handle_reads: Fail with unspecified error")
-  | Error string -> failwith ("handle_reads: Error " ^ string)
-  | Done v -> v
+  | O_Fail (Just err) -> failwith ("handle_reads: Fail " ^ err)
+  | O_Fail Nothing -> failwith ("handle_reads: Fail with unspecified error")
+  | O_Error string -> failwith ("handle_reads: Error " ^ string)
+  | O_Done v -> v
   | _ -> failwith "handle_reg_reads: unhandled effect"
   end
 
 let ensure_done_outcome = function
-  | Done a -> a | _ -> fail end
+  | O_Done a -> a | _ -> fail end
 let ensure_barrier_outcome = function
-  | Barrier bk o -> (bk,o) | _ -> fail end
+  | O_Barrier bk o -> (bk,o) | _ -> fail end
 let ensure_write_ea_outcome = function
-  | Write_ea descr o -> (descr,o) | _ -> fail end
+  | O_Write_ea descr o -> (descr,o) | _ -> fail end
 let ensure_write_memv_outcome = function
-  | Write_memv memv c -> (memv,c) | _ -> fail end
+  | O_Write_memv memv c -> (memv,c) | _ -> fail end
 let ensure_read_mem_outcome = function
-  | Read_mem descr c -> (descr,c) | _ -> fail end
+  | O_Read_mem descr c -> (descr,c) | _ -> fail end
 let ensure_excl_res_outcome = function
-  | Excl_res c -> c | _ -> fail end
+  | O_Excl_res c -> c | _ -> fail end
 let ensure_write_reg_outcome = function
-  | Write_reg descr o -> (descr,o) | _ -> fail end
+  | O_Write_reg descr o -> (descr,o) | _ -> fail end
 let ensure_read_reg_outcome = function
-  | Read_reg descr o -> (descr,o) | _ -> fail end
+  | O_Read_reg descr o -> (descr,o) | _ -> fail end
 
 
 

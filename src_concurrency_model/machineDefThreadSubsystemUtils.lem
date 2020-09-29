@@ -1043,7 +1043,7 @@ let nias_of_instruction
     : set address
   =
   match iic.iic_instance.micro_op_state with
-  | MOS_plain (Done ()) ->
+  | MOS_plain (O_Done ()) ->
       { next_address_of_finished_instruction isa iic.iic_instance }
   | _ ->
       Set.bigunionMap

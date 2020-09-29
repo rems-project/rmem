@@ -3,23 +3,23 @@ open import Sail_impl_base
 open import Sail_values
 
 val return : forall 'a. 'a -> outcome 'a
-let return a = Done a
+let return a = O_Done a
 
 val bind : forall 'a 'b. outcome 'a -> ('a -> outcome 'b) -> outcome 'b
 let rec bind m f = match m with
-  | Done a ->              f a
-  | Read_mem descr k ->    Read_mem descr   (fun v -> let o = k v in bind o f)
-  | Read_reg descr k ->    Read_reg descr   (fun v -> let o = k v in bind o f)
-  | Write_memv descr k ->  Write_memv descr (fun v -> let o = k v in bind o f)
-  | Excl_res k ->          Excl_res         (fun v -> let o = k v in bind o f)
-  | Write_ea descr o ->    Write_ea descr   (bind o f)
-  | Barrier descr o ->     Barrier descr    (bind o f)
-  | Footprint o ->         Footprint        (bind o f)
-  | Write_reg descr o ->   Write_reg descr  (bind o f)
-  | Escape descr ->        Escape descr
-  | Fail descr ->          Fail descr
-  | Error descr ->         Error descr
-  | Internal descr o ->    Internal descr   (bind o f )
+  | O_Done a ->              f a
+  | O_Read_mem descr k ->    O_Read_mem descr   (fun v -> let o = k v in bind o f)
+  | O_Read_reg descr k ->    O_Read_reg descr   (fun v -> let o = k v in bind o f)
+  | O_Write_memv descr k ->  O_Write_memv descr (fun v -> let o = k v in bind o f)
+  | O_Excl_res k ->          O_Excl_res         (fun v -> let o = k v in bind o f)
+  | O_Write_ea descr o ->    O_Write_ea descr   (bind o f)
+  | O_Barrier descr o ->     O_Barrier descr    (bind o f)
+  | O_Footprint o ->         O_Footprint        (bind o f)
+  | O_Write_reg descr o ->   O_Write_reg descr  (bind o f)
+  | O_Escape descr ->        O_Escape descr
+  | O_Fail descr ->          O_Fail descr
+  | O_Error descr ->         O_Error descr
+  | O_Internal descr o ->    O_Internal descr   (bind o f )
 end
 
 
@@ -30,7 +30,7 @@ val (>>) : forall 'b. M unit -> M 'b -> M 'b
 let inline (>>) m n = m >>= fun _ -> n
 
 val exit : forall 'a 'b. 'b -> M 'a
-let exit s = Fail Nothing
+let exit s = O_Fail Nothing
 
 val read_mem : bool -> read_kind -> vector bitU -> integer -> M (vector bitU)
 let read_mem dir rk addr sz =
@@ -38,34 +38,34 @@ let read_mem dir rk addr sz =
   let sz = natFromInteger sz in
   let k memory_value =
     let bitv = internal_mem_value dir memory_value in
-    Done bitv 
+    O_Done bitv 
   in
-  Read_mem (rk,addr,sz) k
+  O_Read_mem (rk,addr,sz) k
 
 val excl_result : unit -> M bool
 let excl_result () =
   let k successful = return successful in
-  Excl_res k
+  O_Excl_res k
 
 val write_mem_ea : write_kind -> vector bitU -> integer -> M unit
 let write_mem_ea wk addr sz =
   let addr = address_lifted_of_bitv addr in
   let sz = natFromInteger sz in
-  Write_ea (wk,addr,sz) (Done ())
+  O_Write_ea (wk,addr,sz) (O_Done ())
 
 val write_mem_val : vector bitU -> M bool
 let write_mem_val v =
   let v = external_mem_value v in
   let k successful = return successful in
-  Write_memv v k
+  O_Write_memv v k
 
 val read_reg_aux : reg_name -> M (vector bitU)
 let read_reg_aux reg = 
   let k reg_value =
     let v = internal_reg_value reg_value in
-    Done v 
+    O_Done v 
   in
-  Read_reg reg k
+  O_Read_reg reg k
 
 let read_reg reg =
   read_reg_aux (external_reg_whole reg)
@@ -83,7 +83,7 @@ let read_reg_bitfield reg regfield =
 val write_reg_aux : reg_name -> vector bitU -> M unit
 let write_reg_aux reg_name v =
   let regval = external_reg_value reg_name v in
-  Write_reg (reg_name,regval) (Done ())
+  O_Write_reg (reg_name,regval) (O_Done ())
 
 let write_reg reg v =
   write_reg_aux (external_reg_whole reg) v
@@ -103,11 +103,11 @@ let write_reg_field_range reg regfield i j v =
 
 
 val barrier : barrier_kind -> M unit
-let barrier bk = Barrier bk (Done ())
+let barrier bk = O_Barrier bk (O_Done ())
 
 
 val footprint : M unit
-let footprint = Footprint (Done ())
+let footprint = O_Footprint (O_Done ())
 
 
 val foreachM_inc : forall 'vars. (integer * integer * integer) -> 'vars ->

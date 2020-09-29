@@ -202,7 +202,7 @@ let read_footprint_of_load instruction : maybe footprint =
   | Just fp -> Just fp
   | Nothing ->
       match instruction.micro_op_state with
-      | MOS_plain (Read_mem (read_kind,addr_lifted,size) _) ->
+      | MOS_plain (O_Read_mem (read_kind,addr_lifted,size) _) ->
          let addr = ensure_just (address_of_address_lifted addr_lifted)
                       "read_footprint_of_load: bad address" in
          Just (addr, size)
@@ -3670,34 +3670,34 @@ let enumerate_transitions_of_instruction
     match is with
 
     (* IC *)
-    | Write_reg (Reg "instruction_cache_operation_IVAU" 63 64 D_decreasing, v) o ->
+    | O_Write_reg (Reg "instruction_cache_operation_IVAU" 63 64 D_decreasing, v) o ->
       handle_ic_ivau s iic v o
 
     (* DC *)
-    | Write_reg (Reg "data_cache_operation_CVAU" 63 64 D_decreasing, v) o ->
+    | O_Write_reg (Reg "data_cache_operation_CVAU" 63 64 D_decreasing, v) o ->
       handle_dc_cvau s iic v o
 
     (* normal outcomes *)
-    | Read_mem descr c     -> handle_read_mem_outcome     params isa s iic descr c
-    | Write_ea descr o     -> handle_write_ea_outcome     params isa s iic descr o
-    | Write_memv descr c   -> handle_write_memv_outcome   params s iic descr c
-    | Excl_res c           -> handle_excl_res_outcome     params isa s iic c
-    | Barrier descr o      -> handle_barrier_outcome      params isa s iic descr o
-    | Read_reg descr c     -> handle_read_reg_outcome     isa s iic descr c
-    | Write_reg descr o    -> handle_write_reg_outcome    isa s iic descr o
-    | Internal descr o     -> handle_internal_outcome     s iic descr o
-    | Footprint o          -> handle_footprint_outcome    isa s iic is o
-    | Done ()              ->
+    | O_Read_mem descr c     -> handle_read_mem_outcome     params isa s iic descr c
+    | O_Write_ea descr o     -> handle_write_ea_outcome     params isa s iic descr o
+    | O_Write_memv descr c   -> handle_write_memv_outcome   params s iic descr c
+    | O_Excl_res c           -> handle_excl_res_outcome     params isa s iic c
+    | O_Barrier descr o      -> handle_barrier_outcome      params isa s iic descr o
+    | O_Read_reg descr c     -> handle_read_reg_outcome     isa s iic descr c
+    | O_Write_reg descr o    -> handle_write_reg_outcome    isa s iic descr o
+    | O_Internal descr o     -> handle_internal_outcome     s iic descr o
+    | O_Footprint o          -> handle_footprint_outcome    isa s iic is o
+    | O_Done ()              ->
        let instr = ensure_fetched iic.iic_instance.instruction in
        if isa.is_thread_start_instruction instr
        then handle_thread_start params isa s iic is
        else handle_done_outcome params isa s iic
 
-    | Escape (Just msg)    -> handle_sail_error     s iic ("Escape: " ^ msg)
-    | Escape Nothing       -> handle_sail_error     s iic ("Escape")
-    | Error msg            -> handle_sail_error     s iic ("Error: " ^ msg)
-    | Fail (Just msg)      -> handle_sail_error     s iic ("Fail: " ^ msg)
-    | Fail Nothing         -> handle_sail_error     s iic ("Fail")
+    | O_Escape (Just msg)    -> handle_sail_error     s iic ("Escape: " ^ msg)
+    | O_Escape Nothing       -> handle_sail_error     s iic ("Escape")
+    | O_Error msg            -> handle_sail_error     s iic ("Error: " ^ msg)
+    | O_Fail (Just msg)      -> handle_sail_error     s iic ("Fail: " ^ msg)
+    | O_Fail Nothing         -> handle_sail_error     s iic ("Fail")
     end
 
   | MOS_pending_mem_read c    -> handle_memory_read  params isa s iic c

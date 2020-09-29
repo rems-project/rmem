@@ -195,7 +195,7 @@ let actually_SAIL_encode
                     lor (shift  lsl 22)
                     lor (bop    lsl 29)
                     lor (sf     lsl 31))
-           | Barrier0
+           | Barrier
               (barrierOp,domain,types)
            ->
                 let op = (match barrierOp with

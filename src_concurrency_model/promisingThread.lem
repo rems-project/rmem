@@ -363,27 +363,27 @@ let write_reg ((ts,(ii,view,o)) : iconf' 'i 'v 'o) (r,v,rview) =
 
 let rec do_internal_steps ((ts,(ii,view,o)) : iconf 'i 'v) = 
   match o with
-  | Internal _ o -> do_internal_steps (ts,(ii,view,o))
+  | O_Internal _ o -> do_internal_steps (ts,(ii,view,o))
   | _ -> (ts,(ii,view,o))
 end
 
 let rec do_local_effs ((ts,(ii,view,o)) : iconf 'i 'v) = 
   match o with
-  | Done () ->           (ts,(ii,view,o))
-  | Read_mem _ _ ->      (ts,(ii,view,o))
-  | Write_ea _ _ ->      (ts,(ii,view,o))
-  | Write_memv _ _ ->    (ts,(ii,view,o))
-  | Barrier _ _ ->       (ts,(ii,view,o))
-  | Excl_res _ ->        (ts,(ii,view,o))
-  | Read_reg r o ->      do_local_effs (read_reg (ts,(ii,view,o)) r)
-  | Write_reg (r,v) o -> do_local_effs (write_reg (ts,(ii,view,o)) (r,v,view))
-  | Internal _ o ->      do_local_effs (ts,(ii,view,o))
-  | Escape Nothing ->    failwith ("escape Nothing")
-  | Escape (Just err) -> failwith ("escape " ^ err)
-  | Error err ->         failwith ("unhandled Error " ^ err)
-  | Fail (Just msg) ->   failwith ("Sail assertion: Fail '" ^ msg ^ "'")
-  | Fail Nothing ->      failwith ("Sail assertion: Fail")
-  | Footprint o ->       failwith "footprint recalculation not supported"
+  | O_Done () ->           (ts,(ii,view,o))
+  | O_Read_mem _ _ ->      (ts,(ii,view,o))
+  | O_Write_ea _ _ ->      (ts,(ii,view,o))
+  | O_Write_memv _ _ ->    (ts,(ii,view,o))
+  | O_Barrier _ _ ->       (ts,(ii,view,o))
+  | O_Excl_res _ ->        (ts,(ii,view,o))
+  | O_Read_reg r o ->      do_local_effs (read_reg (ts,(ii,view,o)) r)
+  | O_Write_reg (r,v) o -> do_local_effs (write_reg (ts,(ii,view,o)) (r,v,view))
+  | O_Internal _ o ->      do_local_effs (ts,(ii,view,o))
+  | O_Escape Nothing ->    failwith ("escape Nothing")
+  | O_Escape (Just err) -> failwith ("escape " ^ err)
+  | O_Error err ->         failwith ("unhandled Error " ^ err)
+  | O_Fail (Just msg) ->   failwith ("Sail assertion: Fail '" ^ msg ^ "'")
+  | O_Fail Nothing ->      failwith ("Sail assertion: Fail")
+  | O_Footprint o ->       failwith "footprint recalculation not supported"
 end
 
 (* stolen from machineDefThreadSubsystem *)
@@ -762,14 +762,14 @@ let run_instruction
   else
     let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
     match o with
-    | Done _ -> run_plain_instruction isa (s,(ii,view,o))
-    | Read_mem _ _ -> run_load_instruction params isa (s,(ii,view,o)) pss_sem pss
-    | Write_ea _ _ ->
+    | O_Done _ -> run_plain_instruction isa (s,(ii,view,o))
+    | O_Read_mem _ _ -> run_load_instruction params isa (s,(ii,view,o)) pss_sem pss
+    | O_Write_ea _ _ ->
        if isa.is_amo instr
        then run_amo_instruction isa (s,(ii,view,o))
        else run_store_instruction params isa Nothing (s,(ii,view,o)) pss_sem pss
-    | Barrier _ _ -> run_barrier_instruction isa (s,(ii,view,o))
-    | Excl_res _ -> run_store_exclusive_instruction params isa (s,(ii,view,o)) pss_sem pss
+    | O_Barrier _ _ -> run_barrier_instruction isa (s,(ii,view,o))
+    | O_Excl_res _ -> run_store_exclusive_instruction params isa (s,(ii,view,o)) pss_sem pss
     | _ -> fail
     end
 

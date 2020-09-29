@@ -2619,30 +2619,30 @@ let pp_outcome indent m o =
       " " ^
       begin match o with
       (* these are special outcomes that we abuse instead of adding new effect kinds *)
-      | Read_reg ((Reg ("TMStartEffect", 63, 64, D_decreasing)), _) ->
+      | O_Read_reg ((Reg ("TMStartEffect", 63, 64, D_decreasing)), _) ->
           "TMStartEffect"
-      | Write_reg ((Reg ("TMAbortEffect", 63, 64, D_decreasing), _), _) ->
+      | O_Write_reg ((Reg ("TMAbortEffect", 63, 64, D_decreasing), _), _) ->
           "TMAbortEffect"
-      | Barrier (Barrier_TM_COMMIT, _) ->
+      | O_Barrier (Barrier_TM_COMMIT, _) ->
           "TMCommitEffect"
 
       (* normal outcomes *)
-      | Read_mem _        -> "Read_mem"
-      | Write_ea _        -> "Write_ea"
-      | Write_memv _      -> "Write_memv"
-      | Excl_res _        -> "Excl_res"
-      | Barrier _         -> "Barrier"
-      | Read_reg _        -> "Read_reg"
-      | Write_reg _       -> "Write_reg"
-      | Internal _        -> "Internal"
-      | Footprint _       -> "Footprint"
-      | Done ()           -> "Done ()"
+      | O_Read_mem _        -> "Read_mem"
+      | O_Write_ea _        -> "Write_ea"
+      | O_Write_memv _      -> "Write_memv"
+      | O_Excl_res _        -> "Excl_res"
+      | O_Barrier _         -> "Barrier"
+      | O_Read_reg _        -> "Read_reg"
+      | O_Write_reg _       -> "Write_reg"
+      | O_Internal _        -> "Internal"
+      | O_Footprint _       -> "Footprint"
+      | O_Done ()           -> "Done ()"
 
-      | Escape (Some msg) -> "Escape: " ^ msg
-      | Escape None       -> "Escape"
-      | Error msg         -> "Error: " ^ msg
-      | Fail (Some msg)   -> "Fail: " ^ msg
-      | Fail None         -> "Fail"
+      | O_Escape (Some msg) -> "Escape: " ^ msg
+      | O_Escape None       -> "Escape"
+      | O_Error msg         -> "Error: " ^ msg
+      | O_Fail (Some msg)   -> "Fail: " ^ msg
+      | O_Fail None         -> "Fail"
       end
       ^ "\n"
   (* end *)

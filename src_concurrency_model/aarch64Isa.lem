@@ -42,8 +42,8 @@ let aarch64hand_shallow_embedding : instruction_semantics ArmV8_embed_types.ast 
     let opcode_bitv = Sail_values.bitv_of_bytes false bytes in
 
     match ArmV8_embed.decode opcode_bitv with
-    | Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
-    | Done (Just instr)  -> 
+    | O_Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
+    | O_Done (Just instr)  -> 
        (* TODO: abstract supported_instructions for all ISAs *)
        match ArmV8_embed.supported_instructions instr with
        | Nothing -> FDO_decode_error(Unsupported_instruction_error opcode instr)

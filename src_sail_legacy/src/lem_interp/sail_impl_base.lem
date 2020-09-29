@@ -821,28 +821,28 @@ end
 type outcome 'a =
   (* Request to read memory, value is location to read, integer is size to read,
      followed by registers that were used in computing that size *)
-  | Read_mem of (read_kind * address_lifted * nat) * (memory_value -> outcome 'a)
+  | O_Read_mem of (read_kind * address_lifted * nat) * (memory_value -> outcome 'a)
   (* Tell the system a write is imminent, at address lifted, of size nat *)
-  | Write_ea of (write_kind * address_lifted * nat) * outcome 'a
+  | O_Write_ea of (write_kind * address_lifted * nat) * outcome 'a
   (* Request the result of store-exclusive *)
-  | Excl_res of (bool -> outcome 'a)
+  | O_Excl_res of (bool -> outcome 'a)
   (* Request to write memory at last signalled address. Memory value should be 8
      times the size given in ea signal *)
-  | Write_memv of memory_value * (bool -> outcome 'a)
+  | O_Write_memv of memory_value * (bool -> outcome 'a)
   (* Request a memory barrier *)
-  | Barrier of barrier_kind * outcome 'a
+  | O_Barrier of barrier_kind * outcome 'a
   (* Tell the system to dynamically recalculate dependency footprint *)
-  | Footprint of outcome 'a
+  | O_Footprint of outcome 'a
   (* Request to read register, will track dependency when mode.track_values *)
-  | Read_reg of reg_name * (register_value -> outcome 'a)
+  | O_Read_reg of reg_name * (register_value -> outcome 'a)
   (* Request to write register *)
-  | Write_reg of (reg_name * register_value) * outcome 'a
-  | Escape of maybe string
+  | O_Write_reg of (reg_name * register_value) * outcome 'a
+  | O_Escape of maybe string
   (*Result of a failed assert with possible error message to report*)
-  | Fail of maybe string
-  | Internal of (maybe string * maybe (unit -> string)) * outcome 'a
-  | Done of 'a
-  | Error of string
+  | O_Fail of maybe string
+  | O_Internal of (maybe string * maybe (unit -> string)) * outcome 'a
+  | O_Done of 'a
+  | O_Error of string
 
 
 (** operations and coercions on basic values *)
