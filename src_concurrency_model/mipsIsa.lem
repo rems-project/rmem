@@ -42,7 +42,7 @@ let mips_shallow_embedding : instruction_semantics Mips_embed_types.ast =
     end
   in
 
-  let initial_outcome_of_instruction instr = (Mips_embed.execute instr,Nothing) in
+  let initial_outcome_of_instruction instr = Mips_embed.execute instr in
 
   let analysis instr reanalyse reginfo environment =
     if reanalyse then

@@ -831,14 +831,14 @@ let pp_reg m r =
 
 let pp_ppcgen_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: Power_embed_types.ast0)
+      (inst: Power_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let i = PPCGenTransSail.shallow_ast_to_herdtools_ast inst in
   PPCGenBase.pp_instruction (PPMode.Ascii) i
 
 let pp_aarch64_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: ArmV8_embed_types.ast1)
+      (inst: ArmV8_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let (i': AArch64HGenBase.instruction) =
     if !Globals.aarch64gen then
@@ -853,7 +853,7 @@ let pp_aarch64_instruction m
 
 let pp_mips_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: Mips_embed_types.ast2)
+      (inst: Mips_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let (i': MIPSHGenBase.instruction) =
     (MIPSHGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
@@ -893,7 +893,7 @@ let pp_riscv_instruction m
 
 let pp_x86_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: X86_embed_types.ast3)
+      (inst: X86_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let (i': X86HGenBase.instruction) =
     (X86HGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
@@ -2612,7 +2612,7 @@ let pp_micro_op_state_top pp_instruction_ast indent ioid m mos =
     | MOS_pending_exception exception_type ->
         "MOS_pending_exception " ^ (pp_exception pp_instruction_ast m ioid exception_type)
 
-let pp_outcome_S indent m (o,_) =
+let pp_outcome indent m o =
   (* begin match is with
    * | (_, Some (instruction_state_pp, _)) -> "\n" ^ pp_instruction_state indent m instruction_state_pp
    * | (o, None) -> *)
@@ -2661,8 +2661,8 @@ let pp_micro_op_state_body pp_instruction_ast indent addr ioid subreads potentia
       in
       let fetch_info = pp_fetched pp_instruction_ast ~graph:false m addr ioid f in
       sprintf "MOS-fetch %s %s" fetched_type fetch_info
-  | MOS_plain is -> pp_outcome_S indent m is
-  | MOS_wait_IC is  -> pp_outcome_S indent m is
+  | MOS_plain is -> pp_outcome indent m is
+  | MOS_wait_IC is  -> pp_outcome indent m is
 
   | MOS_pending_mem_read ic ->
       "\n"

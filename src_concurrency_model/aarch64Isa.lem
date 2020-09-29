@@ -53,7 +53,7 @@ let aarch64hand_shallow_embedding : instruction_semantics ArmV8_embed_types.ast 
     end
   in
 
-  let initial_outcome_of_instruction instr = (ArmV8_embed.execute instr,Nothing) in
+  let initial_outcome_of_instruction instr = ArmV8_embed.execute instr in
 
   let analysis instr reanalyse reginfo environment =
     if reanalyse then

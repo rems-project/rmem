@@ -38,12 +38,12 @@ module type S = sig
 end
 
 
-module PPCGEN_ISA : S with type instruction_ast = Power_embed_types.ast0
-module AARCH64_HGEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast1
-module AARCH64_GEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast1
-module MIPS_ISA : S with type instruction_ast = Mips_embed_types.ast2
+module PPCGEN_ISA : S with type instruction_ast = Power_embed_types.ast
+module AARCH64_HGEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast
+module AARCH64_GEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast
+module MIPS_ISA : S with type instruction_ast = Mips_embed_types.ast
 module RISCV_ISA : S with type instruction_ast = Riscv_types.ast
-module X86_ISA : S with type instruction_ast = X86_embed_types.ast3
+module X86_ISA : S with type instruction_ast = X86_embed_types.ast
 
 val all_isa_defs : (module S) list
 

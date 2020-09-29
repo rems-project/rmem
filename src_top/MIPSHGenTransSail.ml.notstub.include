@@ -25,7 +25,7 @@ open Interp_interface
 open Sail_impl_base
 
 type instruction = MIPSHGenBase.instruction
-type instruction_ast = Mips_embed_types.ast2
+type instruction_ast = Mips_embed_types.ast
 
 let instruction_to_interp2_instruction = failwith "not implemented"
 let interp2_instruction_to_instruction = failwith "not implemented"

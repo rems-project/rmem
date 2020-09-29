@@ -15,7 +15,7 @@
 (*===============================================================================*)
 
 type instruction = PPCGenBase.instruction
-type instruction_ast = Power_embed_types.ast0
+type instruction_ast = Power_embed_types.ast
 
 type labelmap = (string * int) list
 

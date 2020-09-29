@@ -15,7 +15,7 @@
 (*===============================================================================*)
 
 type instruction = MIPSHGenBase.instruction
-type instruction_ast = Mips_embed_types.ast2
+type instruction_ast = Mips_embed_types.ast
 
 type labelmap = (string * int) list
 

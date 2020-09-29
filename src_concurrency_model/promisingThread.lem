@@ -343,7 +343,7 @@ let p_initial_thread_state
 
 type istate 'i 'v 'o  = (instruction_info 'i * 'v * 'o)
 type iconf' 'i 'v 'o = (pts 'i 'v * istate 'i 'v 'o)
-type iconf 'i 'v = (pts 'i 'v * istate 'i 'v outcome_S)
+type iconf 'i 'v = (pts 'i 'v * istate 'i 'v (outcome unit))
 
 
 (* these do not handle mixed-size register accesses *)
@@ -362,13 +362,13 @@ let write_reg ((ts,(ii,view,o)) : iconf' 'i 'v 'o) (r,v,rview) =
 
 
 let rec do_internal_steps ((ts,(ii,view,o)) : iconf 'i 'v) = 
-  match fst o with
+  match o with
   | Internal _ o -> do_internal_steps (ts,(ii,view,o))
   | _ -> (ts,(ii,view,o))
 end
 
 let rec do_local_effs ((ts,(ii,view,o)) : iconf 'i 'v) = 
-  match fst o with
+  match o with
   | Done () ->           (ts,(ii,view,o))
   | Read_mem _ _ ->      (ts,(ii,view,o))
   | Write_ea _ _ ->      (ts,(ii,view,o))
@@ -761,7 +761,7 @@ let run_instruction
     run_thread_start_instruction params isa (s,(ii,view,o)) pss_sem pss
   else
     let (s,(ii,view,o)) = do_local_effs (s,(ii,view,o)) in
-    match fst o with
+    match o with
     | Done _ -> run_plain_instruction isa (s,(ii,view,o))
     | Read_mem _ _ -> run_load_instruction params isa (s,(ii,view,o)) pss_sem pss
     | Write_ea _ _ ->

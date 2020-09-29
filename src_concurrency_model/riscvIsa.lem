@@ -48,7 +48,7 @@ let riscv_shallow_embedding : instruction_semantics Riscv_types.ast =
   in
 
   let initial_outcome_of_instruction instr = 
-    (ignore_outcome (sail2_prompt_to_outcome (Riscv.execute instr)),Nothing) in
+    ignore_outcome (sail2_prompt_to_outcome (Riscv.execute instr)) in
 
   let analysis instr reanalyse reginfo environment =
     if reanalyse then

@@ -28,7 +28,7 @@ module IInt = Sail_impl_base
 module IImp = Interp_inter_imp
 
 type instruction = AArch64HGenBase.instruction
-type instruction_ast = ArmV8_embed_types.ast1
+type instruction_ast = ArmV8_embed_types.ast
 
 let instruction_to_interp_instruction = ArmV8_toFromInterp.astToInterpValue0
 let interp_instruction_to_instruction = ArmV8_toFromInterp.astFromInterpValue0

@@ -41,7 +41,7 @@ let x86_shallow_embedding : instruction_semantics X86_embed_types.ast =
     failwith "x86 decode not implemented"
   in
 
-  let initial_outcome_of_instruction instr = (X86_embed.execute instr,Nothing) in
+  let initial_outcome_of_instruction instr = X86_embed.execute instr in
 
   let analysis instr reanalyse reginfo environment =
     if reanalyse then

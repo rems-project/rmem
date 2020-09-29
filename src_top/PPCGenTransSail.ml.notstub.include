@@ -28,7 +28,7 @@ open Sail_impl_base
 module SB = Sail_impl_base
 
 type instruction = PPCGenBase.instruction
-type instruction_ast = Power_embed_types.ast0
+type instruction_ast = Power_embed_types.ast
 
 let ireg_to_num r = match r with
 | GPR0 -> 0

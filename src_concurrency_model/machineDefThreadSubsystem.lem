@@ -202,7 +202,7 @@ let read_footprint_of_load instruction : maybe footprint =
   | Just fp -> Just fp
   | Nothing ->
       match instruction.micro_op_state with
-      | MOS_plain (Read_mem (read_kind,addr_lifted,size) _,_) ->
+      | MOS_plain (Read_mem (read_kind,addr_lifted,size) _) ->
          let addr = ensure_just (address_of_address_lifted addr_lifted)
                       "read_footprint_of_load: bad address" in
          Just (addr, size)
@@ -1625,7 +1625,7 @@ let initiate_read_action params
     (iic:          instruction_in_context 'i)
     (read_kind:    read_kind)
     ((addr, size): footprint)
-    (inst_cont:    memory_value -> outcome_S)
+    (inst_cont:    memory_value -> outcome unit)
   =
   let (read_requests, i') =
     (if params.thread_restriction = RestrictionSC
@@ -2063,7 +2063,7 @@ let handle_read_mem_outcome params
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     ((read_kind: read_kind),(addr_lifted: address_lifted),(size: nat))
-    (cont: memory_value -> outcome_S)
+    (cont: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let addr = ensure_just (address_of_address_lifted addr_lifted)
@@ -2079,7 +2079,7 @@ let initiate_write_action
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     ((write_kind: write_kind),(addr: address),(size: nat))
-    (is': outcome_S)
+    (is': outcome unit)
   = 
   let i = iic.iic_instance in
   let (potential_write_addrs, i') =
@@ -2104,7 +2104,7 @@ let handle_write_ea_outcome
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     ((write_kind: write_kind),(addr_lifted: address_lifted),(size: nat))
-    (is': outcome_S)
+    (is': outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   (* Are we (1) going to try committing a Write_mem (including
@@ -2154,7 +2154,7 @@ let instantiate_write_action params
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     (value: memory_value)
-    (cont: bool -> outcome_S)
+    (cont: bool -> outcome unit)
   = 
   let writes =
     Events.set_write_values
@@ -2175,7 +2175,7 @@ let handle_write_memv_outcome params
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     (value: memory_value)
-    (cont: bool -> outcome_S)
+    (cont: bool -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let () = ensure (iic.iic_instance.subwrites.sw_potential_write_addresses <> []) 
@@ -2188,7 +2188,7 @@ let cache_maintenance_ic_action
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     (addr:   address) 
-    (o: outcome_S)
+    (o: outcome unit)
   =
   let c () =
     let i' = <| iic.iic_instance with micro_op_state = MOS_wait_IC o |> in
@@ -2203,7 +2203,7 @@ let cache_maintenance_dc_action
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     (addr:   address)
-    (o:      outcome_S)
+    (o:      outcome unit)
   =
   let c () =
     let i' = <| iic.iic_instance with micro_op_state = MOS_plain o |> in
@@ -2244,7 +2244,7 @@ let commit_barrier_action
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     (bk:     barrier_kind)
-    (is':    outcome_S)
+    (is':    outcome unit)
   =
   let i = iic.iic_instance in
   let (b, i') = make_barrier_event_ii i state.thread bk in
@@ -2297,7 +2297,7 @@ let handle_barrier_outcome
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     (bk:     barrier_kind)
-    (is':    outcome_S)
+    (is':    outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   (* Note: in the new scheme, it's more natural to do the whole barrier commit now *)
@@ -2318,7 +2318,7 @@ let pseudo_register_read_action
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
       (r: reg_name)
-      (c: register_value -> outcome_S)
+      (c: register_value -> outcome unit)
   =
 
   (* pseudo registers have a predetermined values and the
@@ -2339,7 +2339,7 @@ let regular_register_read_action
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
       (r: reg_name)
-      (c: register_value -> outcome_S)
+      (c: register_value -> outcome unit)
   =
   let i = iic.iic_instance in
   (* *don't* allow reading from reg writes by the same instruction,
@@ -2371,7 +2371,7 @@ let handle_read_reg_outcome
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
       (r: reg_name)
-      (c: register_value -> outcome_S)
+      (c: register_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   if is_pseudo_register isa r then
@@ -2387,7 +2387,7 @@ let write_register_action
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     ((r: reg_name), (v: register_value))
-    (is':    outcome_S)
+    (is':    outcome unit)
   =
   let c () =
     let i = iic.iic_instance in
@@ -2408,7 +2408,7 @@ let handle_write_reg_outcome
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
     ((r: reg_name), (v: register_value))
-    (is':    outcome_S)
+    (is':    outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let c = write_register_action isa state iic (r,v) is' in
@@ -2429,7 +2429,7 @@ let handle_internal_outcome
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
     (_: (maybe string * maybe (unit -> string)))
-    (is': outcome_S)
+    (is': outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let c () = 
@@ -2445,8 +2445,8 @@ let handle_footprint_outcome
     (isa: isa 'i)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (old_outcome : outcome_S)
-    (is': outcome_S)
+    (old_outcome : outcome unit)
+    (is': outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let () = ensure (isa.isa_model = PPC) "expected PPC" in
@@ -2532,7 +2532,7 @@ let enumerate_write_forward_transitions_pop_and_pldi11
     (isa: isa 'i)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   iic.iic_instance.subreads.sr_unsat_slices >>= fun (rr, unsat_slices) ->
@@ -2548,7 +2548,7 @@ let enumerate_write_forward_transitions_pop_and_pldi11
 let enumerate_write_forward_transitions_relaxed
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2578,7 +2578,7 @@ let enumerate_write_forward_transitions
       (isa:    isa 'i)
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
-      (c: memory_value -> outcome_S)
+      (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i)) =
   match params.thread_model with
   | PLDI11_thread_model ->
@@ -2596,7 +2596,7 @@ let read_issue_action
       (params: thread_params)
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
-      (c: memory_value -> outcome_S)
+      (c: memory_value -> outcome unit)
   (rr,unsat_slices)
   =
   fun (mapped_memory: bool) ->
@@ -2615,7 +2615,7 @@ let enumerate_read_issue_transitions
       (params: thread_params)
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
-      (c: memory_value -> outcome_S)
+      (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2653,7 +2653,7 @@ let enumerate_pldi11_read_satisfy_from_memory_transitions
     (params: thread_params)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   iic.iic_instance.subreads.sr_unsat_slices >>= fun (rr, unsat_slices) ->
@@ -2668,7 +2668,7 @@ let enumerate_flat_read_satisfy_from_memory_transitions
     (params: thread_params)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2703,7 +2703,7 @@ let enumerate_tso_read_satisfy_from_memory_transitions
       (params: thread_params)
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
-      (c: memory_value -> outcome_S)
+      (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2726,7 +2726,7 @@ let enumerate_relaxed_read_satisfy_from_memory_transitions
     (params: thread_params)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2751,7 +2751,7 @@ let enumerate_read_satisfy_from_memory_transitions
     (params: thread_params)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   match params.thread_model with
@@ -2777,7 +2777,7 @@ let enumerate_actually_satisfy_transitions
       (params: thread_params)
       (state: thread_state 'i)
       (iic: instruction_in_context 'i)
-      (c: memory_value -> outcome_S)
+      (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -2875,7 +2875,7 @@ let handle_AMO_lock
     (params: thread_params)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (c:      memory_value -> outcome_S)
+    (c:      memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   guard (take_AMO_lock_cand params state iic) >>
@@ -2892,7 +2892,7 @@ let handle_AMO_lock
 let handle_AMO_unlock
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (o:      outcome_S)
+    (o:      outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let state' = fun () ->
@@ -2909,7 +2909,7 @@ let handle_memory_read
     (isa : isa 'i)
     (state: thread_state 'i)
     (iic: instruction_in_context 'i)
-    (c: memory_value -> outcome_S)
+    (c: memory_value -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   if all_reads_satisfied iic.iic_instance then
@@ -3092,7 +3092,7 @@ let enumerate_commit_and_prop_RISCV_store_cond_transition
     (params: thread_params)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (c:      bool -> outcome_S)
+    (c:      bool -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -3128,7 +3128,7 @@ let enumerate_complete_store_transition
     (params: thread_params)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (c:      bool -> outcome_S)
+    (c:      bool -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -3154,7 +3154,7 @@ let handle_memory_write
     (isa:    isa 'i)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (c:      bool -> outcome_S)
+    (c:      bool -> outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let i = iic.iic_instance in
@@ -3193,7 +3193,7 @@ let handle_exception
 let enumerate_previous_excl_res_outcome_transition
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   let i = iic.iic_instance in
   option_guard (i.successful_atomic_store) >>= fun success_bit ->
@@ -3210,7 +3210,7 @@ let enumerate_excl_res_fail_outcome_transition
     (params:   thread_params)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   guard (params.thread_model <> TSO_thread_model) >>
   let i = iic.iic_instance in
@@ -3244,7 +3244,7 @@ let excl_res_success_action
     (record_success: bool)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
     ()
   =
   let i = iic.iic_instance in
@@ -3262,7 +3262,7 @@ let enumerate_excl_res_success_outcome_transition_pop
     (isa:      isa 'i)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   guard (params.thread_model = POP_thread_model Standard_POP) >>
   let i = iic.iic_instance in
@@ -3309,7 +3309,7 @@ let enumerate_excl_res_success_outcome_transition_flat
     (isa:      isa 'i)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   guard (is_flat_model params) >>
   let i = iic.iic_instance in
@@ -3337,7 +3337,7 @@ let enumerate_excl_res_success_outcome_transition_tso
     (params:   thread_params)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   guard (params.thread_model = TSO_thread_model) >>
   let i = iic.iic_instance in
@@ -3355,7 +3355,7 @@ let enumerate_excl_res_success_outcome_transition_relaxed
     (isa:      isa 'i)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   guard (params.thread_model = Relaxed_thread_model) >>
 
@@ -3379,7 +3379,7 @@ let enumerate_excl_res_success_outcome_transition
     (isa:      isa 'i)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   enumerate_excl_res_success_outcome_transition_pop params isa state iic isa_cont ++
   enumerate_excl_res_success_outcome_transition_flat params isa state iic isa_cont ++
@@ -3391,7 +3391,7 @@ let handle_excl_res_outcome
     (isa:      isa 'i)
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
-    (isa_cont: bool -> outcome_S)
+    (isa_cont: bool -> outcome unit)
   =
   enumerate_previous_excl_res_outcome_transition state iic isa_cont ++
   enumerate_excl_res_success_outcome_transition params isa state iic isa_cont ++
@@ -3439,7 +3439,7 @@ let handle_thread_start
     (isa:    isa 'i)
     (state:  thread_state 'i)
     (iic:    instruction_in_context 'i)
-    (is:     outcome_S)
+    (is:     outcome unit)
     : list (thread_trans 'i (thread_state 'i))
   =
   let c = fun _ -> is in
@@ -3517,7 +3517,7 @@ let handle_ic_ivau
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
     (value:    register_value)
-    (outcome:  outcome_S)
+    (outcome:  outcome unit)
   =
   let addr = ensure_just (address_of_register_value value)
                "TODO: handle_ic_ivau fail invalid addr" in
@@ -3534,7 +3534,7 @@ let handle_dc_cvau
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
     (value:    register_value)
-    (outcome:  outcome_S)
+    (outcome:  outcome unit)
   =
   let addr = ensure_just (address_of_register_value value)
                "TODO: handle_dc_cvau fail invalid addr" in
@@ -3667,7 +3667,7 @@ let enumerate_transitions_of_instruction
   | MOS_fetched _ -> enumerate_decode_transitions_of_instruction isa s iic
   | MOS_wait_IC _ -> []
   | MOS_plain is ->
-    match fst is with
+    match is with
 
     (* IC *)
     | Write_reg (Reg "instruction_cache_operation_IVAU" 63 64 D_decreasing, v) o ->

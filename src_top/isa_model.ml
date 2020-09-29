@@ -41,54 +41,54 @@ module type S = sig
 end
 
 
-module PPCGEN_ISA : S with type instruction_ast = Power_embed_types.ast0 = struct
+module PPCGEN_ISA : S with type instruction_ast = Power_embed_types.ast = struct
   
   let name = "PPC"
   let isa_model = PPC
   let reg_data = PowerIsa.ppc_isa.Isa.register_data_info
-  let available = PowerIsa.available0
+  let available = PowerIsa.available
 
-  type instruction_ast = Power_embed_types.ast0
+  type instruction_ast = Power_embed_types.ast
   let isa = PowerIsa.ppc_isa
   let pp_instruction_ast = Pp.pp_ppcgen_instruction
   module TransSail = PPCGenTransSail
 
 end
 
-module AARCH64_HGEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast1 = struct
+module AARCH64_HGEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast = struct
 
   let name = "AArch64"
   let isa_model = AARCH64 Hand
   let reg_data = Aarch64Isa.aarch64hand_isa.Isa.register_data_info
-  let available = Aarch64Isa.available1
+  let available = Aarch64Isa.available
 
-  type instruction_ast = ArmV8_embed_types.ast1
+  type instruction_ast = ArmV8_embed_types.ast
   let isa = Aarch64Isa.aarch64hand_isa
   let pp_instruction_ast = Pp.pp_aarch64_instruction
   module TransSail = (AArch64HGenTransSail)
 end
 
-module AARCH64_GEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast1 = struct
+module AARCH64_GEN_ISA : S with type instruction_ast = ArmV8_embed_types.ast = struct
   
   let name = "AArch64Gen"
   let isa_model = AARCH64 Gen
   let reg_data = Aarch64Isa.aarch64gen_isa.Isa.register_data_info
-  let available = Aarch64Isa.available1
+  let available = Aarch64Isa.available
   
-  type instruction_ast = ArmV8_embed_types.ast1
+  type instruction_ast = ArmV8_embed_types.ast
   let isa = Aarch64Isa.aarch64gen_isa
   let pp_instruction_ast = Pp.pp_aarch64_instruction
   module TransSail = (AArch64GenTransSail)
 end
 
-module MIPS_ISA : S with type instruction_ast = Mips_embed_types.ast2 = struct
+module MIPS_ISA : S with type instruction_ast = Mips_embed_types.ast = struct
 
   let name = "MIPS"
   let isa_model  = MIPS
   let reg_data = MipsIsa.mips_isa.Isa.register_data_info
-  let available = MipsIsa.available2
+  let available = MipsIsa.available
 
-  type instruction_ast = Mips_embed_types.ast2
+  type instruction_ast = Mips_embed_types.ast
   let isa = MipsIsa.mips_isa
   let pp_instruction_ast = Pp.pp_mips_instruction
   module TransSail = (MIPSHGenTransSail)
@@ -107,12 +107,12 @@ module RISCV_ISA : S with type instruction_ast = Riscv_types.ast = struct
   module TransSail = (RiscvTransSail)
 end
 
-module X86_ISA : S with type instruction_ast = X86_embed_types.ast3 = struct
+module X86_ISA : S with type instruction_ast = X86_embed_types.ast = struct
   let name = "X86"
   let isa_model = X86
   let reg_data = X86Isa.x86_isa.Isa.register_data_info
-  let available = X86Isa.available3
-  type instruction_ast = X86_embed_types.ast3
+  let available = X86Isa.available
+  type instruction_ast = X86_embed_types.ast
   let isa = X86Isa.x86_isa
   let pp_instruction_ast = Pp.pp_x86_instruction
   module TransSail = (X86HGenTransSail)

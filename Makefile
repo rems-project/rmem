@@ -604,11 +604,6 @@ MACHINEFILES=\
   build_sail2_shallow_embedding/sail2_string.lem\
   src_concurrency_model/utils.lem\
   src_concurrency_model/freshIds.lem\
-  $(RISCV_FILES)\
-  $(POWER_FILES)\
-  $(AARCH64_FILES)\
-  $(MIPS_FILES)\
-  $(X86_FILES)\
   src_concurrency_model/instructionSemantics.lem\
   src_concurrency_model/exceptionTypes.lem\
   src_concurrency_model/events.lem\
@@ -639,18 +634,34 @@ MACHINEFILES=\
   src_concurrency_model/promisingStorage.lem\
   src_concurrency_model/promising.lem\
   src_concurrency_model/promisingDwarf.lem\
-  src_concurrency_model/promisingUI.lem\
-  src_concurrency_model/sail_1_2_convert.lem
+  src_concurrency_model/promisingUI.lem
+
+SAIL1_LEM_INPUT_FILES=\
+  -i build_sail_shallow_embedding/sail_values.lem\
+  -i build_sail_shallow_embedding/prompt.lem\
+  -i build_sail_shallow_embedding/sail_impl_base.lem\
+  -i src_concurrency_model/isa.lem
+
+SAIL2_LEM_INPUT_FILES=\
+  $(SAIL1_LEM_INPUT_FILES)\
+  -i build_sail2_shallow_embedding/sail2_instr_kinds.lem\
+  -i build_sail2_shallow_embedding/sail2_values.lem\
+  -i build_sail2_shallow_embedding/sail2_operators.lem\
+  -i build_sail2_shallow_embedding/sail2_operators_mwords.lem\
+  -i build_sail2_shallow_embedding/sail2_prompt_monad.lem\
+  -i build_sail2_shallow_embedding/sail2_prompt.lem\
+  -i build_sail2_shallow_embedding/sail2_string.lem
+
 
 build_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	rm -rf $(dir $@)
 	mkdir -p $(dir $@)
 	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(MACHINEFILES)
-#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(RISCV_FILES)
-#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(POWER_FILES)
-#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(AARCH64_FILES)
-#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(MIPS_FILES)
-#	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(X86_FILES)
+	$(LEM) $(LEMFLAGS) $(SAIL2_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(RISCV_FILES) src_concurrency_model/sail_1_2_convert.lem
+	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(POWER_FILES)
+	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(AARCH64_FILES)
+	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(MIPS_FILES)
+	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(X86_FILES)
 	echo '$(ISA)' > $@
 CLEANDIRS += build_concurrency_model
 
@@ -764,9 +775,9 @@ jenkins-sanity: sanity.xml
 
 sanity.xml: REGRESSIONDIR = $(REMSDIR)/litmus-tests-regression-machinery
 sanity.xml: FORCE
-	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow" TARGETS=clean-model
-	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow"
-	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="interp shallow" TARGETS=report-junit-testcase > '$@.tmp'
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="shallow" TARGETS=clean-model
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="shallow"
+	$(MAKE) -s -C $(REGRESSIONDIR) suite-sanity RMEMDIR=$(CURDIR) ISADRIVERS="shallow" TARGETS=report-junit-testcase > '$@.tmp'
 	{ printf '<testsuites>\n' &&\
 	  printf '  <testsuite name="sanity" tests="%d" failures="%d" timestamp="%s">\n' "$$(grep -c -F '<testcase name=' '$@.tmp')" "$$(grep -c -F '<error message="fail">' '$@.tmp')" "$$(date)" &&\
 	  sed 's/^/    /' '$@.tmp' &&\

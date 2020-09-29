@@ -324,32 +324,32 @@ let rec sail2_prompt_to_outcome p =
   | Sail2_prompt_monad.Exception e            -> Sail_impl_base.Fail (Just "*Sail2 exception escaped*") (* TODO *)
   | Sail2_prompt_monad.Fail s                 -> Sail_impl_base.Fail (Just s)
   | Sail2_prompt_monad.Print s next           -> sail2_prompt_to_outcome next (* TODO *)
-  | Sail2_prompt_monad.Footprint next         -> Sail_impl_base.Footprint (sail2_prompt_to_outcome next, Nothing)
+  | Sail2_prompt_monad.Footprint next         -> Sail_impl_base.Footprint (sail2_prompt_to_outcome next)
   | Sail2_prompt_monad.Choose _ _             -> failwith "unsupported Choose constructor of prompt monad"
   | Sail2_prompt_monad.Read_memt _ _ _ _      -> failwith "unsupported Read_memt constructor of prompt monad"
   | Sail2_prompt_monad.Write_memt _ _ _ _ _ _ -> failwith "unsupported Write_memt constructor of prompt monad"
-  | Sail2_prompt_monad.Read_reg name f        -> Sail_impl_base.Read_reg (string_to_sail1_reg name) (fun v -> (sail2_prompt_to_outcome (f (sail1_regval_to_riscv v)), Nothing))
-  | Sail2_prompt_monad.Write_reg name v next  -> Sail_impl_base.Write_reg (string_to_sail1_reg name, riscv_regval_to_sail v) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Barrier bk next        -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Read_mem rk a sz f     -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (sail2_prompt_to_outcome (f (sail1_memval_to_sail2 mv)), Nothing))
-  | Sail2_prompt_monad.Write_ea wk a sz next  -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (sail2_prompt_to_outcome next, Nothing)
-  | Sail2_prompt_monad.Write_mem _ _ _ mv f   -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
-  | Sail2_prompt_monad.Excl_res f             -> Sail_impl_base.Excl_res (fun b -> (sail2_prompt_to_outcome (f b), Nothing))
+  | Sail2_prompt_monad.Read_reg name f        -> Sail_impl_base.Read_reg (string_to_sail1_reg name) (fun v -> (sail2_prompt_to_outcome (f (sail1_regval_to_riscv v))))
+  | Sail2_prompt_monad.Write_reg name v next  -> Sail_impl_base.Write_reg (string_to_sail1_reg name, riscv_regval_to_sail v) (sail2_prompt_to_outcome next)
+  | Sail2_prompt_monad.Barrier bk next        -> Sail_impl_base.Barrier (riscv_bk_to_sail1 bk) (sail2_prompt_to_outcome next)
+  | Sail2_prompt_monad.Read_mem rk a sz f     -> Sail_impl_base.Read_mem (riscv_rk_to_sail1 rk, sail2_addr_to_sail1 a, sz) (fun mv -> (sail2_prompt_to_outcome (f (sail1_memval_to_sail2 mv))))
+  | Sail2_prompt_monad.Write_ea wk a sz next  -> Sail_impl_base.Write_ea (riscv_wk_to_sail1 wk, sail2_addr_to_sail1 a, sz) (sail2_prompt_to_outcome next)
+  | Sail2_prompt_monad.Write_mem _ _ _ mv f   -> Sail_impl_base.Write_memv (sail2_memval_to_sail1 mv) (fun b -> (sail2_prompt_to_outcome (f b)))
+  | Sail2_prompt_monad.Excl_res f             -> Sail_impl_base.Excl_res (fun b -> (sail2_prompt_to_outcome (f b)))
 end
 
 val outcome_bind : forall 'a 'b. Sail_impl_base.outcome 'a -> ('a -> Sail_impl_base.outcome 'b) -> Sail_impl_base.outcome 'b
 let rec outcome_bind o f =
   match o with
   | Sail_impl_base.Done a -> f a
-  | Sail_impl_base.Read_mem x g -> Sail_impl_base.Read_mem x (fun m -> let (o', aux) = (g m) in (outcome_bind o' f, aux))
-  | Sail_impl_base.Write_ea x owa' -> Sail_impl_base.Write_ea x (let (o', aux) = owa' in (outcome_bind o' f, aux))
-  | Sail_impl_base.Excl_res g -> Sail_impl_base.Excl_res (fun b -> let (o', aux) = (g b) in (outcome_bind o' f, aux))
-  | Sail_impl_base.Write_memv v g -> Sail_impl_base.Write_memv v (fun b -> let (o', aux) = (g b) in (outcome_bind o' f, aux))
-  | Sail_impl_base.Barrier k owa' -> Sail_impl_base.Barrier k (let (o', aux) = owa' in (outcome_bind o' f, aux))
-  | Sail_impl_base.Footprint owa' -> Sail_impl_base.Footprint (let (o', aux) = owa' in (outcome_bind o' f, aux))
-  | Sail_impl_base.Read_reg r g -> Sail_impl_base.Read_reg r (fun v -> let (o', aux) = (g v) in (outcome_bind o' f, aux))
-  | Sail_impl_base.Write_reg (r, v) owa' -> Sail_impl_base.Write_reg (r, v) (let (o', aux) = owa' in (outcome_bind o' f, aux))
-  | Sail_impl_base.Internal h owa' -> Sail_impl_base.Internal h (let (o', aux) = owa' in (outcome_bind o' f, aux))
+  | Sail_impl_base.Read_mem x g -> Sail_impl_base.Read_mem x (fun m -> let o' = (g m) in (outcome_bind o' f))
+  | Sail_impl_base.Write_ea x owa' -> Sail_impl_base.Write_ea x (let o' = owa' in (outcome_bind o' f))
+  | Sail_impl_base.Excl_res g -> Sail_impl_base.Excl_res (fun b -> let o' = (g b) in (outcome_bind o' f))
+  | Sail_impl_base.Write_memv v g -> Sail_impl_base.Write_memv v (fun b -> let o' = (g b) in (outcome_bind o' f))
+  | Sail_impl_base.Barrier k owa' -> Sail_impl_base.Barrier k (let o' = owa' in (outcome_bind o' f))
+  | Sail_impl_base.Footprint owa' -> Sail_impl_base.Footprint (let o' = owa' in (outcome_bind o' f))
+  | Sail_impl_base.Read_reg r g -> Sail_impl_base.Read_reg r (fun v -> let o' = (g v) in (outcome_bind o' f))
+  | Sail_impl_base.Write_reg (r, v) owa' -> Sail_impl_base.Write_reg (r, v) (let o' = owa' in (outcome_bind o' f))
+  | Sail_impl_base.Internal h owa' -> Sail_impl_base.Internal h (let o' = owa' in (outcome_bind o' f))
   | Sail_impl_base.Escape s -> Sail_impl_base.Escape s
   | Sail_impl_base.Fail s -> Sail_impl_base.Fail s
   | Sail_impl_base.Error s -> Sail_impl_base.Error s

@@ -818,46 +818,31 @@ end
 
 
 (* the address_lifted types should go away here and be replaced by address *)
-type with_aux 'o = 'o * maybe ((unit -> (string * string)) * ((list (reg_name * register_value)) -> list event))
 type outcome 'a =
   (* Request to read memory, value is location to read, integer is size to read,
      followed by registers that were used in computing that size *)
-  | Read_mem of (read_kind * address_lifted * nat) * (memory_value -> with_aux (outcome 'a))
+  | Read_mem of (read_kind * address_lifted * nat) * (memory_value -> outcome 'a)
   (* Tell the system a write is imminent, at address lifted, of size nat *)
-  | Write_ea of (write_kind * address_lifted * nat) * (with_aux (outcome 'a))
+  | Write_ea of (write_kind * address_lifted * nat) * outcome 'a
   (* Request the result of store-exclusive *)
-  | Excl_res of (bool -> with_aux (outcome 'a))
+  | Excl_res of (bool -> outcome 'a)
   (* Request to write memory at last signalled address. Memory value should be 8
      times the size given in ea signal *)
-  | Write_memv of memory_value * (bool -> with_aux (outcome 'a))
+  | Write_memv of memory_value * (bool -> outcome 'a)
   (* Request a memory barrier *)
-  | Barrier of barrier_kind * with_aux (outcome 'a)
+  | Barrier of barrier_kind * outcome 'a
   (* Tell the system to dynamically recalculate dependency footprint *)
-  | Footprint of with_aux (outcome 'a)
+  | Footprint of outcome 'a
   (* Request to read register, will track dependency when mode.track_values *)
-  | Read_reg of reg_name * (register_value -> with_aux (outcome 'a))
+  | Read_reg of reg_name * (register_value -> outcome 'a)
   (* Request to write register *)
-  | Write_reg of (reg_name * register_value) * with_aux (outcome 'a)
+  | Write_reg of (reg_name * register_value) * outcome 'a
   | Escape of maybe string
   (*Result of a failed assert with possible error message to report*)
   | Fail of maybe string
-  | Internal of (maybe string * maybe (unit -> string)) * with_aux (outcome 'a)
+  | Internal of (maybe string * maybe (unit -> string)) * outcome 'a
   | Done of 'a
   | Error of string
-
-type outcome_s 'a = with_aux (outcome 'a)
-(* first string : output of instruction_stack_to_string
-   second string: output of local_variables_to_string *)
-
-type outcome_S = outcome_s unit
-(* An outcome_S corresponds to the instruction state. It contains:
-   - the next outcome
-   - maybe (a pp of the current interpreter state)
-   - maybe (a function that given an environment gives us the exhaustive events from this state)
-   This is so we can hide the interpreter state from machineDefTypes but still get the functionality
-   we need for the interpreter.
- *)
-
 
 
 (** operations and coercions on basic values *)

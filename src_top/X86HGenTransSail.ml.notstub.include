@@ -23,7 +23,7 @@ open X86HGenBase
 open Sail_impl_base
 
 type instruction = X86HGenBase.instruction
-type instruction_ast = X86_embed_types.ast3
+type instruction_ast = X86_embed_types.ast
 
 type labelmap = (string * int) list
 

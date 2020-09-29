@@ -28,7 +28,7 @@ open Sail_impl_base
 module IInt = Sail_impl_base
 
 type instruction = AArch64HGenBase.instruction
-type instruction_ast = ArmV8_embed_types.ast1
+type instruction_ast = ArmV8_embed_types.ast
 
 (* #include "build_isa_models/aarch64/gen/herdtools_types_to_shallow_types.hgen" *)
 
