@@ -145,7 +145,7 @@ let pp_reg = function
   | PC             -> "pc"
   | RESADDR        -> "res"
 
-let reg_compare = Pervasives.compare
+let reg_compare = Stdlib.compare
 
 let symb_reg_name = function
   | Symbolic_reg r -> Some r
@@ -165,7 +165,7 @@ let all_kinds_of_barriers = [Sync;]
 let pp_barrier = function
   | Sync -> "Sync"
 
-let barrier_compare = Pervasives.compare
+let barrier_compare = Stdlib.compare
 
 (****************)
 (* Instructions *)

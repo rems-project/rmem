@@ -17,7 +17,7 @@
 type t =
   | Self (* Self modifying code *)
 
-let compare = Pervasives.compare
+let compare = Stdlib.compare
 
 let tags = ["self";]
 

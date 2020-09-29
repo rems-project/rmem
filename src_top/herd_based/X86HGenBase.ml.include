@@ -386,7 +386,7 @@ let pp_size_reg sz = function
 
 let pp_reg = pp_size_reg X86S64
 
-let reg_compare = Pervasives.compare
+let reg_compare = Stdlib.compare
 
 let symb_reg_name = function
   | Symbolic_reg r -> Some r
@@ -434,7 +434,7 @@ let all_kinds_of_barriers = [Sync;]
 let pp_barrier = function
   | Sync -> "Sync"
 
-let barrier_compare = Pervasives.compare
+let barrier_compare = Stdlib.compare
 
 (****************)
 (* Instructions *)

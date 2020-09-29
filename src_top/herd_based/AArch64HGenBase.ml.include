@@ -126,7 +126,7 @@ let pp_reg r =
   | _ -> try List.assoc r xregs with Not_found -> assert false
 
 
-let reg_compare = Pervasives.compare
+let reg_compare = Stdlib.compare
 
 let symb_reg_name = function
   | Symbolic_reg r -> Some r
@@ -210,7 +210,7 @@ let pp_barrier b =
   | DSB(domain,types) -> "DSB " ^ (pp_option domain types)
   | ISB -> "ISB"
 
-let barrier_compare = Pervasives.compare
+let barrier_compare = Stdlib.compare
 
 (****************)
 (* Instructions *)

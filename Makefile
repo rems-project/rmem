@@ -444,7 +444,7 @@ endif
 get_all_isa_models: get_isa_model_power
 
 # use $(call patch,<original_file>,<patch_file>) in the recipe of a rule;
-# this will patch <original_file> without changing its modiffication time
+# this will patch <original_file> without changing its modification time
 patch = touch -r $(1) $(1).timestamp_temp &&\
   patch $(1) $(2) &&\
   touch -r $(1).timestamp_temp $(1) &&\
