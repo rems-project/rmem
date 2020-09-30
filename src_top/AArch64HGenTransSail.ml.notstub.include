@@ -30,12 +30,12 @@ module IInt = Sail_impl_base
 type instruction = AArch64HGenBase.instruction
 type instruction_ast = ArmV8_embed_types.ast
 
-(* #include "build_isa_models/aarch64/gen/herdtools_types_to_shallow_types.hgen" *)
+(* #include "gen_files/aarch64/herdtools_types_to_shallow_types.hgen" *)
 
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let open ArmV8_embed_types in
   let instr = match instr with
-  (* #include "build_isa_models/aarch64/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  (* #include "gen_files/aarch64/herdtools_ast_to_shallow_ast.hgen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -45,12 +45,12 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
   instr
 
 
-(* #include "build_isa_models/aarch64/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/aarch64/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open ArmV8_embed_types in
   begin match instr with
-  (* #include "build_isa_models/aarch64/gen/shallow_ast_to_herdtools_ast.hgen" *)
+  (* #include "gen_files/aarch64/shallow_ast_to_herdtools_ast.hgen" *)
   | _ -> failwith "couldn't translate instruction"
   end
 

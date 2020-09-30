@@ -39,7 +39,7 @@ let error_not_instruction txt = failwith (Printf.sprintf "%s is not an instructi
 
 %token SEMI COMMA PIPE COLON LBRK RBRK EXCL
 
-/* #include "build_isa_models/aarch64/gen/tokens.hgen" */
+/* #include "gen_files/aarch64/tokens.hgen" */
 
 %type <int list * (AArch64HGenBase.parsedPseudo) list list * MiscParser.extra_data> main
 %start  main
@@ -73,7 +73,7 @@ instr_option :
 
 instr:
 /* Generated fixed-point instructions */
-/* #include "build_isa_models/aarch64/gen/parser.hgen" */
+/* #include "gen_files/aarch64/parser.hgen" */
 /* instructions */
 | B NAME
     { `AArch64BranchImmediate_label ($1.branch_type,$2) }

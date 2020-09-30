@@ -30,11 +30,11 @@ type labelmap = (string * int) list
 module IInt = Sail_impl_base
 
 open X86_embed_types
-(* #include "build_isa_models/x86/gen/herdtools_types_to_shallow_types.hgen" *)
+(* #include "gen_files/x86/herdtools_types_to_shallow_types.hgen" *)
     
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let instr = match instr with
-  (* #include "build_isa_models/x86/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  (* #include "gen_files/x86/herdtools_ast_to_shallow_ast.hgen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -69,7 +69,7 @@ let unsym_ins lookup_loc =
   in
   fun ins ->
     match ins with
-    (* #include "build_isa_models/x86/gen/map.hgen" *)
+    (* #include "gen_files/x86/map.hgen" *)
     | _ -> ins
 
 let unlabelize_ins lookup_loc label_map i ins =
@@ -83,7 +83,7 @@ let unlabelize_ins lookup_loc label_map i ins =
 let end_ins = `X86StopFetching
 
 
-(* #include "build_isa_models/x86/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/x86/shallow_types_to_herdtools_types.hgen" *)
 
 let trans_out_int fbits =
   Nat_big_num.to_int (Sail_values.unsigned fbits)
@@ -113,7 +113,7 @@ let trans_out_reg flv =
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open X86_embed_types in
   begin match instr with
-    (* #include "build_isa_models/x86/gen/shallow_ast_to_herdtools_ast.hgen" *)
+    (* #include "gen_files/x86/shallow_ast_to_herdtools_ast.hgen" *)
     (*| i -> failwith "cannot translate instruction"*)
   end
 

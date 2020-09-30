@@ -382,80 +382,27 @@ endif
 
 
 
-## import ISA models #################################################
+## ISA model stubs ###################################################
 
-get_all_deps: get_all_isa_models
-.PHONY: get_all_isa_models
-
-get_isa_model_%: ISABUILDDIR ?= build_isa_models/$*
-get_isa_model_%: BUILDISA ?= true
-get_isa_model_%: BUILDISATARGET ?= all
-get_isa_model_%: ISASAILFILES ?= $(ISADIR)/*.sail
-get_isa_model_%: ISALEMFILES ?= $(ISADIR)/*.lem
-get_isa_model_%: ISAGENFILES ?= $(ISADIR)/gen/*
-get_isa_model_%: FORCE
-	rm -rf $(ISABUILDDIR)
-	mkdir -p $(ISABUILDDIR)
-	$(if $(call equal,$(BUILDISA),true),\
-	  $(if $(call equal,$(CLEANDEPS),true),$(MAKE) -C $(ISADIR) clean &&)\
-	  cp -a $(ISASAILFILES) $(ISABUILDDIR) &&\
-	  cp -a $(ISALEMFILES) $(ISABUILDDIR))
-	mkdir -p $(ISABUILDDIR)/gen
-	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
-CLEANDIRS += build_isa_models
-
-
-get_isa_model_power: ISANAME=power
-get_isa_model_power: ISADIR=$(saildir)/arch/power
+get_all_deps: isa_model_stubs
+isa_model_stubs:
 ifeq ($(filter PPCGEN,$(ISA_LIST)),)
-  get_isa_model_power: BUILDISA=false
   RMEMSTUBS += src_top/PPCGenTransSail.ml
 endif
-get_all_isa_models: get_isa_model_power
-
-
-get_isa_model_aarch64: ISANAME=armV8
-get_isa_model_aarch64: ISADIR=$(saildir)/arch/arm
 ifeq ($(filter AArch64,$(ISA_LIST)),)
-  get_isa_model_aarch64: BUILDISA=false
   RMEMSTUBS += src_top/AArch64HGenTransSail.ml
 endif
-get_all_isa_models: get_isa_model_aarch64
-
-# TODO: Currently AArch64Gen is always stubbed out
 RMEMSTUBS += src_top/AArch64GenTransSail.ml
-
-get_isa_model_mips: ISANAME=mips
-get_isa_model_mips: ISADIR=$(saildir)/arch/mips
 ifeq ($(filter MIPS,$(ISA_LIST)),)
-  get_isa_model_mips: BUILDISA=false
   RMEMSTUBS += src_top/MIPSHGenTransSail.ml
 endif
-get_all_isa_models: get_isa_model_mips
-
-get_isa_model_riscv: ISANAME=riscv
-get_isa_model_riscv: ISADIR=$(riscvdir)
-get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
-get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/for-rmem/*.lem
-get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/0.11/*.lem
-get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
-
-# By assigning a value to SAIL_DIR we force riscv to build with the
-# checked-out Sail2 instead of Sail2 from opam:
-get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv_rmem
 ifeq ($(filter RISCV,$(ISA_LIST)),)
-  get_isa_model_riscv: BUILDISA=false
   RMEMSTUBS += src_top/RISCVHGenTransSail.ml
 endif
-get_all_isa_models: get_isa_model_riscv
-
-get_isa_model_x86: ISANAME=x86
-get_isa_model_x86: ISADIR=$(saildir)/arch/x86
 ifeq ($(filter X86,$(ISA_LIST)),)
-  get_isa_model_x86: BUILDISA=false
   RMEMSTUBS += src_top/X86HGenTransSail.ml
 endif
-get_all_isa_models: get_isa_model_x86
+.PHONY: isa_model_stubs
 
 ######################################################################
 
@@ -490,9 +437,9 @@ ifeq ($(filter PPCGEN,$(ISA_LIST)),)
   POWER_FILES += src_concurrency_model/isa_stubs/power/power_embed.lem
   POWER_FILES += src_concurrency_model/isa_stubs/power/powerIsa.lem
 else
-  POWER_FILES += build_isa_models/power/power_extras_embed.lem
-  POWER_FILES += build_isa_models/power/power_embed_types.lem
-  POWER_FILES += build_isa_models/power/power_embed.lem
+  POWER_FILES += $(saildir)/arch/power/power_extras_embed.lem
+  POWER_FILES += $(saildir)/arch/power/power_embed_types.lem
+  POWER_FILES += $(saildir)/arch/power/power_embed.lem
   POWER_FILES += src_concurrency_model/powerIsa.lem
 endif
 
@@ -501,9 +448,9 @@ ifeq ($(filter AArch64,$(ISA_LIST)),)
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/armV8_embed.lem
   AARCH64_FILES += src_concurrency_model/isa_stubs/aarch64/aarch64Isa.lem
 else
-  AARCH64_FILES += build_isa_models/aarch64/armV8_extras_embed.lem
-  AARCH64_FILES += build_isa_models/aarch64/armV8_embed_types.lem
-  AARCH64_FILES += build_isa_models/aarch64/armV8_embed.lem
+  AARCH64_FILES += $(saildir)/arch/arm/armV8_extras_embed.lem
+  AARCH64_FILES += $(saildir)/arch/arm/armV8_embed_types.lem
+  AARCH64_FILES += $(saildir)/arch/arm/armV8_embed.lem
   AARCH64_FILES += src_concurrency_model/aarch64Isa.lem
 endif
 
@@ -512,9 +459,9 @@ ifeq ($(filter MIPS,$(ISA_LIST)),)
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mips_embed.lem
   MIPS_FILES += src_concurrency_model/isa_stubs/mips/mipsIsa.lem
 else
-  MIPS_FILES += build_isa_models/mips/mips_extras_embed.lem
-  MIPS_FILES += build_isa_models/mips/mips_embed_types.lem
-  MIPS_FILES += build_isa_models/mips/mips_embed.lem
+  MIPS_FILES += $(saildir)/arch/mips/mips_extras_embed.lem
+  MIPS_FILES += $(saildir)/arch/mips/mips_embed_types.lem
+  MIPS_FILES += $(saildir)/arch/mips/mips_embed.lem
   MIPS_FILES += src_concurrency_model/mipsIsa.lem
 endif
 
@@ -523,11 +470,11 @@ ifeq ($(filter RISCV,$(ISA_LIST)),)
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscv.lem
   RISCV_FILES += src_concurrency_model/isa_stubs/riscv/riscvIsa.lem
 else
-  RISCV_FILES += build_isa_models/riscv/riscv_extras.lem
-  RISCV_FILES += build_isa_models/riscv/riscv_extras_fdext.lem
-  RISCV_FILES += build_isa_models/riscv/mem_metadata.lem
-  RISCV_FILES += build_isa_models/riscv/riscv_types.lem
-  RISCV_FILES += build_isa_models/riscv/riscv.lem
+  RISCV_FILES += $(riscvdir)/handwritten_support/0.11/riscv_extras.lem
+  RISCV_FILES += $(riscvdir)/handwritten_support/0.11/riscv_extras_fdext.lem
+  RISCV_FILES += $(riscvdir)/handwritten_support/0.11/mem_metadata.lem
+  RISCV_FILES += $(riscvdir)/generated_definitions/for-rmem/riscv_types.lem
+  RISCV_FILES += $(riscvdir)/generated_definitions/for-rmem/riscv.lem
   # FIXME: using '-wl_pat_red ign' is very bad but because riscv.lem is
   # generated by shallow embedding there is not much we can do
   LEMFLAGS += -wl_pat_red ign
@@ -539,9 +486,9 @@ ifeq ($(filter X86,$(ISA_LIST)),)
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86_embed.lem
   X86_FILES += src_concurrency_model/isa_stubs/x86/x86Isa.lem
 else
-  X86_FILES += build_isa_models/x86/x86_extras_embed.lem
-  X86_FILES += build_isa_models/x86/x86_embed_types.lem
-  X86_FILES += build_isa_models/x86/x86_embed.lem
+  X86_FILES += $(saildir)/arch/x86/x86_extras_embed.lem
+  X86_FILES += $(saildir)/arch/x86/x86_embed_types.lem
+  X86_FILES += $(saildir)/arch/x86/x86_embed.lem
   X86_FILES += src_concurrency_model/x86Isa.lem
 endif
 

@@ -36,7 +36,7 @@ let iskbitsimm k imm = (is_lt_pow2 ((-imm)-1) (k-1)) && (is_lt_pow2 imm (k-1))
 (* invert: inverts the least significant bit *)
 let invert n = if n mod 2 = 0 then (n+1) else (n-1)
 
-(* #include "build_isa_models/aarch64/gen/types.hgen" *)
+(* #include "gen_files/aarch64/types.hgen" *)
 
 let big_in_range (n : Nat_big_num.num) (min : int) (max : int) =
   let big_min = Nat_big_num.of_int min in
@@ -220,7 +220,7 @@ type label = Label.t
 
 type instruction =
   [
-    (* #include "build_isa_models/aarch64/gen/ast.hgen" *)
+    (* #include "gen_files/aarch64/ast.hgen" *)
 
     (* Branch *)
     (* these instructions take a 'label' instead of offset (bit64) *)
@@ -523,7 +523,7 @@ let pp_icop op =
 
 let instruction_printer (pp_regzr : reg_size -> inst_reg -> string) (pp_regsp : reg_size -> inst_reg -> string) (pp_regzrbyext : reg_size -> extendType -> inst_reg -> string) (pp_label : string -> string) (instruction : instruction) : string  =
   match instruction with
-  (* #include "build_isa_models/aarch64/gen/pretty.hgen" *)
+  (* #include "gen_files/aarch64/pretty.hgen" *)
   | `AArch64BranchConditional_label (label,condition) ->
         sprintf "B.%s %s" (pp_cond condition) (pp_label label)
   | `AArch64BranchImmediate_label (_branch_type,label) ->
@@ -587,7 +587,7 @@ let fold_regs (f_reg,f_sreg) =
 
   fun (y_reg,y_sreg as c) ins ->
     match ins with
-    (* #include "build_isa_models/aarch64/gen/fold.hgen" *)
+    (* #include "gen_files/aarch64/fold.hgen" *)
     | `AArch64BranchImmediate_label (_, _)   -> (y_reg, y_sreg)
     | `AArch64BranchConditional_label (_, _) -> (y_reg, y_sreg)
     | `AArch64CompareAndBranch_label (t, _, _, _)    -> fold_reg t (y_reg, y_sreg)
@@ -608,7 +608,7 @@ let map_regs f_reg f_symb =
 
   fun ins ->
     match ins with
-    (* #include "build_isa_models/aarch64/gen/map.hgen" *)
+    (* #include "gen_files/aarch64/map.hgen" *)
     | `AArch64BranchImmediate_label (_branch_type,offset) -> ins
     | `AArch64BranchConditional_label (offset,condition)  -> ins
     | `AArch64CompareAndBranch_label (t,datasize,iszero,offset) ->
@@ -669,7 +669,7 @@ include Pseudo.Make
 
 let get_macro _name = raise Not_found
 
-(* #include "build_isa_models/aarch64/gen/token_types.hgen" *)
+(* #include "gen_files/aarch64/token_types.hgen" *)
 
 (*** TODO: maybe put these in a different file? ***)
 (*** parser aux functions ***)

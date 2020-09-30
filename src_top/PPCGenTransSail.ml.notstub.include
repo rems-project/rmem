@@ -68,7 +68,7 @@ let int_of_reg r = match r with
 | Ireg r -> ireg_to_num r
 | _ -> assert false
 
-(* #include "build_isa_models/power/gen/trans_sail_types.hgen" *)
+(* #include "gen_files/power/trans_sail_types.hgen" *)
 
 
 
@@ -110,7 +110,7 @@ let int_to_bit = function
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let open Power_embed_types in
   let instr = match instr with
-  (* #include "build_isa_models/power/gen/herdtools_ast_to_shallow_ast.gen" *)
+  (* #include "gen_files/power/herdtools_ast_to_shallow_ast.gen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -120,12 +120,12 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
   instr
 
 
-(* #include "build_isa_models/power/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/power/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Power_embed_types in
   begin match instr with
-  (* #include "build_isa_models/power/gen/shallow_ast_to_herdtools_ast.gen" *)
+  (* #include "gen_files/power/shallow_ast_to_herdtools_ast.gen" *)
     (* | i -> failwith "cannot translate instruction" *)
   end
 

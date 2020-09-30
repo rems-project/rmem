@@ -1,0 +1,70 @@
+## import ISA models #################################################
+
+get_all_deps: get_all_isa_models
+.PHONY: get_all_isa_models
+
+get_isa_model_%: ISABUILDDIR ?= build_isa_models/$*
+get_isa_model_%: BUILDISA ?= true
+get_isa_model_%: BUILDISATARGET ?= all
+get_isa_model_%: ISASAILFILES ?= $(ISADIR)/*.sail
+get_isa_model_%: ISALEMFILES ?= $(ISADIR)/*.lem
+get_isa_model_%: ISAGENFILES ?= $(ISADIR)/gen/*
+get_isa_model_%: FORCE
+	rm -rf $(ISABUILDDIR)
+	mkdir -p $(ISABUILDDIR)
+	mkdir -p $(ISABUILDDIR)/gen
+	cp -a $(ISAGENFILES) $(ISABUILDDIR)/gen/
+CLEANDIRS += build_isa_models
+
+
+get_isa_model_power: ISANAME=power
+get_isa_model_power: ISADIR=$(saildir)/arch/power
+ifeq ($(filter PPCGEN,$(ISA_LIST)),)
+  get_isa_model_power: BUILDISA=false
+  RMEMSTUBS += src_top/PPCGenTransSail.ml
+endif
+get_all_isa_models: get_isa_model_power
+
+
+get_isa_model_aarch64: ISANAME=armV8
+get_isa_model_aarch64: ISADIR=$(saildir)/arch/arm
+ifeq ($(filter AArch64,$(ISA_LIST)),)
+  get_isa_model_aarch64: BUILDISA=false
+  RMEMSTUBS += src_top/AArch64HGenTransSail.ml
+endif
+get_all_isa_models: get_isa_model_aarch64
+
+# TODO: Currently AArch64Gen is always stubbed out
+RMEMSTUBS += src_top/AArch64GenTransSail.ml
+
+get_isa_model_mips: ISANAME=mips
+get_isa_model_mips: ISADIR=$(saildir)/arch/mips
+ifeq ($(filter MIPS,$(ISA_LIST)),)
+  get_isa_model_mips: BUILDISA=false
+  RMEMSTUBS += src_top/MIPSHGenTransSail.ml
+endif
+get_all_isa_models: get_isa_model_mips
+
+get_isa_model_riscv: ISANAME=riscv
+get_isa_model_riscv: ISADIR=$(riscvdir)
+get_isa_model_riscv: ISASAILFILES=$(ISADIR)/model/*.sail
+get_isa_model_riscv: ISALEMFILES=$(ISADIR)/generated_definitions/for-rmem/*.lem
+get_isa_model_riscv: ISALEMFILES+=$(ISADIR)/handwritten_support/0.11/*.lem
+get_isa_model_riscv: ISAGENFILES=$(ISADIR)/handwritten_support/hgen/*.hgen
+
+# By assigning a value to SAIL_DIR we force riscv to build with the
+# checked-out Sail2 instead of Sail2 from opam:
+get_isa_model_riscv: BUILDISATARGET=SAIL_DIR="$(realpath $(sail2dir))" riscv_rmem
+ifeq ($(filter RISCV,$(ISA_LIST)),)
+  get_isa_model_riscv: BUILDISA=false
+  RMEMSTUBS += src_top/RISCVHGenTransSail.ml
+endif
+get_all_isa_models: get_isa_model_riscv
+
+get_isa_model_x86: ISANAME=x86
+get_isa_model_x86: ISADIR=$(saildir)/arch/x86
+ifeq ($(filter X86,$(ISA_LIST)),)
+  get_isa_model_x86: BUILDISA=false
+  RMEMSTUBS += src_top/X86HGenTransSail.ml
+endif
+get_all_isa_models: get_isa_model_x86

@@ -17,7 +17,7 @@ open Printf
 (* Who am i ? *)
 let arch = `MIPS
 
-(* #include "build_isa_models/mips/gen/types.hgen" *)
+(* #include "gen_files/mips/types.hgen" *)
 
 (*************)
 (* Registers *)
@@ -177,7 +177,7 @@ type label = Label.t
 
 type instruction =
   [
-    (* #include "build_isa_models/mips/gen/ast.hgen" *)
+    (* #include "gen_files/mips/ast.hgen" *)
     | `MIPSBEQLABEL of reg * reg * label * bool * bool (* rs, rt, offset, not equal, likely *)
     | `MIPSBCMPZLABEL of reg * label * mipsCmp * bool * bool (* rs, offset, cmp, link, likely *)
     | `MIPSStopFetching (* this is a special instruction used by ppcmem
@@ -192,7 +192,7 @@ let pp_label label = label
 
 let instruction_printer (pp_label : string -> string) (instruction : instruction) : string  =
   begin match instruction with
-  (* #include "build_isa_models/mips/gen/pretty.hgen" *)
+  (* #include "gen_files/mips/pretty.hgen" *)
   | `MIPSBEQLABEL (rs, rt, label, ne, likely)
       -> sprintf "%s %s, %s, %s"  (pp_beq_op ne likely) (pp_reg rs) (pp_reg rt) (pp_label label)
   | `MIPSBCMPZLABEL (rs, label, mipsCmp, link, likely)
@@ -229,7 +229,7 @@ let fold_regs (f_reg, f_sreg) =
 
   fun (y_reg, y_sreg as c) ins ->
     match ins with
-    (* #include "build_isa_models/mips/gen/fold.hgen" *)
+    (* #include "gen_files/mips/fold.hgen" *)
     | `MIPSBEQLABEL (rs, rt, offset, ne, likely) -> fold_reg rs (fold_reg rt (y_reg, y_sreg))
     | _ -> c
 
@@ -244,7 +244,7 @@ let map_regs f_reg f_symb =
 
   fun ins ->
     match ins with
-    (* #include "build_isa_models/mips/gen/map.hgen" *)
+    (* #include "gen_files/mips/map.hgen" *)
     | `MIPSBEQLABEL (rs, rt, offset, ne, likely) -> `MIPSBEQLABEL (map_reg rs, map_reg rt, offset, ne, likely)
     | `MIPSBCMPZLABEL (rs, offset, cmp, link, likely) -> `MIPSBCMPZLABEL (map_reg rs, offset, cmp, link, likely)
     | _ -> ins
@@ -288,4 +288,4 @@ include Pseudo.Make
 
 let get_macro _name = raise Not_found
 
-(* #include "build_isa_models/mips/gen/token_types.hgen" *)
+(* #include "gen_files/mips/token_types.hgen" *)
