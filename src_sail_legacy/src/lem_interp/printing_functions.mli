@@ -1,3 +1,5 @@
+(* originally from the sail(1) development, cut down for what we need *)
+
 (* CP: commenting out things to make this not refer to the interpreter any
    longer *)
 

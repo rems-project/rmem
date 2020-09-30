@@ -29,7 +29,6 @@
 "src_top/herd_based"              : include
 "src_top/herd_based/lib"          : include
 "src_top/herd_based/litmus"       : include
-<build_isa_models/*>              : include
 "build_concurrency_model"         : include
 "src_sail_legacy/src/lem_interp"  : include
 
@@ -45,8 +44,6 @@
 <src_top/*.{ml,mli}> or <src_top/**/*.{ml,mli}> : package(lem), package(linksem), package(base64)
 <src_top/text/*.{ml,mli}>                    : package(lambda-term)
 <build_concurrency_model/*.{ml,mli}>         : package(lem)
-<build_isa_models/**/*.{ml,mli}>             : package(lem)
-<src_marshal_defs/*.{ml,mli}>                : package(lem), package(base64)
 <src_sail_legacy/src/lem_interp/*.{ml,mli}>  : package(lem)
 
 <src_marshal_defs/marshal_defs.{d.byte,byte,native,p.native}> : package(lem), package(base64)

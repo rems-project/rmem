@@ -1,3 +1,5 @@
+(* originally from the sail(1) development, cut down for what we need *)
+
 (**************************************************************************)
 (*     Sail                                                               *)
 (*                                                                        *)
