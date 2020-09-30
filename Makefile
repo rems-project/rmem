@@ -576,7 +576,7 @@ generated_ocaml/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(POWER_FILES)
 	@echo "${BLUE}generating ARMv8 ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(AARCH64_FILES)
-	@echo "${BULE}generating MIPS ISA (or stub) OCaml definition ...${RESET}"
+	@echo "${BLUE}generating MIPS ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(MIPS_FILES)
 	@echo "${BLUE}generating x86 ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(X86_FILES)
