@@ -1,15 +1,8 @@
 
 # /
 /_build
-/build_concurrency_model
-/build_isabelle_concurrency_model
-/build_isa_models
-/build_lem_library
-/build_linksem
-/build_sail_interp
-/build_sail_shallow_embedding
-/build_sail2_shallow_embedding
-/lib/*.defs
+/generated_ocaml
+/generated_isabelle
 /rmem
 /main.d.byte
 /main.byte

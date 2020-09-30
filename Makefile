@@ -28,6 +28,8 @@
 #                                                                                                         #
 #=========================================================================================================#
 
+
+
 OPAM := $(shell which opam 2> /dev/null)
 OCAMLBUILD := $(shell which ocamlbuild 2> /dev/null)
 ifeq ($(OCAMLBUILD),)
@@ -45,6 +47,11 @@ default:
 	$(MAKE) rmem
 .PHONY: default
 .DEFAULT_GOAL: default
+
+# https://gist.github.com/rsperl/d2dfe88a520968fbc1f49db0a29345b9
+BLUE  := $(shell tput -Txterm setaf 6)
+RESET := $(shell tput -Txterm sgr0)
+
 
 ## help: #############################################################
 
@@ -69,7 +76,7 @@ make clean_install_dir [INSTALLDIR=<path>]     - removes $(INSTALLDIR)
 make install_web_interface [INSTALLDIR=<path>] - build the web-interface and install it in $(INSTALLDIR)
 make serve [INSTALLDIR=<path>] [PORT=<port>]   - serve the web-interface in $(INSTALLDIR)
 
-make isabelle [ISA=...] - generate theory files for Isabelle (in ./build_isabelle_concurrency_model/)
+make isabelle [ISA=...] - generate theory files for Isabelle (in ./generated_isabelle/)
 
 make sloc_concurrency_model - use sloccount on the .lem files that were used in the last build
 endef
@@ -134,9 +141,9 @@ endif
 UI=text
 .PHONY: UI
 ifeq ($(UI),isabelle)
-  CONCSENTINEL = build_isabelle_concurrency_model/make_sentinel
+  CONCSENTINEL = generated_isabelle/make_sentinel
 else
-  CONCSENTINEL = build_concurrency_model/make_sentinel
+  CONCSENTINEL = generated_ocaml/make_sentinel
   ifeq ($(UI),web)
     ifeq ($(MODE),opt)
       EXT = byte
@@ -173,11 +180,11 @@ ifneq ($(wildcard $(CONCSENTINEL)),)
 endif
 
 show_sentinel_isa:
-	@$(if $(wildcard build_concurrency_model/make_sentinel),\
-	  printf -- 'OCaml: ISA=%s\n' "$$(cat build_concurrency_model/make_sentinel)",\
+	@$(if $(wildcard generated_ocaml/make_sentinel),\
+	  printf -- 'OCaml: ISA=%s\n' "$$(cat generated_ocaml/make_sentinel)",\
 	  echo "OCaml: no sentinel")
-	@$(if $(wildcard build_isabelle_concurrency_model/make_sentinel),\
-	  printf -- 'Isabelle: ISA=%s\n' "$$(cat build_isabelle_concurrency_model/make_sentinel)",\
+	@$(if $(wildcard generated_isabelle/make_sentinel),\
+	  printf -- 'Isabelle: ISA=%s\n' "$$(cat generated_isabelle/make_sentinel)",\
 	  echo "Isabelle: no sentinel")
 .PHONY: show_sentinel_isa
 
@@ -207,6 +214,7 @@ ppcmem:
 text:     override UI = text
 headless: override UI = headless
 text headless:
+	@echo "${BLUE}organising dependencies ...${RESET}"
 	$(MAKE) UI=$(UI) get_all_deps
 	$(MAKE) UI=$(UI) main
 	ln -f -s main.$(EXT) rmem
@@ -216,6 +224,7 @@ CLEANFILES += rmem
 
 web: override UI=web
 web:
+	@echo "${BLUE}organising dependencies ...${RESET}"
 	$(MAKE) UI=$(UI) get_all_deps
 	$(MAKE) UI=$(UI) webppc
 	$(MAKE) UI=$(UI) system.js
@@ -225,13 +234,14 @@ web:
 isabelle: override UI=isabelle
 isabelle:
 	$(MAKE) UI=$(UI) get_all_deps
-	$(MAKE) UI=$(UI) build_isabelle_concurrency_model/make_sentinel
+	$(MAKE) UI=$(UI) generated_isabelle/make_sentinel
 .PHONY: isabelle
 
 .PHONY: get_all_deps
 
 HIGHLIGHT := $(if $(MAKE_TERMOUT),| scripts/highlight.sh -s)
-main webppc: src_top/share_dir.ml version.ml build_concurrency_model/make_sentinel
+main webppc: src_top/share_dir.ml version.ml generated_ocaml/make_sentinel
+	@echo "${BLUE}building executable ...${RESET}"
 	rm -f $@.$(EXT)
 	ulimit -s 33000; $(OCAMLBUILD) $(OCAMLBUILD_FLAGS) src_top/$@.$(EXT) $(HIGHLIGHT)
 #	when piping through the highlight script we lose the exit status
@@ -555,27 +565,33 @@ SAIL2_LEM_INPUT_FILES=\
   -i $(sail2dir)/src/gen_lib/sail2_string.lem
 
 
-build_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
+generated_ocaml/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	rm -rf $(dir $@)
 	mkdir -p $(dir $@)
+	@echo "${BLUE}generating concurrency model OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -ocaml $(MACHINEFILES)
+	@echo "${BLUE}generating RISCV ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL2_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(RISCV_FILES) src_isa_defs/sail_1_2_convert.lem
+	@echo "${BLUE}generating POWER ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(POWER_FILES)
+	@echo "${BLUE}generating ARMv8 ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(AARCH64_FILES)
+	@echo "${BULE}generating MIPS ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(MIPS_FILES)
+	@echo "${BLUE}generating x86 ISA (or stub) OCaml definition ...${RESET}"
 	$(LEM) $(LEMFLAGS) $(SAIL1_LEM_INPUT_FILES) -outdir $(dir $@) -ocaml $(X86_FILES)
 	echo '$(ISA)' > $@
-CLEANDIRS += build_concurrency_model
+CLEANDIRS += generated_ocaml
 
 ######################################################################
 
-build_isabelle_concurrency_model/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
+generated_isabelle/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	rm -rf $(dir $@)
 	mkdir -p $(dir $@)
 	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -isa $(MACHINEFILES-ISABELLE)
 	echo '$(ISA)' > $@
 # 	echo 'session MODEL = "LEM" + theories MachineDefTSOStorageSubsystem MachineDefSystem' > generated_isabelle/ROOT
-CLEANDIRS += build_isabelle_concurrency_model
+CLEANDIRS += generated_isabelle
 
 ######################################################################
 
