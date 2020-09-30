@@ -755,7 +755,7 @@ let make_concurrency_model
     : (module Concurrency_model.S)
   =
   
-  let module ISA = (val (Isa_model.make isa_model runOptions)) in
+  let module ISA = (val (Isa_model.make isa_model)) in
 
   match ts with
   | Params.Promising_thread_model ->

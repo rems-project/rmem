@@ -113,7 +113,7 @@ let tb_addr1 = Internal 9
 
 let pc = PC
 
-let reg_compare = Pervasives.compare
+let reg_compare = Stdlib.compare
 
 let symb_reg_name = function
   | Symbolic_reg r -> Some r
@@ -155,7 +155,7 @@ open Printf
       List.map (fun (r,s) -> s,Freg r) fregs
 
     let parse_reg s =
-      let s = String.lowercase s in
+      let s = String.lowercase_ascii s in
       try Some (List.assoc s parse_list)
       with Not_found -> None
 
@@ -190,7 +190,7 @@ let pp_barrier b =
   | Lwsync -> "Lwsync"
   | Eieio -> "Eioio"
 
-let barrier_compare = Pervasives.compare
+let barrier_compare = Stdlib.compare
 
 (****************)
 (* Instructions *)
@@ -218,7 +218,7 @@ type setlk = SetLK | DontSetLK
 type instruction =
   [
   (* Generated fixed-point instructions *)
-  (* #include "build_isa_models/power/gen/ast.gen" *)
+  (* #include "gen_files/power/ast.gen" *)
 
   (* Branch *)
   | `Pb_lbl of lbl
@@ -262,7 +262,7 @@ type parsedInstruction = instruction
 
     (* TODO: other extended mnemonics *)
  
-    (* #include "build_isa_models/power/gen/pretty.gen" *)
+    (* #include "gen_files/power/pretty.gen" *)
 
     | `Pb_lbl lbl -> "b   " ^ lbl
     | `Pbl_lbl lbl -> "bl   " ^ lbl
@@ -298,7 +298,7 @@ let fold_regs (f_reg,f_sreg) =
   |  _ -> y_reg, y_sreg in
 
   fun (y_reg,y_sreg as c) ins -> match ins with
-  (* #include "build_isa_models/power/gen/fold.gen" *)
+  (* #include "gen_files/power/fold.gen" *)
 
   | `Pb_lbl _
   | `Pbcc_lbl _
@@ -322,7 +322,7 @@ let map_regs f_reg f_symb =
   and map2 ins r1 r2 = ins (map_reg r1,map_reg r2) in
 *)
   fun ins -> match ins with
-  (* #include "build_isa_models/power/gen/map.gen" *)
+  (* #include "gen_files/power/map.gen" *)
 
   | `Pb_lbl _
   | `Pbcc_lbl _

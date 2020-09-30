@@ -26,7 +26,7 @@ type u = t
 module O = 
   struct
     type t = u
-    let compare = Pervasives.compare
+    let compare = Stdlib.compare
   end
 
 module Set = MySet.Make(O)

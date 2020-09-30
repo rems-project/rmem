@@ -28,7 +28,7 @@ open PPCGen
 %token <int> CRBIT
 %token PLUS TIMES
 
-/* #include "build_isa_models/power/gen/tokens.gen" */
+/* #include "gen_files/power/tokens.gen" */
 
 /* Extended mnemonics */
 %token BEQ
@@ -104,7 +104,7 @@ reg_list :
 
 instr:
   /* Generated fixed-point instructions */
-  /* #include "build_isa_models/power/gen/parser.gen" */
+  /* #include "gen_files/power/parser.gen" */
 
   | B NAME
     { `Pb_lbl $2 }

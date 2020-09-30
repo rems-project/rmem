@@ -508,7 +508,7 @@ let make_tikz_graph
 
 module TidMap = Map.Make(struct
   type t = Events.thread_id
-  let compare t1 t2 = Pervasives.compare t1 t2
+  let compare t1 t2 = Stdlib.compare t1 t2
 end)
 
 let make_init_state (info: Test.info) (test: 'i Test.test) : unit =

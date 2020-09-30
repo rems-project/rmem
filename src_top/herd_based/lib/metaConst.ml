@@ -36,7 +36,7 @@ let as_int = function
 
 
 let compare k1 k2 = match k1,k2 with
-| Int i1,Int i2 -> Pervasives.compare i1 i2
+| Int i1,Int i2 -> Stdlib.compare i1 i2
 | Meta v1,Meta v2 -> String.compare v1 v2
 | Int _,Meta _ -> -1
 | Meta _,Int _ -> 1

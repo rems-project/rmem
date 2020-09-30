@@ -15,22 +15,11 @@
 (*===============================================================================*)
 
 type instruction = AArch64HGenBase.instruction
-type instruction_ast = ArmV8_embed_types.ast1
+type instruction_ast = ArmV8_embed_types.ast
 type labelmap = (string * int) list
 
 let shallow_ast_to_herdtools_ast _ = failwith "stub"
 let herdtools_ast_to_shallow_ast _ = failwith "stub"
-
-let herdtools_ast_to_interp_instruction _ = failwith "stub"
-let interp_instruction_to_herdtools_ast _ = failwith "stub"
-
-let instruction_to_interp2_instruction _ = failwith "stub"
-let interp2_instruction_to_instruction _ = failwith "stub"
-
-let instruction_to_interp_instruction _ = failwith "stub"
-let interp_instruction_to_instruction _ = failwith "stub"
-
-let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
 let unlabelize_ins _ _ _ _ = failwith "stub"
 let labelize_ins _ _ _ = failwith "stub"

@@ -23,44 +23,19 @@ open AArch64HGenBase
 
 type labelmap = (string * int) list
 
-open Interp_interface
 open Sail_impl_base
 
 module IInt = Sail_impl_base
-module IImp = Interp_inter_imp
 
 type instruction = AArch64HGenBase.instruction
-type instruction_ast = ArmV8_embed_types.ast1
+type instruction_ast = ArmV8_embed_types.ast
 
-(* #include "build_isa_models/aarch64/gen/types_trans_sail.hgen" *)
-
-let herdtools_ast_to_interp_instruction (i : instruction) =
-  let (instr,parms,_) = match i with
-    (* #include "build_isa_models/aarch64/gen/trans_sail.hgen" *)
-  | i ->
-      begin
-        Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
-        failwith "Translation failure"
-      end in
-  (instr,parms)
-
-
-let instruction_to_interp_instruction = ArmV8_toFromInterp.astToInterpValue0
-let interp_instruction_to_instruction = ArmV8_toFromInterp.astFromInterpValue0
-
-
-let instruction_to_interp2_instruction _ = failwith "not implemented"
-let interp2_instruction_to_instruction _ = failwith "not implemented"
-
-
-let instruction_to_reanalylsis_function_name _ = failwith "fail"
-
-(* #include "build_isa_models/aarch64/gen/herdtools_types_to_shallow_types.hgen" *)
+(* #include "gen_files/aarch64/herdtools_types_to_shallow_types.hgen" *)
 
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let open ArmV8_embed_types in
   let instr = match instr with
-  (* #include "build_isa_models/aarch64/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  (* #include "gen_files/aarch64/herdtools_ast_to_shallow_ast.hgen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -70,12 +45,12 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
   instr
 
 
-(* #include "build_isa_models/aarch64/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/aarch64/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open ArmV8_embed_types in
   begin match instr with
-  (* #include "build_isa_models/aarch64/gen/shallow_ast_to_herdtools_ast.hgen" *)
+  (* #include "gen_files/aarch64/shallow_ast_to_herdtools_ast.hgen" *)
   | _ -> failwith "couldn't translate instruction"
   end
 
@@ -109,14 +84,6 @@ let unlabelize_ins lookup_loc label_map i ins =
 let end_ins = `AArch64ImplementationDefinedStopFetching
 
 
-(* #include "build_isa_models/aarch64/gen/types_sail_trans_out.hgen" *)
-
-let interp_instruction_to_herdtools_ast inst : instruction =
-  let (name, parms) = inst in
-  begin match (name, parms) with
-  (* #include "build_isa_models/aarch64/gen/sail_trans_out.hgen" *)
-  | _ -> failwith ("unrecognized instruction: " ^ name)
-  end
 
 
 

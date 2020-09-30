@@ -19,6 +19,10 @@
 
 module SO = Structured_output
 
+exception File_read_error of string * string
+
+
+
 module type Printers = sig
   val print : string -> unit (* prints the string to the screen (does not add a new line at the end) *)
 
@@ -44,9 +48,6 @@ module type S = sig
       (unit -> SO.t) -> (* state *)
       unit
 
-  val unmarshal_defs : string -> Interp_interface.specification
-  val unmarshal_interp2_defs : string -> (Type_check.tannot Ast.defs * Type_check.Env.t)
-
   type options_state = {
     run_options: RunOptions.t;
     model_params: Params.model_params;
@@ -56,8 +57,6 @@ module type S = sig
     verbosity: SO.verbosity_level;
   }
 end
-
-exception Isa_defs_unmarshal_error of string * string
 
 module Make (Pr : Printers) : S = struct
   let printf fmt = Printf.ksprintf Pr.print fmt
@@ -86,36 +85,7 @@ module Make (Pr : Printers) : S = struct
     Pr.update_system_state
       (fun () -> Pr.of_structured_output ppmode.Globals.pp_colours (state ()))
 
-  let unmarshal_defs isa_name =
-    let bail s =
-      raise (Isa_defs_unmarshal_error (isa_name, s))
-    in
-    let str = Pr.read_filename (isa_name ^ ".defs") in
-    try
-      ((Marshal.from_string (Base64.decode_exn str) 0) : Interp_interface.specification)
-    with Failure s -> bail s
-       | Sys_error s -> bail s
-       | Not_found -> bail "invalid base64"
-
-  let unmarshal_interp2_defs isa_name =
-    let bail s =
-      raise (Isa_defs_unmarshal_error (isa_name, s))
-    in
-    let str = Pr.read_filename (isa_name ^ ".defs") in
-    try
-      let (defs, env) = ((Marshal.from_string (Base64.decode_exn str) 0) : (Type_check.tannot Ast.defs * Type_check.Env.t)) in
-      let replace_prover (l, tannot) =
-        if Type_check.is_empty_tannot tannot then
-          (l, tannot)
-        else
-          (l, Type_check.replace_env (Type_check.Env.set_prover (Some (Type_check.prove __POS__)) (Type_check.env_of_tannot tannot)) tannot)
-      in
-      (Ast_util.map_defs_annot replace_prover defs, Type_check.Env.set_prover (Some (Type_check.prove __POS__)) env)
-    with Failure s -> bail s
-       | Sys_error s -> bail s
-       | Not_found -> bail "invalid base64"
-
-  type options_state = {
+    type options_state = {
       run_options: RunOptions.t;
       model_params: Params.model_params;
       ppmode: Globals.ppmode;

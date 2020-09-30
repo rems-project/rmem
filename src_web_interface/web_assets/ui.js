@@ -101,7 +101,6 @@ $(document).ready(function () {
                 test: load_litmus_editor.getValue().trim(),
                 model_options: {
                     model: $("input[type='radio'][name='model']:checked").val(),
-                    embedding: $("input[type='radio'][name='semantics']:checked").val(),
                     force_sc: $("input[type='radio'][name='force_sc']:checked").val(),
                     relaxed_fetch: $("#relaxed_fetch:checked").val(),
                     fetch_flat_idc: $("#fetch_flat_idc:checked").val(),

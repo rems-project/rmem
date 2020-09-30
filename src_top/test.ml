@@ -99,7 +99,7 @@ let reduced_final_mem_state
       (memory_values: (Sail_impl_base.footprint * Sail_impl_base.memory_value) list) = 
   List.map
     (fun ((addr, size), value) ->
-      let int64_addr = C.interp_address_to_address addr in
+      let int64_addr = C.sail_address_to_address addr in
       let big_value =
         match Sail_impl_base.integer_of_memory_value (Globals.get_endianness ()) value with
         | Some bi -> bi

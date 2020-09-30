@@ -17,8 +17,6 @@
 (*                                                                               *)
 (*===============================================================================*)
 
-let isa_defs_path = ref None
-
 type output_chan =
   | NoOutput
   | FileName of string
@@ -59,14 +57,10 @@ module TextPrinters : Screen_base.Printers = struct
   let print s = run_and_flush (LTerm.fprint term s)
 
   let read_filename basename =
-    let bail s =
-      raise (Screen_base.Isa_defs_unmarshal_error (basename, s))
-    in
-    let filename =
-      match !isa_defs_path with
-      | Some path -> Filename.concat path basename
-      | None -> raise (Screen_base.Isa_defs_unmarshal_error (basename, "have no valid ISA defs path!"))
-    in
+    let bail s = raise (Screen_base.File_read_error (basename, s)) in
+
+    let filename = basename in
+
     let f =
       try
         open_in_bin filename

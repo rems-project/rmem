@@ -329,8 +329,7 @@ let show_options interact_state : unit =
 
   SO.Concat [
     SO.strLine "Global options:";
-    SO.strLine "  embedding = %s"
-      (if interact_state.options.interpreter then "interpreter" else "shallow");
+    SO.strLine "  embedding = %s" "shallow";
     SO.strLine "  loop_limit = %s"
       (pp_maybe_int "" (!Globals.model_params).t.thread_loop_unroll_limit);
   ]
@@ -926,7 +925,7 @@ let ui_choices_of_search_trace
 let print_observed_finals interact_state observed_finals : SO.t =
   let symtab =
     List.map
-      (fun ((addr, _), s) -> (Test.C.interp_address_to_address addr, s))
+      (fun ((addr, _), s) -> (Test.C.sail_address_to_address addr, s))
       interact_state.ppmode.Globals.pp_symbol_table
   in
 
@@ -1806,7 +1805,6 @@ let do_set key args interact_state =
       |> update_default_cmd
 
   | "always_print"            -> ((run_options_lens |-- always_print_lens)            ^= (parse_bool (ensure_one_arg ()))) interact_state
-  | "compare_analyses"        -> ((run_options_lens |-- compare_analyses_lens)        ^= (parse_bool (ensure_one_arg ()))) interact_state
   | "hash_prune"              -> ((run_options_lens |-- hash_prune_lens)              ^= (parse_bool (ensure_one_arg ()))) interact_state
   | "partial_order_reduction" -> ((run_options_lens |-- partial_order_reduction_lens) ^= (parse_bool (ensure_one_arg ()))) interact_state
   | "allow_partial"           -> ((run_options_lens |-- allow_partial_lens)           ^= (parse_bool (ensure_one_arg ()))) interact_state
@@ -1902,7 +1900,6 @@ let do_set key args interact_state =
   | "pp_colours" ->
       let value = ensure_one_arg () in
       let b = parse_bool value in
-      Printing_functions.set_color_enabled b; (* propagate to sail interpreter pp *)
       ((ppmode_lens |-- pp_colours_lens) ^= b) interact_state
 
   | "follow_list" ->
@@ -2477,7 +2474,7 @@ let print_search_results interact_state search_state runtime : unit =
 
   let symtab =
     List.map
-      (fun ((addr, _), s) -> (Test.C.interp_address_to_address addr, s))
+      (fun ((addr, _), s) -> (Test.C.sail_address_to_address addr, s))
       interact_state.ppmode.Globals.pp_symbol_table
   in
 

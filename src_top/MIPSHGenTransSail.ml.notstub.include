@@ -25,7 +25,7 @@ open Interp_interface
 open Sail_impl_base
 
 type instruction = MIPSHGenBase.instruction
-type instruction_ast = Mips_embed_types.ast2
+type instruction_ast = Mips_embed_types.ast
 
 let instruction_to_interp2_instruction = failwith "not implemented"
 let interp2_instruction_to_instruction = failwith "not implemented"
@@ -41,11 +41,11 @@ module IImp = Interp_inter_imp
 
 
 open Mips_embed_types
-(* #include "build_isa_models/mips/gen/herdtools_types_to_shallow_types.hgen" *)
+(* #include "gen_files/mips/herdtools_types_to_shallow_types.hgen" *)
     
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let instr = match instr with
-  (* #include "build_isa_models/mips/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  (* #include "gen_files/mips/herdtools_ast_to_shallow_ast.hgen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -70,7 +70,7 @@ let unlabelize_ins lookup_loc label_map i ins =
 let end_ins = `MIPSStopFetching
 
 
-(* #include "build_isa_models/mips/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/mips/shallow_types_to_herdtools_types.hgen" *)
 
 let trans_out_int fbits =
   Nat_big_num.to_int (Sail_values.unsigned fbits)
@@ -116,13 +116,13 @@ let trans_out_reg flv =
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Mips_embed_types in
   begin match instr with
-  (* #include "build_isa_models/mips/gen/shallow_ast_to_herdtools_ast.hgen" *)
+  (* #include "gen_files/mips/shallow_ast_to_herdtools_ast.hgen" *)
   | i -> failwith "cannot translate instruction"
   end
 
 
 
-(* #include "build_isa_models/mips/gen/types_sail_trans_out.hgen" *)
+(* #include "gen_files/mips/types_sail_trans_out.hgen" *)
 
 let trans_out_int ( _fname, _fsize, fbits ) =
   Nat_big_num.to_int (IInt.integer_of_bit_list fbits)
@@ -167,16 +167,16 @@ let trans_out_reg flv =
 let interp_instruction_to_herdtools_ast inst : instruction =
   let (name, parms) = inst in
   begin match (name, parms) with
-  (* #include "build_isa_models/mips/gen/sail_trans_out.hgen" *)
+  (* #include "gen_files/mips/sail_trans_out.hgen" *)
   | _ -> failwith ("unrecognized instruction: " ^ name)
   end
 
 
-(* #include "build_isa_models/mips/gen/types_trans_sail.hgen" *)
+(* #include "gen_files/mips/types_trans_sail.hgen" *)
 
 let herdtools_ast_to_interp_instruction (i : instruction) = 
   let (instr,parms,_) = match i with
-(* #include "build_isa_models/mips/gen/trans_sail.hgen" *)
+(* #include "gen_files/mips/trans_sail.hgen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);

@@ -36,10 +36,10 @@ end)
 module StateMap = Map.Make(struct
   type t = Test.C.state
   let compare (r1, m1) (r2, m2) =
-    begin match Pervasives.compare r1 r2 with
+    begin match Stdlib.compare r1 r2 with
     | 0 ->
         let cmp (footprint1, value1) (footprint2, value2) = fun () ->
-          begin match Pervasives.compare footprint1 footprint2 with
+          begin match Stdlib.compare footprint1 footprint2 with
           | 0 -> Nat_big_num.compare value1 value2
           | c -> c
           end
@@ -54,7 +54,7 @@ end)
 module ExceptionMap = Map.Make(struct
   type t = Events.thread_id * Events.ioid * (ConcModel.instruction_ast ExceptionTypes.exception_type)
   let compare (tid1, ioid1, e1) (tid2, ioid2, e2) =
-    begin match (Pervasives.compare tid1 tid2, Pervasives.compare ioid1 ioid2) with
+    begin match (Stdlib.compare tid1 tid2, Stdlib.compare ioid1 ioid2) with
     | (0, 0) -> ExceptionTypes.exception_type_compare e1 e2
     | (0, c)
     | (c, _) -> c

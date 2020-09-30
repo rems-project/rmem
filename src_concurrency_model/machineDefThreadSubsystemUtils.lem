@@ -739,7 +739,7 @@ let analyse_instruction
     isa
     (reanalyse: bool)
     (environment : (list (reg_name * register_value)))
-    (old_outcome : outcome_S)
+    (old_outcome : outcome unit)
     (inst:        'i)
     (iprefix:     list (instruction_instance 'i))
     (cia_address: address)
@@ -842,7 +842,7 @@ let starting_inst_instance_aux
       (loc:      address)
       (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
       ioids_feeding_address
-      initial_outcome_S
+      initial_outcome
     : instruction_instance 'i
   =
  <| instance_ioid =     new_ioid;
@@ -852,7 +852,7 @@ let starting_inst_instance_aux
     instruction =       Fetched inst;
     instruction_kind =  ik;
 
-    initial_micro_op_state =          MOS_plain initial_outcome_S;
+    initial_micro_op_state =          MOS_plain initial_outcome;
     initial_regs_in =                 regs_in;
     initial_regs_out =                regs_out;
     initial_regs_in_feeding_address = regs_feeding_address;
@@ -891,7 +891,7 @@ let starting_inst_instance_aux
 
     finished =  false;
 
-    micro_op_state = MOS_plain initial_outcome_S;
+    micro_op_state = MOS_plain initial_outcome;
 
     rmw_finished_load_snapshot = Nothing;
 |>
@@ -907,15 +907,15 @@ let starting_inst_instance
       (is:       list (instruction_instance 'i)) (* active prefix ++ old instructions *)
     : instruction_instance 'i
   =
-  let initial_outcome_S = isa.instruction_semantics.initial_outcome_of_instruction inst in
+  let initial_outcome = isa.instruction_semantics.initial_outcome_of_instruction inst in
   let (ik, nias, dia, regs_in, regs_out, regs_feeding_address) =
-    analyse_instruction isa false [] initial_outcome_S inst is loc in
+    analyse_instruction isa false [] initial_outcome inst is loc in
   let ioids_feeding_address = ioids_feeding_regs is regs_feeding_address in
 
   starting_inst_instance_aux isa new_ioid mop inst loc
     (ik, nias, dia, regs_in, regs_out, regs_feeding_address)
     ioids_feeding_address
-    initial_outcome_S
+    initial_outcome
 
 
 let starting_fetch_exception_inst_instance
@@ -1003,7 +1003,7 @@ let restart_instruction (i: instruction_instance 'i) : instruction_instance 'i =
 (* recalculate_register_footprint, used for instructions whose register footprint changes based on the value of a register read *)
 let recalculate_register_footprint isa
     (i:  instruction_instance 'i)
-    (old_outcome: outcome_S)
+    (old_outcome: outcome unit)
     (is: list (instruction_instance 'i))
     : instruction_instance 'i
   =
@@ -1043,7 +1043,7 @@ let nias_of_instruction
     : set address
   =
   match iic.iic_instance.micro_op_state with
-  | MOS_plain (Done (), _) ->
+  | MOS_plain (O_Done ()) ->
       { next_address_of_finished_instruction isa iic.iic_instance }
   | _ ->
       Set.bigunionMap

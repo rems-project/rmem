@@ -23,22 +23,12 @@ open PPCGenBase
 
 type labelmap = (string * int) list
 
-open Interp_interface
 open Sail_impl_base
 
 module SB = Sail_impl_base
-module IInt = Interp_interface
-module IImp = Interp_inter_imp
 
 type instruction = PPCGenBase.instruction
-type instruction_ast = Power_embed_types.ast0
-
-let instruction_to_interp2_instruction _ = failwith "not implemented"
-let interp2_instruction_to_instruction _ = failwith "not implemented"
-
-
-let instruction_to_interp_instruction = Power_toFromInterp.astToInterpValue
-let interp_instruction_to_instruction = Power_toFromInterp.astFromInterpValue
+type instruction_ast = Power_embed_types.ast
 
 let ireg_to_num r = match r with
 | GPR0 -> 0
@@ -78,19 +68,9 @@ let int_of_reg r = match r with
 | Ireg r -> ireg_to_num r
 | _ -> assert false
 
+(* #include "gen_files/power/trans_sail_types.hgen" *)
 
-(* #include "build_isa_models/power/gen/trans_sail_types.hgen" *)
 
-
-let herdtools_ast_to_interp_instruction (i : instruction) = 
-  let (instr,parms,_) = match i with
-    (* #include "build_isa_models/power/gen/trans_sail.gen" *)
-    | i -> 
-        begin
-          Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
-          failwith "Translation failure"
-        end in
-  (instr,parms)
 
 
 let unlabelize_ins lookup_loc lm i ins =
@@ -111,19 +91,6 @@ let unlabelize_ins lookup_loc lm i ins =
 let end_ins = `Psc (32)
 
 
-(* #include "build_isa_models/power/gen/sail_trans_out_types.hgen" *)
-
-
-let interp_instruction_to_herdtools_ast (instr,parms) : instruction =
-  match (instr,parms,[]) with
-  (* #include "build_isa_models/power/gen/sail_trans_out.gen" *)
-  | i ->
-      match i with
-      | (n,_,_) ->
-        begin  Printf.eprintf "Cannot translate %s to litmus format\n" n;
-        failwith "Translation failure"
-        end
-
 
 let labelize_ins
     (lookup_symbol: address -> string option)
@@ -143,7 +110,7 @@ let int_to_bit = function
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let open Power_embed_types in
   let instr = match instr with
-  (* #include "build_isa_models/power/gen/herdtools_ast_to_shallow_ast.gen" *)
+  (* #include "gen_files/power/herdtools_ast_to_shallow_ast.gen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -153,18 +120,13 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
   instr
 
 
-(* #include "build_isa_models/power/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/power/shallow_types_to_herdtools_types.hgen" *)
 
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Power_embed_types in
   begin match instr with
-  (* #include "build_isa_models/power/gen/shallow_ast_to_herdtools_ast.gen" *)
+  (* #include "gen_files/power/shallow_ast_to_herdtools_ast.gen" *)
     (* | i -> failwith "cannot translate instruction" *)
   end
 
-
-let instruction_to_reanalylsis_function_name = function
-  | Power_embed_types.Lswx _ -> "recalculate_lswx_reg_footprint"
-  | Power_embed_types.Stswx _ -> "recalculate_stswx_reg_footprint"
-  | _ -> failwith "instruction_re_analysis: unsupported instruction"
            

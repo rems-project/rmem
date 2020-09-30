@@ -1,0 +1,813 @@
+(*===============================================================================*)
+(*                                                                               *)
+(*                rmem executable model                                          *)
+(*                =====================                                          *)
+(*                                                                               *)
+(*  This file is:                                                                *)
+(*                                                                               *)
+(*  Copyright Shaked Flur, University of Cambridge       2017-2018               *)
+(*  Copyright Christopher Pulte, University of Cambridge 2017-2018               *)
+(*                                                                               *)
+(*  All rights reserved.                                                         *)
+(*                                                                               *)
+(*  It is part of the rmem tool, distributed under the 2-clause BSD licence in   *)
+(*  LICENCE.txt.                                                                 *)
+(*                                                                               *)
+(*===============================================================================*)
+
+(* emacs fontification -*-caml-*- *)
+
+open import Pervasives
+open import Assert_extra
+open import Sail_impl_base
+open import Utils
+open import FreshIds
+open import Events
+open import InstructionSemantics
+open import Isa
+open import RegUtils
+import Sail_values
+import ArmV8_embed_types
+import ArmV8_embed
+
+(* FIX THIS AND MOVE THE LOGIC FOR THIS TO SAIL *)
+val aarch64hand_encode : ArmV8_embed_types.ast -> end_flag -> memory_value
+declare ocaml target_rep function aarch64hand_encode = `Arm_encode.actually_SAIL_encode`
+
+
+let aarch64hand_shallow_embedding : instruction_semantics ArmV8_embed_types.ast = 
+  
+  let decode_to_instruction (address : address) (opcode : opcode) =
+    let (Opcode bytes) = opcode in
+    let opcode_bitv = Sail_values.bitv_of_bytes false bytes in
+
+    match ArmV8_embed.decode opcode_bitv with
+    | O_Done Nothing       -> FDO_decode_error (Not_an_instruction_error opcode)
+    | O_Done (Just instr)  -> 
+       (* TODO: abstract supported_instructions for all ISAs *)
+       match ArmV8_embed.supported_instructions instr with
+       | Nothing -> FDO_decode_error(Unsupported_instruction_error opcode instr)
+       | Just _ -> FDO_success address (Just opcode) instr
+       end
+    | _ -> FDO_decode_error (Internal_decode_error "unhandled effect")
+    end
+  in
+
+  let initial_outcome_of_instruction instr = ArmV8_embed.execute instr in
+
+  let analysis instr reanalyse reginfo environment =
+    if reanalyse then
+      failwith "instruction_re_analysis: AArch64 instruction" 
+    else 
+      let a = handle_reg_reads environment (ArmV8_embed.initial_analysis instr) in
+      process_analysis reginfo a
+  in
+
+  <| decode_to_instruction = decode_to_instruction;
+     encode_instruction = aarch64hand_encode;
+     instruction_analysis = analysis;
+     initial_outcome_of_instruction = initial_outcome_of_instruction |>
+
+
+
+
+let aarch64_is_system_call_instruction = function
+  | ArmV8_embed_types.GenerateExceptionEL1 imm -> Just (Sail_values.unsigned imm)
+  | _ -> Nothing
+  end
+
+let aarch64_is_thread_start_instruction = function
+  | ArmV8_embed_types.ImplementationDefinedThreadStart -> true
+  | _ -> false
+  end
+
+let aarch64_is_atomically_fetchable_instruction (i: ArmV8_embed_types.ast) : bool =
+  match i with
+(*| ArmV8_embed_types.Barrier3 (ArmV8_embed_types.MemBarrierOp_ISB, _, _) -> true *)
+  | ArmV8_embed_types.Hint (ArmV8_embed_types.SystemHintOp_NOP) -> true
+  | ArmV8_embed_types.BranchImmediate _ -> true
+  | _ -> false
+  end
+
+let aarch64_is_branch = function
+  | ArmV8_embed_types.CompareAndBranch _ -> true
+  | ArmV8_embed_types.BranchConditional _ -> true
+  | ArmV8_embed_types.TestBitAndBranch _ -> true
+  | ArmV8_embed_types.BranchImmediate _ -> true
+  | ArmV8_embed_types.BranchRegister _ -> true
+  | _ -> false
+end
+
+let aarch64_is_amo _ = false    (* update once we have AMO instructions *)
+
+
+let AArch64_maybe_split_conditional_branch (i: ArmV8_embed_types.ast) =
+  match i with
+  | ArmV8_embed_types.BranchConditional (x,y) -> Just (x,y)
+  | _ -> Nothing
+  end
+
+let AArch64_make_conditional_branch (x,y) = 
+  ArmV8_embed_types.BranchConditional (x, y)
+
+
+
+let aarch64_register_data_info : registerdata =
+  let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
+    (name, (D_decreasing, bit_count, bit_count - 1, fields))
+  in
+  [ reg 64 "_PC" [];
+
+    (* most of the PSTATE fields are aliases to other registers so they
+      don't appear here *)
+    reg 1 "PSTATE_nRW" [];
+    reg 1 "PSTATE_E" [];
+    reg 5 "PSTATE_M" [];
+
+    (* general purpose registers *)
+    reg 64 "R0" [];
+    reg 64 "R1" [];
+    reg 64 "R2" [];
+    reg 64 "R3" [];
+    reg 64 "R4" [];
+    reg 64 "R5" [];
+    reg 64 "R6" [];
+    reg 64 "R7" [];
+    reg 64 "R8" [];
+    reg 64 "R9" [];
+    reg 64 "R10" [];
+    reg 64 "R11" [];
+    reg 64 "R12" [];
+    reg 64 "R13" [];
+    reg 64 "R14" [];
+    reg 64 "R15" [];
+    reg 64 "R16" [];
+    reg 64 "R17" [];
+    reg 64 "R18" [];
+    reg 64 "R19" [];
+    reg 64 "R20" [];
+    reg 64 "R21" [];
+    reg 64 "R22" [];
+    reg 64 "R23" [];
+    reg 64 "R24" [];
+    reg 64 "R25" [];
+    reg 64 "R26" [];
+    reg 64 "R27" [];
+    reg 64 "R28" [];
+    reg 64 "R29" [];
+    reg 64 "R30" [];
+
+    (* SIMD *)
+    reg 128 "V0" [];
+    reg 128 "V1" [];
+    reg 128 "V2" [];
+    reg 128 "V3" [];
+    reg 128 "V4" [];
+    reg 128 "V5" [];
+    reg 128 "V6" [];
+    reg 128 "V7" [];
+    reg 128 "V8" [];
+    reg 128 "V9" [];
+    reg 128 "V10" [];
+    reg 128 "V11" [];
+    reg 128 "V12" [];
+    reg 128 "V13" [];
+    reg 128 "V14" [];
+    reg 128 "V15" [];
+    reg 128 "V16" [];
+    reg 128 "V17" [];
+    reg 128 "V18" [];
+    reg 128 "V19" [];
+    reg 128 "V20" [];
+    reg 128 "V21" [];
+    reg 128 "V22" [];
+    reg 128 "V23" [];
+    reg 128 "V24" [];
+    reg 128 "V25" [];
+    reg 128 "V26" [];
+    reg 128 "V27" [];
+    reg 128 "V28" [];
+    reg 128 "V29" [];
+    reg 128 "V30" [];
+    reg 128 "V31" [];
+
+    (* A64  special purpose registers *)
+    reg 32 "CurrentEL" [("EL", (3,2))];
+    reg 32 "DAIF"
+      [ ("D", (9,9));
+        ("A", (8,8));
+        ("I", (7,7));
+        ("F", (6,6));
+      ];
+    reg 32 "NZCV"
+      [ ("N", (31,31));
+        ("Z", (30,30));
+        ("C", (29,29));
+        ("V", (28,28));
+      ];
+    reg 64 "SP_EL0" [];
+    reg 64 "SP_EL1" [];
+    reg 64 "SP_EL2" [];
+    reg 64 "SP_EL3" [];
+    reg 32 "SPSel" [("SP", (0,0))];
+    reg 32 "SPSR_EL1"
+      [ ("N",    (31,31));
+        ("Z",    (30,30));
+        ("C",    (29,29));
+        ("V",    (28,28));
+        ("SS",   (21,21));
+        ("IL",   (20,20));
+        ("E",    (9,9));
+        ("A",    (8,8));
+        ("I",    (7,7));
+        ("F",    (6,6));
+        ("M4",   (4,4));
+        ("M3_0", (3,0));
+      ];
+    reg 32 "SPSR_EL2"
+      [ ("N",    (31,31));
+        ("Z",    (30,30));
+        ("C",    (29,29));
+        ("V",    (28,28));
+        ("SS",   (21,21));
+        ("IL",   (20,20));
+        ("E",    (9,9));
+        ("A",    (8,8));
+        ("I",    (7,7));
+        ("F",    (6,6));
+        ("M4",   (4,4));
+        ("M3_0", (3,0));
+      ];
+    reg 32 "SPSR_EL3"
+      [ ("N",    (31,31));
+        ("Z",    (30,30));
+        ("C",    (29,29));
+        ("V",    (28,28));
+        ("SS",   (21,21));
+        ("IL",   (20,20));
+        ("E",    (9,9));
+        ("A",    (8,8));
+        ("I",    (7,7));
+        ("F",    (6,6));
+        ("M4",   (4,4));
+        ("M3_0", (3,0));
+      ];
+    reg 64 "ELR_EL1" [];
+    reg 64 "ELR_EL2" [];
+    reg 64 "ELR_EL3" [];
+
+    (* A64 general system control registers *)
+    reg 64 "HCR_EL2"
+      [ ("ID",    (33,33));
+        ("CD",    (32,32));
+        ("RW",    (31,31));
+        ("TRVM",  (30,30));
+        ("HCD",   (29,29));
+        ("TDZ",   (28,28));
+        ("TGE",   (27,27));
+        ("TVM",   (26,26));
+        ("TTLB",  (25,25));
+        ("TPU",   (24,24));
+        ("TPC",   (23,23));
+        ("TSW",   (22,22));
+        ("TACR",  (21,21));
+        ("TIDCP", (20,20));
+        ("TSC",   (19,19));
+        ("TID3",  (18,18));
+        ("TID2",  (17,17));
+        ("TID1",  (16,16));
+        ("TID0",  (15,15));
+        ("TWE",   (14,14));
+        ("TWI",   (13,13));
+        ("DC",    (12,12));
+        ("BSU",   (11,10));
+        ("FB",    (9,9));
+        ("VSE",   (8,8));
+        ("VI",    (7,7));
+        ("VF",    (6,6));
+        ("AMO",   (5,5));
+        ("IMO",   (4,4));
+        ("FMO",   (3,3));
+        ("PTW",   (2,2));
+        ("SWIO",  (1,1));
+        ("VM",    (0,0));
+      ];
+    reg 64 "ID_AA64MMFR0_EL1"
+      [ ("TGran4",    (31,28));
+        ("TGran64",   (27,24));
+        ("TGran16",   (23,20));
+        ("BigEndEL0", (19,16));
+        ("SNSMem",    (15,12));
+        ("BigEnd",    (11,8));
+        ("ASIDBits",  (7,4));
+        ("PARange",   (3,0));
+      ];
+    reg 64 "RVBAR_EL1" [];
+    reg 64 "RVBAR_EL2" [];
+    reg 64 "RVBAR_EL3" [];
+    reg 32 "SCR_EL3"
+      [ ("TWE", (13,13));
+        ("TWI", (12,12));
+        ("ST",  (11,11));
+        ("RW",  (10,10));
+        ("SIF", (9,9));
+        ("HCE", (8,8));
+        ("SMD", (7,7));
+        ("EA",  (3,3));
+        ("FIQ", (2,2));
+        ("IRQ", (1,1));
+        ("NS",  (0,0));
+      ];
+    reg 32 "SCTLR_EL1"
+      [ ("UCI",     (26,26));
+        ("EE",      (25,25));
+        ("E0E",     (24,24));
+        ("WXN",     (19,19));
+        ("nTWE",    (18,18));
+        ("nTWI",    (16,16));
+        ("UCT",     (15,15));
+        ("DZE",     (14,14));
+        ("I",       (12,12));
+        ("UMA",     (9,9));
+        ("SED",     (8,8));
+        ("ITD",     (7,7));
+        ("CP15BEN", (5,5));
+        ("SA0",     (4,4));
+        ("SA",      (3,3));
+        ("C",       (2,2));
+        ("A",       (1,1));
+        ("M",       (0,0));
+      ];
+    reg 32 "SCTLR_EL2"
+      [ ("EE",  (25,25));
+        ("WXN", (19,19));
+        ("I",   (12,12));
+        ("SA",  (3,3));
+        ("C",   (2,2));
+        ("A",   (1,1));
+        ("M",   (0,0));
+      ];
+    reg 32 "SCTLR_EL3"
+      [ ("EE",  (25,25));
+        ("WXN", (19,19));
+        ("I",   (12,12));
+        ("SA",  (3,3));
+        ("C",   (2,2));
+        ("A",   (1,1));
+        ("M",   (0,0));
+      ];
+    reg 64 "TCR_EL1"
+      [ ("TBI1",  (38,38));
+        ("TBI0",  (37,37));
+        ("AS",    (36,36));
+        ("EPD1",  (23,23));
+        ("A1",    (22,22));
+        ("IPS",   (34,32));
+        ("TG1",   (31,30));
+        ("SH1",   (29,28));
+        ("ORGN1", (27,26));
+        ("IRGN1", (25,24));
+        ("T1SZ",  (21,16));
+        ("TG0",   (15,14));
+        ("SH0",   (13,12));
+        ("ORGN0", (11,10));
+        ("IRGN0", (9,8));
+        ("EPD0",  (7,7));
+        ("T0SZ",  (5,0));
+      ];
+    reg 32 "TCR_EL2"
+      [ ("TBI",   (20,20));
+        ("PS",    (18,16));
+        ("TG0",   (15,14));
+        ("SH0",   (13,12));
+        ("ORGN0", (11,10));
+        ("IRGN0", (9,8));
+        ("T0SZ",  (5,0));
+      ];
+    reg 32 "TCR_EL3"
+      [ ("TBI",   (20,20));
+        ("PS",    (18,16));
+        ("TG0",   (15,14));
+        ("SH0",   (13,12));
+        ("ORGN0", (11,10));
+        ("IRGN0", (9,8));
+        ("T0SZ",  (5,0));
+      ];
+    reg 64 "TPIDR_EL0" [];
+
+    (* A64 debug registers *)
+    reg 32 "DBGPRCR_EL1" [("CORENPDRQ", (0,0))];
+    reg 32 "OSDLR_EL1" [("DLK", (0,0))];
+
+    (* A64 external debug registers *)
+    reg 32 "EDSCR"
+      [ ("RXfull",  (30,30));
+        ("TXfull",  (29,29));
+        ("ITO",     (28,28));
+        ("RXO",     (27,27));
+        ("TXU",     (26,26));
+        ("PipeAdv", (25,25));
+        ("ITE",     (24,24));
+        ("INTdis",  (23,22));
+        ("TDA",     (21,21));
+        ("MA",      (20,20));
+        ("NS",      (18,18));
+        ("SDD",     (16,16));
+        ("HDE",     (14,14));
+        ("RW",      (13,10));
+        ("EL",      (9,8));
+        ("A",       (7,7));
+        ("ERR",     (6,6));
+        ("STATUS",  (5,0));
+      ];
+
+    (* A64 transactional memory registers *)
+    reg 64 "TXIDR_EL0" [("DEPTH", (7,0))];
+    reg 8 "TxNestingLevel" [];
+
+    (* A32 general system control registers *)
+    reg 32 "SCR"
+      [ ("TWE", (13,13));
+        ("TWI", (12,12));
+        ("ST",  (11,11));
+        ("RW",  (10,10));
+        ("SIF", (9,9));
+        ("HCE", (8,8));
+        ("SMD", (7,7));
+        ("EA",  (3,3));
+        ("FIQ", (2,2));
+        ("IRQ", (1,1));
+        ("NS",  (0,0));
+      ];
+
+    (* A32 debug registers *)
+    reg 32 "DBGOSDLR" [("DLK", (0,0))];
+    reg 32 "DBGPRCR" [("CORENPDRQ", (0,0))];
+  ]
+
+let aarch64_reg_name name : reg_name =
+  match reg_from_data aarch64_register_data_info name with
+  | Just r -> r
+  | Nothing -> fail
+  end
+
+let aarch64_fixed_pseudo_registers : list (reg_name * register_value) =
+  let fix v r = fixed_reg aarch64_register_data_info v r in
+  let fix_field v r f = fixed_reg_field aarch64_register_data_info v r f in
+  [ fix 0 "PSTATE_nRW";
+    fix 0 "PSTATE_E";
+    fix 0 "PSTATE_M";
+
+    fix 0 "CurrentEL";
+    fix 0 "SPSel";
+
+    fix 0 "SPSR_EL1";
+    fix 0 "SPSR_EL2";
+    fix 0 "SPSR_EL3";
+    fix 0 "ELR_EL1";
+    fix 0 "ELR_EL2";
+    fix 0 "ELR_EL3";
+
+    fix 0 "HCR_EL2";
+    fix 0 "ID_AA64MMFR0_EL1";
+    fix 0 "RVBAR_EL1";
+    fix 0 "RVBAR_EL2";
+    fix 0 "RVBAR_EL3";
+    fix 0 "SCR_EL3";
+    fix 0 "SCTLR_EL1"; (* big endian: 16777216 *)
+    fix 0 "SCTLR_EL2";
+    fix 0 "SCTLR_EL3";
+    fix 0 "TCR_EL1";
+    fix 0 "TCR_EL2";
+    fix 0 "TCR_EL3";
+
+    fix 0 "DBGPRCR_EL1";
+    fix 0 "OSDLR_EL1";
+
+    fix 0 "EDSCR";
+
+    fix 0 "SCR";
+
+    fix 0 "DBGOSDLR";
+    fix 0 "DBGPRCR";
+
+    (* maximum nesting depth of transactions *)
+    (* fix 255 "TXIDR_EL0"; *)
+    fix_field 255 "TXIDR_EL0" "DEPTH";
+  ]
+
+let aarch64_thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr  = aarch64_reg_name "R0";
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return = aarch64_reg_name "R0";
+
+      (* these registers hold the arguments of the new-thread function *)
+      tsi_f_tid  = aarch64_reg_name "R0";
+      tsi_f_toc  = Nothing;
+      tsi_f_addr = Nothing;
+  |>
+
+(* This function returns true for the store-pair instructions that are treated
+   as two single-copy atomic writes (when alligned).  These are the instructions
+   that call wMem twice before flushing the write buffer in armV8.sail.  In
+   particular, the function will return false for STXP/STLXP, even though they
+   are store-pair, since the whole write is single-copy atomic. *)
+let aarch64_is_nonatomic_store_pair_instruction = function
+  | ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_STORE,_,_) -> true
+  | ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_STORE,_,_,_) -> true
+  | _ -> false
+  end
+
+(* This function returns true for the load-pair instructions that are treated as
+   two single-copy atomic loads (when alligned).  These are the instructions
+   that call rMem twice before flushing the read buffer in armV8.sail.  In
+   particular, the function will return false for LDXP/LDAXP with Wt1,Wt2
+   (32bit) registers even though these are load-pair, since the whole read is
+   single-copy atomic. *)
+let aarch64_is_nonatomic_load_pair_instruction = function
+  | ArmV8_embed_types.LoadStorePair (_,_,_,_,_,_,_,MemOp_LOAD,_,_) -> true
+  | ArmV8_embed_types.LoadStorePairNonTemp (_,_,_,_,_,_,MemOp_LOAD,_,_,_) -> true
+  | ArmV8_embed_types.LoadStoreAcqExc (_,_,_,_,_,_,Sail_values.B1,MemOp_LOAD,elsize,_,_) ->
+     natFromInteger elsize = 64 (* no pattern matching on integers in Lem *)
+  | _ -> false
+  end
+
+let aarch64_make_empty_write_events
+    (tid:          thread_id)
+    (inst: ArmV8_embed_types.ast) 
+    (id_state: FreshIds.id_state ioid) 
+    (ioid: ioid) 
+    ((addr, size): footprint)
+    (write_kind:   write_kind)
+    : (list write) * (FreshIds.id_state ioid)
+  =
+  let is_store_pair = aarch64_is_nonatomic_store_pair_instruction inst in
+  let addr' = integer_of_address addr in
+  let write_size =
+    if is_store_pair && List.elem size [2; 4; 8; 16] && aligned addr' (size / 2) then size / 2
+    else if not is_store_pair && List.elem size [1; 2; 4; 8; 16] && aligned addr' size then size
+    else 1
+  in
+  make_empty_write_events' id_state tid ioid addr size write_size write_kind
+
+let aarch64_make_read_request_events
+    (tid:          thread_id)
+    (inst: ArmV8_embed_types.ast) 
+    (id_state: FreshIds.id_state ioid) 
+    (ioid: ioid) 
+    ((addr, size): footprint)
+    (read_kind:   read_kind)
+    : (list read_request) * (FreshIds.id_state ioid)
+  =
+  let load_pair = aarch64_is_nonatomic_load_pair_instruction inst in
+  let addr' = integer_of_address addr in
+  let read_size =
+    if load_pair && List.elem size [2; 4; 8; 16] && aligned addr' (size / 2) then size / 2
+    else if not load_pair && List.elem size [1; 2; 4; 8] && aligned addr' size then size
+    else 1
+  in
+  make_read_request_events' id_state tid ioid addr size read_size read_kind
+
+(* aarch64hand_isa is the start point for aarch64gen_isa, when changing
+something here make sure you are not breaking aarch64gen *)
+let aarch64hand_isa : isa ArmV8_embed_types.ast =
+  <|  isa_model                   = AARCH64 Hand;
+      instruction_semantics       = aarch64hand_shallow_embedding;
+
+      is_system_call_instruction  = aarch64_is_system_call_instruction;
+      is_thread_start_instruction = aarch64_is_thread_start_instruction;
+      is_atomically_fetchable_instruction     = aarch64_is_atomically_fetchable_instruction;
+      is_branch = aarch64_is_branch;
+      is_amo = aarch64_is_amo;
+
+      thread_start_info           = aarch64_thread_start_info;
+
+      register_data_info          = aarch64_register_data_info;
+      fixed_pseudo_registers      = aarch64_fixed_pseudo_registers;
+      cia_reg                     = aarch64_reg_name "_PC"; (* NOTE: same as nia *)
+      nia_reg                     = aarch64_reg_name "_PC"; (* NOTE: same as cia *)
+      dia_reg                     = Nothing;
+
+      make_empty_write_events     = aarch64_make_empty_write_events;
+      make_read_request_events    = aarch64_make_read_request_events;
+
+      maybe_split_conditional_branch = AArch64_maybe_split_conditional_branch;
+      make_conditional_branch = AArch64_make_conditional_branch;
+
+  |>
+
+(********************************************************************)
+
+(* FIXME AArch64Gen: check the registers *)
+let aarch64gen_register_data_info : registerdata =
+  let reg (bit_count: nat) (name: reg_base_name) (fields: list (string * slice)) =
+    (name, (D_decreasing, bit_count, bit_count - 1, fields))
+  in
+  [ reg 64 "_PC" [];
+
+    (* most of the PSTATE fields are aliases to other registers so they
+      don't appear here *)
+    reg 1 "PSTATE_nRW" [];
+    reg 1 "PSTATE_E" [];
+    reg 5 "PSTATE_M" [];
+
+    (* general purpose registers *)
+    reg 64 "R0" [];
+    reg 64 "R1" [];
+    reg 64 "R2" [];
+    reg 64 "R3" [];
+    reg 64 "R4" [];
+    reg 64 "R5" [];
+    reg 64 "R6" [];
+    reg 64 "R7" [];
+    reg 64 "R8" [];
+    reg 64 "R9" [];
+    reg 64 "R10" [];
+    reg 64 "R11" [];
+    reg 64 "R12" [];
+    reg 64 "R13" [];
+    reg 64 "R14" [];
+    reg 64 "R15" [];
+    reg 64 "R16" [];
+    reg 64 "R17" [];
+    reg 64 "R18" [];
+    reg 64 "R19" [];
+    reg 64 "R20" [];
+    reg 64 "R21" [];
+    reg 64 "R22" [];
+    reg 64 "R23" [];
+    reg 64 "R24" [];
+    reg 64 "R25" [];
+    reg 64 "R26" [];
+    reg 64 "R27" [];
+    reg 64 "R28" [];
+    reg 64 "R29" [];
+    reg 64 "R30" [];
+
+    (* SIMD *)
+    reg 128 "V0" [];
+    reg 128 "V1" [];
+    reg 128 "V2" [];
+    reg 128 "V3" [];
+    reg 128 "V4" [];
+    reg 128 "V5" [];
+    reg 128 "V6" [];
+    reg 128 "V7" [];
+    reg 128 "V8" [];
+    reg 128 "V9" [];
+    reg 128 "V10" [];
+    reg 128 "V11" [];
+    reg 128 "V12" [];
+    reg 128 "V13" [];
+    reg 128 "V14" [];
+    reg 128 "V15" [];
+    reg 128 "V16" [];
+    reg 128 "V17" [];
+    reg 128 "V18" [];
+    reg 128 "V19" [];
+    reg 128 "V20" [];
+    reg 128 "V21" [];
+    reg 128 "V22" [];
+    reg 128 "V23" [];
+    reg 128 "V24" [];
+    reg 128 "V25" [];
+    reg 128 "V26" [];
+    reg 128 "V27" [];
+    reg 128 "V28" [];
+    reg 128 "V29" [];
+    reg 128 "V30" [];
+    reg 128 "V31" [];
+
+    (* A64 special purpose registers *)
+    reg 2 "PSTATE_EL" []; (*Corresponds to CurrentEL in Aarch64Hand*)
+    reg 1 "PSTATE_D" []; (*The following four correspond to DAIF*)
+    reg 1 "PSTATE_A" [];
+    reg 1 "PSTATE_I" [];
+    reg 1 "PSTATE_F" [];
+    reg 1 "PSTATE_N" []; (*The following four correspond to NZCV*)
+    reg 1 "PSTATE_Z" [];
+    reg 1 "PSTATE_C" [];
+    reg 1 "PSTATE_V" [];
+    reg 64 "SP_EL0" []; (*Equivalent below*)
+    reg 64 "SP_EL1" [];
+    reg 64 "SP_EL2" [];
+    reg 64 "SP_EL3" [];
+    reg 32 "PSTATE_SP" []; (*Corresponds to SPSel in AArch64Hand*)
+    reg 32 "SPSR_EL1" []; (*Equivalent below*)
+    reg 32 "SPSR_EL2" [];
+    reg 32 "SPSR_EL3" [];
+    reg 64 "ELR_EL1" [];
+    reg 64 "ELR_EL2" [];
+    reg 64 "ELR_EL3" [];
+
+    (* A64 general system control registers *)
+    reg 64 "_HCR_EL2" []; (*AArch64Hand does not have leading '_'s*)
+    reg 64 "ID_AA64MMFR0_EL1" [];
+    reg 64 "_RVBAR_EL1" [];
+    reg 64 "_RVBAR_EL2" [];
+    reg 64 "_RVBAR_EL3" [];
+    reg 32 "SCR_EL3" [];
+    reg 32 "SCTLR_EL1" [];
+    reg 32 "_SCTLR_EL2" [];
+    reg 32 "SCTLR_EL3" [];
+    reg 64 "TCR_EL1" [];
+    reg 32 "_TCR_EL2" [];
+    reg 32 "TCR_EL3" [];
+    reg 64 "TPIDR_EL0" [];
+
+    (* A64 debug registers *)
+    reg 32 "DBGPRCR_EL1" [];
+    reg 32 "OSDLR_EL1" [];
+
+    (* A64 external debug registers *)
+    reg 32 "EDSCR" [];
+
+    (* A32 general system control registers *)
+    reg 32 "SCR" [];
+  ]
+
+let aarch64gen_reg_name name : reg_name =
+  match reg_from_data aarch64gen_register_data_info name with
+  | Just r -> r
+  | Nothing -> fail
+  end
+
+let aarch64gen_fixed_pseudo_registers : list (reg_name * register_value) =
+  let fix v r = fixed_reg aarch64gen_register_data_info v r in
+  [ fix 0 "PSTATE_nRW";
+    fix 0 "PSTATE_E";
+    fix 0 "PSTATE_M";
+
+    (* Where registers are here as well as above, see above for differences between Gen and Hand
+        And the commented out registers have not been modified to match Gen KG*)
+    fix 0 "PSTATE_EL";
+  (*  fix 0 "DAIF";
+    fix 0 "NZCV";
+    fix 0 "SP_EL0";
+    fix 0 "SP_EL1";
+    fix 0 "SP_EL2";
+    fix 0 "SP_EL3"; *)
+    fix 0 "PSTATE_SP";
+
+    fix 0 "SPSR_EL1";
+    fix 0 "SPSR_EL2";
+    fix 0 "SPSR_EL3";
+    fix 0 "ELR_EL1";
+    fix 0 "ELR_EL2";
+    fix 0 "ELR_EL3";
+
+    fix 0 "_HCR_EL2";
+    fix 0 "ID_AA64MMFR0_EL1";
+    fix 0 "_RVBAR_EL1";
+    fix 0 "_RVBAR_EL2";
+    fix 0 "_RVBAR_EL3";
+    fix 0 "SCR_EL3";
+    fix 0 "SCTLR_EL1";
+    fix 0 "_SCTLR_EL2";
+    fix 0 "SCTLR_EL3";
+    fix 0 "TCR_EL1";
+    fix 0 "_TCR_EL2";
+    fix 0 "TCR_EL3";
+
+    fix 0 "DBGPRCR_EL1";
+    fix 0 "OSDLR_EL1";
+
+    fix 0 "EDSCR";
+
+    fix 0 "SCR";
+
+    (*fix 0 "DBGOSDLR";
+      fix 0 "DBGPRCR";*)
+  ]
+
+let aarch64gen_thread_start_info =
+  <|  (* these registers hold the arguments of the thread_start function *)
+      tsi_addr  = aarch64gen_reg_name "R0";
+      tsi_toc   = Nothing;
+      tsi_extra = Nothing;
+      (* this register holds the value returned by the thread_start function *)
+      tsi_return = aarch64gen_reg_name "R0";
+
+      (* these registers hold the arguments of the new thread function *)
+      tsi_f_tid  = aarch64gen_reg_name "R0";
+      tsi_f_toc  = Nothing;
+      tsi_f_addr = Nothing;
+  |>
+
+let aarch64gen_isa : isa ArmV8_embed_types.ast =
+  <| aarch64hand_isa with
+      isa_model = AARCH64 Gen;
+      thread_start_info = aarch64gen_thread_start_info;
+      register_data_info = aarch64gen_register_data_info;
+      fixed_pseudo_registers = aarch64gen_fixed_pseudo_registers;
+      cia_reg = aarch64gen_reg_name "_PC"; (* NOTE: same as nia *)
+      nia_reg = aarch64gen_reg_name "_PC"; (* NOTE: same as cia *)
+  |>
+
+
+
+
+let available = true

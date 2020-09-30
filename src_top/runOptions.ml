@@ -31,8 +31,6 @@ type t =
     pseudorandom:            bool;
     pseudorandom_traces:     int;
 
-    interpreter:             bool; (* true for interpreter, false for shallow embedding *)
-    compare_analyses:        bool; (* true for comparing handwritten and exhaustive analysis *)
 
     (* max_trace_length: in exhaustive and random search, fail if a trace
     longer than max_trace_length (non-eager) transitions is found. This
@@ -67,8 +65,6 @@ let prune_restarts_lens = { Lens.get = (fun o -> o.prune_restarts); Lens.set = (
 let prune_discards_lens = { Lens.get = (fun o -> o.prune_discards); Lens.set = (fun v o -> { o with prune_discards = v }) }
 let pseudorandom_lens = { Lens.get = (fun o -> o.pseudorandom); Lens.set = (fun v o -> { o with pseudorandom = v }) }
 let pseudorandom_traces_lens = { Lens.get = (fun o -> o.pseudorandom_traces); Lens.set = (fun v o -> { o with pseudorandom_traces = v }) }
-let interpreter_lens = { Lens.get = (fun o -> o.interpreter); Lens.set = (fun v o -> { o with interpreter = v }) }
-let compare_analyses_lens = { Lens.get = (fun o -> o.compare_analyses); Lens.set = (fun v o -> { o with compare_analyses = v }) }
 let max_trace_length_lens = { Lens.get = (fun o -> o.max_trace_length); Lens.set = (fun v o -> { o with max_trace_length = v }) }
 let transition_limit_lens = { Lens.get = (fun o -> o.transition_limit); Lens.set = (fun v o -> { o with transition_limit = v }) }
 let time_limit_lens = { Lens.get = (fun o -> o.time_limit); Lens.set = (fun v o -> { o with time_limit = v }) }
@@ -151,9 +147,6 @@ let default_options =
     prune_discards          = false;
     pseudorandom            = false;
     pseudorandom_traces     = 1;
-
-    interpreter             = true;
-    compare_analyses        = false;
 
     max_trace_length        = None;
 

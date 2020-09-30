@@ -22,7 +22,7 @@ let instruction_table = Hashtbl.create 100
 let () =
   List.iter (fun (kwd, tok) -> Hashtbl.add instruction_table kwd tok)
   [
-  (* #include "build_isa_models/power/gen/lexer.gen" *)
+  (* #include "gen_files/power/lexer.gen" *)
   ]
 }
 let digit = [ '0'-'9' ]

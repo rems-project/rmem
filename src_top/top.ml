@@ -85,9 +85,6 @@ module Run_test (Test_file: Test_file.S) = struct
     let test_info = CII.info in
 
 
-    if ISAModel.ISADefs.isa_defs_thunk () = Interp_ast.Defs [] && run_options.RunOptions.interpreter then
-      print_endline ("Warning: the interpreter ISA defs are missing");
-
     (* calculate list of initial states (paired with their topology options) *)
     let initial_state_records =
       begin match !Globals.model_params.ss.ss_model with

@@ -28,7 +28,7 @@ open MIPS
 
 %token SEMI COMMA PIPE COLON LPAR RPAR
 
-/* #include "build_isa_models/mips/gen/tokens.hgen" */
+/* #include "gen_files/mips/tokens.hgen" */
 
 %type <int list * (MIPSHGenBase.parsedPseudo) list list * MiscParser.extra_data> main
 %start  main
@@ -62,7 +62,7 @@ instr_option :
 
 instr:
 /* Generated fixed-point instructions */
-/* #include "build_isa_models/mips/gen/parser.hgen" */
+/* #include "gen_files/mips/parser.hgen" */
 /* TODO: add the label version of instructions here */
 | BEQ reg COMMA reg COMMA NAME
    { `MIPSBEQLABEL ($2, $4, $6, $1.ne, $1.likely) }

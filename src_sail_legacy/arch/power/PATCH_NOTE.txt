@@ -1,0 +1,31 @@
+Shaked's power path logic, moved here from the rmem toplevel makefile. This
+won't work here, but recording it to potentially re-instate later. The patch is checked into `./patch`.
+
+
+
+
+
+get_isa_model_power: ISANAME=power
+get_isa_model_power: ISADIR=$(saildir)/arch/power
+ifeq ($(filter PPCGEN,$(ISA_LIST)),)
+  get_isa_model_power: BUILDISA=false
+  RMEMSTUBS += src_top/PPCGenTransSail.ml
+endif
+get_all_isa_models: get_isa_model_power
+
+
+patch = touch -r $(1) $(1).timestamp_temp &&\
+  patch $(1) $(2) &&\
+  touch -r $(1).timestamp_temp $(1) &&\
+  rm -f $(1).timestamp_temp
+
+
+patch_isa_model_power:
+# the shallow embedding generates bad code because of some typing issue
+ifeq ($(filter PPCGEN,$(ISA_LIST)),)
+else
+	$(call patch,build_isa_models/power/power_embed.lem,patches/power_embed.lem.patch)
+endif
+
+gen_patch_isa_model_power:
+	diff -au $(saildir)/arch/power/power_embed.lem build_isa_models/power/power_embed.lem > patches/power_embed.lem.patch || true

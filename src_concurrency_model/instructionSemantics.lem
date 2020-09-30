@@ -24,7 +24,6 @@ open import Pervasives_extra
 open import Sail_impl_base
 open import Utils
 open import Sail_values
-open import Sail_1_2_convert
 
 
 
@@ -116,7 +115,7 @@ type instruction_semantics 'i =
   
       encode_instruction: 'i -> end_flag -> memory_value;
 
-      initial_outcome_of_instruction : 'i -> outcome_S;
+      initial_outcome_of_instruction : 'i -> outcome unit;
 
       instruction_analysis :  (*bool is whether or not to re-analyse*) 
         'i -> bool -> register_info -> register_environment -> fp_analysis;
@@ -138,37 +137,37 @@ let print_register_environment environment =
 
 val handle_reg_reads : forall 'a. list (reg_name * register_value) -> outcome 'a -> 'a
 let rec handle_reg_reads environment outcome = match outcome with
-  | Read_reg reg_name c ->
+  | O_Read_reg reg_name c ->
      let regval = match List.lookup reg_name environment with
        | Just v -> v
        | Nothing -> 
           failwith ("no value in environment for register " ^  show reg_name ^ " in list " ^
                       print_register_environment environment)
      end in
-     handle_reg_reads environment (fst (c regval))
-  | Fail (Just err) -> failwith ("handle_reads: Fail " ^ err)
-  | Fail Nothing -> failwith ("handle_reads: Fail with unspecified error")
-  | Error string -> failwith ("handle_reads: Error " ^ string)
-  | Done v -> v
+     handle_reg_reads environment (c regval)
+  | O_Fail (Just err) -> failwith ("handle_reads: Fail " ^ err)
+  | O_Fail Nothing -> failwith ("handle_reads: Fail with unspecified error")
+  | O_Error string -> failwith ("handle_reads: Error " ^ string)
+  | O_Done v -> v
   | _ -> failwith "handle_reg_reads: unhandled effect"
   end
 
-let ensure_done_outcome (o,_) =
-  match o with Done a -> a | _ -> fail end
-let ensure_barrier_outcome (o,_) =
-  match o with Barrier bk o -> (bk,o) | _ -> fail end
-let ensure_write_ea_outcome (o,_) =
-  match o with Write_ea descr o -> (descr,o) | _ -> fail end
-let ensure_write_memv_outcome (o,_) =
-  match o with Write_memv memv c -> (memv,c) | _ -> fail end
-let ensure_read_mem_outcome (o,_) =
-  match o with Read_mem descr c -> (descr,c) | _ -> fail end
-let ensure_excl_res_outcome (o,_) =
-  match o with Excl_res c -> c | _ -> fail end
-let ensure_write_reg_outcome (o,_) =
-  match o with Write_reg descr o -> (descr,o) | _ -> fail end
-let ensure_read_reg_outcome (o,_) =
-  match o with Read_reg descr o -> (descr,o) | _ -> fail end
+let ensure_done_outcome = function
+  | O_Done a -> a | _ -> fail end
+let ensure_barrier_outcome = function
+  | O_Barrier bk o -> (bk,o) | _ -> fail end
+let ensure_write_ea_outcome = function
+  | O_Write_ea descr o -> (descr,o) | _ -> fail end
+let ensure_write_memv_outcome = function
+  | O_Write_memv memv c -> (memv,c) | _ -> fail end
+let ensure_read_mem_outcome = function
+  | O_Read_mem descr c -> (descr,c) | _ -> fail end
+let ensure_excl_res_outcome = function
+  | O_Excl_res c -> c | _ -> fail end
+let ensure_write_reg_outcome = function
+  | O_Write_reg descr o -> (descr,o) | _ -> fail end
+let ensure_read_reg_outcome = function
+  | O_Read_reg descr o -> (descr,o) | _ -> fail end
 
 
 

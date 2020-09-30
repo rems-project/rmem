@@ -36,7 +36,7 @@ open X86
 
 %token SEMI DOLLAR COMMA LPAR RPAR PIPE COLON PLUS STAR LOCK
 
-/* #include "build_isa_models/x86/gen/tokens.hgen" */
+/* #include "gen_files/x86/tokens.hgen" */
 
 %type <int list * (X86HGenBase.parsedPseudo) list list * MiscParser.extra_data> main
 %start  main
@@ -70,7 +70,7 @@ instr_option :
 
 instr:
 /* Generated fixed-point instructions */
-/* #include "build_isa_models/x86/gen/parser_intel.hgen" */
+/* #include "gen_files/x86/parser_intel.hgen" */
 /* TODO: add the label version of instructions here */
 | JCC NAME
    { `X86JCCLABEL ($1.cond, $2) }

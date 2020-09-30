@@ -35,7 +35,7 @@ let iskbitsimm k imm = (is_lt_pow2 ((-imm)-1) (k-1)) && (is_lt_pow2 imm (k-1))
 %token <int> PROC
 
 %token SEMI COMMA PIPE COLON LPAR RPAR
-/* #include "build_isa_models/riscv/gen/tokens.hgen" */
+/* #include "gen_files/riscv/tokens.hgen" */
 
 %type <int list * (RISCVHGenBase.parsedPseudo) list list * MiscParser.extra_data> main
 %start  main
@@ -69,7 +69,7 @@ instr_option :
 
 instr:
 /* Generated fixed-point instructions */
-/* #include "build_isa_models/riscv/gen/parser.hgen" */
+/* #include "gen_files/riscv/parser.hgen" */
 | JAL reg COMMA NAME
   { `RISCVJALLabel($4, $2) }
 | BTYPE reg COMMA reg COMMA NAME

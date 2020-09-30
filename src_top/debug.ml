@@ -28,8 +28,6 @@ let function_no =
 	  "enumerate_transitions_of_storage_subsystem";
 	  "enumerate_transitions_of_instruction";
 	  "update_state";
-	  "interp";
-	  "interp_exhaustive";
 	  "enumerate_transitions_of_storage_subsystem__pcc";
 	  "enumerate_transitions_of_storage_subsystem__pw";
 	  "enumerate_transitions_of_storage_subsystem__pb";

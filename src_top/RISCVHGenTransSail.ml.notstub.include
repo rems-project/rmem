@@ -19,7 +19,6 @@ open Big_int
 open RISCVHGenBase
 
 
-open Interp_interface
 open Sail_impl_base
 
 type instruction = RISCVHGenBase.instruction
@@ -28,16 +27,15 @@ type instruction_ast = Riscv_types.ast
 type labelmap = (string * int) list
 
 module IInt = Sail_impl_base
-module IImp = Interp_inter_imp
 
 let instruction_to_reanalylsis_function_name _ = failwith "fail"
 
 open Riscv_types
-(* #include "build_isa_models/riscv/gen/herdtools_types_to_shallow_types.hgen" *)
+(* #include "gen_files/riscv/herdtools_types_to_shallow_types.hgen" *)
     
 let herdtools_ast_to_shallow_ast (instr : instruction) =
   let instr = match instr with
-  (* #include "build_isa_models/riscv/gen/herdtools_ast_to_shallow_ast.hgen" *)
+  (* #include "gen_files/riscv/herdtools_ast_to_shallow_ast.hgen" *)
   | i ->
       begin
         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
@@ -45,13 +43,6 @@ let herdtools_ast_to_shallow_ast (instr : instruction) =
       end
   in
   instr
-
-
-let instruction_to_interp_instruction _ = failwith "not implemented"
-let interp_instruction_to_instruction _ = failwith "not implemented"
-
-let instruction_to_interp2_instruction = Riscv_toFromInterp2.astToInterpValue 
-let interp2_instruction_to_instruction = Riscv_toFromInterp2.astFromInterpValue
 
 
 
@@ -69,7 +60,7 @@ let unlabelize_ins lookup_loc label_map i ins =
 let end_ins = `RISCVStopFetching
 
 
-(* #include "build_isa_models/riscv/gen/shallow_types_to_herdtools_types.hgen" *)
+(* #include "gen_files/riscv/shallow_types_to_herdtools_types.hgen" *)
 
 let trans_out_int fbits =
   Nat_big_num.to_int (Sail_values.unsigned fbits)
@@ -115,13 +106,13 @@ let trans_out_reg flv =
 let shallow_ast_to_herdtools_ast instr : instruction =
   let open Riscv_types in
      begin match instr with
-     (* #include "build_isa_models/riscv/gen/shallow_ast_to_herdtools_ast.hgen" *)
+     (* #include "gen_files/riscv/shallow_ast_to_herdtools_ast.hgen" *)
      | i -> failwith "cannot translate instruction"
      end
 
 
 
-(* #dontinclude "build_isa_models/riscv/gen/types_sail_trans_out.hgen" *)
+(* #dontinclude "gen_files/riscv/types_sail_trans_out.hgen" *)
 
 let trans_out_int ( _fname, _fsize, fbits ) =
   Nat_big_num.to_int (IInt.integer_of_bit_list fbits)
@@ -163,25 +154,7 @@ let trans_out_reg flv =
   | 31 -> R31
   | _  -> failwith "trans_out_reg number not 0 to 31"
 
-let interp_instruction_to_herdtools_ast inst : instruction = failwith "RISCV interp_instruction_to_herdtools_ast stub"
-  (* let (name, parms) = inst in
-   * begin match (name, parms) with
-   * (\* #dontinclude "build_isa_models/riscv/gen/sail_trans_out.hgen" *\)
-   * | _ -> failwith ("unrecognized instruction: " ^ name)
-   * end *)
-
-
-(* #dontinclude "build_isa_models/riscv/gen/types_trans_sail.hgen" *)
-
-let herdtools_ast_to_interp_instruction (i : instruction) = failwith "RISCV herdtools_ast_to_interp_instruction stub"
-  (* let (instr,parms,_) = match i with
- * (\* #dontinclude "build_isa_models/riscv/gen/trans_sail.hgen" *\)
- *   | i ->
- *       begin
- *         Printf.eprintf "Cannot translate %s\n" (dump_instruction i);
- *         failwith "Translation failure"
- *       end in
- *   (instr,parms) *)
+(* #dontinclude "gen_files/riscv/types_trans_sail.hgen" *)
 
     
 let labelize_ins

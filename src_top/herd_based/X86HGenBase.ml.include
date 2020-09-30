@@ -17,7 +17,7 @@ open Printf
 (* Who am i ? *)
 let arch = `X86
 
-(* #include "build_isa_models/x86/gen/types.hgen" *)
+(* #include "gen_files/x86/types.hgen" *)
 
 (*************)
 (* Registers *)
@@ -386,7 +386,7 @@ let pp_size_reg sz = function
 
 let pp_reg = pp_size_reg X86S64
 
-let reg_compare = Pervasives.compare
+let reg_compare = Stdlib.compare
 
 let symb_reg_name = function
   | Symbolic_reg r -> Some r
@@ -434,7 +434,7 @@ let all_kinds_of_barriers = [Sync;]
 let pp_barrier = function
   | Sync -> "Sync"
 
-let barrier_compare = Pervasives.compare
+let barrier_compare = Stdlib.compare
 
 (****************)
 (* Instructions *)
@@ -444,7 +444,7 @@ type label = Label.t
 
 type instruction =
   [
-    (* #include "build_isa_models/x86/gen/ast.hgen" *)
+    (* #include "gen_files/x86/ast.hgen" *)
     | `X86JCCLABEL of x86Cond * label
     | `X86StopFetching (* this is a special instruction used by ppcmem
                           to indicate the end of a litmus thread *)
@@ -460,7 +460,7 @@ let pp_label label = label
 
 let instruction_printer (pp_label : string -> string) (instruction : instruction) : string  =
   begin match instruction with
-  (* #include "build_isa_models/x86/gen/pretty.hgen" *)
+  (* #include "gen_files/x86/pretty.hgen" *)
   | `X86JCCLABEL (cnd, label) -> "j" ^ pp_x86Cond cnd ^ " " ^ pp_label label
   end
 
@@ -514,7 +514,7 @@ let fold_regs (f_reg, f_sreg) =
   in
   fun (y_reg, y_sreg as c) ins ->
     match ins with
-    (* #include "build_isa_models/x86/gen/fold.hgen" *)
+    (* #include "gen_files/x86/fold.hgen" *)
     | _ -> c
 
 (* Map over symbolic regs *)
@@ -552,7 +552,7 @@ let map_regs f_reg f_symb =
   in
   fun ins ->
     match ins with
-    (* #include "build_isa_models/x86/gen/map.hgen" *)
+    (* #include "gen_files/x86/map.hgen" *)
     | _ -> ins
 
 (* No addresses burried in X86 code? *)
@@ -592,4 +592,4 @@ include Pseudo.Make
 
 let get_macro _name = raise Not_found
 
-(* #include "build_isa_models/x86/gen/token_types.hgen" *)
+(* #include "gen_files/x86/token_types.hgen" *)

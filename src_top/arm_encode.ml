@@ -1,7 +1,7 @@
 open Sail_impl_base
 
 let actually_SAIL_encode
-        (instr : ArmV8_embed_types.ast1)
+        (instr : ArmV8_embed_types.ast)
         (endianness: Sail_impl_base.end_flag)
         : memory_value
     =
@@ -195,7 +195,7 @@ let actually_SAIL_encode
                     lor (shift  lsl 22)
                     lor (bop    lsl 29)
                     lor (sf     lsl 31))
-           | Barrier3
+           | Barrier
               (barrierOp,domain,types)
            ->
                 let op = (match barrierOp with

@@ -8,7 +8,6 @@
 #
 # exclude the following folders:
 #
-"build_sail_shallow_embedding": -traverse
 "doc"                         : -traverse
 "old"                         : -traverse
 "regression"                  : -traverse
@@ -26,15 +25,13 @@
 #   the Makefile also adds src_top/text or src_top/web or src_top/headless
 #   according to the selected UI
 #
-"src_top"                       : include
-"src_top/herd_based"            : include
-"src_top/herd_based/lib"        : include
-"src_top/herd_based/litmus"     : include
-<build_isa_models/*>            : include
-"build_concurrency_model"       : include
-"build_sail_interp"             : include
-"build_sail_interp/pprint/src"  : include
-"build_sail2_shallow_embedding" : include
+"src_top"                         : include
+"src_top/herd_based"              : include
+"src_top/herd_based/lib"          : include
+"src_top/herd_based/litmus"       : include
+"generated_ocaml"                 : include
+"src_sail_legacy/src/lem_interp"  : include
+
 
 #
 # files that use js_of_ocaml special syntax:
@@ -44,20 +41,17 @@
 #
 # library dependencies:
 #
-<src_top/*.{ml,mli}> or <src_top/**/*.{ml,mli}> : package(lem), package(linksem), package(base64), package(sail)
-<src_top/text/*.{ml,mli}>                  : package(lambda-term), package(sail)
-<build_concurrency_model/*.{ml,mli}>       : package(lem)
-<build_isa_models/**/*.{ml,mli}>           : package(lem), package(sail)
-<build_sail_interp/**/*.{ml,mli}>          : package(lem), package(sail)
-<build_sail2_shallow_embedding/*.{ml,mli}> : package(lem)
-<src_marshal_defs/*.{ml,mli}>              : package(lem), package(base64), package(sail)
+<src_top/*.{ml,mli}> or <src_top/**/*.{ml,mli}> : package(lem), package(linksem), package(base64)
+<src_top/text/*.{ml,mli}>                    : package(lambda-term)
+<generated_ocaml/*.{ml,mli}>                 : package(lem)
+<src_sail_legacy/src/lem_interp/*.{ml,mli}>  : package(lem)
 
-<src_marshal_defs/marshal_defs.{d.byte,byte,native,p.native}> : package(lem), package(base64), package(sail)
+<src_marshal_defs/marshal_defs.{d.byte,byte,native,p.native}> : package(lem), package(base64)
 
-<src_top/main.{d.byte,byte,native,p.native}> : package(unix), package(str), package(lem), package(linksem), package(base64), package(sail)
+<src_top/main.{d.byte,byte,native,p.native}> : package(unix), package(str), package(lem), package(linksem), package(base64)
 # the Makefile also adds package(lambda-term) when building text (and not headless)
 
-<src_top/webppc.{d.byte,byte}> : package(unix), package(js_of_ocaml), package(lem), package(linksem), package(base64), package(sail)
+<src_top/webppc.{d.byte,byte}> : package(unix), package(js_of_ocaml), package(lem), package(linksem), package(base64)
 
 <src_top/console_help_printer.{d.byte,byte,native,p.native}> : package(lem), package(base64)
 
@@ -68,19 +62,9 @@
 #
 # ignore warnings
 #
-<build_concurrency_model/interp*.ml>                : warn_p, warn_y
-<build_concurrency_model/instruction_extractor.ml>  : warn_p
-<build_concurrency_model/*_embed_types.ml>          : warn_p, warn_y
-<build_concurrency_model/*_embed.ml>                : warn_p, warn_y
-<build_concurrency_model/*_embed_sequential.ml>     : warn_p, warn_y
-<build_concurrency_model/riscv.ml>                  : warn_a
-<build_concurrency_model/*_toFromInterp.ml>         : warn_p, warn_y
-<build_sail_interp/pretty_interp.ml>                : warn_p, warn_u
+<generated_ocaml/*_embed_types.ml>          : warn_p, warn_y
+<generated_ocaml/*_embed.ml>                : warn_p, warn_y
+<generated_ocaml/riscv.ml>                  : warn_a
 
+# <generated_ocaml/*_embed.ml>              : linscan
 
-
-<build_isa_models/*/armV8.ml>  : linscan
-<build_isa_models/*/power.ml>  : linscan
-<build_isa_models/*/riscv.ml>  : linscan
-<build_isa_models/*/mips.ml>  : linscan
-<build_isa_models/*/x86.ml>  : linscan

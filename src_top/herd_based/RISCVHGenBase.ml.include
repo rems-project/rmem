@@ -17,7 +17,7 @@ open Printf
 (* Who am i ? *)
 let arch = `RISCV
 
-(* #include "build_isa_models/riscv/gen/types.hgen" *)
+(* #include "gen_files/riscv/types.hgen" *)
 
 (*************)
 (* Registers *)
@@ -145,7 +145,7 @@ let pp_reg = function
   | PC             -> "pc"
   | RESADDR        -> "res"
 
-let reg_compare = Pervasives.compare
+let reg_compare = Stdlib.compare
 
 let symb_reg_name = function
   | Symbolic_reg r -> Some r
@@ -165,7 +165,7 @@ let all_kinds_of_barriers = [Sync;]
 let pp_barrier = function
   | Sync -> "Sync"
 
-let barrier_compare = Pervasives.compare
+let barrier_compare = Stdlib.compare
 
 (****************)
 (* Instructions *)
@@ -175,7 +175,7 @@ type label = Label.t
 
 type instruction =
   [
-    (* #include "build_isa_models/riscv/gen/ast.hgen" *)
+    (* #include "gen_files/riscv/ast.hgen" *)
     | `RISCVJALLabel of label * reg
     | `RISCVBTypeLabel of label * reg * reg * riscvBop
   ]
@@ -188,7 +188,7 @@ let pp_label label = label
 
 let instruction_printer (pp_label : string -> string) (instruction : instruction) : string  =
   begin match instruction with
-  (* #include "build_isa_models/riscv/gen/pretty.hgen" *)
+  (* #include "gen_files/riscv/pretty.hgen" *)
     | `RISCVJALLabel (l, rs)
       -> sprintf "jal %s, %s"  (pp_reg rs) (pp_label l)
     | `RISCVBTypeLabel (l, rs2, rs1, op)
@@ -208,7 +208,7 @@ let pp_instruction_to_xml (instruction : instruction) : string  =
 
   let (tag, atts) =
     begin match instruction with
-    (* #include "build_isa_models/riscv/gen/pretty_xml.hgen" *)
+    (* #include "gen_files/riscv/pretty_xml.hgen" *)
     | `RISCVJALLabel (l, rd) ->
         ("op_jal",
           [ ("label", l);
@@ -255,7 +255,7 @@ let fold_regs (f_reg, f_sreg) =
 
   fun (y_reg, y_sreg as c) ins ->
     match ins with
-    (* #include "build_isa_models/riscv/gen/fold.hgen" *)
+    (* #include "gen_files/riscv/fold.hgen" *)
     | `RISCVJALLabel   (_, rs) -> fold_reg rs c
     | `RISCVBTypeLabel (_, rs2, rs1, _) -> fold_reg rs2 (fold_reg rs1 c)
     | _ -> c
@@ -271,7 +271,7 @@ let map_regs f_reg f_symb =
 
   fun ins ->
     match ins with
-    (* #include "build_isa_models/riscv/gen/map.hgen" *)
+    (* #include "gen_files/riscv/map.hgen" *)
     | `RISCVJALLabel (l, rs)             -> `RISCVJALLabel (l, map_reg rs)
     | `RISCVBTypeLabel (l, rs2, rs1, op) -> `RISCVBTypeLabel (l, map_reg rs2, map_reg rs1, op)
     | _ -> ins
@@ -314,4 +314,4 @@ include Pseudo.Make
 
 let get_macro _name = raise Not_found
 
-(* #include "build_isa_models/riscv/gen/token_types.hgen" *)
+(* #include "gen_files/riscv/token_types.hgen" *)

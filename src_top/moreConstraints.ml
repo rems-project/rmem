@@ -48,7 +48,7 @@ module type S = sig
 
   val big_num_to_int64 : Nat_big_num.num -> int64
   val big_num_to_value : Nat_big_num.num -> value
-  val interp_address_to_address : Sail_impl_base.address -> address
+  val sail_address_to_address : Sail_impl_base.address -> address
 
   val pp_atom : symbol_table -> (location, int64) ConstrGen.atom -> string
 
@@ -102,7 +102,7 @@ module Make : S =
 
     let big_num_to_value : Nat_big_num.num -> value = big_num_to_int64
 
-    let interp_address_to_address (a: Sail_impl_base.address) : address =
+    let sail_address_to_address (a: Sail_impl_base.address) : address =
       Sail_impl_base.integer_of_address a |> big_num_to_int64
 
 

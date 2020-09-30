@@ -29,7 +29,6 @@
 
 open Printf
 
-open Interp_interface
 open Sail_impl_base
 open Utils
 open Events
@@ -51,9 +50,6 @@ open Types
 open Model_aux
 
 open Globals
-
-(*open Printing_functions *)  (* the interpreter printing functions *)
-
 
 
 let init_thread = Globals.init_thread
@@ -835,14 +831,14 @@ let pp_reg m r =
 
 let pp_ppcgen_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: Power_embed_types.ast0)
+      (inst: Power_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let i = PPCGenTransSail.shallow_ast_to_herdtools_ast inst in
   PPCGenBase.pp_instruction (PPMode.Ascii) i
 
 let pp_aarch64_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: ArmV8_embed_types.ast1)
+      (inst: ArmV8_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let (i': AArch64HGenBase.instruction) =
     if !Globals.aarch64gen then
@@ -857,7 +853,7 @@ let pp_aarch64_instruction m
 
 let pp_mips_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: Mips_embed_types.ast2)
+      (inst: Mips_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let (i': MIPSHGenBase.instruction) =
     (MIPSHGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
@@ -897,7 +893,7 @@ let pp_riscv_instruction m
 
 let pp_x86_instruction m
       (symbol_table: ((address * size) * string) list)
-      (inst: X86_embed_types.ast3)
+      (inst: X86_embed_types.ast)
       (program_loc: Sail_impl_base.address) =
   let (i': X86HGenBase.instruction) =
     (X86HGenTransSail.labelize_ins (lookup_symbol symbol_table) program_loc)
@@ -921,37 +917,37 @@ let pp_instruction
   | Fetched ast -> sprintf "fetched %s" (pp_instruction_ast m symbol_table ast program_loc)
   end
 
-let pp_instruction_state
-      indent (m:Globals.ppmode)
-      (instruction_state_pp : unit -> (string * string)) =
-  Printing_functions.set_interp_ppmode
-    (match m.Globals.pp_kind with
-    | Ascii | Hash -> Printing_functions.Interp_ascii
-    | Latex -> Printing_functions.Interp_latex
-    | Html -> Printing_functions.Interp_html);
-
-  let ((instruction_stack_to_string_output : string),
-       (local_variables_to_string_output : string)) =
-    instruction_state_pp () in
-
-(*  let s = Printing_functions.top_instruction_state_to_string is in*)
-  let s = instruction_stack_to_string_output in
-  let ss = split "\n" s in
-
-  let ss =
-    if false (*not(m.pp_screenshot)*) then ss else
-    begin match ss with
-    | "{" :: ss' ->
-        begin match List.rev ss' with
-        | "}" :: ss' -> List.rev ss'
-        | _ -> ss
-        end
-    | _ -> ss
-    end
-  in
-
-  String.concat "" (List.map (fun s -> indent ^ "| " ^ colour_sail m s ^ "\n") ss)
-  ^ indent ^ "Env: " ^ local_variables_to_string_output ^ " \n"
+(* let pp_instruction_state
+ *       indent (m:Globals.ppmode)
+ *       (instruction_state_pp : unit -> (string * string)) =
+ *   Printing_functions.set_interp_ppmode
+ *     (match m.Globals.pp_kind with
+ *     | Ascii | Hash -> Printing_functions.Interp_ascii
+ *     | Latex -> Printing_functions.Interp_latex
+ *     | Html -> Printing_functions.Interp_html);
+ * 
+ *   let ((instruction_stack_to_string_output : string),
+ *        (local_variables_to_string_output : string)) =
+ *     instruction_state_pp () in
+ * 
+ * (\*  let s = Printing_functions.top_instruction_state_to_string is in*\)
+ *   let s = instruction_stack_to_string_output in
+ *   let ss = split "\n" s in
+ * 
+ *   let ss =
+ *     if false (\*not(m.pp_screenshot)*\) then ss else
+ *     begin match ss with
+ *     | "{" :: ss' ->
+ *         begin match List.rev ss' with
+ *         | "}" :: ss' -> List.rev ss'
+ *         | _ -> ss
+ *         end
+ *     | _ -> ss
+ *     end
+ *   in
+ * 
+ *   String.concat "" (List.map (fun s -> indent ^ "| " ^ colour_sail m s ^ "\n") ss)
+ *   ^ indent ^ "Env: " ^ local_variables_to_string_output ^ " \n" *)
 
 let pp_bool m b =
   match b with  (* TODO should use k pp to match her output? not sure*)
@@ -960,14 +956,10 @@ let pp_bool m b =
 
 
 let pp_decode_error pp_instruction_ast m de addr = match de with
-  | Unsupported_instruction_error0 (_opcode, (i: 'i)) ->
+  | Unsupported_instruction_error (_opcode, (i: 'i)) ->
      sprintf "Unsupported instruction (%s)" (pp_instruction_ast m m.pp_symbol_table i addr)
-  | Not_an_instruction_error0 (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
+  | Not_an_instruction_error (op:opcode) -> sprintf "Not an instruction (value: %s)" (pp_opcode m op)
   | Internal_decode_error (s:string) -> "Internal error "^s
-
-(* TODO: need to feed in a pp mode (part of m) into the
-interpreter code so that special characters can be printed in
-Ascii/Latex/HTML form *)
 
 (* let pp_hash = "#" *)
 (* (\* m = match m with *\) *)
@@ -1676,7 +1668,7 @@ let pp_t_only_label pp_instruction_ast ?(graph=false) m tl =
       ("register write", Some info)
 
   | T_internal_outcome ->
-      ("interpreter", None)
+      ("sail-internal outcome", None)
 
   | T_pending_memory_read_request ->
       ("initiate memory reads of load instruction", None)
@@ -2060,7 +2052,7 @@ let pp_pt_thread_start_trans ?(graph=false) m (tid,ioid) (rv,mrv) mtid' =
 
 
 
-let pp_p_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss,PromisingViews.t0) p_trans) =
+let pp_p_trans pp_instruction_ast ?(graph=false) m (t: ('i,'ts,'ss,PromisingViews.t) p_trans) =
   match t with
   | PT t -> pp_pt_trans pp_instruction_ast ~graph m t
   (* | PSys_thread_start ((tid,ioid), (rv,mrv), tid', _) ->
@@ -2620,40 +2612,40 @@ let pp_micro_op_state_top pp_instruction_ast indent ioid m mos =
     | MOS_pending_exception exception_type ->
         "MOS_pending_exception " ^ (pp_exception pp_instruction_ast m ioid exception_type)
 
-let pp_outcome_S indent m is =
-  begin match is with
-  | (_, Some (instruction_state_pp, _)) -> "\n" ^ pp_instruction_state indent m instruction_state_pp
-  | (o, None) ->
+let pp_outcome indent m o =
+  (* begin match is with
+   * | (_, Some (instruction_state_pp, _)) -> "\n" ^ pp_instruction_state indent m instruction_state_pp
+   * | (o, None) -> *)
       " " ^
       begin match o with
       (* these are special outcomes that we abuse instead of adding new effect kinds *)
-      | Read_reg ((Reg ("TMStartEffect", 63, 64, D_decreasing)), _) ->
+      | O_Read_reg ((Reg ("TMStartEffect", 63, 64, D_decreasing)), _) ->
           "TMStartEffect"
-      | Write_reg ((Reg ("TMAbortEffect", 63, 64, D_decreasing), _), _) ->
+      | O_Write_reg ((Reg ("TMAbortEffect", 63, 64, D_decreasing), _), _) ->
           "TMAbortEffect"
-      | Barrier (Barrier_TM_COMMIT, _) ->
+      | O_Barrier (Barrier_TM_COMMIT, _) ->
           "TMCommitEffect"
 
       (* normal outcomes *)
-      | Read_mem _        -> "Read_mem"
-      | Write_ea _        -> "Write_ea"
-      | Write_memv _      -> "Write_memv"
-      | Excl_res _        -> "Excl_res"
-      | Barrier _         -> "Barrier"
-      | Read_reg _        -> "Read_reg"
-      | Write_reg _       -> "Write_reg"
-      | Internal _        -> "Internal"
-      | Footprint _       -> "Footprint"
-      | Done ()           -> "Done ()"
+      | O_Read_mem _        -> "Read_mem"
+      | O_Write_ea _        -> "Write_ea"
+      | O_Write_memv _      -> "Write_memv"
+      | O_Excl_res _        -> "Excl_res"
+      | O_Barrier _         -> "Barrier"
+      | O_Read_reg _        -> "Read_reg"
+      | O_Write_reg _       -> "Write_reg"
+      | O_Internal _        -> "Internal"
+      | O_Footprint _       -> "Footprint"
+      | O_Done ()           -> "Done ()"
 
-      | Escape (Some msg) -> "Escape: " ^ msg
-      | Escape None       -> "Escape"
-      | Error msg         -> "Error: " ^ msg
-      | Fail (Some msg)   -> "Fail: " ^ msg
-      | Fail None         -> "Fail"
+      | O_Escape (Some msg) -> "Escape: " ^ msg
+      | O_Escape None       -> "Escape"
+      | O_Error msg         -> "Error: " ^ msg
+      | O_Fail (Some msg)   -> "Fail: " ^ msg
+      | O_Fail None         -> "Fail"
       end
       ^ "\n"
-  end
+  (* end *)
 
 
 let pp_micro_op_state_body pp_instruction_ast indent addr ioid subreads potential_writes m mos =
@@ -2669,8 +2661,8 @@ let pp_micro_op_state_body pp_instruction_ast indent addr ioid subreads potentia
       in
       let fetch_info = pp_fetched pp_instruction_ast ~graph:false m addr ioid f in
       sprintf "MOS-fetch %s %s" fetched_type fetch_info
-  | MOS_plain is -> pp_outcome_S indent m is
-  | MOS_wait_IC is  -> pp_outcome_S indent m is
+  | MOS_plain is -> pp_outcome indent m is
+  | MOS_wait_IC is  -> pp_outcome indent m is
 
   | MOS_pending_mem_read ic ->
       "\n"

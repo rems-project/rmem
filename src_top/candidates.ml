@@ -309,7 +309,7 @@ let pp_axiomatic_candidate_execution' chan m0 c =
            (f sorted_instructions 0)) in
     (ppd_thread_horiz,ppd_thread_vert,adjacencies) in
 
-  let threads = List.sort (Pervasives.compare) (pset_to_list c.ace_threads) in
+  let threads = List.sort (Stdlib.compare) (pset_to_list c.ace_threads) in
   let ppd_threads0 = List.map pp_instructions_of_thread threads in
 
   let adjacencies = List.flatten (List.map (function (ppd1,ppd2,adj)->adj) ppd_threads0) in
@@ -742,11 +742,11 @@ let ppg_axiomatic_calc_2 m ac legend =
   let first_event_of_instruction i = let (e1,_,_) = first_and_last_event_of_instruction i in e1 in
   let second_event_of_instruction i = let (_,e1,_) = first_and_last_event_of_instruction i in e1 in
 
-  let instructions_of_tid tid = List.sort (fun i1 i2 -> Pervasives.compare (ioid_of_axiomatic_instruction i1) (ioid_of_axiomatic_instruction i2)) (List.filter (function i -> thread_of_axiomatic_instruction i = tid) (pset_to_list ac.ac_ace.ace_instructions)) in
+  let instructions_of_tid tid = List.sort (fun i1 i2 -> Stdlib.compare (ioid_of_axiomatic_instruction i1) (ioid_of_axiomatic_instruction i2)) (List.filter (function i -> thread_of_axiomatic_instruction i = tid) (pset_to_list ac.ac_ace.ace_instructions)) in
 
   let first_instruction_of_thread tid = List.hd (instructions_of_tid tid) in
 
-  let threads = (*List.rev*) (List.sort (Pervasives.compare) (pset_to_list ac.ac_ace.ace_threads)) in
+  let threads = (*List.rev*) (List.sort (Stdlib.compare) (pset_to_list ac.ac_ace.ace_threads)) in
 
   let thread_pairs = let rec f tids = match tids with | tid::tid'::tids' -> (tid,tid'):: f (tid'::tids') | [_] -> [] | [] -> [] in f threads in
 
@@ -1201,7 +1201,7 @@ let eval_instr ihere instrs ts sc s =
     | _ -> (ibeh,reads,constrs)
   in 
   let (fully_evaluated,reads,constrs) = 
-    evaluate_behaviour ihere.behaviour.remaining (Pset.empty Pervasives.compare) ctrue in
+    evaluate_behaviour ihere.behaviour.remaining (Pset.empty Stdlib.compare) ctrue in
   let ev_behaviour = {ihere.behaviour with remaining = fully_evaluated} in
   let action = 
     if Pset.cardinal reads > 0 then 
@@ -1224,7 +1224,7 @@ let rec eval_instrs ihere instrs ts sc s =
       (fun i k -> 
         match i.prev with 
         | Some (ioid,rb) -> if ioid = ihere.instance_ioid then Pset.add (i,rb) k else k 
-        | _ -> k) instrs (Pset.empty (fun (i1,rb1) (i2,rb2) -> Pervasives.compare i1.instance_ioid i2.instance_ioid)) in
+        | _ -> k) instrs (Pset.empty (fun (i1,rb1) (i2,rb2) -> Stdlib.compare i1.instance_ioid i2.instance_ioid)) in
   if will_cond_branch ihere.behaviour
   then
     let vbranch = Pset.choose (cond_branch_on_values ihere.behaviour) in
@@ -1234,14 +1234,14 @@ let rec eval_instrs ihere instrs ts sc s =
         | IfZero v -> Pset.add (v,i) k
         | _ -> k) nexts 
         (Pset.empty (fun (v1,i1) (v2,i2) -> 
-          Pervasives.compare (v1,i1.instance_ioid) (v2,i2.instance_ioid))) in
+          Stdlib.compare (v1,i1.instance_ioid) (v2,i2.instance_ioid))) in
     let ifnonzero = 
       Pset.fold 
         (fun (i,rb) k -> match rb with
         | IfNonZero v -> Pset.add (v,i) k
         | _ -> k) nexts 
         (Pset.empty (fun (v1,i1) (v2,i2) ->
-          Pervasives.compare (v1,i1.instance_ioid) (v2,i2.instance_ioid))) in
+          Stdlib.compare (v1,i1.instance_ioid) (v2,i2.instance_ioid))) in
     let s_ifzerosuccs =
       if Pset.cardinal ifzero > 0 then 
         Pset.fold 
@@ -1373,12 +1373,12 @@ let ii_reln_to_ax_inst_reln r axinstrs =
       try 
         Pset.add (find_ax_inst_of_ii ii1 axinstrs,find_ax_inst_of_ii ii2 axinstrs) k
       with Not_found -> k)
-    r (Pset.empty Pervasives.compare)
+    r (Pset.empty Stdlib.compare)
 
 let execution_result_to_axiomatic_candidate_execution st res =
   let ace0 = 
     { ace_threads = st.storage_subsystem.threads;
-      ace_instructions = Pset.from_list Pervasives.compare res.instructions;
+      ace_instructions = Pset.from_list Stdlib.compare res.instructions;
       ace_ins_source = res.ins_source;
       ace_initial_memory_state = st.storage_subsystem.writes_seen;
       ace_initial_register_state = 
@@ -1389,23 +1389,23 @@ let execution_result_to_axiomatic_candidate_execution st res =
           fun tid' r' ->
             if tid = tid' && r = r' then Some v else k tid' r')
         res.final_regs (fun tid r -> None);
-      ace_po = Pset.from_list Pervasives.compare res.po;
-      ace_rf = Pset.from_list Pervasives.compare res.rf;
-      ace_rf_init = Pset.from_list Pervasives.compare res.rf_init;
-      ace_co = Pset.from_list Pervasives.compare res.co;
+      ace_po = Pset.from_list Stdlib.compare res.po;
+      ace_rf = Pset.from_list Stdlib.compare res.rf;
+      ace_rf_init = Pset.from_list Stdlib.compare res.rf_init;
+      ace_co = Pset.from_list Stdlib.compare res.co;
       ace_datadep = Pset.fold
         (fun tid k ->
           Pset.union (ii_reln_to_ax_inst_reln (datadep_reln_of (Globals.get_our_runopts ()).Globals.model_params.t (st.thread_states tid)) res.instructions) k)
-        (st.storage_subsystem.threads) (Pset.empty Pervasives.compare);
+        (st.storage_subsystem.threads) (Pset.empty Stdlib.compare);
       ace_addrdep = Pset.fold
         (fun tid k ->
           Pset.union (ii_reln_to_ax_inst_reln (addrdep_reln_of (Globals.get_our_runopts ()).Globals.model_params.t (st.thread_states tid)) res.instructions) k)
-        (st.storage_subsystem.threads) (Pset.empty Pervasives.compare);
+        (st.storage_subsystem.threads) (Pset.empty Stdlib.compare);
       ace_ctrldep = Pset.fold
         (fun tid k ->
           Pset.union (ii_reln_to_ax_inst_reln (ctrldep_reln_of (Globals.get_our_runopts ()).Globals.model_params.t (st.thread_states tid)) res.instructions) k)
-        (st.storage_subsystem.threads) (Pset.empty Pervasives.compare);
-(*    MDA.events = Pset.from_list Pervasives.compare
+        (st.storage_subsystem.threads) (Pset.empty Stdlib.compare);
+(*    MDA.events = Pset.from_list Stdlib.compare
       (List.map (fun i -> instruction_to_axiomatic_event i res.rf) res.instructions);*)
     } in
   MachineDefAxiomaticCore.de_other ace0
@@ -1560,7 +1560,7 @@ let read_mmexplorer chan =
       else do_rec () in
   let xs = do_rec () in
   let xs =
-    List.sort (fun (x1,_) (x2,_) -> Pervasives.compare x1 x2) xs in
+    List.sort (fun (x1,_) (x2,_) -> Stdlib.compare x1 x2) xs in
   List.map snd xs
 
 let fork_smt tmp =

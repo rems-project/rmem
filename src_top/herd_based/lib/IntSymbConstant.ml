@@ -17,7 +17,7 @@
 module IntScalar = struct
   type t = int
 
-  let compare (i:int) (j:int) = Pervasives.compare i j
+  let compare (i:int) (j:int) = Stdlib.compare i j
   let of_int i = i
   let pp hexa i = Printf.sprintf (if hexa then "0x%x" else "%i") i    
 end

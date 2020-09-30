@@ -23,7 +23,7 @@ let instruction_table = Hashtbl.create 300
 let () =
   List.iter (fun (kwd, tok) -> Hashtbl.add instruction_table kwd tok)
   [
-  (* #include "build_isa_models/x86/gen/lexer_intel.hgen" *)
+  (* #include "gen_files/x86/lexer_intel.hgen" *)
   ]
 }
 
