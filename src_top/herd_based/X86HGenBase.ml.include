@@ -409,14 +409,14 @@ let pp_x86Rm (sz, rm) =
   | Mem (Some (scale, idx), RegBase r, i) ->
       pp_displacement i ^ pp_size_reg sz r ^ "," ^ pp_size_reg sz idx ^ "," ^
       string_of_int scale ^ ")"
-  | Sym (s) -> "[" ^ s ^ "]"
+  | Sym (s) -> "(" ^ s ^ ")"
   | Mem _ -> "!! bad address !!"
 
 let pp_x86Dest_src (sz, ds) =
    match ds with
    | R_rm (r, rm) -> pp_x86Rm (sz, rm) ^ ", " ^ pp_size_reg sz r
    | Rm_r (rm, r) -> pp_size_reg sz r ^ ", " ^ pp_x86Rm (sz, rm)
-   | Rm_i (rm, i) -> bit64_to_string i ^ ", " ^ pp_x86Rm (sz, rm)
+   | Rm_i (rm, i) -> "$" ^ bit64_to_string i ^ ", " ^ pp_x86Rm (sz, rm)
 
 let pp_x86Bit_offset (sz, bo) =
   match bo with
