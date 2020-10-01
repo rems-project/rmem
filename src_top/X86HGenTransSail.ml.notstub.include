@@ -144,6 +144,39 @@ let trans_out_reg flv =
   | _  -> failwith "trans_out_reg number not 0 to 15"
 
 
+(* sneakily reuse map.hgen to find Sym address we need to resolve syms *)
+let sym_ins lookup_symbol =
+  let map_reg reg = reg in
+  let map_rm rm =
+    match rm with
+    | X86HGenBase.Mem (None, X86HGenBase.NoBase, addr) ->
+      let addr = Sail_impl_base.address_of_integer addr in
+      begin match lookup_symbol addr with
+      | None -> rm
+      | Some s -> X86HGenBase.Sym s
+      end
+    | _     -> rm
+  in
+  let map_dest_src ds =
+    match ds with
+    | X86HGenBase.R_rm (r, rm) -> X86HGenBase.R_rm (map_reg r, map_rm rm)
+    | X86HGenBase.Rm_i (rm, i) -> X86HGenBase.Rm_i (map_rm rm, i)
+    | X86HGenBase.Rm_r (rm, r) -> X86HGenBase.Rm_r (map_rm rm, map_reg r)
+  in
+  let map_imm_rm irm =
+    match irm with
+    | X86HGenBase.Imm i -> irm
+    | X86HGenBase.Rm rm -> X86HGenBase.Rm (map_rm rm)
+  in
+  let map_bit_offset bo =
+    match bo with
+    | X86HGenBase.Bit_rm_imm (rm, imm) -> X86HGenBase.Bit_rm_imm (map_rm rm, imm)
+    | X86HGenBase.Bit_rm_r (rm, r)     -> X86HGenBase.Bit_rm_r (map_rm rm, map_reg r)
+  in
+  fun ins ->
+    match ins with
+    (* #include "gen_files/x86/map.hgen" *)
+    | _ -> ins
 
     
 let labelize_ins
@@ -163,5 +196,5 @@ let labelize_ins
      | None -> ins
      | Some l -> `X86JCCLABEL (c, l)
      end
-  | ins -> ins
+  | _ -> sym_ins lookup_symbol ins
   end
