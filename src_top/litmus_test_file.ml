@@ -677,8 +677,7 @@ let read_channel
 
     | (X86, TSO_storage_model, TSO_thread_model)
     | (X86, Flat_storage_model, Relaxed_thread_model) ->
-        begin match List.assoc "Syntax" test_splitted.Splitter.info with
-        | "gas" ->
+        let gas () =
             Globals.x86syntax := Some X86_gas;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseGas) in
             let module ISA = X86_ISA in
@@ -690,8 +689,9 @@ let read_channel
                let initial_state_record_maker = initial_state_record test ISA.isa
                let info = make_info test
                module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
-             end))
-        | "intel" ->
+             end : Test_file.ConcModel_Info_Init))
+        in
+        let intel () =
             Globals.x86syntax := Some X86_intel;
             let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
             let module ISA = X86_ISA in
@@ -703,23 +703,15 @@ let read_channel
                let initial_state_record_maker = initial_state_record test ISA.isa
                let info = make_info test
                module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
-             end))
+            end : Test_file.ConcModel_Info_Init))
+        in
+        begin match List.assoc "Syntax" test_splitted.Splitter.info with
+        | "gas" -> gas ()
+        | "intel" -> intel ()
         | _ ->
             Printf.eprintf "Unknown x86 Syntax (expected 'gas' or 'intel')\n";
             exit 1
-        | exception Not_found -> (* intel by default *)
-            Globals.x86syntax := Some X86_intel;
-            let module Parser = Make_litmus_parser(X86HGen)(X86HGenTransSail)(X86HGenLexParseIntel) in
-            let module ISA = X86_ISA in
-            let test = Parser.parse in_chan test_splitted in
-            let info = make_info test in
-            let module SS = (val (Machine_concurrency_model.get_SS_model params.ss.ss_model)) in
-            (do_graph_init test info, (module struct
-               type instruction_ast = ISA.instruction_ast
-               let initial_state_record_maker = initial_state_record test ISA.isa
-               let info = make_info test
-               module ConcModel = Machine_concurrency_model.Make(ISA)(SS)
-             end))
+        | exception Not_found -> gas () (* gas by default *)
         end
     | _ ->
         Printf.eprintf "Unsupported model and architecture configuration\n";
