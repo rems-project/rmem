@@ -19,7 +19,7 @@
 | `X86LOOP (cnd, i) -> "loop" ^ pp_x86Cond cnd ^ " " ^ bit64_to_string i
 | `X86MFENCE -> "mfence"
 | `X86MONOP (locked, mop, sz, rm) ->
-    pp_x86Monop mop ^ pp_x86Size sz ^ " " ^ pp_x86Rm (sz, rm)
+    pp_locked locked ^ pp_x86Monop mop ^ pp_x86Size sz ^ " " ^ pp_x86Rm (sz, rm)
 | `X86MOV (X86ALWAYS, sz, dst_src) ->
     "mov" ^ pp_x86Size sz ^ " " ^ pp_x86Dest_src (sz, dst_src)
 | `X86MOV (cnd, sz, dst_src) ->
