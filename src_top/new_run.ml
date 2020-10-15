@@ -982,14 +982,6 @@ let search_from_state
   =
   let started_timestamp = Sys.time () |> int_of_float in
 
-  (* FIXME: (SF) The interpreter PP is not complete and might cause different
-  state hash to compare as equal *)
-  if options.hash_prune &&
-    not (options.eager_mode.eager_pseudocode_internal ||
-          (ConcModel.model_params system_state).ss.ss_model = Promising_storage_model)
-  then
-    raise (BadSearchOptions "hash_prune is not safe without eager_pseudocode_internal");
-
   if options.prune_discards &&
       (ConcModel.model_params system_state).t.thread_allow_tree_speculation
   then
