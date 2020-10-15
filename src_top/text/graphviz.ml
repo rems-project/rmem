@@ -111,7 +111,7 @@ module Make (ConcModel: Concurrency_model.S)
     | Some RD_final
     | Some RD_final_ok
     | Some RD_final_not_ok
-      -> exit 0
+      -> raise Misc.Exit
     | None
     | Some RD_step
       -> ()
