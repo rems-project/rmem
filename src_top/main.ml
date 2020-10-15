@@ -287,10 +287,6 @@ let opts = [
                         (* FIXME: (SF) high verbosity will affect performance *)
                         SO.verbosity := SO.Debug),
     " turn on performance debug");
-("-dont",
-    Arg.Unit (fun () -> quiet := true;
-                        Globals.dont_tool := true),
-    (Printf.sprintf " produce output suitable for the dont tool (%b)" !Globals.dont_tool));
 
 ("-pp_hex",
     Arg.Bool (fun b -> Globals.print_hex := b),
@@ -409,8 +405,12 @@ let opts = [
 
 (** deprecated ******************************************************)
 ("-auto",
-    Arg.Unit (fun () -> fatal_error "-auto was renamed to -dont"),
+    Arg.Unit (fun () -> fatal_error "-auto was renamed to -dont, and -dont was deprecated"),
     "");
+("-dont",
+    Arg.Unit (fun () -> fatal_error "-dont was deprecated"),
+    "");
+
 ("-follow_to",
     Arg.Unit (fun () -> fatal_error "-follow_to was deprecated"),
     "");
@@ -534,7 +534,6 @@ let main = fun () ->
   Pp.linebreak_init();
 
   if !SO.verbosity <> SO.Normal (* specially important for quiet mode as Luc's tools rely on this *)
-      && not !Globals.dont_tool
   then
     SO.Concat [
       SO.strLine "#Version: %s" Versions.Rmem.describe; (* TODO: do we want more info here? *)

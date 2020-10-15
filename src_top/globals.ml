@@ -41,8 +41,6 @@ let init_thread = 1000
 
 let logdir = ref None
 
-let dont_tool = ref false (* "Dont" output *)
-
 (** model options ***************************************************)
 
 (* model_params should probably not be changed after the initial state

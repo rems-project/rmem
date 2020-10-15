@@ -34,8 +34,6 @@
 
 val logdir: (string option) ref
 
-val dont_tool: bool ref (* "Dont" output *)
-
 val init_thread : int
 
 

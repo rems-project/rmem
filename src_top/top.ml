@@ -107,8 +107,7 @@ module Run_test (Test_file: Test_file.S) = struct
     in
 
     (* specially important for quiet mode as Luc's tools rely on this *)
-    if !Structured_output.verbosity <> Structured_output.Normal
-      && not !Globals.dont_tool then
+    if !Structured_output.verbosity <> Structured_output.Normal then
     begin
       Structured_output.strLine "#Endianness: %s" (Globals.pp_endianness ())
       |> Screen.show_message (Globals.get_ppmode ());

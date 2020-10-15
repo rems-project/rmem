@@ -2484,27 +2484,13 @@ let print_search_results interact_state search_state runtime : unit =
   in
 
   let test_info_output =
-    if !Globals.dont_tool then
-    begin
-      SO.Concat
-        (List.map
-          (fun (k, v) ->
-            if Misc.string_eq k "Relax" then
-              SO.strLine "Relax %s %s %s" interact_state.test_info.Test.name (if constraint_holds then "Ok" else "No") v
-            else
-              SO.strLine "%s=%s" k v)
-          interact_state.test_info.Test.info)
-    end
-    else
-    begin
-      SO.Concat
-        (Lem_list.mapMaybe
-          (fun (k, v) ->
-            if Misc.string_eq k "Hash" then
-              Some (SO.strLine "%s=%s" k v)
-            else None)
-          interact_state.test_info.Test.info)
-    end
+    SO.Concat
+      (Lem_list.mapMaybe
+         (fun (k, v) ->
+           if Misc.string_eq k "Hash" then
+             Some (SO.strLine "%s=%s" k v)
+           else None)
+         interact_state.test_info.Test.info)
   in
 
   let observation_output =
