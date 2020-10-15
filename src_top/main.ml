@@ -459,6 +459,8 @@ let main = fun () ->
   (* this ppmode is just for printing some messages, don't use it for anything else *)
   let ppmode = Globals.get_ppmode () in
 
+  if !run_options.RunOptions.interactive && not (Unix.isatty Unix.stdout) then
+    fatal_error "Output is not a terminal, '-interactive true' is not allowed.\n  Use '-interactive false'";
 
   if !should_list_isas then
     do_list_isas ();
