@@ -15,9 +15,9 @@ The tool provides both a stand-alone web-interface version (compiled to JavaScri
 
 rmem was developed as part of the
 [REMS project](https://www.cl.cam.ac.uk/~pes20/rems/), partly funded
-by the EPSRC Programme Grant "REMS: Rigorous Engineering for
-Mainstream Systems" (EP/K008528/1), ERC Advanced grant "ELVER"
-(2018-2023, ERC AdG 789108), EPSRC grant "C3: Scalable & Verified
+by ERC Advanced grant "ELVER"
+(2018-2023, ERC AdG 789108), the EPSRC Programme Grant "REMS: Rigorous Engineering for
+Mainstream Systems" (EP/K008528/1), EPSRC grant "C3: Scalable & Verified
 Shared Memory via Consistency-directed Cache Coherence"
 (EP/M027317/1), an ARM iCASE award (Pulte), an EPSRC IAA KTF (Gray),
 EPSRC Leadership Fellowship "Semantic Foundations for Real-World
@@ -44,7 +44,7 @@ The dependencies can be installed automatically as part of the rmem build proces
 In addition, a debian based Linux system also need the following packages:
 
 ``` shell
-$ sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
+sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
 ```
 
 
@@ -52,39 +52,45 @@ $ sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
 
 ``` shell
   # add the REMS opam repository containing some of rmem's dependencies:
-$ opam repository add rems https://github.com/rems-project/opam-repository.git
+opam repository add rems https://github.com/rems-project/opam-repository.git
   # The ulimit is to work around the problem of the OCaml compiler running
   # out of memory when processing the ISA semantics.
-$ ulimit -s 33000
-$ opam install rmem
+ulimit -s 33000
+opam install rmem
 ```
 
 
-## Building and running rmem with command-line interface, with opam from a github checkout
+## Building and running rmem with command-line interface, with opam, from a github checkout
 
 ``` shell
   # clone the repo:
 git clone git@github.com:rems-project/rmem.git
 cd rmem
   # add the REMS opam repository containing some of rmem's dependencies:
-$ opam repository add rems https://github.com/rems-project/opam-repository.git
+opam repository add rems https://github.com/rems-project/opam-repository.git
   # The ulimit is to work around the problem of the OCaml compiler running
   # out of memory when processing the ISA semantics.
-$ ulimit -s 33000
-$ opam install .
+ulimit -s 33000
+opam install .
 ```
 
 To rebuild and reinstall after local changes, run `opam upgrade --working-dir rmem`  (or `opam upgrade -w rmem`).
 
 
+## Building and running rmem with command-line interface, with `make`
 
 Alternatively, rmem can be built using `make` as follows:
 
 ``` shell
-$ opam repository add rems https://github.com/rems-project/opam-repository.git
-$ opam install --deps-only .
-$ ulimit -s 33000
-$ make MODE=opt 
+  # clone the repo:
+git clone git@github.com:rems-project/rmem.git
+cd rmem
+  # get rmem's opam dependencies
+opam repository add rems https://github.com/rems-project/opam-repository.git
+opam install --deps-only .
+  # build rmem
+ulimit -s 33000
+make MODE=opt 
 ```
 
 This will build a native rmem OCaml binary.
