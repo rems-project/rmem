@@ -47,17 +47,36 @@ In addition, a debian based Linux system also need the following packages:
 $ sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
 ```
 
-## Building and running rmem with command-line interface
+
+## Building and running rmem with command-line interface, with opam 
 
 ``` shell
   # add the REMS opam repository containing some of rmem's dependencies:
 $ opam repository add rems https://github.com/rems-project/opam-repository.git
-  # This is to work around the problem of the
-  # OCaml compiler running out of memory when processing the ISA
-  # semantics.
+  # The ulimit is to work around the problem of the OCaml compiler running
+  # out of memory when processing the ISA semantics.
+$ ulimit -s 33000
+$ opam install rmem
+```
+
+
+## Building and running rmem with command-line interface, with opam from a github checkout
+
+``` shell
+  # clone the repo:
+git clone git@github.com:rems-project/rmem.git
+cd rmem
+  # add the REMS opam repository containing some of rmem's dependencies:
+$ opam repository add rems https://github.com/rems-project/opam-repository.git
+  # The ulimit is to work around the problem of the OCaml compiler running
+  # out of memory when processing the ISA semantics.
 $ ulimit -s 33000
 $ opam install .
 ```
+
+To rebuild and reinstall after local changes, run `opam upgrade --working-dir rmem`  (or `opam upgrade -w rmem`).
+
+
 
 Alternatively, rmem can be built using `make` as follows:
 
@@ -90,9 +109,23 @@ The contributors to the rmem code are listed in the LICENCE.txt file
 
 ## The concurrency models and their contributors
 
-rmem is a successor to the ppcmem tool, originally developed to model the concurrency
-semantics of the IBM Power architecture in the "PLDI11" model, developed from 2009 onwards.  It has since been substantially extended and re-engineered, and it currently 
-includes several concurrency models:
+rmem is a successor to the ppcmem tool, originally developed to model
+the concurrency semantics of the IBM Power architecture in the
+"PLDI11" model, developed from 2009 onwards.  It has since been
+substantially extended and re-engineered, and it currently includes
+several concurrency models:
+
+- The Flat model for ARMv8 and RISC-V, principally by Christopher
+  Pulte and Shaked Flur, described in the paper and RISC-V architecture
+  manual below, and co-developed with the revised ARMv8-A axiomatic
+  model, principally by Will Deacon.
+
+	- [Simplifying ARM Concurrency: Multicopy-atomic Axiomatic and
+      Operational Models for
+      ARMv8.](https://www.cl.cam.ac.uk/~pes20/armv8-mca/) Christopher
+      Pulte, Shaked Flur, Will Deacon, Jon French, Susmit Sarkar, and
+      Peter Sewell. In POPL 2018.
+        - [The RISC-V Instruction Set Manual Volume I: Unprivileged ISA.](https://github.com/riscv/riscv-isa-manual/releases/download/draft-20181227-c6741cb/riscv-spec.pdf) Andrew Waterman and Krste Asanović, editors. December 2018. Document Version 20181221-Public-Review-draft. Contributors: Arvind, Krste Asanović, Rimas Avižienis, Jacob Bachmeyer, Christopher F. Batten, Allen J. Baum, Alex Bradbury, Scott Beamer, Preston Briggs, Christopher Celio, Chuanhua Chang, David Chisnall, Paul Clayton, Palmer Dabbelt, Roger Espasa, Shaked Flur, Stefan Freudenberger, Jan Gray, Michael Hamburg, John Hauser, David Horner, Bruce Hoult, Alexandre Joannou, Olof Johansson, Ben Keller, Yunsup Lee, Paul Loewenstein, Daniel Lustig, Yatin Manerkar, Luc Maranget, Margaret Martonosi, Joseph Myers, Vijayanand Nagarajan, Rishiyur Nikhil, Jonas Oberhauser, Stefan O'Rear, Albert Ou, John Ousterhout, David Patterson, Christopher Pulte, Jose Renau, Colin Schmidt, Peter Sewell, Susmit Sarkar, Michael Taylor, Wesley Terpstra, Matt Thomas, Tommy Thorn, Caroline Trippel, Ray VanDeWalker, Muralidaran Vijayaraghavan, Megan Wachs, Andrew Waterman, Robert Watson, Derek Williams, Andrew Wright, Reinoud Zandijk, and Sizhuo Zhang.
 
 - The PLDI11 Power model, principally by Susmit Sarkar and Peter
   Sewell, originally as described in the papers below, and adapted since.
@@ -116,16 +149,6 @@ includes several concurrency models:
       and ISA.](https://www.cl.cam.ac.uk/~sf502/popl16/index.html)
       Shaked Flur, Kathryn E. Gray, Christopher Pulte, Susmit Sarkar,
       Ali Sezgin, Luc Maranget, Will Deacon, and Peter Sewell. In POPL 2016.
-
-- The Flat model for ARMv8 and RISC-V, principally by Christopher
-  Pulte and Shaked Flur, described in the paper and RISC-V architecture manual below, and co-developed with the revised ARMv8-A axiomatic model, principally by Will Deacon.
-
-	- [Simplifying ARM Concurrency: Multicopy-atomic Axiomatic and
-      Operational Models for
-      ARMv8.](https://www.cl.cam.ac.uk/~pes20/armv8-mca/) Christopher
-      Pulte, Shaked Flur, Will Deacon, Jon French, Susmit Sarkar, and
-      Peter Sewell. In POPL 2018.
-  - [The RISC-V Instruction Set Manual Volume I: Unprivileged ISA.](https://github.com/riscv/riscv-isa-manual/releases/download/draft-20181227-c6741cb/riscv-spec.pdf) Andrew Waterman and Krste Asanović, editors. December 2018. Document Version 20181221-Public-Review-draft. Contributors: Arvind, Krste Asanović, Rimas Avižienis, Jacob Bachmeyer, Christopher F. Batten, Allen J. Baum, Alex Bradbury, Scott Beamer, Preston Briggs, Christopher Celio, Chuanhua Chang, David Chisnall, Paul Clayton, Palmer Dabbelt, Roger Espasa, Shaked Flur, Stefan Freudenberger, Jan Gray, Michael Hamburg, John Hauser, David Horner, Bruce Hoult, Alexandre Joannou, Olof Johansson, Ben Keller, Yunsup Lee, Paul Loewenstein, Daniel Lustig, Yatin Manerkar, Luc Maranget, Margaret Martonosi, Joseph Myers, Vijayanand Nagarajan, Rishiyur Nikhil, Jonas Oberhauser, Stefan O'Rear, Albert Ou, John Ousterhout, David Patterson, Christopher Pulte, Jose Renau, Colin Schmidt, Peter Sewell, Susmit Sarkar, Michael Taylor, Wesley Terpstra, Matt Thomas, Tommy Thorn, Caroline Trippel, Ray VanDeWalker, Muralidaran Vijayaraghavan, Megan Wachs, Andrew Waterman, Robert Watson, Derek Williams, Andrew Wright, Reinoud Zandijk, and Sizhuo Zhang.
 
 - Originally all these models and the tool assumed all memory accesses were aligned and of the same
   size. Mixed-size support was added by Shaked Flur, Susmit Sarkar,
