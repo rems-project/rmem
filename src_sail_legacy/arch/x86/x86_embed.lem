@@ -104,7 +104,7 @@ let ROL64 (v, shift) =
 let negative_to_zero x = if bitU_to_bool (lt (x, (0:ii))) then (0:ii) else x
 
 let GPRstr =
-  Vector ["RAX";"RCX";"RDX";"RBX";"RSP";"RBP";"RSI";"RDI";"R8";"R9";"R10";"R11";"R12";"R13";"R14";"R15"] 0 true
+  Vector ["rax";"rcx";"rdx";"rbx";"rsp";"rbp";"rsi";"rdi";"r8";"r9";"r10";"r11";"r12";"r13";"r14";"r15"] 0 true
 
 let rMEMl (locked, addr, size) =
   if bitU_to_bool locked
@@ -144,7 +144,7 @@ let drop i =
     read_reg RSP >>= fun w__0 ->
     write_reg RSP (add_VVV w__0 i)
 
-let all_flags_but_cf_of = [RFull "ZF";RFull "SF";RFull "PF";RFull "AF"]
+let all_flags_but_cf_of = [RFull "zf";RFull "sf";RFull "pf";RFull "af"]
 
 let write_PF w =
   write_reg PF (Vector [byte_parity (reset_vector_start (slice w (7:ii) (0:ii)))] 0 false)
@@ -268,7 +268,7 @@ let write_ZF (sz, w) =
 let regfp_base b =
   match b with
   | NoBase -> []
-  | RipBase -> [RFull "RIP"]
+  | RipBase -> [RFull "rip"]
   | RegBase (b) -> [RFull (access GPRstr b)]
   end
 
@@ -394,22 +394,22 @@ let bv_to_cond v =
 
 let regfp_cond c =
   match c with
-  | X86_A -> [RFull "ZF";RFull "CF"]
-  | X86_NB -> [RFull "CF"]
-  | X86_B -> [RFull "CF"]
-  | X86_NA -> [RFull "ZF";RFull "CF"]
-  | X86_E -> [RFull "ZF"]
-  | X86_G -> [RFull "OF";RFull "SF";RFull "ZF"]
-  | X86_NL -> [RFull "OF";RFull "SF"]
-  | X86_L -> [RFull "OF";RFull "SF"]
-  | X86_NG -> [RFull "OF";RFull "SF";RFull "ZF"]
-  | X86_NE -> [RFull "ZF"]
-  | X86_NO -> [RFull "OF"]
-  | X86_NP -> [RFull "PF"]
-  | X86_NS -> [RFull "SF"]
-  | X86_O -> [RFull "OF"]
-  | X86_P -> [RFull "PF"]
-  | X86_S -> [RFull "SF"]
+  | X86_A -> [RFull "zf";RFull "cf"]
+  | X86_NB -> [RFull "cf"]
+  | X86_B -> [RFull "cf"]
+  | X86_NA -> [RFull "zf";RFull "cf"]
+  | X86_E -> [RFull "zf"]
+  | X86_G -> [RFull "of";RFull "sf";RFull "zf"]
+  | X86_NL -> [RFull "of";RFull "sf"]
+  | X86_L -> [RFull "of";RFull "sf"]
+  | X86_NG -> [RFull "of";RFull "sf";RFull "zf"]
+  | X86_NE -> [RFull "zf"]
+  | X86_NO -> [RFull "of"]
+  | X86_NP -> [RFull "pf"]
+  | X86_NS -> [RFull "sf"]
+  | X86_O -> [RFull "of"]
+  | X86_P -> [RFull "pf"]
+  | X86_S -> [RFull "sf"]
   | X86_ALWAYS -> []
   end
 
@@ -492,7 +492,7 @@ let push_rip () =
   read_reg RIP >>= fun w__0 ->
   push_aux w__0
 
-let all_flags = [RFull "OF";RFull "CF"] ++ all_flags_but_cf_of
+let all_flags = [RFull "of";RFull "cf"] ++ all_flags_but_cf_of
 
 let ea_index index =
   match index with
@@ -803,7 +803,7 @@ let initial_analysis instr =
        end in
      let ik = ik' in
      let iR = iRs ++ iR in
-     let oR = (RFull "CF") :: (oRs ++ oR) in
+     let oR = (RFull "cf") :: (oRs ++ oR) in
      let aR = aRs ++ aR in
      return (Nias,ik,iR,oR,aR)
   | CALL (irm) ->
@@ -813,8 +813,8 @@ let initial_analysis instr =
        if bitU_to_bool m
        then IK_mem_rmw (Read_plain,Write_plain)
        else IK_mem_write Write_plain in
-     let iR = (RFull "RIP") :: (RFull "RSP") :: rs in
-     let oR = (RFull "RSP") :: oR in
+     let iR = (RFull "rip") :: (RFull "rsp") :: rs in
+     let oR = (RFull "rsp") :: oR in
      let aR = ars in
      match irm with
      | Rm (v) -> return (NIAFP_indirect_address)
@@ -825,33 +825,33 @@ let initial_analysis instr =
      let Nias = w__1 :: Nias in
      return (Nias,ik,iR,oR,aR)
   | CLC ->
-     let oR = (RFull "CF") :: oR in
+     let oR = (RFull "cf") :: oR in
      return (Nias,ik,iR,oR,aR)
   | CMC ->
-     let iR = (RFull "CF") :: iR in
-     let oR = (RFull "CF") :: oR in
+     let iR = (RFull "cf") :: iR in
+     let oR = (RFull "cf") :: oR in
      return (Nias,ik,iR,oR,aR)
   | CMPXCHG (locked,sz,r_m,reg) ->
      let rk = if bitU_to_bool locked then Read_X86_locked else Read_plain in
      let wk = if bitU_to_bool locked then Write_X86_locked else Write_plain in
      let (m, rs, aRs) = match (regfp_rm r_m) with | (v13v', v14v', v15v') -> (v13v',v14v',v15v') end in
      let ik = if bitU_to_bool m then IK_mem_rmw (rk,wk) else IK_simple in
-     let iR = (RFull "RAX") :: (RFull (access GPRstr reg)) :: (rs ++ aRs) in
-     let oR = (RFull "RAX") :: ((regfp_binop_flags X86_Cmp) ++ rs) in
+     let iR = (RFull "rax") :: (RFull (access GPRstr reg)) :: (rs ++ aRs) in
+     let oR = (RFull "rax") :: ((regfp_binop_flags X86_Cmp) ++ rs) in
      let aR = aRs in
      return (Nias,ik,iR,oR,aR)
   | X86_DIV (sz,r_m) ->
      let (m, rs, ars) = match (regfp_rm r_m) with | (v16v', v17v', v18v') -> (v16v',v17v',v18v') end in
      let ik = if bitU_to_bool m then IK_mem_read Read_plain else IK_simple in
-     let iR = (RFull "RAX") :: (RFull "RDX") :: (rs ++ ars) in
-     let oR = (RFull "RAX") :: (RFull "RDX") :: (oR ++ all_flags) in
+     let iR = (RFull "rax") :: (RFull "rdx") :: (rs ++ ars) in
+     let oR = (RFull "rax") :: (RFull "rdx") :: (oR ++ all_flags) in
      let aR = ars in
      return (Nias,ik,iR,oR,aR)
   | HLT -> return (Nias,ik,iR,oR,aR)
   | Jcc (c,imm64) ->
      let flags = regfp_cond c in
      let ik = IK_branch in
-     let iR = (RFull "RIP") :: flags in
+     let iR = (RFull "rip") :: flags in
      read_reg RIP >>= fun w__2 ->
      let Nias =
        (NIAFP_concrete_address (reset_vector_start (set_vector_start 0 (add_VVV w__2 imm64)))) ::
@@ -860,7 +860,7 @@ let initial_analysis instr =
   | JMP (r_m) ->
      let (m, rs, ars) = match (regfp_rm r_m) with | (v19v', v20v', v21v') -> (v19v',v20v',v21v') end in
      let ik = if bitU_to_bool m then IK_mem_read Read_plain else IK_simple in
-     let iR = (RFull "RIP") :: (rs ++ ars) in
+     let iR = (RFull "rip") :: (rs ++ ars) in
      let aR = ars in
      let Nias = (NIAFP_indirect_address) :: Nias in
      return (Nias,ik,iR,oR,aR)
@@ -875,15 +875,15 @@ let initial_analysis instr =
      return (Nias,ik,iR,oR,aR)
   | LEAVE ->
      let ik = IK_mem_read Read_plain in
-     let iR = (RFull "RBP") :: iR in
-     let oR = (RFull "RBP") :: (RFull "RSP") :: oR in
-     let aR = (RFull "RBP") :: aR in
+     let iR = (RFull "rbp") :: iR in
+     let oR = (RFull "rbp") :: (RFull "rsp") :: oR in
+     let aR = (RFull "rbp") :: aR in
      return (Nias,ik,iR,oR,aR)
   | LOOP (c,imm64) ->
      let flags = regfp_cond c in
      let ik = IK_branch in
-     let iR = (RFull "RCX") :: flags in
-     let oR = (RFull "RCX") :: oR in
+     let iR = (RFull "rcx") :: flags in
+     let oR = (RFull "rcx") :: oR in
      read_reg RIP >>= fun w__3 ->
      let Nias =
        (NIAFP_concrete_address (reset_vector_start (set_vector_start 0 (add_VVV w__3 imm64)))) ::
@@ -936,8 +936,8 @@ let initial_analysis instr =
   | X86_MUL (sz,r_m) ->
      let (m, rs, ars) = match (regfp_rm r_m) with | (v41v', v42v', v43v') -> (v41v',v42v',v43v') end in
      let ik = if bitU_to_bool m then IK_mem_read Read_plain else IK_simple in
-     let iR = (RFull "RAX") :: (rs ++ ars) in
-     let oR = (RFull "RAX") :: (RFull "RDX") :: (oR ++ all_flags) in
+     let iR = (RFull "rax") :: (rs ++ ars) in
+     let oR = (RFull "rax") :: (RFull "rdx") :: (oR ++ all_flags) in
      let aR = ars in
      return (Nias,ik,iR,oR,aR)
   | X86_NOP (_) -> return (Nias,ik,iR,oR,aR)
@@ -947,9 +947,9 @@ let initial_analysis instr =
        if bitU_to_bool m
        then IK_mem_rmw (Read_plain,Write_plain)
        else IK_mem_write Write_plain in
-     let iR = (RFull "RSP") :: ars in
-     let oR = (RFull "RSP") :: rd in
-     let aR = (RFull "RSP") :: ars in
+     let iR = (RFull "rsp") :: ars in
+     let oR = (RFull "rsp") :: rd in
+     let aR = (RFull "rsp") :: ars in
      return (Nias,ik,iR,oR,aR)
   | PUSH (irm) ->
      let (m, rs, ars) =
@@ -958,15 +958,15 @@ let initial_analysis instr =
        if bitU_to_bool m
        then IK_mem_rmw (Read_plain,Write_plain)
        else IK_mem_write Write_plain in
-     let iR = (RFull "RSP") :: (rs ++ ars) in
-     let oR = (RFull "RSP") :: oR in
-     let aR = (RFull "RSP") :: ars in
+     let iR = (RFull "rsp") :: (rs ++ ars) in
+     let oR = (RFull "rsp") :: oR in
+     let aR = (RFull "rsp") :: ars in
      return (Nias,ik,iR,oR,aR)
   | RET (imm64) ->
      let ik = IK_mem_read Read_plain in
-     let iR = (RFull "RSP") :: iR in
-     let oR = (RFull "RSP") :: oR in
-     let aR = (RFull "RSP") :: aR in
+     let iR = (RFull "rsp") :: iR in
+     let oR = (RFull "rsp") :: oR in
+     let aR = (RFull "rsp") :: aR in
      let Nias = (NIAFP_indirect_address) :: Nias in
      return (Nias,ik,iR,oR,aR)
   | SET (c,b,r_m) ->
@@ -978,7 +978,7 @@ let initial_analysis instr =
      let aR = ars in
      return (Nias,ik,iR,oR,aR)
   | STC ->
-     let oR = [RFull "CF"] in
+     let oR = [RFull "cf"] in
      return (Nias,ik,iR,oR,aR)
   | XADD (locked,sz,r_m,reg) ->
      let rk = if bitU_to_bool locked then Read_X86_locked else Read_plain in

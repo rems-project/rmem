@@ -24,17 +24,17 @@ type qword = vector bitU
 
 type regn = integer
 
-let CF = Register "CF" 1 0 false []
+let CF = Register "cf" 1 0 false []
 
-let PF = Register "PF" 1 0 false []
+let PF = Register "pf" 1 0 false []
 
-let AF = Register "AF" 1 0 false []
+let AF = Register "af" 1 0 false []
 
-let ZF = Register "ZF" 1 0 false []
+let ZF = Register "zf" 1 0 false []
 
-let SF = Register "SF" 1 0 false []
+let SF = Register "sf" 1 0 false []
 
-let OF = Register "OF" 1 0 false []
+let OF = Register "of" 1 0 false []
 
 type wsize = | Sz8 of (bitU) | Sz16 | Sz32 | Sz64
 
@@ -94,39 +94,39 @@ type byte_stream = list byte
 
 type ostream = maybe byte_stream
 
-let RIP = Register "RIP" 64 63 false []
+let RIP = Register "rip" 64 63 false []
 
-let RAX = Register "RAX" 64 63 false []
+let RAX = Register "rax" 64 63 false []
 
-let RCX = Register "RCX" 64 63 false []
+let RCX = Register "rcx" 64 63 false []
 
-let RDX = Register "RDX" 64 63 false []
+let RDX = Register "rdx" 64 63 false []
 
-let RBX = Register "RBX" 64 63 false []
+let RBX = Register "rbx" 64 63 false []
 
-let RSP = Register "RSP" 64 63 false []
+let RSP = Register "rsp" 64 63 false []
 
-let RBP = Register "RBP" 64 63 false []
+let RBP = Register "rbp" 64 63 false []
 
-let RSI = Register "RSI" 64 63 false []
+let RSI = Register "rsi" 64 63 false []
 
-let RDI = Register "RDI" 64 63 false []
+let RDI = Register "rdi" 64 63 false []
 
-let R8 = Register "R8" 64 63 false []
+let R8 = Register "r8" 64 63 false []
 
-let R9 = Register "R9" 64 63 false []
+let R9 = Register "r9" 64 63 false []
 
-let R10 = Register "R10" 64 63 false []
+let R10 = Register "r10" 64 63 false []
 
-let R11 = Register "R11" 64 63 false []
+let R11 = Register "r11" 64 63 false []
 
-let R12 = Register "R12" 64 63 false []
+let R12 = Register "r12" 64 63 false []
 
-let R13 = Register "R13" 64 63 false []
+let R13 = Register "r13" 64 63 false []
 
-let R14 = Register "R14" 64 63 false []
+let R14 = Register "r14" 64 63 false []
 
-let R15 = Register "R15" 64 63 false []
+let R15 = Register "r15" 64 63 false []
 
 type base = | NoBase | RipBase | RegBase of (regn)
 

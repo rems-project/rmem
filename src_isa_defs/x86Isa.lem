@@ -71,30 +71,30 @@ let x86_register_data_info : registerdata =
     (name, (D_decreasing, bit_count, bit_count - 1, fields))
   in
   [ 
-    reg 64 "RIP" [];
-    reg 64 "RAX" [];
-    reg 64 "RCX" [];
-    reg 64 "RDX" [];
-    reg 64 "RBX" [];
-    reg 64 "RSP" [];
-    reg 64 "RBP" [];
-    reg 64 "RSI" [];
-    reg 64 "RDI" [];
-    reg 64 "R8"  [];
-    reg 64 "R9"  [];
-    reg 64 "R10" [];
-    reg 64 "R11" [];
-    reg 64 "R12" [];
-    reg 64 "R13" [];
-    reg 64 "R14" [];
-    reg 64 "R15" [];
+    reg 64 "rip" [];
+    reg 64 "rax" [];
+    reg 64 "rcx" [];
+    reg 64 "rdx" [];
+    reg 64 "rbx" [];
+    reg 64 "rsp" [];
+    reg 64 "rbp" [];
+    reg 64 "rsi" [];
+    reg 64 "rdi" [];
+    reg 64 "r8"  [];
+    reg 64 "r9"  [];
+    reg 64 "r10" [];
+    reg 64 "r11" [];
+    reg 64 "r12" [];
+    reg 64 "r13" [];
+    reg 64 "r14" [];
+    reg 64 "r15" [];
 
-    reg 1  "CF" [];
-    reg 1  "PF" [];
-    reg 1  "AF" [];
-    reg 1  "ZF" [];
-    reg 1  "SF" [];
-    reg 1  "OF" [];
+    reg 1  "cf" [];
+    reg 1  "pf" [];
+    reg 1  "af" [];
+    reg 1  "zf" [];
+    reg 1  "sf" [];
+    reg 1  "of" [];
   ]
 
 let x86_reg_name name : reg_name =
@@ -113,14 +113,14 @@ let x86_fixed_pseudo_registers = []
 
 let x86_thread_start_info =
   <|  (* these registers hold the arguments of the thread_start function *)
-      tsi_addr  = x86_reg_name "RAX"; (* XXX *)
+      tsi_addr  = x86_reg_name "rax"; (* XXX *)
       tsi_toc   = Nothing;
       tsi_extra = Nothing;
       (* this register holds the value returned by the thread_start function *)
-      tsi_return = x86_reg_name "RAX";
+      tsi_return = x86_reg_name "rax";
 
       (* these registers hold the arguments of the new-thread function *)
-      tsi_f_tid  = x86_reg_name "RAX"; (* XXX *)
+      tsi_f_tid  = x86_reg_name "rax"; (* XXX *)
       tsi_f_toc  = Nothing;
       tsi_f_addr = Nothing;
   |>
@@ -186,8 +186,8 @@ let x86_isa : isa X86_embed_types.ast =
 
       register_data_info          = x86_register_data_info;
       fixed_pseudo_registers      = x86_fixed_pseudo_registers;
-      cia_reg                     = x86_reg_name "RIP";
-      nia_reg                     = x86_reg_name "RIP";
+      cia_reg                     = x86_reg_name "rip";
+      nia_reg                     = x86_reg_name "rip";
       dia_reg                     = Nothing;
 
       make_empty_write_events     = x86_make_empty_write_events;

@@ -69,34 +69,34 @@ register qword RIP
 
 (* General purpose registers *)
 
-register qword RAX (* 0 *)
-register qword RCX (* 1 *)
-register qword RDX (* 2 *)
-register qword RBX (* 3 *)
-register qword RSP (* 4 *)
-register qword RBP (* 5 *)
-register qword RSI (* 6 *)
-register qword RDI (* 7 *)
-register qword R8
-register qword R9
-register qword R10
-register qword R11
-register qword R12
-register qword R13
-register qword R14
-register qword R15
+register qword rax (* 0 *)
+register qword rcx (* 1 *)
+register qword rdx (* 2 *)
+register qword rbx (* 3 *)
+register qword rsp (* 4 *)
+register qword rbp (* 5 *)
+register qword rsi (* 6 *)
+register qword rdi (* 7 *)
+register qword r8
+register qword r9
+register qword r10
+register qword r11
+register qword r12
+register qword r13
+register qword r14
+register qword r15
 
 let (vector<0,16,inc,(register<qword>)>) REG =
-  [RAX,RCX,RDX,RBX,RSP,RBP,RSI,RDI,R8,R9,R10,R11,R12,R13,R14,R15]
+  [rax,rcx,rdx,rbx,rsp,rbp,rsi,rdi,r8,r9,r10,r11,r12,r13,r14,r15]
 
 (* Flags *)
 
-register bit[1] CF
-register bit[1] PF
-register bit[1] AF
-register bit[1] ZF
-register bit[1] SF
-register bit[1] OF
+register bit[1] cf
+register bit[1] pf
+register bit[1] af
+register bit[1] zf
+register bit[1] sf
+register bit[1] of
 
 (* --------------------------------------------------------------------------
    Memory
@@ -288,7 +288,7 @@ function qword effect { rreg, rmem } EA ((bool) locked, (ea) e) =
   switch e {
     case (Ea_i(sz,i)) -> restrict_size(sz,i)
     case (Ea_r((Sz8(have_rex)),r)) ->
-      if have_rex | r < 4 (* RSP *) | r > 7 (* RDI *) then
+      if have_rex | r < 4 (* rsp *) | r > 7 (* rdi *) then
         REG[r]
       else
         (REG[sub4 (r)] >> 8) & 0x00000000000000FF
@@ -303,7 +303,7 @@ function unit effect { wmem, wreg, escape } wEA ((bool) locked, (ea) e, (qword) 
   switch e {
     case (Ea_i(_,_)) -> exit ()
     case (Ea_r((Sz8(have_rex)),r)) ->
-      if have_rex | r < 4 (* RSP *) | r > 7 (* RDI *) then
+      if have_rex | r < 4 (* rsp *) | r > 7 (* rdi *) then
         (REG[r])[7 .. 0] := w[7 .. 0]
       else
         (REG[sub4(r)])[15 .. 8] := (vector<15,8,dec,bit>) (w[7 .. 0])
@@ -385,12 +385,12 @@ function bit word_size_msb ((wsize) sz, (qword) w) = w[size_width(sz) - 1]
 
 function bit word_size_msb ((wsize) sz, (qword) w) = w[size_width_sub1(sz)]
 
-function unit write_PF ((qword) w) = PF := byte_parity (w[7 .. 0])
+function unit write_pf ((qword) w) = pf := byte_parity (w[7 .. 0])
 
-function unit write_SF ((wsize) sz, (qword) w) = SF := word_size_msb (sz, w)
+function unit write_sf ((wsize) sz, (qword) w) = sf := word_size_msb (sz, w)
 
-function unit write_ZF ((wsize) sz, (qword) w) =
-  ZF := (bit)
+function unit write_zf ((wsize) sz, (qword) w) =
+  zf := (bit)
          (switch sz {
             case (Sz8(_)) -> w[7 .. 0] == 0x00
             case Sz16 -> w[15 .. 0] == 0x0000
@@ -398,19 +398,19 @@ function unit write_ZF ((wsize) sz, (qword) w) =
             case Sz64 -> w == 0x0000000000000000
           })
 
-function unit write_arith_eflags_except_CF_OF ((wsize) sz, (qword) w) =
+function unit write_arith_eflags_except_cf_of ((wsize) sz, (qword) w) =
 {
-  AF := undefined;
-  write_PF(w);
-  write_SF(sz, w);
-  write_ZF(sz, w);
+  af := undefined;
+  write_pf(w);
+  write_sf(sz, w);
+  write_zf(sz, w);
 }
 
 function unit write_arith_eflags ((wsize) sz, (qword) w, (bit) c, (bit) x) =
 {
-  CF := c;
-  OF := x;
-  write_arith_eflags_except_CF_OF (sz, w)
+  cf := c;
+  of := x;
+  write_arith_eflags_except_cf_of (sz, w)
 }
 
 function unit write_logical_eflags ((wsize) sz, (qword) w) =
@@ -418,12 +418,12 @@ function unit write_logical_eflags ((wsize) sz, (qword) w) =
 
 function unit erase_eflags () =
 {
-  AF := undefined;
-  CF := undefined;
-  OF := undefined;
-  PF := undefined;
-  SF := undefined;
-  ZF := undefined;
+  af := undefined;
+  cf := undefined;
+  of := undefined;
+  pf := undefined;
+  sf := undefined;
+  zf := undefined;
 }
 
 function nat value_width ((wsize) sz) = 2 ** size_width(sz)
@@ -449,15 +449,15 @@ function unit write_arith_result ((bool) locked, (wsize) sz, (qword) w, (bit) c,
   wEA (locked, e) := w;
 }
 
-function unit write_arith_result_no_CF_OF ((bool) locked, (wsize) sz, (qword) w, (ea) e) =
+function unit write_arith_result_no_cf_of ((bool) locked, (wsize) sz, (qword) w, (ea) e) =
 {
-  write_arith_eflags_except_CF_OF (sz, w);
+  write_arith_eflags_except_cf_of (sz, w);
   wEA (locked, e) := w;
 }
 
 function unit write_logical_result ((bool) locked, (wsize) sz, (qword) w, (ea) e) =
 {
-  write_arith_eflags_except_CF_OF (sz, w);
+  write_arith_eflags_except_cf_of (sz, w);
   wEA (locked, e) := w;
 }
 
@@ -495,7 +495,7 @@ function qword rol ((wsize) sz, (qword) a, (qword) b) =
 
 function qword ror ((wsize) sz, (qword) a, (qword) b) =
   switch sz {
-    case (Sz8(_)) -> EXTZ (ROR8 (a[7 .. 0], b[2 .. 0]))
+    case (Sz8(_)) -> EXTZ (ROr8 (a[7 .. 0], b[2 .. 0]))
     case Sz16 -> EXTZ (ROR16 (a[15 .. 0], b[3 .. 0]))
     case Sz32 -> EXTZ (ROR32 (a[31 .. 0], b[4 .. 0]))
     case Sz64 -> ROR64 (a, b[5 .. 0])
@@ -503,7 +503,7 @@ function qword ror ((wsize) sz, (qword) a, (qword) b) =
 
 function qword sar ((wsize) sz, (qword) a, (qword) b) =
   switch sz {
-    case (Sz8(_)) -> EXTZ (ASR8 (a[7 .. 0], b[2 .. 0]))
+    case (Sz8(_)) -> EXTZ (ASr8 (a[7 .. 0], b[2 .. 0]))
     case Sz16 -> EXTZ (ASR16 (a[15 .. 0], b[3 .. 0]))
     case Sz32 -> EXTZ (ASR32 (a[31 .. 0], b[4 .. 0]))
     case Sz64 -> ASR64 (a, b[5 .. 0])
@@ -528,22 +528,22 @@ function unit write_binop ((bool) locked, (wsize) sz, (binop_name) bop, (qword) 
     case X86_Shr -> write_result_erase_eflags (locked, a >> mask_shift (sz, b), e)
     case X86_Adc ->
       {
-        let carry = (bit) CF in
+        let carry = (bit) cf in
         let (qword) result = a + (qword) (b + carry) in
         {
-          CF := (bit) ((int) (value_width (sz)) <= unsigned(a) + unsigned(b));
-          OF := undefined;
-          write_arith_result_no_CF_OF (locked, sz, result, e);
+          cf := (bit) ((int) (value_width (sz)) <= unsigned(a) + unsigned(b));
+          of := undefined;
+          write_arith_result_no_cf_of (locked, sz, result, e);
         }
       }
     case X86_Sbb ->
       {
-        let carry = (bit) CF in
+        let carry = (bit) cf in
         let (qword) result = a - (qword) (b + carry) in
         {
-          CF := (bit) (unsigned(a) < unsigned(b) + (int) carry);
-          OF := undefined;
-          write_arith_result_no_CF_OF (locked, sz, result, e);
+          cf := (bit) (unsigned(a) < unsigned(b) + (int) carry);
+          of := undefined;
+          write_arith_result_no_cf_of (locked, sz, result, e);
         }
       }
     case _ -> exit ()
@@ -552,45 +552,45 @@ function unit write_binop ((bool) locked, (wsize) sz, (binop_name) bop, (qword) 
 function unit write_monop ((bool) locked, (wsize) sz, (monop_name) mop, (qword) a, (ea) e) =
   switch mop {
     case X86_Not -> wEA(locked, e) := ~(a)
-    case X86_Dec -> write_arith_result_no_CF_OF (locked, sz, a - 1, e)
-    case X86_Inc -> write_arith_result_no_CF_OF (locked, sz, a + 1, e)(* XXX rmn30 should set OF *)
-    case X86_Neg -> { write_arith_result_no_CF_OF (locked, sz, 0 - a, e);
-                      CF := undefined;
+    case X86_Dec -> write_arith_result_no_cf_of (locked, sz, a - 1, e)
+    case X86_Inc -> write_arith_result_no_cf_of (locked, sz, a + 1, e)(* XXX rmn30 should set of *)
+    case X86_Neg -> { write_arith_result_no_cf_of (locked, sz, 0 - a, e);
+                      cf := undefined;
                     }
   }
 
 function bool read_cond ((cond) c) =
   switch c {
-    case X86_A  -> ~(CF) & ~(ZF)
-    case X86_NB -> ~(CF)
-    case X86_B  -> CF
-    case X86_NA -> CF | (bit) ZF
-    case X86_E  -> ZF
-    case X86_G  -> ~(ZF) & (SF == OF)
-    case X86_NL -> SF == OF
-    case X86_L  -> SF != OF
-    case X86_NG -> ZF | SF != OF
-    case X86_NE -> ~(ZF)
-    case X86_NO -> ~(OF)
-    case X86_NP -> ~(PF)
-    case X86_NS -> ~(SF)
-    case X86_O  -> OF
-    case X86_P  -> PF
-    case X86_S  -> SF
+    case X86_A  -> ~(cf) & ~(zf)
+    case X86_NB -> ~(cf)
+    case X86_B  -> cf
+    case X86_NA -> cf | (bit) zf
+    case X86_E  -> zf
+    case X86_G  -> ~(zf) & (sf == of)
+    case X86_NL -> sf == of
+    case X86_L  -> sf != of
+    case X86_NG -> zf | sf != of
+    case X86_NE -> ~(zf)
+    case X86_NO -> ~(of)
+    case X86_NP -> ~(pf)
+    case X86_NS -> ~(sf)
+    case X86_O  -> of
+    case X86_P  -> pf
+    case X86_S  -> sf
     case X86_ALWAYS -> true
   }
 
 function qword pop_aux () =
-  let top = rMEM(RSP, 8) in
+  let top = rMEM(rsp, 8) in
   {
-    RSP := RSP + 8;
+    rsp := rsp + 8;
     top;
   }
 
 function unit push_aux ((qword) w) =
 {
-  RSP := RSP - 8;
-  wMEM(false, RSP, 8) := w;
+  rsp := rsp - 8;
+  wMEM(false, rsp, 8) := w;
 }
 
 function unit pop ((rm) r) = wEA (false, ea_rm (Sz64,r)) := pop_aux()
@@ -598,7 +598,7 @@ function unit pop_rip () = RIP := pop_aux()
 function unit push ((imm_rm) i) = push_aux (EA (false, ea_imm_rm (i)))
 function unit push_rip () = push_aux (RIP)
 
-function unit drop ((qword) i) = if i[7 ..0] != 0 then () else RSP := RSP + i
+function unit drop ((qword) i) = if i[7 ..0] != 0 then () else rsp := rsp + i
 
 (* --------------------------------------------------------------------------
    Instructions
@@ -634,7 +634,7 @@ function clause execute (Bitop (locked,bop,sz,boffset)) =
       case Btc -> (~ (bitval))
       case Btr -> bitzero
     };
-    CF := bitval;
+    cf := bitval;
     wEA(locked, base_ea) := word;
   }
 
@@ -656,7 +656,7 @@ function clause execute (CALL (i)) =
 
 union ast member unit CLC
 
-function clause execute CLC = CF := false
+function clause execute CLC = cf := false
 
 (* ==========================================================================
       CMC
@@ -664,7 +664,7 @@ function clause execute CLC = CF := false
 
 union ast member unit CMC
 
-function clause execute CMC = CF := ~(CF)
+function clause execute CMC = cf := ~(cf)
 
 (* ==========================================================================
       CMPXCHG
@@ -674,7 +674,7 @@ union ast member (bool, wsize,rm,regn) CMPXCHG
 
 function clause execute (CMPXCHG (locked, sz,r,n)) =
   let src = Ea_r(sz, n) in
-  let acc = Ea_r(sz, 0) in (* RAX *)
+  let acc = Ea_r(sz, 0) in (* rax *)
   let dst = ea_rm(sz, r) in
   let val_dst = EA(locked, dst) in
   let val_acc = EA(false, acc) in
@@ -698,8 +698,8 @@ union ast member (wsize,rm) X86_DIV
 
 function clause execute (X86_DIV (sz,r)) =
   let w = (int) (value_width(sz)) in
-  let eax = Ea_r(sz, 0) in (* RAX *)
-  let edx = Ea_r(sz, 2) in (* RDX *)
+  let eax = Ea_r(sz, 0) in (* rax *)
+  let edx = Ea_r(sz, 2) in (* rdx *)
   let n = unsigned(EA(false, edx)) * w + unsigned(EA(false, eax)) in
   let d = unsigned(EA(false, ea_rm(sz, r))) in
   let q = n quot d in
@@ -757,8 +757,8 @@ union ast member unit LEAVE
 
 function clause execute LEAVE =
 {
-  RSP := RBP;
-  pop (X86_Reg (5)); (* RBP *)
+  rsp := rbp;
+  pop (X86_Reg (5)); (* rbp *)
 }
 
 (* ==========================================================================
@@ -769,8 +769,8 @@ union ast member (cond,qword) LOOP
 
 function clause execute (LOOP (c,i)) =
 {
-  RCX := RCX - 1;
-  if RCX != 0 & read_cond (c) then RIP := RIP + i else ();
+  rcx := rcx - 1;
+  if rcx != 0 & read_cond (c) then RIP := RIP + i else ();
 }
 
 (* ==========================================================================
@@ -833,14 +833,14 @@ function clause execute (MOVZX (sz1,ds,sz2)) =
 union ast member (wsize,rm) X86_MUL
 
 function clause execute (X86_MUL (sz,r)) =
-  let eax = Ea_r (sz, 0) in (* RAX *)
+  let eax = Ea_r (sz, 0) in (* rax *)
   let val_eax = EA(false, eax) in
   let val_src = EA(false, ea_rm (sz, r)) in
   switch sz {
     case (Sz8(_)) -> wEA(false, Ea_r(Sz16,0)) := (val_eax * val_src)[63 .. 0]
     case _ ->
       let m = val_eax * val_src in
-      let edx = Ea_r (sz, 2) in (* RDX *)
+      let edx = Ea_r (sz, 2) in (* rdx *)
       {
         wEA(false, eax) := m[63 .. 0];
         wEA(false, edx) := (m >> size_width(sz))[63 .. 0]
@@ -898,7 +898,7 @@ function clause execute (SET (c,b,r)) =
 
 union ast member unit STC
 
-function clause execute STC = CF := true
+function clause execute STC = cf := true
 
 (* ==========================================================================
       XADD
@@ -1012,11 +1012,11 @@ function (rm, ostream)
      case ((bit[2]) SS : (bit[3]) Index : (bit[3]) Base) :: strm1 ->
         (let bbase = rex_reg (rex.B, Base) in
          let index = rex_reg (rex.X, Index) in
-         let scaled_index = if index == 4 (* RSP *) then
+         let scaled_index = if index == 4 (* rsp *) then
                                (option<scale_index>) None
                             else let x = (scale_index) (SS, index) in
                                Some (x) in
-          (if bbase == 5 (* RBP *)
+          (if bbase == 5 (* rbp *)
               then let (displacement, strm2) =
                       read_sib_displacement (Mod, strm1) in
                    let bbase = if Mod == 0b00 then NoBase else RegBase (bbase)
@@ -1311,7 +1311,7 @@ function (byte_stream, ast, nat) decode ((byte_stream) strm) =
   *)
 
 let (vector <0, 16, inc, string >) GPRstr =
-  ["RAX","RCX","RDX","RBX","RSP","RBP","RSI","RDI","R8","R9","R10","R11","R12","R13","R14","R15"]
+  ["rax","rcx","rdx","rbx","rsp","rbp","rsi","rdi","r8","r9","r10","r11","r12","r13","r14","r15"]
 
 function (regfps) regfp_base ((base) b) =
   switch b {
@@ -1371,8 +1371,8 @@ function (bool, regfps, regfps) regfp_imm_rm ((imm_rm) i_rm) =
     case (Imm (v)) -> (false, [|| ||], [|| ||])
   }
 
-let all_flags_but_cf_of = [|| RFull("AF"), RFull("PF"), RFull("SF"), RFull("ZF") ||]
-let all_flags = append([|| RFull("CF"), RFull("OF") ||], all_flags_but_cf_of)
+let all_flags_but_cf_of = [|| RFull("af"), RFull("pf"), RFull("sf"), RFull("zf") ||]
+let all_flags = append([|| RFull("cf"), RFull("of") ||], all_flags_but_cf_of)
 
 function (regfps) regfp_binop_flags ((binop_name) op) = 
   switch (op) {
@@ -1393,22 +1393,22 @@ function (regfps) regfp_binop_flags ((binop_name) op) =
   }
 function (regfps) regfp_cond ((cond) c) =
   switch c {
-    case X86_A  -> [|| RFull("CF"), RFull("ZF") ||]
-    case X86_NB -> [|| RFull("CF") ||]
-    case X86_B  -> [|| RFull("CF") ||]
-    case X86_NA -> [|| RFull("CF"), RFull("ZF") ||]
-    case X86_E  -> [|| RFull("ZF") ||]
-    case X86_G  -> [|| RFull("ZF"), RFull("SF"), RFull("OF") ||]
-    case X86_NL -> [|| RFull("SF"), RFull("OF") ||]
-    case X86_L  -> [|| RFull("SF"), RFull("OF") ||]
-    case X86_NG -> [|| RFull("ZF"), RFull("SF"), RFull("OF") ||]
-    case X86_NE -> [|| RFull("ZF") ||]
-    case X86_NO -> [|| RFull("OF") ||]
-    case X86_NP -> [|| RFull("PF") ||]
-    case X86_NS -> [|| RFull("SF") ||]
-    case X86_O  -> [|| RFull("OF") ||]
-    case X86_P  -> [|| RFull("PF") ||]
-    case X86_S  -> [|| RFull("SF") ||]
+    case X86_A  -> [|| RFull("cf"), RFull("zf") ||]
+    case X86_NB -> [|| RFull("cf") ||]
+    case X86_B  -> [|| RFull("cf") ||]
+    case X86_NA -> [|| RFull("cf"), RFull("zf") ||]
+    case X86_E  -> [|| RFull("zf") ||]
+    case X86_G  -> [|| RFull("zf"), RFull("sf"), RFull("of") ||]
+    case X86_NL -> [|| RFull("sf"), RFull("of") ||]
+    case X86_L  -> [|| RFull("sf"), RFull("of") ||]
+    case X86_NG -> [|| RFull("zf"), RFull("sf"), RFull("of") ||]
+    case X86_NE -> [|| RFull("zf") ||]
+    case X86_NO -> [|| RFull("of") ||]
+    case X86_NP -> [|| RFull("pf") ||]
+    case X86_NS -> [|| RFull("sf") ||]
+    case X86_O  -> [|| RFull("of") ||]
+    case X86_P  -> [|| RFull("pf") ||]
+    case X86_S  -> [|| RFull("sf") ||]
     case X86_ALWAYS -> [|| ||]
   }
 
@@ -1446,40 +1446,40 @@ function (regfps,regfps,regfps,niafps,diafp,instruction_kind) initial_analysis (
       } in {
         ik := ik';
         iR := append(iRs, iR);
-        oR := RFull("CF")::append(oRs, oR);
+        oR := RFull("cf")::append(oRs, oR);
         aR := append(aRs, aR);
       }
     }
     case(CALL    (irm)             ) ->
       let (m, rs, ars) = regfp_imm_rm (irm) in { 
           ik := if m then IK_mem_rmw(Read_plain, Write_plain) else IK_mem_write(Write_plain);
-          iR := RFull("RIP") :: RFull("RSP") :: rs;
-          oR := RFull("RSP") :: oR;
+          iR := RFull("RIP") :: RFull("rsp") :: rs;
+          oR := RFull("rsp") :: oR;
           aR := ars;
           Nias := switch irm {
             case (Rm (v))  -> NIAFP_indirect_address
             case (Imm (v)) -> NIAFP_concrete_address(RIP + v)
           } :: Nias;
       }
-    case(CLC                          ) -> oR := RFull("CF") :: oR
+    case(CLC                          ) -> oR := RFull("cf") :: oR
     case(CMC                          ) -> {
-      iR := RFull("CF") :: iR;
-      oR := RFull("CF") :: oR;
+      iR := RFull("cf") :: iR;
+      oR := RFull("cf") :: oR;
     }
     case(CMPXCHG (locked, sz, r_m, reg)       ) ->
       let rk = if locked then Read_X86_locked else Read_plain in
       let wk = if locked then Write_X86_locked else Write_plain in
       let (m, rs, aRs) = regfp_rm (r_m) in {
         ik := if m then IK_mem_rmw (rk, wk) else IK_simple;
-        iR := RFull("RAX") :: RFull(GPRstr[reg]) :: append(rs, aRs);
-        oR := RFull("RAX") :: append(regfp_binop_flags(X86_Cmp),  rs);
+        iR := RFull("rax") :: RFull(GPRstr[reg]) :: append(rs, aRs);
+        oR := RFull("rax") :: append(regfp_binop_flags(X86_Cmp),  rs);
         aR := aRs;
       }
     case(X86_DIV    (sz, r_m)             ) ->
       let (m, rs, ars) = regfp_rm (r_m) in {
         ik := if m then IK_mem_read (Read_plain) else IK_simple;
-        iR := RFull("RAX") :: RFull("RDX") :: append(rs, ars);
-        oR := RFull("RAX") :: RFull("RDX") :: append(oR, all_flags);
+        iR := RFull("rax") :: RFull("rdx") :: append(rs, ars);
+        oR := RFull("rax") :: RFull("rdx") :: append(oR, all_flags);
         aR := ars;
       }
     case(HLT                          ) -> ()
@@ -1504,15 +1504,15 @@ function (regfps,regfps,regfps,niafps,diafp,instruction_kind) initial_analysis (
       }
     case(LEAVE                        ) -> {
       ik := IK_mem_read(Read_plain);
-      iR := RFull("RBP") :: iR;
-      oR := RFull("RBP") :: RFull("RSP") :: oR;
-      aR := RFull("RBP") :: aR;
+      iR := RFull("rbp") :: iR;
+      oR := RFull("rbp") :: RFull("rsp") :: oR;
+      aR := RFull("rbp") :: aR;
     }
     case(LOOP    (c, imm64)           ) -> 
       let flags = regfp_cond(c) in {
           ik := IK_branch;
-          iR := RFull("RCX") :: flags;
-          oR := RFull("RCX") :: oR;
+          iR := RFull("rcx") :: flags;
+          oR := RFull("rcx") :: oR;
           Nias := NIAFP_concrete_address(RIP + imm64) :: Nias;
       }
     case(MFENCE                       ) ->
@@ -1552,30 +1552,30 @@ function (regfps,regfps,regfps,niafps,diafp,instruction_kind) initial_analysis (
     case(X86_MUL    (sz, r_m)              ) ->
       let (m, rs, ars) = regfp_rm (r_m) in {
         ik := if m then IK_mem_read (Read_plain) else IK_simple;
-        iR := RFull("RAX") :: append(rs, ars);
-        oR := RFull("RAX") :: RFull("RDX") :: append(oR, all_flags);
+        iR := RFull("rax") :: append(rs, ars);
+        oR := RFull("rax") :: RFull("rdx") :: append(oR, all_flags);
         aR := ars;
       }
     case(X86_NOP (_)                  ) -> ()
     case(POP     (r_m)                ) -> 
       let (m, rd, ars) = regfp_rm (r_m) in {
         ik := if m then IK_mem_rmw(Read_plain, Write_plain) else IK_mem_write(Write_plain);
-        iR := RFull("RSP") :: ars;
-        oR := RFull("RSP") :: rd;
-        aR := RFull("RSP") :: ars;
+        iR := RFull("rsp") :: ars;
+        oR := RFull("rsp") :: rd;
+        aR := RFull("rsp") :: ars;
       }
     case(PUSH    (irm)               ) -> 
       let (m, rs, ars) = regfp_imm_rm (irm) in {
         ik := if m then IK_mem_rmw(Read_plain, Write_plain) else IK_mem_write(Write_plain);
-        iR := RFull("RSP") :: append(rs, ars);
-        oR := RFull("RSP") :: oR;
-        aR := RFull("RSP") :: ars;
+        iR := RFull("rsp") :: append(rs, ars);
+        oR := RFull("rsp") :: oR;
+        aR := RFull("rsp") :: ars;
       }
     case(RET     (imm64)              ) -> {
       ik := IK_mem_read(Read_plain);
-      iR := RFull("RSP") :: iR;
-      oR := RFull("RSP") :: oR;
-      aR := RFull("RSP") :: aR;
+      iR := RFull("rsp") :: iR;
+      oR := RFull("rsp") :: oR;
+      aR := RFull("rsp") :: aR;
       Nias := NIAFP_indirect_address :: Nias;
     }
     case(SET     (c, b, r_m)          ) -> 
@@ -1586,7 +1586,7 @@ function (regfps,regfps,regfps,niafps,diafp,instruction_kind) initial_analysis (
         oR := rs;
         aR := ars;
       }
-    case(STC                          ) -> oR := [|| RFull("CF") ||]
+    case(STC                          ) -> oR := [|| RFull("cf") ||]
     case(XADD    (locked, sz, r_m, reg)       ) -> 
       let rk = if locked then Read_X86_locked else Read_plain in
       let wk = if locked then Write_X86_locked else Write_plain in

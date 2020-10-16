@@ -290,22 +290,22 @@ and ephemeral = Internal 3
 let loop_idx = Internal 4
 
 let pp_ireg = function
-  | RAX -> "RAX"
-  | RCX -> "RCX"
-  | RDX -> "RDX"
-  | RBX -> "RBX"
-  | RSP -> "RSP"
-  | RBP -> "RBP"
-  | RSI -> "RSI"
-  | RDI -> "RDI"
-  | R8  -> "R8"
-  | R9  -> "R9"
-  | R10 -> "R10"
-  | R11 -> "R11"
-  | R12 -> "R12"
-  | R13 -> "R13"
-  | R14 -> "R14"
-  | R15 -> "R15"
+  | RAX -> "rax"
+  | RCX -> "rcx"
+  | RDX -> "rdx"
+  | RBX -> "rbx"
+  | RSP -> "rsp"
+  | RBP -> "rbp"
+  | RSI -> "rsi"
+  | RDI -> "rdi"
+  | R8  -> "r8"
+  | R9  -> "r9"
+  | R10 -> "r10"
+  | R11 -> "r11"
+  | R12 -> "r12"
+  | R13 -> "r13"
+  | R14 -> "r14"
+  | R15 -> "r15"
 
 let pp_x86Reg (sz, r) =
   match sz, r with
