@@ -75,6 +75,20 @@ let make_tikz_graph
     sprintf "%d-%d" tid ioid
   in
 
+  let pp_memory_value ioid value =
+    match Pp.pp_corresponding_symbol m (Some ioid)
+                  (Sail_impl_base.address_of_memory_value (Globals.get_endianness ()) value)
+    with
+    | Some str -> str
+    | None -> Printing_functions.memory_value_to_string (Globals.get_endianness ()) value
+  in
+
+  let pp_write_value write =
+    match write.w_value with
+    | Some value -> pp_memory_value write.w_ioid value
+    | None       -> "(awaiting)"
+  in
+
   let pp_tikz_footprint ((addr, size): Sail_impl_base.footprint) : string =
     let (loc, offset) =
       match Pp.lookup_symbol_and_offset m.pp_symbol_table addr with
@@ -269,7 +283,7 @@ let make_tikz_graph
                       (pp_tikz_pretty_eiid m r.reiid)
                       (Pp.pp_brief_read_kind m r.r_read_kind)
                       (pp_tikz_footprint r.r_addr)
-                      (Pp.pp_memory_value m r.r_ioid mrs.mrs_value))
+                      (pp_memory_value r.r_ioid mrs.mrs_value))
                 rs
             in
 
@@ -292,7 +306,7 @@ let make_tikz_graph
                       (pp_tikz_pretty_eiid m w.weiid)
                       (Pp.pp_brief_write_kind m w.w_write_kind)
                       (pp_tikz_footprint w.w_addr)
-                      (Pp.pp_write_value m w))
+                      (pp_write_value w))
                 ws
             in
 
@@ -315,7 +329,7 @@ let make_tikz_graph
                       (pp_tikz_pretty_eiid m r.reiid)
                       (Pp.pp_brief_read_kind m r.r_read_kind)
                       (pp_tikz_footprint r.r_addr)
-                      (Pp.pp_memory_value m r.r_ioid mrs.mrs_value))
+                      (pp_memory_value r.r_ioid mrs.mrs_value))
                 rs
           end
         in
@@ -330,7 +344,7 @@ let make_tikz_graph
                       (pp_tikz_pretty_eiid m w.weiid)
                       (Pp.pp_brief_write_kind m w.w_write_kind)
                       (pp_tikz_footprint w.w_addr)
-                      (Pp.pp_write_value m w))
+                      (pp_write_value w))
                 ws
           end
         in
