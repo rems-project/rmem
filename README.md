@@ -53,9 +53,6 @@ sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
 ``` shell
   # add the REMS opam repository containing some of rmem's dependencies:
 opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
-  # The ulimit is to work around the problem of the OCaml compiler running
-  # out of memory when processing the ISA semantics.
-ulimit -s 33000
 opam install rmem
 ```
 
@@ -68,9 +65,6 @@ git clone git@github.com:rems-project/rmem.git
 cd rmem
   # add the REMS opam repository containing some of rmem's dependencies:
 opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
-  # The ulimit is to work around the problem of the OCaml compiler running
-  # out of memory when processing the ISA semantics.
-ulimit -s 33000
 opam install .
 ```
 
@@ -89,7 +83,6 @@ cd rmem
 opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
 opam install --deps-only .
   # build rmem
-ulimit -s 33000
 make MODE=opt 
 ```
 
