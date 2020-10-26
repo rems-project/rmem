@@ -86,7 +86,7 @@ Alternatively, rmem can be built using `make` as follows:
 git clone git@github.com:rems-project/rmem.git
 cd rmem
   # get rmem's opam dependencies
-opam repository add rems https://github.com/rems-project/opam-repository.git
+opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
 opam install --deps-only .
   # build rmem
 ulimit -s 33000
