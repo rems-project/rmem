@@ -206,8 +206,11 @@ let make_write_events_aux isa s ii (wk,addr,sz,memv) =
     | Just memv -> Events.set_write_values memv writes []
     | Nothing -> writes
   end in
-  let write = ensure_singleton writes
-                "no/multiple write events generated for store" in
+  let write = match writes with
+    | [] -> failwith "no write events generated for store"
+    | [w] -> w
+    | _ -> failwith "multiple write events generated for store"
+  end in
   let write = <| write with w_ioid = dummy_ioid s.tid; weiid = wid |> in
   (s,write)
 
