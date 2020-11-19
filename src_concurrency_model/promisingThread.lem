@@ -209,7 +209,19 @@ let make_write_events_aux isa s ii (wk,addr,sz,memv) =
   let write = match writes with
     | [] -> failwith "no write events generated for store"
     | [w] -> w
-    | _ -> failwith "multiple write events generated for store"
+    | _ ->        
+       let err = 
+         String.concat " "
+           [ "The Promising model cannot handle mixed-size memory accesses.";
+             "multiple write events generated for store";
+             "writes:"; show writes;
+             "addr:"; show addr;
+             "sz:"; show sz;
+             "thread:"; show (s.tid);
+             "ii:"; show ii.ii_ioid;
+           ]
+       in
+       failwith err
   end in
   let write = <| write with w_ioid = dummy_ioid s.tid; weiid = wid |> in
   (s,write)
