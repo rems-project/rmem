@@ -4507,7 +4507,6 @@ let execute_BranchImmediate (branch_type, offset) =
      branch_type)
 
 let execute_BranchRegister (n, branch_type) =
-  rX ((64:ii),n) >>= fun target ->
   (if bitU_to_bool (eq (branch_type, BranchType_CALL))
    then
      rPC () >>= fun w__0 ->
@@ -4516,6 +4515,7 @@ let execute_BranchRegister (n, branch_type) =
         reset_vector_start (set_vector_start_to_length
           (add_VIV (reset_vector_start (set_vector_start_to_length w__0)) (4:ii))))
    else return ()) >>
+  rX ((64:ii),n) >>= fun target ->
   BranchTo (reset_vector_start (set_vector_start_to_length target),branch_type)
 
 let execute_ExceptionReturn () =
