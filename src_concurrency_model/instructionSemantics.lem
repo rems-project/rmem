@@ -94,10 +94,10 @@ instance forall 'i. (Ord (decode_error_t 'i))
   let (>=) = decode_error_greater_eq
 end
 
-let {coq; ocaml} decode_error_equal e1 e2 = (decode_error_compare e1 e2) = EQ
+let decode_error_equal e1 e2 = (decode_error_compare e1 e2) = EQ
 (* let inline {hol; isabelle} decode_error_equal = unsafe_structural_equality *)
 
-let {coq; ocaml} decode_error_inequal e1 e2 = not (decode_error_equal e1 e2)
+let decode_error_inequal e1 e2 = not (decode_error_equal e1 e2)
 (* let inline {hol; isabelle} decode_error_inequal = unsafe_structural_inequality *)
 
 instance forall 'i.  (Eq decode_error_t 'i)

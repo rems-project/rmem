@@ -588,7 +588,7 @@ CLEANDIRS += generated_ocaml
 generated_isabelle/make_sentinel: $(FORCECONCSENTINEL) $(MACHINEFILES)
 	rm -rf $(dir $@)
 	mkdir -p $(dir $@)
-	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -isa $(MACHINEFILES-ISABELLE)
+	$(LEM) $(LEMFLAGS) -outdir $(dir $@) -isa $(MACHINEFILES)
 	echo '$(ISA)' > $@
 # 	echo 'session MODEL = "LEM" + theories MachineDefTSOStorageSubsystem MachineDefSystem' > generated_isabelle/ROOT
 CLEANDIRS += generated_isabelle

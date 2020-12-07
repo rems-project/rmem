@@ -20,6 +20,7 @@
 
 open import Relation
 open import Pervasives_extra
+open import Debug
 open import Sail_impl_base
 
 (* Help emacs fontification -*-caml-*- *)
@@ -219,6 +220,8 @@ val print_integer : integer -> unit
 declare ocaml    target_rep function print_integer = `Debug.print_integer`
 declare isabelle target_rep function print_integer = `nothing1`
 
+declare isabelle target_rep function print_string = `nothing1`
+declare isabelle target_rep function print_endline = `nothing1`
 
 (** relon is a relation over a set (useful when the domain of the
 relation does not cover the set, e.g., coherence when there is only one
