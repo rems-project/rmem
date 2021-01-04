@@ -3,7 +3,7 @@ open import Assert_extra
 open import Sail_impl_base
 open import Sail_values
 open import Events
-import InstructionSemantics
+open import InstructionSemantics
 import Fragments
 import FreshIds
 
@@ -92,10 +92,10 @@ type isa 'i =
   
 
 let instruction_semantics_stub = 
-  <| InstructionSemantics.decode_to_instruction = fun _ _ -> failwith "stub";
-     InstructionSemantics.encode_instruction = fun _ _ -> failwith "stub";
-     InstructionSemantics.initial_outcome_of_instruction = fun _ -> failwith "stub";
-     InstructionSemantics.instruction_analysis = fun _ _ _ _ -> failwith "stub"
+  <| decode_to_instruction = fun _ _ -> failwith "stub";
+     encode_instruction = fun _ _ -> failwith "stub";
+     initial_outcome_of_instruction = fun _ -> failwith "stub";
+     instruction_analysis = fun _ _ _ _ -> failwith "stub"
   |>
 
 
