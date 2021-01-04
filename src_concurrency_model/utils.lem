@@ -159,7 +159,7 @@ module ListMonad = struct
   let inline (>>) m n = m >>= fun () -> n
 
   let inline return x = [x]
-  let mzero = []
+  let inline mzero = []
 
   val guard : bool -> list unit
   let inline guard b = if b then return () else mzero
@@ -182,7 +182,7 @@ module SetMonad = struct
   let inline (>>) m n = m >>= fun () -> n
 
   let inline return = Set.singleton
-  let mzero = Set.empty
+  let inline mzero = Set.empty
 
   val guard : bool -> set unit
   let inline guard b = if b then return () else mzero
