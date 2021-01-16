@@ -600,7 +600,7 @@ let pop_load_sat_might_self_restart params
       'rr' might need to be restarted. *)
       (exists (prev_inst MEM prefix).
        exists ((rr', unsat_slices') MEM prev_inst.subreads.sr_unsat_slices).
-          read_requested prev_inst rr' &&
+          not (read_requested prev_inst rr') &&
           overlapping_slices (rr.r_addr, unsat_slices) 
                              (rr'.r_addr, unsat_slices')
       )
