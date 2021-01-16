@@ -485,15 +485,17 @@ let pop_memory_read_action_restart_roots params
   =
   (* predicate to determine if a po-after satisfied read should be restarted *)
   let restart_satisfied_read prefix_ioids inst : bool =
-    exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
-      ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
       match ss with
       | WSS wss ->
-          overlapping_slices_from_different_writes_not_in_set
-            wss (Set.fromList rr_wss) prefix_ioids
+          exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
+            ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
+            overlapping_slices_from_different_writes_not_in_set
+              wss (Set.fromList rr_wss) prefix_ioids
       | SS rss ->
-          overlapping_slices_not_in_set
-            (read_request, rss) (Set.fromList rr_wss) prefix_ioids
+          exists (rr MEM (read_requests_of_subreads inst.subreads)).
+            ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
+            overlapping_slices (read_request.r_addr, rss)
+                (rr.r_addr, [complete_slice rr.r_addr])
       end
   in
 
@@ -583,6 +585,8 @@ let pop_load_sat_might_self_restart params
     (instruction:          instruction_instance 'i)
     : bool
   =
+  not (is_flat_model params) &&
+
   let prev_ioids =
     {i.instance_ioid | forall (i MEM (prefix ++ state.old_instructions)) | true}
   in
@@ -659,8 +663,7 @@ let pop_load_might_restart_roots params
   if not (is_memory_load_instruction (ik instruction)) then {} else
 
   if instruction.instance_ioid IN might_restart_prefix ||
-       (not (is_flat_model params) && (* In Flat is_stale_read never holds *)
-          pop_load_sat_might_self_restart params state might_restart_prefix prefix instruction)
+       pop_load_sat_might_self_restart params state might_restart_prefix prefix instruction
   then
     (* because the load migh be restarted, we have to assume it will be, and then
        resatisfied, hence the complete slice below. *)
@@ -1208,9 +1211,9 @@ let rec pop_load_finish_co_check_helper
             -->
             (inst.instance_ioid NIN might_be_restarted &&
             forall ((rr', slices') MEM inst.subreads.sr_unsat_slices).
-            (List.null slices' ||
-               ((overlapping_slices_not_in_set (rr', slices') (Set.fromList writes_read_from) {})
-               (*((exists ((w, s) MEM writes_read_from).
+            (((overlapping_slices_not_in_set (rr', slices') (Set.fromList writes_read_from) {})
+            (*(List.null slices' ||
+               ((exists ((w, s) MEM writes_read_from).
                  overlapping_slices
                  write_slices_overlaps_with_addr rr'.r_addr (w, s) )*)
                 (* see
