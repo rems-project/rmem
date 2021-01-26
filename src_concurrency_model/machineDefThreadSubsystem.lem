@@ -382,14 +382,25 @@ let restart_dependent_subtrees
    slices footprint-intersect and where the second does not come from
    an instruction in ifeed_ioids *)
 let overlapping_slices_from_different_writes_not_in_set
-      (wss1: set (write*slices))
-      (wss2: set (write*slices))
-      (ifeed_ioids: set ioid) =
+    (wss1: set (write*slices))
+    (wss2: set (write*slices))
+    (ifeed_ioids: set ioid)
+    : bool
+  =
+  let wss2 = {(w, sls) | forall ((w, sls) IN wss2) | w.w_ioid NIN ifeed_ioids} in
   exists ((w1, sls1) IN wss1). exists ((w2, sls2) IN wss2).
-    (w2.w_ioid NIN ifeed_ioids) &&
     (w1 <> w2) &&
     overlapping_slices (w1.w_addr, sls1) (w2.w_addr, sls2)
 
+let overlapping_slices_not_in_set
+    ((rr, rs): (read_request*slices))
+    (wss: set (write*slices))
+    (ifeed_ioids: set ioid)
+    : bool
+  =
+  let wss = {(w, ws) | forall ((w, ws) IN wss) | w.w_ioid NIN ifeed_ioids} in
+  exists ((w, ws) IN wss).
+    overlapping_slices (rr.r_addr, rs) (w.w_addr, ws)
 
 
 (* remove read_requests of restarted instructions from pop's read_issuing_order *)
@@ -454,6 +465,10 @@ let pop_reads_issued_in_order
   relonInRel po_old_rr po_new_rr read_issuing_order
 
 
+type write_slices_or_slices =
+  | WSS of set (write * slices)
+  | SS  of slices
+
 (* determines the set of instructions that need to be restarted (not
 including their dependencies) due to 'read_request' being satisfied.
 'it' is the subtree under the instruction that issued  'read_request'.
@@ -465,33 +480,23 @@ let pop_memory_read_action_restart_roots params
     (state:        thread_state 'i)
     (it:           instruction_tree 'i)
     (read_request: read_request)
-    (wss:          maybe (set (write * slices)))
+    (ss:           write_slices_or_slices)
     : set (instruction_instance 'i)
   =
-
   (* predicate to determine if a po-after satisfied read should be restarted *)
   let restart_satisfied_read prefix_ioids inst : bool =
-    match wss with
-    | Just wss ->
-        (* we know the writes that satisfied the read, we will restart
-        po-after loads that overlap and read from different writes *)
-        exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
-          ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
-          overlapping_slices_from_different_writes_not_in_set
-            wss (Set.fromList rr_wss) prefix_ioids
-
-    | Nothing ->
-        (* we don't know the writes that satisfied the read, we will
-        restart all po-after reads that overlap. *)
-        exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
-            ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params)
-            &&
-            exists ((rr_w, rr_sls) MEM rr_wss).
-              overlapping_slices 
-                (read_request.r_addr, [complete_slice read_request.r_addr])
-                (rr_w.w_addr, rr_sls) &&
-              rr_w.w_ioid NIN prefix_ioids
-    end
+      match ss with
+      | WSS wss ->
+          exists ((rr, rr_wss) MEM inst.subreads.sr_writes_read_from).
+            ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
+            overlapping_slices_from_different_writes_not_in_set
+              wss (Set.fromList rr_wss) prefix_ioids
+      | SS rss ->
+          exists (rr MEM (read_requests_of_subreads inst.subreads)).
+            ((not (pop_reads_issued_in_order state read_request rr)) || is_flat_model params) &&
+            overlapping_slices (read_request.r_addr, rss)
+                (rr.r_addr, [complete_slice rr.r_addr])
+      end
   in
 
   {i | forall ((i,prefix_ioids) IN instructions_with_prefix_ioids it)
@@ -580,6 +585,8 @@ let pop_load_sat_might_self_restart params
     (instruction:          instruction_instance 'i)
     : bool
   =
+  not (is_flat_model params) &&
+
   let prev_ioids =
     {i.instance_ioid | forall (i MEM (prefix ++ state.old_instructions)) | true}
   in
@@ -653,17 +660,21 @@ let pop_load_might_restart_roots params
     (inst_tree:            instruction_tree 'i)
     : set (instruction_instance 'i)
   =
-  if not (is_memory_load_instruction (ik instruction)) then {}
+  if not (is_memory_load_instruction (ik instruction)) then {} else
+
+  if instruction.instance_ioid IN might_restart_prefix ||
+       pop_load_sat_might_self_restart params state might_restart_prefix prefix instruction
+  then
+    (* because the load migh be restarted, we have to assume it will be, and then
+       resatisfied, hence the complete slice below. *)
+    Set.bigunionMap
+      (fun rr -> pop_memory_read_action_restart_roots params state inst_tree rr (SS [complete_slice rr.r_addr]))
+      (Set.fromList (read_requests_of_subreads instruction.subreads))
+    union {instruction}
   else
     Set.bigunionMap
-      (fun rr -> pop_memory_read_action_restart_roots params state inst_tree rr Nothing)
-      (Set.fromList (read_requests_of_subreads instruction.subreads))
-    union
-    if instruction.instance_ioid NIN might_restart_prefix && (* for efficiency *)
-      pop_load_sat_might_self_restart params state might_restart_prefix prefix instruction
-    then {instruction}
-    else {}
-
+      (fun (rr, unsat_slices) -> pop_memory_read_action_restart_roots params state inst_tree rr (SS unsat_slices))
+      (Set.fromList instruction.subreads.sr_unsat_slices)
 
 let pop_instruction_might_restart_roots params
     (state:                thread_state 'i)
@@ -1200,9 +1211,11 @@ let rec pop_load_finish_co_check_helper
             -->
             (inst.instance_ioid NIN might_be_restarted &&
             forall ((rr', slices') MEM inst.subreads.sr_unsat_slices).
-            (List.null slices' ||
+            (((overlapping_slices_not_in_set (rr', slices') (Set.fromList writes_read_from) {})
+            (*(List.null slices' ||
                ((exists ((w, s) MEM writes_read_from).
-                 write_slices_overlaps_with_addr rr'.r_addr (w, s) )
+                 overlapping_slices
+                 write_slices_overlaps_with_addr rr'.r_addr (w, s) )*)
                 (* see
                    AArch64/mixed-size/HAND/R+dmb.sy+rfipw-poswp-ctrlisb.litmus
                    for why we need to use the complete slice of rr'
@@ -1222,8 +1235,8 @@ let rec pop_load_finish_co_check_helper
 
 (* pop might-access-same-address (for loads) The closest po-previous write
    to the same address must be propagated and all memory accesses in-between must
-   have a fully determined addresses. If the closest po-previous write is a
-   write that was forwarded to the load it does not have to be
+   have a fully determined addresses, except if the closest po-previous write is a
+   write that was forwarded to the load, then it does not have to be
    propagated, just "fixed" (i.e. instructions feeding ALL its registers are
    determined). *)
 let pop_load_finish_co_check
@@ -1245,15 +1258,15 @@ let pop_load_finish_co_check
     if preceding_memory_accesses_have_fully_determined_address iic &&
          preceding_reads_writes_are_calculated iic
     then pop_might_be_restarted params state iic.active_prefix
-    else {inst.instance_ioid | forall (inst MEM iic.active_prefix) 
+    else {inst.instance_ioid | forall (inst MEM iic.active_prefix)
                              | not inst.finished}
   in
   let writes_read_from =
     iic.iic_instance.subreads.sr_writes_read_from in
 
-  forall ((read_request, w) MEM writes_read_from).
+  forall ((read_request, ws) MEM writes_read_from).
     pop_load_finish_co_check_helper
-      params state might_be_restarted read_request w iic.active_prefix
+      params state might_be_restarted read_request ws iic.active_prefix
 
 
 
@@ -1797,9 +1810,9 @@ let pop_satisfy_read_from_memory_action params
       mark_read_as_satisfied iic.iic_instance request [] write_slices in
     (* do restarts *)
     let (it', restarted_ioids) =
-      let wss = (Just (Set.fromList write_slices)) in
       let roots = pop_memory_read_action_restart_roots
-                    params state iic.subtree request wss in
+                    params state iic.subtree request
+                    (WSS (Set.fromList write_slices)) in
       restart_dependent_subtrees iic.subtree roots
     in
     let it'' = handle_restart_dc request.r_addr it' in
@@ -1958,7 +1971,7 @@ let pop_and_pldi11_satisfy_read_by_forwarding_action params
     let roots = match params.thread_model with
       | POP_thread_model _ ->
          pop_memory_read_action_restart_roots
-           params state it request (Just (Set.fromList writes)) 
+           params state it request (WSS (Set.fromList writes))
       | PLDI11_thread_model ->
          pldi11_memory_read_action_restart_roots
            params i it request (Set.fromList writes)
