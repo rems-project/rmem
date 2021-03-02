@@ -34,6 +34,17 @@ Copyright Kayvan Memarian, University of Cambridge                              
 Copyright Anthony Fox, University of Cambridge (when this work was done)                   2017-2017 
 Copyright Alasdair Armstrong, University of Cambridge                                      2017-2017 
 
+rmem was developed as part of the REMS project
+(https://www.cl.cam.ac.uk/~pes20/rems/), partly funded by ERC Advanced
+grant "ELVER" (2018-2023, ERC AdG 789108), the EPSRC Programme Grant
+"REMS: Rigorous Engineering for Mainstream Systems" (EP/K008528/1),
+EPSRC grant "C3: Scalable & Verified Shared Memory via
+Consistency-directed Cache Coherence" (EP/M027317/1), an ARM iCASE
+award (Pulte), an EPSRC IAA KTF (Gray), EPSRC Leadership Fellowship
+"Semantic Foundations for Real-World Systems" (EP/H005633/1,
+2009-2014, Sewell), and EPSRC grant "Reasoning with Relaxed Memory
+Models" (EP/F036345, 2008-2012).
+
 
 ======================================================================
 
