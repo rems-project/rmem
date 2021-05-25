@@ -3258,16 +3258,16 @@ let excl_res_success_action
     (state:    thread_state 'i)
     (iic:      instruction_in_context 'i)
     (isa_cont: bool -> outcome unit)
-    ()
   =
-  let i = iic.iic_instance in
-  let i' = <| i with micro_op_state = MOS_plain (isa_cont true) |> in
-  let i' = if record_success
-           then <| i' with successful_atomic_store = Just true |>
-           else i' in
-  let it' = apply_tree_context iic.context (i', iic.subtree) in
-  let state' = <| state with instruction_tree = it' |> in
-  make_thread_cont_res {} {} state'
+  fun () ->
+    let i = iic.iic_instance in
+    let i' = <| i with micro_op_state = MOS_plain (isa_cont true) |> in
+    let i' = if record_success
+             then <| i' with successful_atomic_store = Just true |>
+             else i' in
+    let it' = apply_tree_context iic.context (i', iic.subtree) in
+    let state' = <| state with instruction_tree = it' |> in
+    make_thread_cont_res {} {} state'
 
 
 let enumerate_excl_res_success_outcome_transition_pop
