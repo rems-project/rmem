@@ -275,13 +275,15 @@ let pretty_eiids s =
   List.flatten (
   List.mapi
     (fun m eiids ->
-      (match eiids with
+      begin match eiids with
       | [eiid] -> [(eiid, pretty_eiid m None)]
       | _ ->
-          List.mapi
-            (fun n eiid ->
+          List.map
+            (fun eiid ->
+              let (_, n) = eiid in
               (eiid, pretty_eiid m (Some n)))
-            eiids)
+            eiids
+      end
     )
     eiidss
  )

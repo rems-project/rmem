@@ -80,7 +80,16 @@ let make_tikz_graph
                   (Sail_impl_base.address_of_memory_value (Globals.get_endianness ()) value)
     with
     | Some str -> str
-    | None -> Printing_functions.memory_value_to_string (Globals.get_endianness ()) value
+    | None ->
+       if !Globals.print_hex then
+         Printing_functions.logfile_memory_value_to_string (Globals.get_endianness ()) value
+       else
+         begin match Sail_impl_base.integer_of_memory_value (Globals.get_endianness ()) value with
+         | None ->
+            Printing_functions.logfile_memory_value_to_string (Globals.get_endianness ()) value
+         | Some big_val ->
+            Nat_big_num.to_string big_val
+         end
   in
 
   let pp_write_value write =
@@ -276,6 +285,12 @@ let make_tikz_graph
         | rs ->
             let ioid = pp_tikz_pretty_ioid instance.cex_instance_ioid in
 
+            let rs =
+              List.sort
+                (fun (r, _) (r', _) -> Sail_impl_base.footprintCompare r.r_addr r'.r_addr)
+                rs
+            in
+
             let events =
               List.map
                 (fun (r, mrs) ->
@@ -298,6 +313,12 @@ let make_tikz_graph
         | [] -> failwith "store instruction without writes (tikz)"
         | ws ->
             let ioid = pp_tikz_pretty_ioid instance.cex_instance_ioid in
+
+            let ws =
+              List.sort
+                (fun w w' -> Sail_impl_base.footprintCompare w.w_addr w'.w_addr)
+                ws
+            in
 
             let events =
               List.map
@@ -323,6 +344,12 @@ let make_tikz_graph
           begin match instance.cex_satisfied_reads with
           | [] -> failwith "load instruction without reads (tikz)"
           | rs ->
+              let rs =
+                List.sort
+                  (fun (r, _) (r', _) -> Sail_impl_base.footprintCompare r.r_addr r'.r_addr)
+                  rs
+              in
+
               List.map
                 (fun (r, mrs) ->
                   sprintf "%s/.mem read={%s %s=%s}"
@@ -338,6 +365,12 @@ let make_tikz_graph
           begin match instance.cex_propagated_writes with
           | [] -> failwith "store instruction without writes (tikz)"
           | ws ->
+              let ws =
+                List.sort
+                  (fun w w' -> Sail_impl_base.footprintCompare w.w_addr w'.w_addr)
+                  ws
+              in
+
               List.map
                 (fun w ->
                     sprintf "%s/.mem write={%s %s=%s}"

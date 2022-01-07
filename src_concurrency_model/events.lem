@@ -395,8 +395,12 @@ let make_read_request_event
   (rr, ist')
 
 (* don't call this function directly, use isa_info.make_read_request_events instead *)
-(* For mixed-size, we split nonaligned/mixed-size read requests into multiple events as necessary.
-Create (size / read_size) read request events with; head will be from 'addr' *)
+(* For mixed-size, we split nonaligned/mixed-size read requests into multiple
+   events as necessary. Create (size / read_size) read request events with;
+   head will be from 'addr'. The direction of eiids and addresses match. E.g.,
+   a two-byte read from 0x1001, will result in eiid 0 for the read from 0x1001,
+   and eiid 1 for the read from 0x1002. It might be less pleasing for
+   big-endian. *)
 let make_read_request_events'
     (ist:       id_state ioid)
     (tid:       thread_id)
@@ -414,13 +418,13 @@ let make_read_request_events'
   List.genlist
     (fun n -> add_address_nat addr (n * read_size))
     (size / read_size)
-  $> List.foldr
-      (fun addr (rrs, ist) ->
+  $> List.foldl
+      (fun (rrs, ist) addr ->
         let (rr, ist) = make_read_request_event ist tid ioid addr read_size read_kind in
         (rr :: rrs, ist))
       ([], ist)
+  $> (fun (rs, ist) -> (List.reverse rs, ist))
 
- 
 let make_empty_write_event
     (ist:  id_state ioid)
     (tid:  thread_id)
@@ -444,8 +448,12 @@ let make_empty_write_event
   (w, ist')
 
 (* don't call this function directly, use isa_info.make_empty_write_events instead *)
-(* For mixed-size, we split nonaligned/mixed-size writes into multiple events as necessary.
-Create (size / write_size) write events with no value; head will be to 'addr' *)
+(* For mixed-size, we split nonaligned/mixed-size writes into multiple events
+   as necessary. Create (size / write_size) write events with no value; head
+   will be to 'addr'. The direction of eiids and addresses match. E.g., a
+   two-byte write to 0x1001, will result in eiid 0 for the write to 0x1001,
+   and eiid 1 for the write to 0x1002. It might be less pleasing for
+   big-endian. *)
 let make_empty_write_events'
     (ist:  id_state ioid)
     (tid:  thread_id)
@@ -463,11 +471,12 @@ let make_empty_write_events'
   List.genlist
     (fun n -> add_address_nat addr (n * write_size))
     (size / write_size)
-  $> List.foldr
-      (fun addr (ws, ist) ->
+  $> List.foldl
+      (fun (ws, ist) addr ->
         let (w, ist) = make_empty_write_event ist tid ioid addr write_size wk in
         (w :: ws, ist))
       ([], ist)
+  $> (fun (ws, ist) -> (List.reverse ws, ist))
 
 (* split 'bytes' between 'writes' (starting from the head of both) *)
 let rec set_write_values
