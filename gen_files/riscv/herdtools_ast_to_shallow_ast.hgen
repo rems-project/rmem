@@ -10,7 +10,7 @@
       translate_reg "rd" rd)
 | `RISCVJALR(imm, rs, rd) -> RISCV_JALR(
       translate_imm12 "imm" imm,
-      translate_reg "rs" rd,
+      translate_reg "rs" rs,
       translate_reg "rd" rd)
 | `RISCVBType(imm, rs2, rs1, op) -> BTYPE(
       translate_imm13 "imm" imm,
