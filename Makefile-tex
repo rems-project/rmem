@@ -1,0 +1,67 @@
+saildir=../sail-legacy
+sail2dir=../sail
+
+LEM=../lem/lem
+
+MACHINEFILES=\
+  $(saildir)/src/lem_interp/sail_impl_base.lem\
+  $(saildir)/src/gen_lib/sail_values.lem\
+  $(saildir)/src/gen_lib/prompt.lem\
+  $(sail2dir)/src/gen_lib/sail2_instr_kinds.lem\
+  $(sail2dir)/src/gen_lib/sail2_values.lem\
+  $(sail2dir)/src/gen_lib/sail2_operators.lem\
+  $(sail2dir)/src/gen_lib/sail2_operators_mwords.lem\
+  $(sail2dir)/src/gen_lib/sail2_prompt_monad.lem\
+  $(sail2dir)/src/gen_lib/sail2_prompt.lem\
+  $(sail2dir)/src/gen_lib/sail2_string.lem\
+  src_concurrency_model/utils.lem\
+  src_concurrency_model/freshIds.lem\
+  src_concurrency_model/instructionSemantics.lem\
+  src_concurrency_model/exceptionTypes.lem\
+  src_concurrency_model/events.lem\
+  src_concurrency_model/fragments.lem\
+  src_concurrency_model/elfProgMemory.lem\
+  src_concurrency_model/isa.lem\
+  src_concurrency_model/regUtils.lem\
+  src_concurrency_model/uiTypes.lem\
+  src_concurrency_model/params.lem\
+  src_concurrency_model/dwarfTypes.lem\
+  src_concurrency_model/instructionKindPredicates.lem\
+  src_concurrency_model/candidateExecution.lem\
+  src_concurrency_model/machineDefTypes.lem\
+  src_concurrency_model/machineDefUI.lem\
+  src_concurrency_model/machineDefPLDI11StorageSubsystem.lem\
+  src_concurrency_model/machineDefFlowingStorageSubsystem.lem\
+  src_concurrency_model/machineDefFlatStorageSubsystem.lem\
+  src_concurrency_model/machineDefPOPStorageSubsystem.lem\
+  src_concurrency_model/machineDefTSOStorageSubsystem.lem\
+  src_concurrency_model/machineDefThreadSubsystemUtils.lem\
+  src_concurrency_model/machineDefThreadSubsystem.lem\
+  src_concurrency_model/machineDefSystem.lem\
+  src_concurrency_model/machineDefTransitionUtils.lem\
+  src_concurrency_model/promisingViews.lem\
+  src_concurrency_model/promisingTransitions.lem\
+  src_concurrency_model/promisingThread.lem\
+  src_concurrency_model/promisingStorageTSS.lem\
+  src_concurrency_model/promisingStorage.lem\
+  src_concurrency_model/promising.lem\
+  src_concurrency_model/promisingDwarf.lem\
+  src_concurrency_model/promisingUI.lem
+
+
+LEM=lem
+
+LEMFLAGS += -only_changed_output
+LEMFLAGS += -wl_unused_vars ign
+LEMFLAGS += -wl_pat_comp ign
+LEMFLAGS += -wl_pat_exh ign
+# LEMFLAGS += -wl_pat_fail ign
+LEMFLAGS += -wl_comp_message ign
+LEMFLAGS += -wl_rename ign
+
+TEXOUT=tex
+
+all:
+	mkdir -p $(TEXOUT)
+	@echo "${BLUE}generating concurrency model tex definition ..."
+	$(LEM) $(LEMFLAGS) -outdir $(TEXOUT) -ocaml $(MACHINEFILES)
