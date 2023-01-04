@@ -1,7 +1,10 @@
-saildir=../sail-legacy
+# -*-makefile-*-
+lemdir=../lem
+lemdir2=../../lem
+saildir=src_sail_legacy
 sail2dir=../sail
 
-LEM=../lem/lem
+LEM=$(lemdir)/lem
 
 MACHINEFILES=\
   $(saildir)/src/lem_interp/sail_impl_base.lem\
@@ -49,8 +52,6 @@ MACHINEFILES=\
   src_concurrency_model/promisingUI.lem
 
 
-LEM=lem
-
 LEMFLAGS += -only_changed_output
 LEMFLAGS += -wl_unused_vars ign
 LEMFLAGS += -wl_pat_comp ign
@@ -61,7 +62,13 @@ LEMFLAGS += -wl_rename ign
 
 TEXOUT=tex
 
+
 all:
 	mkdir -p $(TEXOUT)
 	@echo "${BLUE}generating concurrency model tex definition ..."
-	$(LEM) $(LEMFLAGS) -outdir $(TEXOUT) -ocaml $(MACHINEFILES)
+	$(LEM) $(LEMFLAGS) -outdir $(TEXOUT) -tex $(MACHINEFILES)
+	cd tex && TEXINPUTS=$(lemdir2)/tex-lib/:$(TEXINPUTS) pdflatex MachineDefThreadSubsystem
+
+clean:
+	rm -rf tex
+	rm -f *~
