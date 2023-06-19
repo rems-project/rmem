@@ -367,16 +367,19 @@ let XX_update params value = {params with t = {params.t with XX = value}}
 let XX_value params = params.t.XX
 *)
 
-open MachineDefTypes
 let fetch_atomics_assoc =
-  let r =
-      (* TODO: eventually read these from user or sail registers *)
-      { flat_need_ic = true;
-        flat_need_dc = true;
+  let r ic dc =
+      { flat_need_ic = ic;
+        flat_need_dc = dc;
         flat_icache_type = Icache_Many;
       } in
+  (* TODO: eventually, dic/idc can be read from the user CTR_EL0 register on Arm
+   * and don't need to be a weird argument to the model *)
   [((Fetch_Atomic, Fetch_Sequential, false), "fetch-atomic");
-   ((Fetch_Relaxed r, Fetch_Unrestricted, true), "fetch-relaxed")]
+   ((Fetch_Relaxed (r true true), Fetch_Unrestricted, true), "fetch-relaxed");
+   ((Fetch_Relaxed (r true false), Fetch_Unrestricted, true), "fetch-relaxed-only-idc");
+   ((Fetch_Relaxed (r false true), Fetch_Sequential, true), "fetch-relaxed-only-dic");
+   ((Fetch_Relaxed (r false false), Fetch_Sequential, true), "fetch-relaxed-both");]
 let fetch_atomics_update params (mft, tfo, iffss)  =
     {params with
         ss = {params.ss with ss_fetch_type=mft};
