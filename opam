@@ -18,6 +18,7 @@ depends: [
   "lem" {>= "2018-12-14"}
   "linksem" {>= "0.3"}
   "sail"
+  "sail-legacy"
   "sail-riscv"
   "conf-gmp"
   "lwt" {>= "4.1.0" & <= "4.5.0"}
