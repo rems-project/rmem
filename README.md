@@ -188,7 +188,7 @@ More recent work, integrating a newer version of Sail with rmem (currently only 
 
 - [ISA Semantics for ARMv8-A, RISC-V, and CHERI-MIPS.](http://www.cl.cam.ac.uk/users/pes20/sail/sail-popl2019.pdf) Alasdair Armstrong, Thomas Bauereiss, Brian Campbell, Alastair Reid, Kathryn E. Gray, Robert M. Norton, Prashanth Mundkur, Mark Wassell, Jon French, Christopher Pulte, Shaked Flur, Ian Stark, Neel Krishnaswami, and Peter Sewell. In POPL 2019.
 
-
+(2023/10/19 Note: rmem is currently lagging behind Sail development. rmem's integration of ISA models is based on the now-outdated Sail1, and all ISA models except RISC-V are Sail1 models. To accommodate the Sail2-based RISC-V model, rmem internally converts Sail2 types to Sail1 types. The parts of Sail1 rmem relies on are checked in as `src_sail_legacy`.)
 
 
 
