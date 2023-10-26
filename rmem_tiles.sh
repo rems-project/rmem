@@ -197,13 +197,13 @@ run_tmux() {
       set -t : @rmem_layout state\
     " \
     " if -F \"#{==:#{@rmem_layout},state}\" \
-        \"break-pane -s :Console.1 -n SystemState ; \
+        \"break-pane -d -s :Console.top -n SystemState ; \
           join-pane -d -s :Trace.0 -t :Console.0 -h -p 40 ; \
-          join-pane -d -s :SystemState.0 -t :Console.0 -v -b -p 75 ; \
+          join-pane -d -s :SystemState.0 -t :Console.left -v -b -p 75 ; \
           set -t : @rmem_layout full\
         \" \
-        \"break-pane -s :Console.2 -n Trace ; \
-          break-pane -s :Console.1 -n SystemState ; \
+        \"break-pane -s :Console.right -n Trace ; \
+          break-pane -s :Console.top -n SystemState ; \
           select-window -t :Console ; \
           set -t : @rmem_layout console\
         \"\
@@ -211,15 +211,15 @@ run_tmux() {
   tmux bind-key -n BTab \
     if -F "#{==:#{@rmem_layout},console}" \
       " join-pane -d -s :Trace.0 -t :Console.0 -h -p 40 ; \
-        join-pane -d -s :SystemState.0 -t :Console.0 -v -b -p 75 ; \
+        join-pane -d -s :SystemState.0 -t :Console.left -v -b -p 75 ; \
         set -t : @rmem_layout full\
       " \
       " if -F \"#{==:#{@rmem_layout},full}\" \
-          \"break-pane -s :Console.2 -n Trace ; \
+          \"break-pane -d -s :Console.right -n Trace ; \
             select-window -t :Console ; \
             set -t : @rmem_layout state\
           \" \
-          \"break-pane -s :Console.1 -n SystemState ; \
+          \"break-pane -d -s :Console.top -n SystemState ; \
             select-window -t :Console ; \
             set -t : @rmem_layout console\
           \"\

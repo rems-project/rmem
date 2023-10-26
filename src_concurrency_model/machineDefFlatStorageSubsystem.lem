@@ -681,8 +681,7 @@ let flat_storage =
      ss_is_final_state                    = flat_ss_is_final_state ;
      ss_coherence                         = flat_ss_coherence ;
      ss_clean_reads                       = flat_ss_remove_old_read_requests;
-     ss_enumerate_transitions = enumerate_transitions_ss;
-     ss_receive_transition = 
-         fun p s tl -> flat_ss_receive_transition p s tl;
-     ss_make_ui_storage_state = flat_make_ui_storage_subsystem_state;
+     ss_enumerate_transitions             = enumerate_transitions_ss;
+     ss_receive_transition                = flat_ss_receive_transition;
+     ss_make_ui_storage_state             = flat_make_ui_storage_subsystem_state;
  |>

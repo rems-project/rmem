@@ -337,7 +337,6 @@ let pop_ss_satisfy_read_action params state read_request write_request =
       (* the read is acquire or was partially satisfied *)
       (* update the read to record the write that satisfied it and the remaining unsat slices *)
       let read_request' =
-        let (read, _, write_slices) = unsafeFRead read_request in
         FRead read read_slices' (write_slices' ++ write_slices)
       in
       let state = pop_update_flowing_event state read_request read_request' in

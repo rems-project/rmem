@@ -1,0 +1,42 @@
+Trying to understand how RISC-V memory access annotations flow into RMEM.
+
+See sail-riscv/model/riscv_analysis.sail for the memory access annotations
+currently used by RISC-V (new-Sail). Those are then mapped in
+rmem/src_isa_defs/sail_1_2_convert.lem to old-Sail. And those are
+lifted in rmem/src_concurrency_model/instructionKindPredicates.lem to
+architecture specific predicates.
+
+Examples:
+ASM       | man model                | new-Sail                    | mapped to old-Sail
+LR.D      | reserved                 | Read_RISCV_reserved         | Read_RISCV_reserved
+LR.D.aq   | reserved + acquire-RCsc  | Read_RISCV_reserved_acquire | Read_RISCV_reserved_acquire_RCsc
+LR.D.aqrl | reserved + acquire-RCsc..| Read_RISCV_reserved_strong..| Read_RISCV_reserved_acquire_release
+                   ..+ release-RCsc  | .._acquire                  |
+LR.D.rl --- invalid ---
+
+ASM       | man model                   | new-Sail                        | mapped to old-Sail
+SC.D      | conditional                 | Write_RISCV_conditional         | Write_RISCV_conditional
+SC.D.rl   | conditional + release-RCsc  | Write_RISCV_conditional_release | Write_RISCV_conditional_release_RCsc
+SC.D.aqrl | conditional + acquire-RCsc..| Write_RISCV_conditional_strong..| Write_RISCV_conditional_acquire_release
+                      ..+ release-RCsc  | .._release
+SC.D.aq --- invalid ---
+
+ASM           | man model 'read, write' (new/old-Sail as above)
+AMOADD.D      | reserved, conditional
+AMOADD.D.aq   | reserved acquire-RCsc, conditional
+AMOADD.D.rl   | reserved, conditional + release-RCsc
+AMOADD.D.aqrl | reserved acquire-RCsc + release-RCsc, conditional + acquire-RCsc + release-RCsc
+
+The important rules from the RV manual mem-model:
+5. a has an acquire annotation;
+6. b has a release annotation;
+7. a and b both have RCsc annotations;
+Current RV non-Ztso ISA doesn't use RCpc at all.
+Future encodings might include:
+load + acquire-RCpc
+load + acquire-RCsc
+load + acquire-RCsc + release-RCsc
+store + release-RCpc
+store + release-RCsc
+store + acquire-RCsc + release-RCsc
+and similarly RCpc variants for LR, SC, and AMOs.

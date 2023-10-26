@@ -395,7 +395,11 @@ type flowing_storage_subsystem_state =
       flowing_ss_reordered : set (flowing_event * flowing_event);
 
       (* map read_requests of load-exclusives that are paired with store-exclusive
-      that is guaranteed to succeed, to the writes they read from *)
+      that is guaranteed to succeed, to the writes they read from, and to the
+      write of the paired store exclusive. Initially, when the load-exclusive is
+      issued, or when the success of a store-exclusive is guaranteed, we use FFWrite
+      to represent the future-write; later, when the write is propagated to storage
+      this is replaced with the actual FWrite. *)
       flowing_ss_exclusive_reads: map read_request (list (write * slices) * flowing_event);
       (* map writes of store-exclusives that are guaranteed to succeed,
       to the read_request of the paired load-exclusive; this read_request
@@ -439,8 +443,8 @@ type flat_storage_subsystem_state =
       flat_ss_ic_writes : map address (cache_maintenance_request * (list thread_id));
       (* the global buffer of writes that can be fetched from *)
       flat_ss_fetch_buf : list write;
-      (* record writes that flowed to memory in the order in which they
-      flowed (head is new); we need this to reconstruct coherence *)
+      (* record writes that propagated to memory in the order in which they
+      propagated (head is new); we need this to reconstruct coherence *)
       flat_ss_old_writes : list write;
       (* map read_requests of load-exclusives that are paired with store-exclusive
       that is guaranteed to succeed, to the writes they read from *)

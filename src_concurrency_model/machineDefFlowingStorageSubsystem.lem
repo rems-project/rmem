@@ -356,6 +356,13 @@ let exclusives_future_edges exclusives order =
     end
   in
 
+  (* w ---co-> e'              ,--> e'
+   * |         ^              /     ^
+   * rf        |             fr     |
+   * |      ADD-THIS  and   /    ADD-THIS
+   * V         |           /        |
+   * r_exc --> w_exc      r_exc --> w_exc
+   *)
   {(w_exc, e')
     | forall  ((r_exc, (prev_ws, w_exc)) IN exclusives)
               ((e, e') IN order.relon_rel)
@@ -367,19 +374,33 @@ let exclusives_future_edges exclusives order =
       end
   } union
 
+  (* w <-ADD-- o             ,----- o
+   * |   THIS  |            /       |
+   * rf        co   and  ADD-THIS   co
+   * |         |           |        |
+   * V         V           V        V
+   * r_exc --> w_exc      r_exc --> w_exc
+   *)
   {(o, e)
     | forall  ((r_exc, (prev_ws, w_exc)) IN exclusives)
               (o IN (relonLeftOf w_exc order))
               (e IN order.relon_set)
     | o <> e && thread_of_flowing_event o <> thread_of_flowing_event w_exc &&
       (is_fe_write o || is_fe_future_write o) &&
-      overlapping_slices (slices_of_fe o) (slices_of_fe w_exc) &&
+      fe_addrs_intersect o w_exc &&
       match prev_slices r_exc prev_ws e with
       | Just s  -> overlapping_slices (slices_of_fe o) s
       | Nothing -> false
       end
   } union
 
+  (* w -order->fw_exc          ,--> fw_exc
+   * |         ^              /     ^
+   * rf        |           order    |
+   * |      ADD-THIS  and   /    ADD-THIS
+   * V         |           /        |
+   * r_exc --> w_exc      r_exc --> w_exc
+   *)
   {(w_exc, fw_exc)
     | forall  ((r_exc, (prev_ws, w_exc)) IN exclusives)
               ((_, (_, fw_exc)) IN exclusives)

@@ -721,7 +721,7 @@ let pop_might_be_restarted params
 
 (* returns true iff a po-previous read request was issued after
 'read_request' (i.e. out of order) and was satisfied by a write to the
-same address different from 'wss' and 'wss' is not a forward from a
+same address different from 'wss', and 'wss' is not a forward from a
 write that is po-after that read request.
 NOTE: changes in this function need to be reflected in pop_load_sat_might_self_restart *)
 let pop_is_stale_read params
@@ -1088,7 +1088,9 @@ let pop_no_po_preceding_overlapping_unpropagated_writes
       forall (prev_write MEM prev_unpropagated_writes).
         not (non_empty_intersection write.w_addr prev_write.w_addr)
 
-
+(* TODO: SF: I think we should make it so that transitions are only held back by
+   po-preceding instructions. In this case, instead of checking the
+   po-succeeding loads, we should restart them if the transition is taken. *)
 let pop_all_reads_partially_satisfied_by_forwarding_issued_unsat_slices
       params iic write = 
   let issued _ iafter itafter =
@@ -1505,6 +1507,9 @@ let pop_finish_cand params state (iic: instruction_in_context 'i) : bool =
     true
   else if is_memory_load_instruction (ik iic.iic_instance) then
     pop_finish_load_cand params state iic
+  (* The following two cases seem like some leftovers from something. The above
+     committed_barriers <> [] case already covers these, so I don't know why
+     they are here. *)
   else if is_RISCV_fence_pr (ik iic.iic_instance) then
     true
   else if is_RISCV_fence_pw (ik iic.iic_instance) then
@@ -1775,7 +1780,7 @@ let pop_satisfy_stale_read_from_memory_action
 
 (* the reply from storage includes the forward-writes, but they might
    be old (from when the read was issued), so we need to set the value
-   for writes that were forwarded without value. This only does does
+   for writes that were forwarded without value. This only does
    anything if there is symbolic forwarding. *)
 let pop_read_from_memory_update_forward_writes iic request write_slices =
   (* as this is the point where we get the reply from storage, any

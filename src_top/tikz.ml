@@ -70,6 +70,13 @@ let make_tikz_graph
     !res
   in
 
+  (* Old version of pgf has some trouble parsing the special syntax of node cs
+     for eiids with numbers, as you get for mixed-size events, (e.g. '(a0)');
+     this function pp the explicit syntax which is easier to parse. *)
+  let node_cs (name: string) : string =
+    sprintf "node cs:name=%s" name
+  in
+
   let pp_tikz_pretty_ioid ioid =
     let (tid, ioid) = ioid in
     sprintf "%d-%d" tid ioid
@@ -493,8 +500,8 @@ let make_tikz_graph
         List.map
           (fun (w, w') ->
               pp_tikz_edge "co"
-                (pp_tikz_pretty_eiid m w.weiid)
-                (pp_tikz_pretty_eiid m w'.weiid))
+                (node_cs (pp_tikz_pretty_eiid m w.weiid))
+                (node_cs (pp_tikz_pretty_eiid m w'.weiid)))
           co
       in
                 "  % coherence\n" ^
@@ -516,8 +523,8 @@ let make_tikz_graph
                   pp_eiid
               else
                 pp_tikz_edge ("rf'=" ^ pp_tikz_write_slices_uncoloured m (w, ss))
-                  (pp_tikz_pretty_eiid m w.weiid)
-                  (pp_tikz_pretty_eiid m r.reiid)
+                  (node_cs (pp_tikz_pretty_eiid m w.weiid))
+                  (node_cs (pp_tikz_pretty_eiid m r.reiid))
           )
           rf
       in
@@ -533,8 +540,8 @@ let make_tikz_graph
         List.map
           (fun (r, (w, ss)) ->
               pp_tikz_edge ("fr'=" ^ pp_tikz_write_slices_uncoloured m (w, ss))
-                  (pp_tikz_pretty_eiid m r.reiid)
-                  (pp_tikz_pretty_eiid m w.weiid))
+                  (node_cs (pp_tikz_pretty_eiid m r.reiid))
+                  (node_cs (pp_tikz_pretty_eiid m w.weiid)))
           fr
       in
                 "  % from-read:\n" ^
