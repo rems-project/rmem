@@ -776,7 +776,6 @@ let pldi11_enumerate_transitions_of_storage_subsystem
      = 
   let all_writes = s.writes_seen in
 
-  let () = print_string "writes seen " in
   let () =
     let n_debug = integerFromNat (Set.size all_writes) in
     let () = print_integer n_debug in let () = print_string "\n" in
