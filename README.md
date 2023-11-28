@@ -21,7 +21,8 @@ Mainstream Systems" (EP/K008528/1), EPSRC grant "C3: Scalable & Verified
 Shared Memory via Consistency-directed Cache Coherence"
 (EP/M027317/1), an ARM iCASE award (Pulte), an EPSRC IAA KTF (Gray),
 EPSRC Leadership Fellowship "Semantic Foundations for Real-World
-Systems" (EP/H005633/1, 2009-2014, Sewell), and EPSRC grant "Reasoning
+Systems" (EP/H005633/1, 2009-2014, Sewell), an Arm iCASE Award (Simner),
+and EPSRC grant "Reasoning
 with Relaxed Memory Models" (EP/F036345, 2008-2012).
 
 
@@ -167,6 +168,11 @@ several concurrency models:
       concurrency model.](https://sf.snu.ac.kr/promising-arm-riscv/)
       Christopher Pulte, Jean Pichon-Pharabod, Jeehoon Kang, Sung-Hwan
       Lee, and Chung-Kil Hur. In PLDI 2019.
+
+- An extension to the Flat model for Arm to model instruction fetch and the required cache maintenance instructions, described in:
+
+  - [ARMv8-A system semantics: instruction fetch in relaxed architectures](https://www.cl.cam.ac.uk/~pes20/iflat/top-extended.pdf).
+    Ben Simner, Shaked Flur, Christopher Pulte, Alasdair Armstrong, Jean Pichon-Pharabod, Luc Maranget, and Peter Sewell. In ESOP 2020.
 
 ### Model validation
 
