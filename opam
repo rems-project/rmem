@@ -17,7 +17,7 @@ depends: [
   "ocamlbuild"
   "lem" {>= "2018-12-14"}
   "linksem" {>= "0.3"}
-  "sail"
+  "sail" {>= "0.14" & <= "0.14"}
   "sail-legacy"
   "sail-riscv"
   "conf-gmp"
