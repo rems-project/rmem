@@ -19,4 +19,5 @@
 /sanity.xml
 /system.js
 /console_help_printer.native
-
+src_top/share_dir.ml
+random_seed.dat
