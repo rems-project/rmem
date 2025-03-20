@@ -52,8 +52,13 @@ sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
 ## Building and running rmem with command-line interface, with opam 
 
 ``` shell
-  # add the REMS opam repository containing some of rmem's dependencies:
+# create an opam switch with an OCaml compiler version satisfying the constraints for the version of lwt that rmem uses
+opam switch create opam-4.11.2-for-rmem 4.11.2
+
+# add the REMS opam repository containing some of rmem's dependencies:
 opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
+
+# install rmem itself
 opam install rmem
 ```
 
@@ -61,10 +66,14 @@ opam install rmem
 ## Building and running rmem with command-line interface, with opam, from a github checkout
 
 ``` shell
-  # clone the repo:
+# create an opam switch with an OCaml compiler version satisfying the constraints for the version of lwt that rmem uses
+opam switch create opam-4.11.2-for-rmem 4.11.2
+
+# clone the repo:
 git clone git@github.com:rems-project/rmem.git
 cd rmem
-  # add the REMS opam repository containing some of rmem's dependencies:
+
+# add the REMS opam repository containing some of rmem's dependencies:
 opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
 opam install .
 ```
@@ -77,13 +86,18 @@ To rebuild and reinstall after local changes, run `opam upgrade --working-dir rm
 Alternatively, rmem can be built using `make` as follows:
 
 ``` shell
-  # clone the repo:
+# create an opam switch with an OCaml compiler version satisfying the constraints for the version of lwt that rmem uses
+opam switch create opam-4.11.2-for-rmem 4.11.2
+
+# clone the repo:
 git clone git@github.com:rems-project/rmem.git
 cd rmem
-  # get rmem's opam dependencies
+
+# get rmem's opam dependencies
 opam repository add rems https://github.com/rems-project/opam-repository.git#opam2
 opam install --deps-only .
-  # build rmem
+
+# build rmem
 make MODE=opt 
 ```
 
