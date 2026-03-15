@@ -45,7 +45,7 @@ The dependencies can be installed automatically as part of the rmem build proces
 In addition, a debian based Linux system also need the following packages:
 
 ``` shell
-sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev
+sudo apt install findutils libgmp-dev m4 perl pkg-config zlib1g-dev z3
 ```
 
 
